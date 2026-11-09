@@ -17,6 +17,10 @@ mod process_job;
 #[cfg(windows)]
 pub(crate) use process_job::ProcessJob;
 
+#[cfg(any(unix, test))]
+#[path = "acp_process_group_state.rs"]
+mod process_group_state;
+
 #[cfg(unix)]
 #[path = "acp_process_group.rs"]
 mod process_group;

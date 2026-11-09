@@ -1,6 +1,7 @@
 //! Spawn-owned POSIX groups. The leader is observed with WNOWAIT and is not
 //! reaped until the group has no executable members, preventing PGID reuse.
 use super::UnverifiedStop;
+use super::process_group_state::{validate_leader_group, verify_exited_group_quiescent, LeaderGroupState};
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::process::{Command, ExitStatus};
@@ -86,25 +87,32 @@ fn started_at(_pid: u32) -> Option<u128> {
     None
 }
 
+fn observed_group(pid: u32) -> std::io::Result<Option<u32>> {
+    let group = unsafe { libc::getpgid(pid as libc::pid_t) };
+    if group >= 0 { return Ok(Some(group as u32)); }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) { Ok(None) } else { Err(error) }
+}
+
 pub(super) fn register(pid: u32) -> Result<Arc<GroupIdentity>> {
     if pid == 0 || pid == std::process::id() {
         return Err(anyhow!(UnverifiedStop(
             "拒绝登记应用自身或无效进程组".into()
         )));
     }
-    let pgid = unsafe { libc::getpgid(pid as libc::pid_t) };
-    if pgid != pid as libc::pid_t {
-        return Err(anyhow!(UnverifiedStop(format!(
-            "PID {pid} 不是独立 spawn 进程组首领（PGID={pgid}）"
-        ))));
-    }
-    // waitid additionally proves that this is our own unreaped child, rather
-    // than a PID found in a file or a process from another parent.
-    peek_process_exit(pid).with_context(|| format!("无法持有 PID {pid} 的未回收子进程身份"))?;
+    // WNOWAIT proves ownership and reserves the PID even when Darwin no longer
+    // exposes a completed child through getpgid. Never substitute a reaped PID.
+    let observed = observed_group(pid)?;
+    let exited = peek_process_exit(pid).with_context(|| format!("无法持有 PID {pid} 的未回收子进程身份"))?.is_some();
+    let group_state = validate_leader_group(pid, observed, exited, cfg!(target_os = "macos"))
+        .map_err(|error| anyhow!(UnverifiedStop(format!("PID {pid} 不是独立 spawn 进程组首领：{error}"))))?;
     let identity = Arc::new(GroupIdentity {
         pid,
         started: started_at(pid),
-        owned_session: unsafe { libc::getsid(pid as libc::pid_t) } == pid as libc::pid_t,
+        // With a completed Darwin child getsid may also return ESRCH; inspect
+        // the possible owned session conservatively rather than assuming none.
+        owned_session: group_state == LeaderGroupState::ExitedWithoutLookup
+            || unsafe { libc::getsid(pid as libc::pid_t) } == pid as libc::pid_t,
         verified: AtomicBool::new(false),
         owner_dropped: AtomicBool::new(false),
         cleanup_failed: AtomicBool::new(false),
@@ -212,7 +220,7 @@ fn stop_locked(identity: &Arc<GroupIdentity>) -> Result<()> {
     let result = (|| -> Result<()> {
         // A still-waitable leader (even a zombie) reserves the original PID/PGID.
         // Reaping is exclusively done by the owned Child AFTER this succeeds.
-        peek_process_exit(identity.pid).context("进程组首领已被提前回收，不能排除PGID复用")?;
+        let exited = peek_process_exit(identity.pid).context("进程组首领已被提前回收，不能排除PGID复用")?.is_some();
         if identity
             .started
             .zip(started_at(identity.pid))
@@ -220,33 +228,44 @@ fn stop_locked(identity: &Arc<GroupIdentity>) -> Result<()> {
         {
             return Err(anyhow!("进程组首领创建时间不匹配，拒绝复用的PGID"));
         }
-        if unsafe { libc::getpgid(identity.pid as libc::pid_t) } != identity.pid as libc::pid_t {
-            return Err(anyhow!("原生进程组身份发生变化"));
-        }
-        let signal = |signal| -> Result<()> {
-            if unsafe { libc::kill(-(identity.pid as libc::pid_t), signal) } != 0 {
-                let error = std::io::Error::last_os_error();
-                if error.raw_os_error() != Some(libc::ESRCH) {
-                    return Err(error.into());
+        let observed = observed_group(identity.pid)?;
+        // The leader can exit between the first WNOWAIT observation and getpgid.
+        // Recheck ownership/exit after ESRCH rather than rejecting that race.
+        let exited = if observed.is_none() { peek_process_exit(identity.pid)?.is_some() } else { exited };
+        let group_state = validate_leader_group(identity.pid, observed, exited, cfg!(target_os = "macos"))
+            .map_err(|error| anyhow!(error))?;
+        if group_state == LeaderGroupState::ExitedWithoutLookup {
+            // Do not send any signal based on a missing group lookup. An own,
+            // unreaped exited root can finish only if its groups are quiescent.
+            verify_exited_group_quiescent(active_members(identity.pid)?,
+                identity.owned_session && active_other_session_groups(identity.pid)?)
+                .map_err(|error| anyhow!(error))?;
+        } else {
+            let signal = |signal| -> Result<()> {
+                if unsafe { libc::kill(-(identity.pid as libc::pid_t), signal) } != 0 {
+                    let error = std::io::Error::last_os_error();
+                    if error.raw_os_error() != Some(libc::ESRCH) {
+                        return Err(error.into());
+                    }
                 }
+                Ok(())
+            };
+            signal(libc::SIGTERM)?;
+            let started = Instant::now();
+            loop {
+                // kill(...,0) includes zombies, which cannot execute or spawn. Keep
+                // the leader unreaped while verifying all executable group members.
+                if !active_members(identity.pid)? {
+                    break;
+                }
+                if started.elapsed() >= Duration::from_millis(150) {
+                    signal(libc::SIGKILL)?;
+                }
+                if started.elapsed() >= Duration::from_secs(5) {
+                    return Err(anyhow!("POSIX进程组仍有活动成员"));
+                }
+                std::thread::sleep(Duration::from_millis(20));
             }
-            Ok(())
-        };
-        signal(libc::SIGTERM)?;
-        let started = Instant::now();
-        loop {
-            // kill(...,0) includes zombies, which cannot execute or spawn. Keep
-            // the leader unreaped while verifying all executable group members.
-            if !active_members(identity.pid)? {
-                break;
-            }
-            if started.elapsed() >= Duration::from_millis(150) {
-                signal(libc::SIGKILL)?;
-            }
-            if started.elapsed() >= Duration::from_secs(5) {
-                return Err(anyhow!("POSIX进程组仍有活动成员"));
-            }
-            std::thread::sleep(Duration::from_millis(20));
         }
         // Never signal dynamic PGIDs: their leaders may have exited and their
         // identifiers may be reused between enumeration and kill. Keep the
@@ -402,4 +421,23 @@ mod tests {
         second.join().unwrap().unwrap();
         owner_dropped(&identity).unwrap();
     }
+    #[test]
+    fn checked_stop_accepts_owned_unreaped_completed_command() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "exit 0"]).process_group(0);
+        let mut child = command.spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while peek_process_exit(child.id()).unwrap().is_none() {
+            assert!(Instant::now() < deadline, "fixture did not exit");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // Registration itself must also handle the fast-exit race on Darwin.
+        let identity = register(child.id()).unwrap();
+        stop(&identity).unwrap();
+        assert!(identity.verified.load(Ordering::Acquire));
+        assert!(child.wait().unwrap().success());
+        assert_eq!(peek_process_exit(child.id()).unwrap_err().raw_os_error(), Some(libc::ECHILD));
+        owner_dropped(&identity).unwrap();
+    }
+
 }

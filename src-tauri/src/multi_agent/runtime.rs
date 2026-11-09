@@ -212,7 +212,12 @@ pub fn upgrade_runtime(kind: AgentRuntimeKind) -> Result<RuntimeUpgradeReceipt, 
 }
 
 fn probe_runtime(definition: &RuntimeDefinition) -> RuntimeProbe {
-    let executable = resolve_definition_executable(definition);
+    let (executable, resolution_error) = if definition.kind == AgentRuntimeKind::Codex {
+        match resolve_codex_definition(definition) {
+            Ok(resolved) => (Some(resolved), None),
+            Err(error) => (None, Some(error)),
+        }
+    } else { (resolve_definition_executable(definition), None) };
     let Some((executable, validated_version)) = executable else {
         return RuntimeProbe {
             kind: definition.kind,
@@ -221,7 +226,8 @@ fn probe_runtime(definition: &RuntimeDefinition) -> RuntimeProbe {
             version: None,
             protocol: definition.protocol.to_string(),
             capabilities: capabilities_for_runtime(definition.kind),
-            error: Some(if definition.kind == AgentRuntimeKind::ZCode {
+            error: Some(if let Some(error) = resolution_error { error }
+            else if definition.kind == AgentRuntimeKind::ZCode {
                 super::zcode::executable()
                     .err()
                     .map(|error| error.to_string())
@@ -512,9 +518,17 @@ mod update_tests {
 }
 
 pub(crate) fn resolve_runtime_executable(kind: AgentRuntimeKind) -> Option<PathBuf> {
-    executable_definition(kind)
-        .and_then(resolve_definition_executable)
-        .map(|(executable, _)| executable)
+    resolve_runtime_executable_checked(kind).ok()
+}
+
+pub(crate) fn resolve_runtime_executable_checked(kind: AgentRuntimeKind) -> Result<PathBuf, String> {
+    let definition = executable_definition(kind)
+        .ok_or_else(|| format!("Runtime {} 不可用", kind.as_str()))?;
+    if definition.kind == AgentRuntimeKind::Codex {
+        return resolve_codex_definition(definition).map(|(path, _)| path);
+    }
+    resolve_definition_executable(definition).map(|(path, _)| path)
+        .ok_or_else(|| format!("未检测到 {} Runtime；请确认对应 CLI 已安装且在应用 PATH 中", kind.as_str()))
 }
 
 fn executable_definition(kind: AgentRuntimeKind) -> Option<&'static RuntimeDefinition> {
@@ -554,15 +568,7 @@ fn resolve_definition_executable(
     }
 
     if definition.kind == AgentRuntimeKind::Codex {
-        let mut candidates = Vec::new();
-        if let Ok(path) = which::which(definition.command) {
-            candidates.push(path);
-        }
-        for prefix in codex_npm_prefixes() {
-            candidates.extend(codex_npm_candidates(&prefix));
-        }
-        return resolve_codex_candidates(candidates)
-            .map(|(executable, version)| (executable, Some(version)));
+        return resolve_codex_definition(definition).ok();
     }
 
 
@@ -570,6 +576,13 @@ fn resolve_definition_executable(
         return Some((path, None));
     }
     None
+}
+
+fn resolve_codex_definition(definition: &RuntimeDefinition) -> Result<(PathBuf, Option<String>), String> {
+    let mut candidates = Vec::new();
+    if let Ok(path) = which::which(definition.command) { candidates.push(path); }
+    for prefix in codex_npm_prefixes() { candidates.extend(codex_npm_candidates(&prefix)); }
+    resolve_codex_candidates_checked(candidates).map(|(path, version)| (path, Some(version)))
 }
 
 fn codex_npm_prefixes() -> Vec<PathBuf> {
@@ -615,22 +628,33 @@ where
     resolve_codex_candidates(candidates)
 }
 
-fn resolve_codex_candidates(
+fn resolve_codex_candidates_checked(
     candidates: impl IntoIterator<Item = PathBuf>,
-) -> Option<(PathBuf, String)> {
+) -> Result<(PathBuf, String), String> {
     let mut inspected = Vec::new();
+    let mut failures = Vec::new();
     for candidate in candidates {
-        if inspected.contains(&candidate) {
-            continue;
-        }
+        if inspected.contains(&candidate) { continue; }
         inspected.push(candidate.clone());
-        if candidate.is_file() {
-            if let Some(version) = codex_executable_version(&candidate) {
-                return Some((candidate, version));
-            }
+        if !candidate.is_file() { continue; }
+        let (version, error) = read_version(&candidate);
+        if let Some(version) = version.filter(|value| value.to_ascii_lowercase().contains("codex")) {
+            return Ok((candidate, version));
         }
+        let detail = error.unwrap_or_else(|| "命令输出不是 Codex 版本".into());
+        failures.push(format!("{}：{detail}", candidate.display()));
     }
-    None
+    if failures.is_empty() {
+        Err("未找到 codex 命令；请安装 Codex CLI，并确认应用可继承其安装路径".into())
+    } else {
+        // Keep version/process errors distinct from a missing installation.
+        Err(format!("已找到 Codex 文件，但版本检查失败（不是未安装）。请检查 Node.js、CLI 安装和进程检查错误：{}", failures.join("；")))
+    }
+}
+
+#[cfg(test)]
+fn resolve_codex_candidates(candidates: impl IntoIterator<Item = PathBuf>) -> Option<(PathBuf, String)> {
+    resolve_codex_candidates_checked(candidates).ok()
 }
 
 fn codex_npm_candidates(prefix: &std::path::Path) -> Vec<PathBuf> {
@@ -724,13 +748,6 @@ fn native_codex_package() -> Option<(&'static str, &'static str, &'static str)> 
     None
 }
 
-fn codex_executable_version(executable: &PathBuf) -> Option<String> {
-    let (version, error) = read_version(executable);
-    if error.is_some() {
-        return None;
-    }
-    version.filter(|value| value.to_ascii_lowercase().contains("codex"))
-}
 
 fn read_version(executable: &PathBuf) -> (Option<String>, Option<String>) {
     let mut command = command_for_path(executable);
@@ -805,17 +822,27 @@ mod tests {
         let valid_prefix = root.join("valid");
         fs::create_dir_all(&broken_prefix).unwrap();
         fs::create_dir_all(&valid_prefix).unwrap();
-        fs::write(broken_prefix.join("codex.cmd"), b"@exit /b 1\r\n").unwrap();
-        fs::write(
-            valid_prefix.join("codex.cmd"),
-            b"@echo codex-cli test-version\r\n",
-        )
-        .unwrap();
+        #[cfg(windows)]
+        {
+            fs::write(broken_prefix.join("codex.cmd"), b"@exit /b 1\r\n").unwrap();
+            fs::write(valid_prefix.join("codex.cmd"), b"@echo codex-cli test-version\r\n").unwrap();
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for (prefix, script) in [(&broken_prefix, "#!/bin/sh\nexit 1\n"),
+                (&valid_prefix, "#!/bin/sh\nprintf 'codex-cli test-version\\n'\n")] {
+                fs::create_dir_all(prefix.join("bin")).unwrap();
+                let entry = prefix.join("bin/codex");
+                fs::write(&entry, script).unwrap();
+                fs::set_permissions(entry, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
 
         let resolved =
             resolve_codex_from_npm_prefixes([broken_prefix.as_path(), valid_prefix.as_path()]);
 
-        let expected = valid_prefix.join("codex.cmd");
+        let expected = valid_prefix.join(if cfg!(windows) { "codex.cmd" } else { "bin/codex" });
         assert_eq!(
             resolved.as_ref().map(|(path, _)| path.as_path()),
             Some(expected.as_path())
@@ -869,4 +896,32 @@ mod tests {
         );
         fs::remove_dir_all(prefix).unwrap();
     }
+    #[cfg(windows)]
+    #[test]
+    fn codex_probe_preserves_failure_instead_of_reporting_not_installed() {
+        let root = std::env::temp_dir().join(format!("codex-probe-error-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let wrapper = root.join("codex.cmd");
+        fs::write(&wrapper, b"@echo fixture-version-probe-failed 1>&2\r\n@exit /b 23\r\n").unwrap();
+        let error = resolve_codex_candidates_checked([wrapper]).unwrap_err();
+        fs::remove_dir_all(root).unwrap();
+        assert!(error.contains("fixture-version-probe-failed"), "lost actual probe error: {error}");
+        assert!(!error.contains("未找到"), "existing executable was reported as absent");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_probe_preserves_unix_failure_instead_of_reporting_not_installed() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("codex-probe-error-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let wrapper = root.join("codex");
+        fs::write(&wrapper, "#!/bin/sh\nprintf 'fixture-version-probe-failed\\n' >&2\nexit 23\n").unwrap();
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+        let error = resolve_codex_candidates_checked([wrapper]).unwrap_err();
+        fs::remove_dir_all(root).unwrap();
+        assert!(error.contains("fixture-version-probe-failed"), "lost actual probe error: {error}");
+        assert!(!error.contains("未找到"));
+    }
+
 }

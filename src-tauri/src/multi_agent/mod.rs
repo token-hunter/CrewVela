@@ -30,5 +30,5 @@ pub(crate) use runtime::capabilities_for_runtime;
 pub use runtime::{
     check_runtime_updates, probe_all_runtimes, upgrade_runtime, RuntimeProbe, RuntimeUpgradeReceipt,
 };
-pub(crate) use runtime::{command_for_path, resolve_runtime_executable};
+pub(crate) use runtime::{command_for_path, resolve_runtime_executable, resolve_runtime_executable_checked};
 pub use store::MultiAgentStore;

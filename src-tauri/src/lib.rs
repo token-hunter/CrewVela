@@ -3271,8 +3271,7 @@ fn open_runtime_session_checked(
     }
     pty_state.kill_for_app_session(&record.id).map_err(to_err)?;
 
-    let executable = multi_agent::resolve_runtime_executable(kind)
-        .ok_or_else(|| format!("未检测到 {} Runtime", kind.as_str()))?;
+    let executable = multi_agent::resolve_runtime_executable_checked(kind)?;
     let _starting = session_state
         .begin_runtime_start(&record.id)
         .map_err(to_err)?;
