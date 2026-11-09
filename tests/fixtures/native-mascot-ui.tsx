@@ -16,7 +16,7 @@ function Preview() {
     <header><h1>欢迎页角色动画验收</h1>
       <label><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />播放动画</label>
       <label><input type="checkbox" checked={compact} onChange={e => setCompact(e.target.checked)} />窄屏布局</label>
-      <label>显示角色 <select value={filter} onChange={e => setFilter(e.target.value as NativeAgentKind | "all")}><option value="all">全部</option>{kinds.map(kind => <option key={kind} value={kind}>{kind === "deepseek_harness" ? "DeepSeek Harness 会话图形" : kind}</option>)}</select></label>
+      <label>显示角色 <select value={filter} onChange={e => setFilter(e.target.value as NativeAgentKind | "all")}><option value="all">全部</option>{kinds.map(kind => <option key={kind} value={kind}>{kind === "deepseek_harness" ? "DeepSeek Harness 海豚" : kind}</option>)}</select></label>
       <output aria-live="polite">{command}</output>
     </header>
     <div className="mascot-qa-grid">{kinds.filter(kind => filter === "all" || kind === filter).map(kind => <article key={kind} className="harness-chat native-agent-chat" data-preview-kind={kind}>

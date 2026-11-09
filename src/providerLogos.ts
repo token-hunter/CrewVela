@@ -1,12 +1,11 @@
 import type { ProviderConfig } from "./types";
-import { NEUTRAL_AGENT_ICONS } from "./neutralAgentAssets";
 
 export type ProviderTone = "kimi" | "glm" | "deepseek" | "minimax" | "custom";
 
-const kimiModelLogo = NEUTRAL_AGENT_ICONS.kimi;
-const glmModelLogo = NEUTRAL_AGENT_ICONS.zcode;
-const deepSeekModelLogo = NEUTRAL_AGENT_ICONS.deepseek;
-const miniMaxModelLogo = NEUTRAL_AGENT_ICONS.minimax;
+const kimiModelLogo = new URL("./assets/agent-kimi-code.svg", import.meta.url).href;
+const glmModelLogo = new URL("./assets/model-zhipu.svg", import.meta.url).href;
+const deepSeekModelLogo = new URL("./assets/model-deepseek.svg", import.meta.url).href;
+const miniMaxModelLogo = new URL("./assets/model-minimax.svg", import.meta.url).href;
 
 export const PROVIDER_LOGOS: Partial<Record<ProviderTone, string>> = {
   kimi: kimiModelLogo,

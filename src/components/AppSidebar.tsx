@@ -37,6 +37,7 @@ import type {
   SessionUsage,
   TerminalShell,
 } from "../types";
+import claudeIcon from "../assets/claude-color.png";
 import { RUNTIME_LOGOS } from "../runtimeLogos";
 import { SessionList } from "./SessionList";
 import { CommunicationGuideButton } from "./CommunicationGuide";
@@ -405,7 +406,7 @@ export function AppSidebar(props: Props) {
           {newMenuOpen && (
               <div ref={newSessionMenuRef} id="sidebar-new-session-menu" className={`rail-new-menu unified-new-menu runtime-submenu${toolsMenuOpen ? "" : " direct-new-menu"}`} role="menu" aria-label="新建 Runtime 会话">
                 {isRuntimeEnabled("claude_code") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onNewClaudeSession)}>
-                  <img src={RUNTIME_LOGOS.claude_code} alt="" aria-hidden="true" />
+                  <img src={claudeIcon} alt="" aria-hidden="true" />
                   <span><strong>Claude Code</strong><small>新建 AI 会话</small></span>
                 </button>}
                 {isRuntimeEnabled("codex") && <button type="button" role="menuitem" onClick={() => runNewAction(() => props.onNewRuntimeSession("codex"))}>

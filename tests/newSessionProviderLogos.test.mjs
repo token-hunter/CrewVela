@@ -19,8 +19,8 @@ test("新建会话和模型设置复用同一套 Provider Logo", () => {
   assert.match(dialogSource, /PROVIDER_LOGOS, providerTone/);
   assert.match(settingsSource, /PROVIDER_LOGOS, providerTone/);
   assert.match(dialogSource, /<img src=\{logo\} alt="" aria-hidden="true" \/>/);
-  assert.match(logosSource, /NEUTRAL_AGENT_ICONS\.kimi/);
-  assert.match(logosSource, /NEUTRAL_AGENT_ICONS\.zcode/);
-  assert.match(logosSource, /NEUTRAL_AGENT_ICONS\.deepseek/);
-  assert.match(logosSource, /NEUTRAL_AGENT_ICONS\.minimax/);
+  assert.match(logosSource, /agent-kimi-code\.svg/);
+  assert.match(logosSource, /model-zhipu\.svg/);
+  assert.match(logosSource, /model-deepseek\.svg/);
+  assert.match(logosSource, /model-minimax\.svg/);
 });

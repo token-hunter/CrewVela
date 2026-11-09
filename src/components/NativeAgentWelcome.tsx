@@ -3,6 +3,8 @@ import { ArrowRight, ArrowsLeftRight } from "@phosphor-icons/react";
 import { RUNTIME_LOGOS, RUNTIME_LABELS } from "../runtimeLogos";
 import type { NativeAgentKind, NativeAgentSwitchProps } from "../nativeAgentSwitch";
 import { NativeAgentMascot } from "./NativeAgentMascot";
+import { NativeDolphin } from "./NativeDolphin";
+import { NativeZCodeMascot } from "./NativeZCodeMascot";
 
 export function NativeAgentSelector({ kind, switching, enabledAgents, onSwitchAgent, onHandoffAgent, managedToolbar }: NativeAgentSwitchProps & { kind: NativeAgentKind }) {
   if (managedToolbar) return null;
@@ -30,8 +32,8 @@ export function NativeAgentWelcome({ kind, active = true, skillsDisabled, onSkil
     : kind === "opencode_chat" ? "本机 OpenCode · 原生 ACP 会话"
     : kind === "pi_chat" ? "本机 pi · 原生 RPC 会话" : "技能 · 插件 · 工作流";
   return <div className={`native-agent-welcome ${kind === "zcode" ? "native-agent-zcode" : "native-agent-dolphin"}${!active || !visible ? " motion-paused" : ""}`}>
-    <div className="native-agent-character">
-      <NativeAgentMascot kind={kind} active={active && visible} />
+    <div className="native-agent-character" aria-hidden={kind === "deepseek_harness" ? true : undefined}>
+      {kind === "deepseek_harness" ? <NativeDolphin /> : kind === "zcode" ? <NativeZCodeMascot active={active && visible} /> : <NativeAgentMascot kind={kind} active={active && visible} />}
     </div>
     <h1>{RUNTIME_LABELS[kind]}</h1>
     <p>{tagline}</p>

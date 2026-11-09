@@ -9,7 +9,8 @@
       "../THIRD_PARTY_NOTICES/phosphor-icons-LICENSE": "licenses/phosphor-icons-LICENSE.txt",
       "../THIRD_PARTY_NOTICES/cc-switch-LICENSE": "licenses/cc-switch-LICENSE.txt",
       "../THIRD_PARTY_NOTICES/provider-quota.md": "licenses/provider-quota.md",
-      "vendor/portable-pty/LICENSE.md": "licenses/portable-pty-LICENSE.txt"
+      "vendor/portable-pty/LICENSE.md": "licenses/portable-pty-LICENSE.txt",
+      "../THIRD_PARTY_NOTICES/lobe-icons-LICENSE": "licenses/lobe-icons-LICENSE.txt"
     },
     "windows": {
       "webviewInstallMode": {

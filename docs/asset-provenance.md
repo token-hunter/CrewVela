@@ -1,27 +1,26 @@
 # 发行素材来源记录
 
-本文件记录素材来源与核对范围。项目根目录的 MIT 许可证不能自动授予第三方商标或图像的使用权。
+本文件记录当前素材来源与处理范围，项目根目录许可不替代第三方素材适用的许可。
 
-## 2026-11-09 中性图形替换
+## 当前项目视觉
 
-按维护者选择，菜单、标签、Provider、CLI 状态区及原生聊天欢迎页改用通用图形。Agent 名称、运行时标识、接入方式与通信逻辑不变；图形不代表厂商授权、合作或背书。
+按维护者最新要求，恢复项目原版的会话图形、聊天欢迎页角色与 CLI 状态动画。维护者指出这些资源中包含其自行设计的图形；中性替换不再整类覆盖项目既有设计。
 
 | 当前素材 | 来源与处理 |
 | --- | --- |
-| `src/assets/neutral-agents/*.svg` | 从锁文件中的 `@phosphor-icons/react` 2.1.10 直接渲染，保留上游轮廓；仅配置颜色和用途。MIT 完整原文位于 `THIRD_PARTY_NOTICES/phosphor-icons-LICENSE` |
-| 中性图形生成器 | `scripts/generate-neutral-agent-icons.mjs`；在 `npm ci` 后执行 `node scripts/generate-neutral-agent-icons.mjs` 可复现 |
-| `docs/media/crewvela-collaboration-banner.png` | Image Gen 新生成的宣传插画；沿用 CrewVela 橙色球形形象与舞台布局，其余为抽象通用角色，不按厂商角色或 Logo 设计。生成图不是产品截图，也不能作为第三方授权证明 |
-| 新版原生桌面截图 | 来自新编译的 Windows 应用与专用隔离目录；具体拍摄范围见 `docs/media/README.md` |
-| README 多 CLI 分屏及原生聊天截图 | 用户再次提供并明确要求用于界面预览，原样恢复；为含旧图标的历史版本实拍，不代表当前中性图形或第三方品牌授权 |
-| `crewvela-overview.svg` / `social-preview.jpg` | 项目文字和几何示意图及其转出图片，不是产品截图 |
+| `app-icon.png` / `src-tauri/icons/` | 对照中性替换前版本逐文件核验，保持原文件一致，没有重新生成软件主图标 |
+| `src/assets/agent-*`、`claude-color.png` | 项目原有会话图形，按维护者要求恢复到中性替换前版本 |
+| 欢迎页及 CLI 角色 | 恢复原版角色组件、图片与状态帧，保留暂停、减少动态效果和交互行为 |
+| `src/assets/model-zhipu.svg`、`model-deepseek.svg`、`model-minimax.svg` | 来自 Lobe Icons；保留 LobeHub 署名及 MIT 完整原文，见 `THIRD_PARTY_NOTICES/lobe-icons-LICENSE` |
+| `src/assets/neutral-agents/*.svg` | 保留的 Phosphor 通用辅助图形，由 `scripts/generate-neutral-agent-icons.mjs` 生成；许可见 `THIRD_PARTY_NOTICES/phosphor-icons-LICENSE` |
+| `docs/media/crewvela-collaboration-banner.png` | 此前生成并选用的宣传插画，保留 CrewVela 橙色形象与舞台布局；本次不重新生成海报 |
+| README 实拍截图 | 使用用户提供的图，按其选择定点遮挡个人路径和历史任务文字；具体说明见 `docs/media/README.md` |
+| `crewvela-overview.svg` / `social-preview.jpg` | 工作方式示意及其分享图 |
 
-已从当前应用源码资源移出旧 Agent 品牌图形、欢迎页图片与 Claude 状态帧；旧文档图片中，多 CLI 分屏与原生聊天图按用户后续指定恢复展示，其余仍保留在本机已忽略的 `.scratch/asset-rights/retired/`。此操作不改写 Git 历史，也没有更新 GitHub 既有 Release 的安装包；这些旧版本仍可能包含旧图形。
+此前中性替换涉及的视觉部分，已按本次要求恢复。素材恢复不修改 Git 历史，也不会自动更新已发布安装包。
 
-## 其他素材与依赖
+## 其他随附许可
 
 - CrewVela 代码许可见根目录 `LICENSE`。
-- 配额适配器的实际来源说明及 CC Switch 许可证保留；portable-pty 的许可证保留。详见根目录 `THIRD_PARTY_NOTICES.md`。
-- CrewVela 橙色品牌形象、通知形象、其他可选宠物和旧版素材的逐文件创作记录尚不完整。本次替换针对 Agent 品牌图形，不将这些其他素材标为已经完成权利核验。
-- npm / Cargo 依赖还适用各自的许可证；安全扫描与测试通过不等于全部许可已核验。
-
-本记录不作“全部素材没有版权问题”的承诺。以后公开新版二进制时，需使用本次改动后的构建产物，并随分发保留适用许可证。
+- 配额适配器、CC Switch 与 portable-pty 的已有来源说明及许可继续保留。
+- 其他 npm / Cargo 依赖适用各自许可。相关入口见 `THIRD_PARTY_NOTICES.md`。

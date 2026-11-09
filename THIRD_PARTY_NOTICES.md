@@ -10,6 +10,8 @@ Copyright (c) 2020 Phosphor Icons
 
 ## 其他随附许可
 
+- 模型 SVG 图标（智谱、DeepSeek、MiniMax）来自 [Lobe Icons](https://github.com/lobehub/lobe-icons)，Copyright (c) 2023 LobeHub，MIT 许可原文见 [lobe-icons-LICENSE](THIRD_PARTY_NOTICES/lobe-icons-LICENSE)。
+
 - 配额适配器：[来源说明](THIRD_PARTY_NOTICES/provider-quota.md)及 [CC Switch 许可证](THIRD_PARTY_NOTICES/cc-switch-LICENSE)。
 - portable-pty：[随源码保留的许可证](src-tauri/vendor/portable-pty/LICENSE.md)。
 

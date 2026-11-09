@@ -35,3 +35,5 @@ Status: ready-for-human
 - macOS 原生构建与界面、本次新版的真实 Agent 工作流未验收。
 - 既有 Git 历史、Windows 安装向导、macOS DMG 与 GitHub Release 仍可能包含旧图形，未随源码替换自动更新。
 - 其他宠物与 CrewVela 既有形象的逐文件创作记录仍不完整，见 `docs/asset-provenance.md`。
+
+- 后续更正：维护者指出整类中性替换覆盖了其自创视觉，按任务 48 恢复项目原版图形、欢迎页和 CLI 动画；软件主图标核验未改变。

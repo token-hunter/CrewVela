@@ -58,7 +58,7 @@ try {
   assert.equal(await page.locator("[data-case='powershell'] .cli-session-pet").count(), 0, "shell panes stay unchanged");
 
   await page.screenshot({ path: "output/playwright/cli-session-pets-running.png", fullPage: true });
-  const sampleAnimation = page.locator('.cli-session-pet[data-runtime="codex"] .cli-neutral-activity');
+  const sampleAnimation = page.locator('.cli-session-pet[data-runtime="codex"] .pet-codex-hand-left');
   const runningTimeBefore = await sampleAnimation.evaluate(element => element.getAnimations()[0]?.currentTime);
   await page.waitForTimeout(240);
   const runningTimeAfter = await sampleAnimation.evaluate(element => element.getAnimations()[0]?.currentTime);
@@ -74,7 +74,7 @@ try {
       }, time);
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const bounds = await part.evaluate(element => {
-        const stage = element.closest(".cli-session-pet").getBoundingClientRect();
+        const stage = element.closest("svg").getBoundingClientRect();
         const partRect = element.getBoundingClientRect();
         return { stage: { left: stage.left, right: stage.right, top: stage.top, bottom: stage.bottom }, part: { left: partRect.left, right: partRect.right, top: partRect.top, bottom: partRect.bottom } };
       });
@@ -82,16 +82,16 @@ try {
       assert.ok(bounds.part.top >= bounds.stage.top && bounds.part.bottom <= bounds.stage.bottom, `${runtime} stays inside the stage vertically`);
     }
   };
-  await assertInsidePetStage("kimi_code", ".cli-neutral-activity", [1152, 1728]);
-  await assertInsidePetStage("pi", ".cli-neutral-activity", [858, 1188]);
+  await assertInsidePetStage("kimi_code", ".pet-kimi-flying-star", [1152, 1728]);
+  await assertInsidePetStage("pi", ".pet-pi-token", [858, 1188]);
 
   await page.getByTestId("toggle-hidden").click();
   for (const [runtime, selector] of [
-    ["codex", ".cli-neutral-activity"],
-    ["kimi_code", ".cli-neutral-activity"],
-    ["zcode_cli", ".cli-neutral-activity"],
-    ["opencode", ".cli-neutral-activity"],
-    ["pi", ".cli-neutral-activity"],
+    ["codex", ".pet-codex-hand-left"],
+    ["kimi_code", ".pet-kimi-flying-star"],
+    ["zcode_cli", ".pet-zcode-body"],
+    ["opencode", ".pet-opencode-bracket-left"],
+    ["pi", ".pet-pi-token"],
   ]) {
     const motionPart = page.locator(`.cli-session-pet[data-runtime="${runtime}"] ${selector}`);
     assert.equal(await motionPart.evaluate(element => getComputedStyle(element).animationPlayState), "paused", `${runtime} pauses when its pane is hidden`);

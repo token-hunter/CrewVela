@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
-import { NEUTRAL_AGENT_ICONS } from "../neutralAgentAssets";
+import claudePetSleep from "../assets/claude-code-pet-sleep.png";
+import claudePetWorkingBoth from "../assets/claude-code-pet-working-both.png";
+import claudePetWorkingLeft from "../assets/claude-code-pet-working-left.png";
+import claudePetWorkingRight from "../assets/claude-code-pet-working-right.png";
+import claudePetSmokeOne from "../assets/claude-code-pet-working-smoke-1.png";
+import claudePetSmokeTwo from "../assets/claude-code-pet-working-smoke-2.png";
+import claudePetSmokeThree from "../assets/claude-code-pet-working-smoke-3.png";
 import type { SessionStatus } from "../types";
 import { getPetWorkPhase } from "./sessionPetState";
-
-const claudePetSleep = new URL("../assets/neutral-agents/idle.svg", import.meta.url).href;
-const claudePetWorkingBoth = NEUTRAL_AGENT_ICONS.claude;
-const claudePetWorkingLeft = NEUTRAL_AGENT_ICONS.claude;
-const claudePetWorkingRight = NEUTRAL_AGENT_ICONS.claude;
-const claudePetSmokeOne = new URL("../assets/neutral-agents/activity.svg", import.meta.url).href;
-const claudePetSmokeTwo = claudePetSmokeOne;
-const claudePetSmokeThree = claudePetSmokeOne;
 
 type PetMode = "working" | "idle";
 
@@ -45,12 +43,12 @@ export function SessionPet({ status }: Props) {
   const label = isWorking ? "干活中" : "摸鱼中";
   const description =
     phase === "overheated"
-      ? "Claude 会话已持续工作较长时间"
+      ? "Claude 工作时间较长，正在敲键盘并冒烟"
       : phase === "busy"
-        ? "Claude 会话正在忙碌执行"
+        ? "Claude 正在快速敲键盘工作"
         : isWorking
-          ? "Claude 会话正在执行"
-          : "Claude 会话正在待命";
+          ? "Claude 正在敲键盘工作"
+          : "Claude 正在睡觉摸鱼";
 
   return (
     <div

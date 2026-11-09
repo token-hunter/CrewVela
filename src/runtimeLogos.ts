@@ -1,14 +1,13 @@
 import type { AgentRuntimeKind } from "./types";
-import { NEUTRAL_AGENT_ICONS } from "./neutralAgentAssets";
+import claudeCodeAgentLogo from "./assets/agent-claude-code.png";
+import codexAgentLogo from "./assets/agent-codex.png";
+import openCodeAgentLogo from "./assets/agent-opencode.png";
+import piAgentLogo from "./assets/agent-pi.png";
 
-const claudeCodeAgentLogo = NEUTRAL_AGENT_ICONS.claude;
-const codexAgentLogo = NEUTRAL_AGENT_ICONS.codex;
-const openCodeAgentLogo = NEUTRAL_AGENT_ICONS.opencode;
-const piAgentLogo = NEUTRAL_AGENT_ICONS.pi;
-const kimiCodeAgentLogo = NEUTRAL_AGENT_ICONS.kimi;
+const kimiCodeAgentLogo = new URL("./assets/agent-kimi-code.svg", import.meta.url).href;
 const retiredRuntimeLogo = new URL("./assets/agent-avatars/compass.svg", import.meta.url).href;
 
-/** Agent 运行时的中性会话图形（协作菜单、工作台和终端标题共用）。 */
+/** Agent 运行时的彩色 logo（协作目标菜单 / 协作工作台 / 终端格标题共用，保证视觉统一）。 */
 export const RUNTIME_LOGOS: Record<AgentRuntimeKind, string> = {
   claude_code: claudeCodeAgentLogo,
   codex: codexAgentLogo,
@@ -18,9 +17,9 @@ export const RUNTIME_LOGOS: Record<AgentRuntimeKind, string> = {
   oh_my_pi: piAgentLogo,
   unsupported: retiredRuntimeLogo,
   opencode: openCodeAgentLogo,
-  zcode: NEUTRAL_AGENT_ICONS.zcode,
-  zcode_cli: NEUTRAL_AGENT_ICONS.zcode,
-  deepseek_harness: NEUTRAL_AGENT_ICONS.deepseek,
+  zcode: new URL("./assets/model-zhipu.svg", import.meta.url).href,
+  zcode_cli: new URL("./assets/model-zhipu.svg", import.meta.url).href,
+  deepseek_harness: new URL("./assets/model-deepseek.svg", import.meta.url).href,
   claude_chat: claudeCodeAgentLogo,
   codex_chat: codexAgentLogo,
   kimi_chat: kimiCodeAgentLogo,
