@@ -1,0 +1,18 @@
+.codex-context-picker { position: relative; flex-shrink: 0; }
+.codex-context-trigger { gap: 6px; cursor: pointer; min-width: 62px; }
+.codex-context-trigger svg { color: var(--accent, #8b80ef); }
+.codex-context-ring-track, .codex-context-ring-value { fill: none; stroke-width: 2; }
+.codex-context-ring-track { stroke: currentColor; opacity: .22; }
+.codex-context-ring-value { stroke: currentColor; }
+.codex-context-trigger[data-tone="warning"] svg { color: #e7b65c; }
+.codex-context-trigger[data-tone="high"] svg { color: #ef8a7e; }
+.codex-context-popover { position: absolute; bottom: calc(100% + 10px); right: 0; width: 248px; max-width: calc(100vw - 32px); box-sizing: border-box; z-index: 30; padding: 16px; background: var(--bg-elev); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px #0005; font-size: 13px; }
+.codex-context-popover::after { content: ""; position: absolute; top: 100%; right: 0; left: 0; height: 12px; }
+.codex-context-headline { margin-top: 8px; font-size: 20px; font-weight: 600; }
+.codex-context-progress { height: 5px; margin: 12px 0; border-radius: 4px; background: #8883; overflow: hidden; }
+.codex-context-progress i { display: block; height: 100%; background: var(--accent, #8b80ef); border-radius: inherit; }
+.codex-context-popover dl { margin: 12px 0 0; }
+.codex-context-popover dl div { display: flex; justify-content: space-between; margin-top: 8px; gap: 18px; }
+.codex-context-popover dt, .codex-context-popover p { color: var(--text-dim); }
+.codex-context-popover dd { margin: 0; font-variant-numeric: tabular-nums; }
+.codex-context-popover p { margin: 12px 0 0; font-size: 12px; line-height: 1.6; }

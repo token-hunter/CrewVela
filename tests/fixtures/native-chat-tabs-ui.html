@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NativeChatTabs 原型验证</title>
+    <style>
+      html, body, #root { min-height:100%; margin:0; }
+      body { background:var(--bg); color:var(--text); font-family:var(--display-font); }
+      .fixture-page { max-width:1360px; margin:0 auto; padding:28px 32px; }
+      .fixture-header { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
+      .fixture-heading p,.fixture-heading h1 { margin:0; }
+      .fixture-heading p { color:var(--text-dim); font-size:12px; }
+      .fixture-heading h1 { margin:6px 0; font-size:22px; font-weight:600; }
+      .fixture-controls { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+      .fixture-option { display:flex; align-items:center; gap:7px; padding:7px 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-elev); color:var(--text); font-size:12px; cursor:pointer; }
+      .fixture-option input { margin:0; accent-color:#8871de; }
+      .fixture-stage { margin-top:22px; border:1px solid var(--border); border-radius:12px; background:var(--bg); transition:max-width .18s ease; }
+      .fixture-stage.narrow { max-width:720px; }
+      .fixture-stage .native-chat-navigation { padding:10px 14px; }
+      .fixture-context { min-height:150px; padding:26px 24px; color:var(--text-dim); font-size:13px; }
+      .fixture-context p { margin:0; }
+      .fixture-note { margin-top:14px; color:var(--text-faint); font-size:12px; }
+      @media (max-width:800px) {
+        .fixture-page { padding:18px 12px; }
+        .fixture-header { align-items:flex-start; flex-direction:column; gap:16px; }
+        .fixture-controls { justify-content:flex-start; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./native-chat-tabs-ui.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,207 @@
+/* Domain-split entry file. Import order == cascade order; do not reorder.
+   Split by scripts in tmp/ (stage 2); verify with concat-diff against the pre-split file. */
+@import "./styles/tokens.css";
+@import "./styles/multi-agent.css";
+@import "./styles/panels.css";
+@import "./styles/control.css";
+@import "./styles/settings.css";
+@import "./styles/workspace.css";
+@import "./styles/master-control.css";
+@import "./styles/git.css";
+@import "./styles/control-chat.css";
+@import "./styles/settings-page.css";
+@import "./styles/notifications.css";
+@import "./styles/skin-settings.css";
+@import "./styles/skins.css";
+@import "./styles/git-workbench.css";
+@import "./styles/integrations.css";
+@import "/src/styles/provider-quota.css";
+@import "./styles/native-agent.css";
+@import "./styles/browser-control.css";
+@import "./styles/ui-polish.css";
+@import "./styles/skill-workspace.css";
+/* 普通会话 Agent 接力；作用域限定到显式入口和弹窗。 */
+.pane-switch-agent { border: 1px solid var(--border); background: transparent; color: inherit; border-radius: 5px; padding: 3px 7px; cursor: pointer; font-size: 11px; white-space: nowrap; }
+.pane-handoff-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 26px; height: 26px; padding: 0; }
+.pane-handoff-icon:hover { background: var(--bg-hover); }
+.pane-handoff-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.session-switch-dialog { width: min(560px, 90vw); max-height: 85vh; overflow: auto; }
+.session-switch-dialog h2 { margin-top: 0; }
+.session-switch-dialog p { margin: 8px 0; line-height: 1.6; }
+.session-switch-cwd code { overflow-wrap: anywhere; }
+.session-switch-context { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.session-switch-batons { border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; font-size: 12px; background: color-mix(in srgb, var(--accent, #a78bfa) 8%, transparent); }
+.session-switch-fallback { display: flex; gap: 8px; align-items: flex-start; margin: 16px 0; line-height: 1.6; }
+.session-switch-fallback input { margin-top: 5px; flex-shrink: 0; }
+.session-switch-dialog .editor-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.session-switch-recovery { margin: 6px; }
+.session-switch-dialog select { max-width: 100%; margin-left: 8px; }
+.session-switch-dialog code { overflow-wrap: anywhere; }
+
+/* Standalone ACP conversation shares the main workspace height and theme. */
+.harness-chat { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; height:100%; color:var(--text); background:var(--bg); font-family:var(--display-font); }
+.harness-chat-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 24px; border-bottom:1px solid var(--border); }
+.harness-chat-header > div:first-child { display:grid; gap:5px; min-width:0; }
+.harness-chat-header span { font-size:12px; color:var(--text-dim); overflow-wrap:anywhere; }
+.harness-chat-controls { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.harness-chat-controls label { display:flex; align-items:center; gap:8px; font-size:12px; }
+.harness-chat button,.harness-chat select { padding:7px 12px; border:1px solid var(--border); border-radius:7px; background:var(--bg-elev); color:var(--text); }
+.harness-chat button:disabled,.harness-chat select:disabled { opacity:.5; cursor:not-allowed; }
+.harness-chat-capability-note,.harness-chat-preview-banner { padding:9px 24px; font-size:12px; color:var(--text-dim); background:var(--bg-elev); }
+.harness-chat-messages { flex:1; min-height:0; overflow:auto; padding:24px; display:flex; flex-direction:column; gap:18px; }
+.harness-message { max-width:850px; width:100%; margin:0 auto; }
+.harness-message.user { padding:15px 18px; border-radius:10px; background:var(--bg-elev); }
+.harness-message strong { font-size:12px; color:var(--text-dim); }
+.harness-message p { margin:9px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.7; }
+.harness-tool-list,.harness-permission { width:100%; max-width:850px; margin:0 auto; }
+.harness-tool,.harness-permission { padding:14px 18px; border:1px solid var(--border); border-radius:10px; background:var(--bg-elev); }
+.harness-tool span { margin-left:12px; font-size:12px; color:var(--text-dim); }
+.harness-tool pre,.harness-permission pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:180px; overflow:auto; font:12px var(--mono-font); }
+.harness-permission > div { display:flex; gap:8px; }
+.harness-chat-info { text-align:center; color:var(--text-dim); font-size:13px; }
+.harness-chat-error { margin:0; padding:10px 24px; color:#e66c65; white-space:pre-wrap; max-height:120px; overflow:auto; }
+.harness-chat-composer { flex-shrink:0; margin:0; padding:16px 24px; border-top:1px solid var(--border); }
+.harness-chat-composer textarea { display:block; width:100%; min-height:86px; max-height:220px; resize:vertical; box-sizing:border-box; padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-elev); color:var(--text); font:inherit; }
+.harness-chat-composer > div { display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:10px; }
+.harness-chat-composer > div > span { margin-right:auto; color:var(--text-dim); font-size:12px; }
+.harness-chat-composer > .harness-attachments { justify-content:flex-start; flex-wrap:wrap; margin:0 0 10px; }
+.harness-attachment { font-size:12px; color:var(--text-dim); overflow-wrap:anywhere; }
+.harness-chat-composer { position:relative; }
+.harness-command-menu { position:absolute; bottom:100%; left:24px; right:24px; display:grid!important; justify-content:stretch!important; background:var(--bg-elev); padding:8px; border:1px solid var(--border); border-radius:12px; box-shadow:0 8px 28px #0006; z-index:3; }
+.harness-command-menu button { text-align:left; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.harness-command-menu small { color:var(--text-dim); }
+.harness-goal,.harness-command-result { margin:10px 24px 0; padding:12px; border:1px solid var(--border); border-radius:9px; font-size:13px; max-height:180px; overflow:auto; }
+.harness-goal p { white-space:pre-wrap; margin:6px 0; }
+.harness-goal > div { display:flex; gap:8px; margin-top:8px; }
+.harness-command-result pre { white-space:pre-wrap; margin:6px 0 0; }
+.harness-goal-dialog { position:absolute; inset:25% 15% auto; z-index:5; background:var(--bg-elev); border:1px solid var(--border); padding:24px; border-radius:12px; box-shadow:0 0 0 100vmax #0008; }
+.harness-goal-dialog textarea { display:block; box-sizing:border-box; width:100%; min-height:100px; padding:12px; margin-top:12px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:7px; font:inherit; }
+.harness-goal-dialog > div { display:flex; justify-content:flex-end; gap:10px; }
+.harness-goal-dialog p { font-size:12px; color:var(--text-dim); }
+
+.harness-skill-menu { max-height: 240px; overflow-y: auto; border-top: 1px solid var(--border); padding-top: 8px; }
+.harness-skill-menu > strong { display: block; padding: 4px 8px; opacity: .7; }
+
+.harness-command-menu { max-height: min(440px, 55vh); overflow-y: auto; }
+.harness-skill-menu button { width: 100%; flex-shrink: 0; justify-content: flex-start; gap: 8px; }
+.harness-skill-name { flex-shrink: 0; }
+.harness-skill-menu small { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.harness-skill-key-hint { float: right; font-size: 11px; font-weight: 400; }
+.harness-claude-commands { max-height: none; }
+.harness-command-group + .harness-command-group { margin-top: 2px; }
+.harness-command-group-title { position: sticky; top: 0; z-index: 1; display: block; padding: 5px 8px 4px; background: var(--bg-elev); border-bottom: 1px solid var(--border); font-size: 11px; letter-spacing: .05em; color: var(--text-dim); text-transform: uppercase; }
+.harness-chat .harness-skill-active { background: var(--bg-hover); border-color: var(--harness-link); box-shadow: inset 3px 0 var(--harness-link); }
+.harness-skill-active .harness-skill-name { color: var(--harness-link); font-weight: 600; }
+
+.harness-reasoning { border-left: 2px solid var(--border); padding-left: 12px; color: var(--text-dim); margin: 8px 0; }
+.harness-reasoning summary { cursor: pointer; }
+.harness-stream-status { color: var(--text-dim); }
+
+/* Harness welcome and composer; all selectors stay inside this conversation. */
+.harness-chat { --harness-blue: #3155ff; --harness-link: #8ea2ff; --harness-border: var(--border); --harness-control-bg: var(--bg-elev); position: relative; }
+.harness-chat-header { min-height: 54px; padding: 10px 24px; border-bottom: 0; flex-shrink: 0; }
+.harness-chat-controls { gap: 18px; justify-content: flex-end; }
+.harness-workspace { display: inline-flex; align-items: center; gap: 8px; max-width: 330px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.harness-connection { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.harness-connection i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+.harness-connection.connected i { background: #28b55c; }
+.harness-chat-preview-banner { padding: 5px 24px; background: transparent; font-size: 11px; }
+.harness-chat-empty .harness-chat-messages { padding: 12px 32px 28px; }
+.harness-welcome { width: min(100%, 880px); margin: auto; padding: 68px 0 20px; }
+.harness-welcome h1 { margin: 0 0 42px; font-size: clamp(22px, 2.2vw, 36px); font-weight: 600; letter-spacing: -.7px; text-align: center; line-height: 1.4; }
+.harness-welcome-hero { display: flex; align-items: center; justify-content: center; gap: 40px; }
+.harness-welcome-hero > img { display: block; width: clamp(220px, 23vw, 320px); height: clamp(220px, 23vw, 320px); object-fit: contain; flex-shrink: 0; }
+.harness-welcome-copy { min-width: 0; }
+.harness-welcome-copy h2 { margin: 0 0 16px; font-size: clamp(26px, 2.5vw, 42px); letter-spacing: -1px; font-weight: 650; white-space: nowrap; }
+.harness-welcome-copy p { margin: 0; font-size: clamp(15px, 1.4vw, 23px); color: var(--text-dim); white-space: nowrap; }
+.harness-chat .harness-welcome-skills { display: flex; align-items: center; justify-content: flex-start; gap: 16px; width: 100%; border: 0; border-top: 1px solid var(--harness-border); border-radius: 0; margin-top: 34px; padding: 22px 0 0; font-size: 18px; background: transparent; color: var(--harness-link); cursor: pointer; }
+.harness-chat .harness-welcome-skills:hover { color: #6580ff; }
+.harness-chat-composer { width: min(1100px, calc(100% - 64px)); margin: 0 auto 32px; padding: 14px 16px 12px; border: 1px solid var(--harness-border); border-radius: 22px; background: var(--bg-elev); box-shadow: 0 8px 30px #00000012; }
+.harness-chat-composer textarea { min-height: 74px; padding: 6px 2px 12px; border: 0; border-radius: 0; background: transparent; outline: none; font-size: 17px; resize: vertical; }
+.harness-chat .harness-chat-composer textarea:focus { outline: none; box-shadow: none; border: 0; border-radius: 0; }
+.harness-chat-composer textarea::placeholder { color: var(--text-dim); }
+.harness-chat .harness-composer-input { align-items: flex-start; justify-content: flex-start; gap: 8px; margin-top: 0; }
+.harness-chat .harness-composer-input textarea { flex: 1; min-width: 0; }
+.harness-chat .harness-composer-input .harness-goal-prefix { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; margin: 6px 0 0; color: var(--text); font-size: 17px; line-height: 1.5; }
+.harness-chat .harness-composer-input-command { display: flex; align-items: flex-start; justify-content: flex-start; gap: 8px; }
+.harness-chat .harness-input-command-chip { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; margin: 8px 0 0; padding: 3px 9px; border: 1px solid var(--harness-border); border-radius: 8px; background: var(--harness-control-bg); color: var(--harness-link); font-size: 15px; line-height: 1.5; max-width: 45%; overflow: hidden; white-space: nowrap; }
+.harness-chat .harness-composer-toolbar { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 12px; }
+.harness-composer-left,.harness-composer-right { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.harness-composer-right { justify-content: flex-end; margin-left: auto; }
+.harness-chat .harness-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 36px; padding: 0; border: 0; background: transparent; color: var(--text-dim); cursor: pointer; }
+.harness-chat .harness-icon-button:hover { color: var(--text); background: var(--bg-hover); }
+.harness-picker { display: inline-flex; align-items: center; gap: 7px; min-width: 0; padding: 0 9px; border: 1px solid var(--harness-border); border-radius: 9px; background: var(--harness-control-bg); color: var(--text-dim); font-size: 15px; }
+.harness-chat .harness-picker select { min-width: 0; max-width: 230px; padding: 9px 3px; border: 0; background: transparent; font-size: 15px; outline-offset: 2px; }
+.harness-reasoning-picker select { max-width: 110px; }
+.harness-reasoning-picker { position: relative; }
+.harness-reasoning-tooltip { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev); color: var(--text); font-size: 12px; line-height: 1.4; white-space: nowrap; box-shadow: 0 3px 12px #00000020; pointer-events: none; visibility: hidden; z-index: 20; }
+.harness-reasoning-picker:hover .harness-reasoning-tooltip,
+.harness-reasoning-picker:focus-within .harness-reasoning-tooltip { visibility: visible; }
+.harness-chat .harness-send-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--harness-blue); color: #fff; cursor: pointer; }
+.harness-chat .harness-send-button:disabled { opacity: .45; }
+.harness-chat .harness-composer-hint { justify-content: center; position: absolute; top: calc(100% + 8px); left: 0; right: 0; margin: 0; font-size: 10px; color: var(--text-dim); }
+.harness-command-menu { left: 0; right: 0; margin-bottom: 10px; box-shadow: 0 10px 34px #00000020; }
+.zcode-command-menu { display: flex!important; flex-direction: column; align-items: stretch!important; gap: 8px; }
+.zcode-command-menu header { display: flex; align-items: center; gap: 12px; }
+.zcode-command-menu header small { margin-left: auto; }
+.zcode-menu-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.zcode-menu-items { max-height: 260px; overflow: auto; display: grid; gap: 4px; }
+.zcode-menu-items button { width: 100%; min-width: 0; }
+.zcode-menu-items button span { flex-shrink: 0; }
+.zcode-menu-items button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zcode-selected-references { display: flex!important; justify-content: flex-start!important; flex-wrap: wrap; gap: 6px!important; }
+.zcode-selected-references > span, .zcode-reference { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 6px; background: var(--bg-hover); color: var(--harness-link); font-size: 13px; }
+.zcode-selected-references button { padding: 0; border: 0; background: transparent; display: flex; }
+.harness-chat-composer > .zcode-selected-references > span { margin-right: 0; }
+.harness-chat-composer > .harness-attachments { margin: 0 0 6px; }
+.harness-chat .harness-attachments button { font-size: 12px; }
+/* 拖放文件悬停在 ZCode 输入区：虚线高亮提示可放置。 */
+.zcode-composer.zcode-drop-active { outline: 2px dashed var(--harness-link); outline-offset: -8px; border-radius: 12px; background: var(--bg-hover); }
+.zcode-composer.zcode-drop-active textarea { border-color: var(--harness-link); }
+.harness-chat .harness-goal-dialog { max-height: 65vh; overflow-y: auto; }
+:root[data-theme="light"] .harness-chat { --harness-link: #3155ff; --harness-border: #e1e6ef; --harness-control-bg: #f7f9fc; background: #fff; }
+:root[data-theme="light"] .harness-chat-composer { background: #fff; }
+@media (max-width: 1000px) {
+  .harness-chat .harness-composer-toolbar { align-items: flex-start; flex-wrap: wrap; }
+  .harness-composer-right { margin-left: auto; }
+  .harness-welcome-hero { gap: 24px; }
+  .harness-welcome-copy h2 { font-size: 30px; }
+  .harness-welcome-copy p { font-size: 17px; }
+}
+@media (max-width: 680px) {
+  .harness-chat-header { gap: 8px; padding: 10px 16px; }
+  .harness-chat-controls { gap: 10px; }
+  .harness-workspace { max-width: 170px; }
+  .harness-chat-empty .harness-chat-messages { padding: 16px; }
+  .harness-welcome { padding: 8px 0; }
+  .harness-welcome h1 { margin-bottom: 16px; font-size: 22px; }
+  .harness-welcome-hero { flex-direction: column; gap: 10px; }
+  .harness-welcome-hero > img { width: 180px; height: 180px; }
+  .harness-welcome-copy { text-align: center; }
+  .harness-welcome-copy h2 { font-size: 27px; margin-bottom: 8px; }
+  .harness-welcome-copy p { font-size: 15px; }
+  .harness-chat .harness-welcome-skills { justify-content: center; margin-top: 16px; padding-top: 14px; }
+  .harness-chat-composer { width: calc(100% - 24px); padding: 12px; border-radius: 18px; margin-bottom: 28px; }
+  .harness-composer-left,.harness-composer-right { gap: 5px; }
+  .harness-chat .harness-picker select { max-width: 170px; }
+  .harness-chat .harness-composer-toolbar { gap: 10px; }
+  .harness-goal-dialog { inset: 15% 12px auto; }
+}
+
+.harness-chat { container-type: inline-size; }
+.harness-welcome-copy h2,.harness-welcome-copy p { white-space: normal; }
+.harness-chat .harness-attachments button { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.harness-chat .harness-attachments button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.harness-attachment { display: flex; align-items: center; gap: 5px; }
+@container (max-width: 650px) {
+  .harness-welcome h1 { margin-bottom: 18px; font-size: 24px; }
+  .harness-welcome-hero { flex-direction: column; gap: 12px; }
+  .harness-welcome-hero > img { width: 180px; height: 180px; }
+  .harness-welcome-copy { width: 100%; max-width: 380px; text-align: center; }
+  .harness-welcome-copy h2 { font-size: 27px; margin-bottom: 10px; }
+  .harness-welcome-copy p { font-size: 16px; }
+  .harness-chat .harness-welcome-skills { justify-content: center; margin-top: 18px; padding-top: 15px; }
+}
+
+.project-agent-picker { max-height: min(65vh, 560px); overflow-y: auto; }
+.project-agent-unavailable { opacity: .65; cursor: default; }

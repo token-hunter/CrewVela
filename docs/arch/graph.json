@@ -1,0 +1,903 @@
+{
+  "project": "crewvela",
+  "nodes": [
+    {
+      "id": "App",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "acp",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "appearance",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "archivedSessions",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "automation",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "clipboard_image",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "codexAccounts",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "codex_accounts",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "codex_quota",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "companionMotion",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "companionPosition",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "companionSettings",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "components",
+      "path": "src/components",
+      "files": 50,
+      "lang": "ts"
+    },
+    {
+      "id": "control",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "controlSurface",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "customSkins",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "deepSkins",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "dynamic_skins",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "edge_speech",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "format",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "gitSidebarLimit",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "git_source_control",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "launcher",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "lib",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "liveAvatarVideo",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "livekitVoice",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "livekit_voice",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "local_audio",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "local_speech",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "local_wake",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "main",
+      "path": "src",
+      "files": 2,
+      "lang": "rust/ts"
+    },
+    {
+      "id": "messaging",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "modelEvalGallery",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "model_eval",
+      "path": "src-tauri/src",
+      "files": 2,
+      "lang": "rust"
+    },
+    {
+      "id": "multiAgentDraftState",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "multiAgentMention",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "multiAgentTaskPresentation",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "multi_agent",
+      "path": "src-tauri/src/multi_agent",
+      "files": 8,
+      "lang": "rust"
+    },
+    {
+      "id": "native_speech",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "notificationCenter",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "notificationHistory",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "notificationSettings",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "notification_history",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "pet-preview",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "petBehavior",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "petSettings",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "presets",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "projects",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "providerConfig",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "providerLogos",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "providerPresets",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "provider_network",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "providers",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "pty",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "runtimeLogos",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "scripts",
+      "path": "scripts",
+      "files": 1,
+      "lang": "python"
+    },
+    {
+      "id": "secrets",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "sessionNotifications",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "sessionSnapshot",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "sessions",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "skill_center",
+      "path": "src-tauri/src",
+      "files": 2,
+      "lang": "rust"
+    },
+    {
+      "id": "skinIds",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "src-tauri",
+      "path": "src-tauri",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "telemetry",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "title_summary",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "tools",
+      "path": "tools/livekit-agent",
+      "files": 2,
+      "lang": "python"
+    },
+    {
+      "id": "transcript",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "types",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "unifiedControlRouter",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "usage",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "vite.config",
+      "path": ".",
+      "files": 1,
+      "lang": "asset"
+    },
+    {
+      "id": "voiceAudioLevels",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "voiceCommandRouter",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "voiceTurnPipeline",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "voiceWake",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "windows_notification",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "workspaceTabs",
+      "path": "src",
+      "files": 1,
+      "lang": "ts"
+    },
+    {
+      "id": "workspace_trust",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    },
+    {
+      "id": "worktree",
+      "path": "src-tauri/src",
+      "files": 1,
+      "lang": "rust"
+    }
+  ],
+  "edges": [
+    {
+      "from": "petSettings",
+      "to": "assets",
+      "weight": 16
+    },
+    {
+      "from": "components",
+      "to": "assets",
+      "weight": 15
+    },
+    {
+      "from": "companionSettings",
+      "to": "assets",
+      "weight": 8
+    },
+    {
+      "from": "runtimeLogos",
+      "to": "assets",
+      "weight": 5
+    },
+    {
+      "from": "control",
+      "to": "sessions",
+      "weight": 3
+    },
+    {
+      "from": "messaging",
+      "to": "sessions",
+      "weight": 2
+    },
+    {
+      "from": "provider_network",
+      "to": "providers",
+      "weight": 2
+    },
+    {
+      "from": "main",
+      "to": "styles",
+      "weight": 1
+    },
+    {
+      "from": "main",
+      "to": "companion",
+      "weight": 1
+    },
+    {
+      "from": "pet-preview",
+      "to": "styles",
+      "weight": 1
+    },
+    {
+      "from": "components",
+      "to": "runtimeUpdates",
+      "weight": 1
+    },
+    {
+      "from": "components",
+      "to": "skillUpdates",
+      "weight": 1
+    },
+    {
+      "from": "control",
+      "to": "launcher",
+      "weight": 1
+    },
+    {
+      "from": "control",
+      "to": "providers",
+      "weight": 1
+    },
+    {
+      "from": "control",
+      "to": "pty",
+      "weight": 1
+    },
+    {
+      "from": "git_source_control",
+      "to": "launcher",
+      "weight": 1
+    },
+    {
+      "from": "git_source_control",
+      "to": "providers",
+      "weight": 1
+    },
+    {
+      "from": "launcher",
+      "to": "providers",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "acp",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "automation",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "clipboard_image",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "codex_accounts",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "codex_quota",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "control",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "dynamic_skins",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "edge_speech",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "git_source_control",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "launcher",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "livekit_voice",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "local_audio",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "local_speech",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "local_wake",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "messaging",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "model_eval",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "multi_agent",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "native_speech",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "notification_history",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "presets",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "projects",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "provider_network",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "providers",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "pty",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "secrets",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "sessions",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "skill_center",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "telemetry",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "title_summary",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "transcript",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "usage",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "windows_notification",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "workspace_trust",
+      "weight": 1
+    },
+    {
+      "from": "lib",
+      "to": "worktree",
+      "weight": 1
+    },
+    {
+      "from": "local_speech",
+      "to": "local_audio",
+      "weight": 1
+    },
+    {
+      "from": "local_wake",
+      "to": "local_audio",
+      "weight": 1
+    },
+    {
+      "from": "messaging",
+      "to": "control",
+      "weight": 1
+    },
+    {
+      "from": "model_eval",
+      "to": "launcher",
+      "weight": 1
+    },
+    {
+      "from": "model_eval",
+      "to": "multi_agent",
+      "weight": 1
+    },
+    {
+      "from": "model_eval",
+      "to": "providers",
+      "weight": 1
+    },
+    {
+      "from": "model_eval",
+      "to": "default_cases",
+      "weight": 1
+    },
+    {
+      "from": "pty",
+      "to": "launcher",
+      "weight": 1
+    },
+    {
+      "from": "pty",
+      "to": "providers",
+      "weight": 1
+    },
+    {
+      "from": "pty",
+      "to": "sessions",
+      "weight": 1
+    },
+    {
+      "from": "pty",
+      "to": "workspace_trust",
+      "weight": 1
+    },
+    {
+      "from": "sessions",
+      "to": "worktree",
+      "weight": 1
+    },
+    {
+      "from": "skill_center",
+      "to": "updates",
+      "weight": 1
+    },
+    {
+      "from": "telemetry",
+      "to": "pty",
+      "weight": 1
+    },
+    {
+      "from": "telemetry",
+      "to": "sessions",
+      "weight": 1
+    },
+    {
+      "from": "telemetry",
+      "to": "usage",
+      "weight": 1
+    },
+    {
+      "from": "title_summary",
+      "to": "launcher",
+      "weight": 1
+    },
+    {
+      "from": "title_summary",
+      "to": "providers",
+      "weight": 1
+    },
+    {
+      "from": "transcript",
+      "to": "sessions",
+      "weight": 1
+    },
+    {
+      "from": "transcript",
+      "to": "usage",
+      "weight": 1
+    },
+    {
+      "from": "usage",
+      "to": "sessions",
+      "weight": 1
+    },
+    {
+      "from": "multi_agent",
+      "to": "pty",
+      "weight": 1
+    },
+    {
+      "from": "multi_agent",
+      "to": "sessions",
+      "weight": 1
+    }
+  ],
+  "external": {
+    "components": 267,
+    "multi_agent": 66,
+    "lib": 26,
+    "tools": 22,
+    "skill_center": 16,
+    "model_eval": 14,
+    "automation": 13,
+    "livekit_voice": 11,
+    "acp": 10,
+    "git_source_control": 10,
+    "pty": 9,
+    "sessions": 9,
+    "clipboard_image": 8,
+    "codex_accounts": 8,
+    "control": 8,
+    "codex_quota": 7,
+    "dynamic_skins": 6,
+    "native_speech": 6,
+    "notification_history": 6,
+    "providers": 6,
+    "telemetry": 6,
+    "usage": 6,
+    "worktree": 6,
+    "local_audio": 5,
+    "presets": 5,
+    "projects": 5,
+    "provider_network": 5,
+    "windows_notification": 5,
+    "App": 4,
+    "launcher": 4,
+    "local_speech": 4,
+    "local_wake": 4,
+    "title_summary": 4,
+    "transcript": 4,
+    "scripts": 3,
+    "notificationCenter": 3,
+    "edge_speech": 3,
+    "messaging": 3,
+    "vite.config": 2,
+    "notificationHistory": 2,
+    "pet-preview": 2,
+    "secrets": 2,
+    "codexAccounts": 1,
+    "livekitVoice": 1,
+    "main": 1
+  }
+}

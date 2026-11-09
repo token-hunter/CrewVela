@@ -1,0 +1,59 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CrewVela · 协帆",
+  "mainBinaryName": "CrewVela",
+  "version": "0.1.0",
+  "identifier": "com.crewvela.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "CrewVela · 协帆",
+        "width": 1440,
+        "height": 900,
+        "maximized": true,
+        "minWidth": 820,
+        "minHeight": 540,
+        "resizable": true,
+        "decorations": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPLOCALDATA/skins/**/*"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "resources": {
+      "../LICENSE": "licenses/CrewVela-LICENSE.txt",
+      "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
+      "../THIRD_PARTY_NOTICES/phosphor-icons-LICENSE": "licenses/phosphor-icons-LICENSE.txt",
+      "../THIRD_PARTY_NOTICES/cc-switch-LICENSE": "licenses/cc-switch-LICENSE.txt",
+      "../THIRD_PARTY_NOTICES/provider-quota.md": "licenses/provider-quota.md",
+      "vendor/portable-pty/LICENSE.md": "licenses/portable-pty-LICENSE.txt"
+    },
+    "publisher": "CrewVela",
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

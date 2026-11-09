@@ -1,0 +1,8 @@
+.handoff-source-view { display:flex; flex-direction:column; width:100%; height:100%; min-height:0; padding:16px; box-sizing:border-box; gap:16px; }
+.handoff-source-banner { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px; border:1px solid var(--border); border-radius:8px; background:var(--bg-elevated, var(--bg-hover)); }
+.handoff-source-banner strong { color:var(--text); }
+.handoff-source-banner p { margin:6px 0 0; color:var(--text-dim); font-size:var(--text-md); }
+.handoff-source-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.handoff-transcript { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.handoff-transcript h2 { margin:0 0 12px; font-size:var(--text-lg); }
+.handoff-transcript .transcript-messages { min-height:0; }

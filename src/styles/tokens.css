@@ -1,0 +1,502 @@
+:root {
+  color-scheme: dark;
+  /* VSCode Default Dark — 中性灰无蓝调；信息密度优先 */
+  --bg: #1e1e1e;
+  --bg-elev: #252526;
+  --bg-sunken: #181818;
+  --bg-hover: #2a2d2e;
+  --border: #3c3c3c;
+  --border-strong: #6e6e6e;
+  --text: #d4d4d4;
+  --text-dim: #858585;
+  --text-faint: #6e6e6e;
+  /* Accent 绿（GitHub green ≈ oklch(58% 0.16 145)） */
+  --accent: #3fb950;
+  --accent-rgb: 63, 185, 80;
+  --accent-soft: rgba(var(--accent-rgb), 0.14);
+  --accent-strong: #46c960;
+  --on-accent: #0d1117;
+  /* 状态语义色（克制，不作并列装饰） */
+  --accent-2: #3fb950;
+  --success: #89d185;
+  --warn: #cca700;
+  --warn-rgb: 204, 167, 0;
+  --danger: #f48771;
+  --danger-rgb: 244, 135, 113;
+  --signal: #cca700;
+  --signal-soft: rgba(var(--warn-rgb), 0.14);
+  /* 终端面 */
+  --terminal-bg: #000000;
+  --terminal-shell: #181818;
+  /* 高程：tech-utility 扁平，hairline 优先 */
+  --shadow-sm: 0 0 0 1px var(--border);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --overlay: rgba(0, 0, 0, 0.6);
+  /* 字体：spec stack（系统 sans + 等宽 fallback）*/
+  --display-font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  --mono-font: "JetBrains Mono", "IBM Plex Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  /* 圆角：tech-utility 小圆角 */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  /* 设计令牌（阶段 3）：值与字面量一一相等，零视觉变化。命名即像素值。 */
+  --radius-md: 9px;
+  --radius-xl: 13px;
+  --space-4: 4px;
+  --space-5: 5px;
+  --space-6: 6px;
+  --space-7: 7px;
+  --space-8: 8px;
+  --space-9: 9px;
+  --space-10: 10px;
+  --space-12: 12px;
+  /* 字号阶梯（仅 font-size 声明引用；font 简写不参与） */
+  --text-2xs: 8px;
+  --text-xs: 9px;
+  --text-sm: 10px;
+  --text-md: 11px;
+  --text-lg: 12px;
+  --text-xl: 13px;
+  --text-2xl: 14px;
+  /* z-index 分层：一值一令牌，值 = 拆分前实际值，未做归并 */
+  --z-base: 0;
+  --z-raised: 1;
+  --z-sticky: 2;
+  --z-panel: 3;
+  --z-panel-raised: 4;
+  --z-header: 5;
+  --z-header-raised: 6;
+  --z-float: 10;
+  --z-float-raised: 12;
+  --z-dock: 14;
+  --z-dock-raised: 16;
+  --z-dock-top: 17;
+  --z-dock-overlay: 18;
+  --z-dock-max: 19;
+  --z-drawer: 20;
+  --z-fixed: 24;
+  --z-fixed-raised: 25;
+  --z-fixed-2: 26;
+  --z-fixed-3: 27;
+  --z-popover: 30;
+  --z-popover-raised: 32;
+  --z-popover-2: 34;
+  --z-popover-3: 36;
+  --z-overlay: 40;
+  --z-overlay-raised: 50;
+  --z-modal: 60;
+  --z-modal-raised: 200;
+  --z-modal-2: 240;
+  --z-modal-3: 340;
+  --z-dialog: 1300;
+  --z-dialog-raised: 1305;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* GitHub Primer light */
+  --bg: #ffffff;
+  --bg-elev: #f6f8fa;
+  --bg-sunken: #eaeef2;
+  --bg-hover: #eef1f4;
+  --border: #d0d7de;
+  --border-strong: #afb8c1;
+  --text: #1f2328;
+  --text-dim: #636c76;
+  --text-faint: #818b98;
+  --accent: #1a7f37;
+  --accent-rgb: 26, 127, 55;
+  --accent-soft: rgba(var(--accent-rgb), 0.1);
+  --accent-strong: #1a7f37;
+  --on-accent: #ffffff;
+  --accent-2: #1a7f37;
+  --success: #1a7f37;
+  --warn: #9a6700;
+  --warn-rgb: 154, 103, 0;
+  --danger: #cf222e;
+  --danger-rgb: 207, 34, 46;
+  --signal: #9a6700;
+  --signal-soft: rgba(var(--warn-rgb), 0.12);
+  --terminal-bg: #ffffff;
+  --terminal-shell: #eaeef2;
+  --shadow-sm: 0 0 0 1px var(--border);
+  --shadow-md: 0 8px 24px rgba(171, 180, 192, 0.3);
+  --overlay: rgba(175, 184, 193, 0.5);
+}
+
+/* 可编辑实战模型测评 */
+
+/* 设置中的自动化与知识库复用主入口组件，仅切换为内嵌布局。 */
+.settings-dialog.settings-feature-dialog .settings-content {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-dialog.settings-feature-dialog .settings-heading {
+  flex: none;
+}
+
+.settings-dialog .automation-dialog.embedded,
+.settings-dialog .knowledge-dialog.embedded {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-dialog .automation-dialog.embedded .automation-heading {
+  padding: 0 0 14px;
+  justify-content: flex-end;
+  border-bottom: 0;
+}
+
+.settings-dialog .automation-dialog.embedded .automation-heading-copy,
+.settings-dialog .automation-dialog.embedded .automation-heading .btn-icon {
+  display: none;
+}
+
+.settings-dialog .automation-dialog.embedded .automation-scroll-area {
+  padding: 0 6px 0 0;
+}
+
+.settings-dialog .automation-dialog.embedded .automation-section,
+.settings-dialog .automation-dialog.embedded .automation-list-section {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.settings-dialog .automation-dialog.embedded .automation-form-actions {
+  padding: 16px 0 0;
+  background: transparent;
+}
+
+.settings-dialog .knowledge-dialog.embedded {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.settings-dialog .knowledge-dialog.embedded .knowledge-dialog-heading {
+  display: none;
+}
+
+.settings-dialog .knowledge-dialog.embedded .knowledge-dialog-toolbar {
+  padding: 0 0 14px;
+}
+
+.settings-dialog .knowledge-dialog.embedded .knowledge-dialog-meta {
+  padding: 0 12px;
+}
+
+.settings-dialog .knowledge-dialog.embedded .knowledge-dialog-results {
+  padding: 0;
+}
+
+.settings-dialog .knowledge-dialog.embedded .knowledge-dialog-content {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--settings-panel);
+}
+
+/* 外观主题：保留同一组语义令牌，主题只负责重新映射表面与文本。 */
+:root[data-appearance-theme="ocean"] {
+  color-scheme: dark;
+  --bg: #101820;
+  --bg-elev: #17232d;
+  --bg-sunken: #0b1218;
+  --bg-hover: #1e303d;
+  --border: #304553;
+  --border-strong: #597181;
+  --text: #d8e3e9;
+  --text-dim: #91a4af;
+  --text-faint: #657985;
+  --terminal-bg: #071016;
+  --terminal-shell: #0d1920;
+}
+
+:root[data-appearance-theme="purple"] {
+  color-scheme: dark;
+  --bg: #1b1822;
+  --bg-elev: #25202e;
+  --bg-sunken: #141119;
+  --bg-hover: #30293b;
+  --border: #42384e;
+  --border-strong: #756581;
+  --text: #e2dce7;
+  --text-dim: #a397ab;
+  --text-faint: #756a7d;
+  --terminal-bg: #0e0b12;
+  --terminal-shell: #18131e;
+}
+
+:root[data-appearance-theme="sand"] {
+  color-scheme: light;
+  --bg: #fbf5ea;
+  --bg-elev: #fffaf2;
+  --bg-sunken: #eee4d5;
+  --bg-hover: #f3e8d8;
+  --border: #d8cab6;
+  --border-strong: #b5a58e;
+  --text: #352f28;
+  --text-dim: #71675b;
+  --text-faint: #958979;
+  --terminal-bg: #fffaf1;
+  --terminal-shell: #eee4d5;
+  --shadow-md: 0 8px 24px rgba(102, 80, 54, 0.18);
+  --overlay: rgba(147, 126, 98, 0.36);
+}
+
+:root[data-appearance-theme="aurora"] {
+  color-scheme: dark;
+  --bg: #111c1c;
+  --bg-elev: #182827;
+  --bg-sunken: #0b1414;
+  --bg-hover: #203533;
+  --border: #304a47;
+  --border-strong: #58746f;
+  --text: #d7e5e2;
+  --text-dim: #91aaa5;
+  --text-faint: #657e79;
+  --terminal-bg: #071110;
+  --terminal-shell: #0e1d1b;
+}
+
+:root[data-appearance-accent="blue"] {
+  --accent: #58a6ff;
+  --accent-rgb: 88, 166, 255;
+  --accent-strong: #79b8ff;
+  --accent-2: #58a6ff;
+  --on-accent: #07111f;
+}
+
+:root[data-appearance-accent="purple"] {
+  --accent: #9b7af0;
+  --accent-rgb: 155, 122, 240;
+  --accent-strong: #b49af5;
+  --accent-2: #9b7af0;
+  --on-accent: #140c25;
+}
+
+:root[data-appearance-accent="cyan"] {
+  --accent: #3ebac6;
+  --accent-rgb: 62, 186, 198;
+  --accent-strong: #68ccd5;
+  --accent-2: #3ebac6;
+  --on-accent: #071b1e;
+}
+
+:root[data-appearance-accent="green"] {
+  --accent: #69b34c;
+  --accent-rgb: 105, 179, 76;
+  --accent-strong: #83c769;
+  --accent-2: #69b34c;
+  --on-accent: #0e1b09;
+}
+
+:root[data-appearance-accent="orange"] {
+  --accent: #e8933a;
+  --accent-rgb: 232, 147, 58;
+  --accent-strong: #f0aa62;
+  --accent-2: #e8933a;
+  --on-accent: #251304;
+}
+
+:root[data-appearance-accent="pink"] {
+  --accent: #cf6aa0;
+  --accent-rgb: 207, 106, 160;
+  --accent-strong: #df89b8;
+  --accent-2: #cf6aa0;
+  --on-accent: #260d1a;
+}
+
+:root[data-appearance-accent="coral"] {
+  --accent: #e06b5f;
+  --accent-rgb: 224, 107, 95;
+  --accent-strong: #eb897f;
+  --accent-2: #e06b5f;
+  --on-accent: #270d0a;
+}
+
+:root[data-appearance-accent="gray"] {
+  --accent: #90979f;
+  --accent-rgb: 144, 151, 159;
+  --accent-strong: #abb1b7;
+  --accent-2: #90979f;
+  --on-accent: #121416;
+}
+
+:root[data-theme="light"][data-appearance-accent] {
+  --on-accent: #ffffff;
+}
+
+/* Light surfaces need deeper accent colors for both white button labels and
+   accent text. Keep the existing hue choices and the dark-theme palette. */
+:root[data-theme="light"][data-appearance-accent="blue"] {
+  --accent: #0969da;
+  --accent-rgb: 9, 105, 218;
+  --accent-strong: #0757b5;
+  --accent-2: #0969da;
+}
+
+:root[data-theme="light"][data-appearance-accent="purple"] {
+  --accent: #8250df;
+  --accent-rgb: 130, 80, 223;
+  --accent-strong: #6c3fc2;
+  --accent-2: #8250df;
+}
+
+:root[data-theme="light"][data-appearance-accent="cyan"] {
+  --accent: #007782;
+  --accent-rgb: 0, 119, 130;
+  --accent-strong: #00616a;
+  --accent-2: #007782;
+}
+
+:root[data-theme="light"][data-appearance-accent="green"] {
+  --accent: #1a7f37;
+  --accent-rgb: 26, 127, 55;
+  --accent-strong: #14692c;
+  --accent-2: #1a7f37;
+}
+
+:root[data-theme="light"][data-appearance-accent="orange"] {
+  --accent: #a34d00;
+  --accent-rgb: 163, 77, 0;
+  --accent-strong: #843e00;
+  --accent-2: #a34d00;
+}
+
+:root[data-theme="light"][data-appearance-accent="pink"] {
+  --accent: #b7256f;
+  --accent-rgb: 183, 37, 111;
+  --accent-strong: #98205c;
+  --accent-2: #b7256f;
+}
+
+:root[data-theme="light"][data-appearance-accent="coral"] {
+  --accent: #c13c2f;
+  --accent-rgb: 193, 60, 47;
+  --accent-strong: #a03126;
+  --accent-2: #c13c2f;
+}
+
+:root[data-theme="light"][data-appearance-accent="gray"] {
+  --accent: #57606a;
+  --accent-rgb: 87, 96, 106;
+  --accent-strong: #424a53;
+  --accent-2: #57606a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---- 全局交互层：焦点指示 + 过渡基线 ---- */
+/* 键盘焦点环：可访问性硬性要求，全交互元素统一 */
+:is(button, [role="button"], input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+/* 可点击元素过渡基线：消灭瞬时切换；各自 hover 只改颜色，过渡在这里统一 */
+:is(.btn, .btn-icon, .dialog-close, .settings-nav-item, .settings-provider-main,
+    .settings-provider-delete, .settings-provider-drag-handle, .session-filter-trigger,
+    .session-filter-option, .ma-pane-icon, .pane-close, .ma-control-button,
+    .ma-workspace-header > button, .ma-takeover-panel button, .ma-agent-strip button,
+    .provider-choice, .workspace-tab, .workspace-tab-close, .workspace-tab-add,
+    .sidebar-new-session) {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease,
+    transform 120ms ease;
+}
+
+/* 按压反馈：模拟物理点击 */
+.btn:active:not(:disabled),
+.btn-icon:active:not(:disabled),
+.ma-control-button:active:not(:disabled),
+.ma-workspace-header > button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* ---- Toast 错误通知（替代 alert） ---- */
+.toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  display: grid;
+  grid-template-columns: 3px minmax(0, 1fr) auto;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: var(--text-lg);
+  line-height: 1.5;
+  pointer-events: auto;
+  animation: toast-in 180ms ease-out;
+}
+
+.toast::before {
+  content: "";
+  background: var(--danger);
+}
+
+.toast > span {
+  padding: 9px 4px 9px 10px;
+  overflow-wrap: anywhere;
+}
+
+.toast > button {
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: var(--text-xl);
+}
+
+.toast > button:hover {
+  color: var(--text);
+}
+
+.toast.leaving {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+

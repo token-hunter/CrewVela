@@ -1,0 +1,1893 @@
+/* ---- Git 源代码控制：主界面右侧工作台 ---- */
+.workspace-right-sidebar-toggle {
+  width: 34px;
+  height: 26px;
+  margin: 0 2px 3px auto;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.workspace-right-sidebar-toggle:hover,
+.workspace-right-sidebar-toggle.active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.workspace-right-sidebar-toggle.active {
+  box-shadow: inset 0 -2px var(--accent);
+}
+
+.workspace-right-sidebar-toggle + .window-controls {
+  margin-left: 0;
+}
+
+.app.right-sidebar-expanded .main-workspace {
+  grid-template-columns: minmax(0, 1fr) var(--right-sidebar-width, 380px);
+}
+
+.left-sidebar-resizer {
+  position: absolute;
+  z-index: var(--z-overlay);
+  top: 0;
+  bottom: 0;
+  left: calc(var(--left-sidebar-width, 292px) - 4px);
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.left-sidebar-resizer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  content: "";
+  transition: background 120ms ease;
+}
+
+.left-sidebar-resizer:hover::after,
+.left-sidebar-resizer:focus-visible::after {
+  background: var(--accent);
+}
+
+.unified-right-sidebar {
+  position: relative;
+  z-index: var(--z-dock);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  box-shadow: -12px 0 28px rgba(0, 0, 0, 0.18);
+}
+
+.right-sidebar-resizer {
+  position: absolute;
+  z-index: var(--z-drawer);
+  top: 0;
+  bottom: 0;
+  /* 挂在 .main-workspace 层（aside 有 overflow: hidden，放里面会被裁掉一半热区）：
+     右锚定让 10px 热区跨在侧栏左边线两侧，各 5px。 */
+  right: calc(var(--right-sidebar-width, 380px) - 5px);
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.right-sidebar-resizer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 1px;
+  background: transparent;
+  content: "";
+  transition: background 120ms ease;
+}
+
+.right-sidebar-resizer:hover::after,
+.right-sidebar-resizer:focus-visible::after {
+  background: var(--accent);
+}
+
+.unified-right-sidebar.is-closed {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.right-sidebar-activity-bar {
+  min-height: 42px;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elev) 96%, transparent);
+}
+
+.right-sidebar-activity-bar > div {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.right-sidebar-activity-bar button {
+  position: relative;
+  width: 42px;
+  min-width: 42px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.right-sidebar-activity-bar button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.right-sidebar-activity-bar [role="tab"][aria-selected="true"] {
+  color: var(--accent);
+}
+
+.right-sidebar-activity-bar [role="tab"][aria-selected="true"]::after {
+  position: absolute;
+  right: 7px;
+  bottom: 0;
+  left: 7px;
+  height: 2px;
+  background: var(--accent);
+  content: "";
+}
+
+.right-sidebar-activity-bar img {
+  width: 19px;
+  height: 19px;
+  object-fit: contain;
+}
+
+.unified-right-sidebar-content {
+  /* 限定内容面板的层叠范围，内部浮层不能盖过标签栏菜单。 */
+  position: relative;
+  z-index: var(--z-base);
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.right-sidebar-panel {
+  width: 100%;
+  height: 100%;
+  display: none;
+}
+
+.right-sidebar-panel.active {
+  display: block;
+}
+
+.file-explorer-panel {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--file-tree-width, 260px);
+  background: var(--bg-elev);
+  color: var(--text);
+}
+
+.file-preview-divider {
+  position: absolute;
+  z-index: var(--z-float);
+  top: 0;
+  right: calc(var(--file-tree-width, 260px) - 4px);
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.file-preview-divider::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  content: "";
+  transition: background 120ms ease;
+}
+
+.file-preview-divider:hover::after,
+.file-preview-divider:focus-visible::after {
+  background: var(--accent);
+}
+
+.file-explorer-browser {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 42px 38px minmax(0, 1fr);
+  border-left: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+}
+
+.file-explorer-panel button,
+.file-explorer-panel input {
+  font: inherit;
+}
+
+.file-explorer-header,
+.file-explorer-header > div,
+.file-preview-pane > header,
+.file-preview-pane > header > div,
+.file-explorer-search,
+.file-preview-code > label {
+  display: flex;
+  align-items: center;
+}
+
+.file-explorer-header {
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 0 9px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-explorer-header > div {
+  min-width: 0;
+  gap: var(--space-7);
+}
+
+.file-explorer-header > div:first-child svg {
+  color: var(--accent);
+}
+
+.file-explorer-header strong {
+  overflow: hidden;
+  font-size: var(--text-lg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-explorer-header button,
+.file-preview-pane > header button,
+.file-preview-image button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.file-explorer-header button:hover,
+.file-preview-pane > header button:hover,
+.file-preview-image button:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.file-explorer-search {
+  gap: var(--space-7);
+  margin: var(--space-6) var(--space-9);
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-input);
+  color: var(--text-faint);
+}
+
+.file-explorer-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+}
+
+.file-explorer-search input,
+.file-preview-code input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-md);
+}
+
+.file-preview-settings {
+  position: absolute;
+  z-index: var(--z-panel-raised);
+  top: 40px;
+  right: 8px;
+  width: 210px;
+  padding: 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev-2);
+  box-shadow: var(--shadow-lg);
+}
+
+.file-preview-settings label {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-10);
+  padding: 0 7px;
+  border-radius: 5px;
+  color: var(--text-dim);
+  font-size: var(--text-md);
+}
+
+.file-preview-settings label:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.file-explorer-tree {
+  min-height: 0;
+  overflow: auto;
+  padding: 5px 0 9px;
+}
+
+.file-tree-row {
+  width: 100%;
+  min-height: 27px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding-top: 3px;
+  padding-right: var(--space-9);
+  padding-bottom: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.file-tree-row:hover,
+.file-tree-row.selected {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.file-tree-row.selected {
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.file-tree-row > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tree-row > svg:first-child {
+  flex: 0 0 auto;
+  transition: transform 120ms ease;
+}
+
+.file-tree-row > svg:first-child.expanded {
+  transform: rotate(90deg);
+}
+
+.file-tree-row > svg:nth-child(2) {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.file-tree-row:has(svg:nth-child(2)) > svg:nth-child(2) {
+  color: var(--accent);
+}
+
+.file-tree-spacer {
+  width: 12px;
+  flex: 0 0 12px;
+}
+
+.file-tree-loading,
+.file-explorer-empty {
+  margin: var(--space-8) var(--space-12);
+  color: var(--text-faint);
+  font-size: var(--text-md);
+}
+
+.file-preview-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 92%, var(--bg-elev));
+}
+
+.file-preview-pane > header {
+  min-height: 48px;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 7px 12px 7px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-preview-pane > header > div {
+  min-width: 0;
+}
+
+.file-preview-pane > header strong,
+.file-preview-pane > header span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-pane > header strong {
+  font-size: var(--text-lg);
+}
+
+.file-preview-pane > header span {
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+}
+
+.file-preview-empty,
+.file-preview-error {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--space-9);
+  padding: 16px;
+  color: var(--text-faint);
+  font-size: var(--text-md);
+  text-align: center;
+}
+
+.file-preview-error {
+  color: var(--danger);
+}
+
+.file-preview-empty button {
+  padding: 5px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+.file-preview-image,
+.file-preview-media,
+.file-preview-markdown,
+.file-preview-code {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.file-preview-image {
+  padding: 8px;
+  text-align: center;
+}
+
+.file-preview-image > div {
+  position: sticky;
+  z-index: var(--z-sticky);
+  top: 0;
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin: 0 auto var(--space-8);
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.file-preview-image img {
+  max-width: none;
+  height: auto;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+.file-preview-media {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  background: #090a0d;
+}
+
+.file-preview-media video {
+  width: 100%;
+  max-height: 100%;
+}
+
+.file-preview-frame {
+  min-height: 0;
+  width: 100%;
+  flex: 1;
+  border: 0;
+  background: #fff;
+}
+
+.file-preview-markdown {
+  width: 100%;
+  padding: 28px 36px 48px;
+  color: var(--text-dim);
+  font-size: var(--text-2xl);
+  line-height: 1.75;
+}
+
+.file-preview-markdown h1,
+.file-preview-markdown h2,
+.file-preview-markdown h3,
+.file-preview-markdown h4,
+.file-preview-markdown h5,
+.file-preview-markdown h6 {
+  margin: var(--space-12) 0 var(--space-6);
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.file-preview-markdown h1 { font-size: 20px; }
+.file-preview-markdown h2 { font-size: 17px; }
+.file-preview-markdown h3 { font-size: var(--text-2xl); }
+.file-preview-markdown p,
+.file-preview-markdown li { margin: var(--space-5) 0; }
+.file-preview-markdown pre {
+  overflow: auto;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.file-preview-code {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.file-preview-code > label {
+  min-height: 32px;
+  gap: var(--space-6);
+  padding: 0 9px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+}
+
+.file-preview-code pre {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 7px 0 20px;
+  font: 10.5px/1.55 var(--mono-font);
+  tab-size: 2;
+}
+
+.file-preview-code pre > div {
+  min-width: max-content;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  padding-right: var(--space-12);
+}
+
+.file-preview-code pre > div.match {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.file-preview-code pre > div > span {
+  padding-right: var(--space-9);
+  color: var(--text-faint);
+  text-align: right;
+  user-select: none;
+}
+
+.file-preview-code code {
+  color: var(--text-dim);
+  white-space: pre;
+}
+
+.file-preview-code .keyword { color: #c792ea; }
+.file-preview-code .string { color: #c3e88d; }
+.file-preview-code .comment { color: #697386; }
+.file-preview-code .number { color: #f78c6c; }
+
+.right-sidebar-loading {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+  font-size: var(--text-md);
+}
+
+.unified-right-sidebar-content > * {
+  width: 100%;
+  height: 100%;
+}
+
+.unified-right-sidebar-content .control-overlay,
+.unified-right-sidebar-content .control-sidebar {
+  height: 100%;
+}
+
+.unified-right-sidebar-content .control-close,
+.unified-right-sidebar-content button[aria-label="关闭源代码控制"] {
+  display: none;
+}
+
+@media (max-width: 1040px) {
+  .app.right-sidebar-expanded .main-workspace {
+    grid-template-columns: minmax(0, 1fr) var(--right-sidebar-width, 340px);
+  }
+}
+
+@media (max-width: 760px) {
+  .main-workspace,
+  .app.right-sidebar-expanded .main-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .unified-right-sidebar {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: min(var(--right-sidebar-width, 380px), 100%);
+  }
+
+  .file-explorer-panel {
+    grid-template-columns: minmax(0, 1fr) var(--file-tree-width, 260px);
+  }
+}
+
+.sidebar-git-shortcut.active {
+  background: var(--bg-hover);
+  color: var(--accent);
+  box-shadow: inset 0 -2px var(--accent);
+}
+
+.git-source-sidebar {
+  position: relative;
+  z-index: var(--z-dock);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: 44px 38px auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border-left: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--bg-elev) 96%, transparent);
+  color: var(--text);
+  box-shadow: -12px 0 28px rgba(0, 0, 0, 0.18);
+  animation: control-drawer-enter 180ms ease-out;
+}
+
+.git-source-sidebar button,
+.git-source-sidebar input,
+.git-source-sidebar select,
+.git-source-sidebar textarea {
+  font: inherit;
+}
+
+.git-source-sidebar-header,
+.git-source-sidebar-toolbar,
+.git-source-sidebar-context,
+.git-source-sidebar-composer {
+  border-bottom: 1px solid var(--border);
+}
+
+.git-source-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 0 10px 0 12px;
+}
+
+.git-source-sidebar-title,
+.git-source-sidebar-header-actions,
+.git-source-sidebar-toolbar,
+.git-source-sidebar-repo,
+.git-source-sidebar-branch,
+.git-source-sidebar-primary,
+.git-source-sidebar-group > header,
+.git-source-sidebar-file,
+.git-source-sidebar-banner {
+  display: flex;
+  align-items: center;
+}
+
+.git-source-sidebar-title {
+  min-width: 0;
+  gap: var(--space-7);
+}
+
+.git-source-sidebar-title svg {
+  color: var(--accent);
+}
+
+.git-source-sidebar-title strong {
+  overflow: hidden;
+  font-size: var(--text-lg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-source-sidebar-header-actions {
+  gap: 2px;
+}
+
+.git-source-sidebar-header-actions button,
+.git-source-sidebar-toolbar > details > summary,
+.git-source-sidebar-message > button,
+.git-source-sidebar-file-actions button,
+.git-source-sidebar-group > header button,
+.git-source-sidebar-diff > header > button {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.git-source-sidebar-header-actions button:hover,
+.git-source-sidebar-toolbar > details > summary:hover,
+.git-source-sidebar-message > button:hover,
+.git-source-sidebar-file-actions button:hover,
+.git-source-sidebar-group > header button:hover,
+.git-source-sidebar-diff > header > button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.git-source-sidebar-header-actions button:disabled,
+.git-source-sidebar-message > button:disabled,
+.git-source-sidebar-file-actions button:disabled,
+.git-source-sidebar-group > header button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.git-source-sidebar .spin {
+  animation: spin 0.8s linear infinite;
+}
+
+.git-source-sidebar-toolbar {
+  position: relative;
+  gap: var(--space-4);
+  padding: 5px 8px;
+}
+
+.git-source-sidebar-search {
+  min-width: 0;
+  flex: 1;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+}
+
+.git-source-sidebar-search:focus-within {
+  border-color: var(--border-strong);
+  color: var(--text-dim);
+}
+
+.git-source-sidebar-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.git-source-sidebar-search input::placeholder {
+  color: var(--text-faint);
+}
+
+.git-source-sidebar-overflow {
+  position: relative;
+}
+
+.git-source-sidebar-overflow > summary,
+.git-source-sidebar-primary details > summary {
+  list-style: none;
+}
+
+.git-source-sidebar-overflow > summary::-webkit-details-marker,
+.git-source-sidebar-primary details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.git-source-sidebar-overflow > div,
+.git-source-sidebar-primary details > div {
+  position: absolute;
+  z-index: var(--z-overlay);
+  display: grid;
+  min-width: 150px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
+}
+
+.git-source-sidebar-overflow > div {
+  top: 31px;
+  right: 0;
+}
+
+.git-source-sidebar-overflow button,
+.git-source-sidebar-primary details button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-source-sidebar-overflow button:hover,
+.git-source-sidebar-primary details button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.git-source-sidebar-overflow button:disabled,
+.git-source-sidebar-primary details button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.git-source-sidebar-overflow .danger-text:hover,
+.git-source-sidebar-primary details .danger-text:hover {
+  background: rgba(var(--danger-rgb), 0.1);
+  color: var(--danger);
+}
+
+.git-source-sidebar-context {
+  display: grid;
+  gap: var(--space-5);
+  padding: 8px 12px 9px;
+}
+
+.git-source-sidebar-context select {
+  width: 100%;
+  height: 26px;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  outline: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+}
+
+.git-source-sidebar-context select:hover,
+.git-source-sidebar-context select:focus {
+  border-color: var(--border);
+  background: var(--bg-sunken);
+  color: var(--text);
+}
+
+.git-source-sidebar-repo {
+  min-width: 0;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.git-source-sidebar-repo > strong {
+  overflow: hidden;
+  font: 650 11px var(--mono-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-source-sidebar-stats {
+  display: flex;
+  gap: var(--space-6);
+  font: 9px var(--mono-font);
+}
+
+.git-source-sidebar-stats em {
+  color: var(--success);
+  font-style: normal;
+}
+
+.git-source-sidebar-stats i {
+  color: var(--danger);
+  font-style: normal;
+}
+
+.git-source-sidebar-branch {
+  min-width: 0;
+  gap: var(--space-6);
+  color: var(--text-faint);
+  font: 9px var(--mono-font);
+}
+
+.git-source-sidebar-branch svg {
+  color: var(--accent);
+}
+
+.git-source-sidebar-branch strong {
+  overflow: hidden;
+  flex: 1;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-source-sidebar-banner {
+  gap: var(--space-6);
+  min-height: 30px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+
+.git-source-sidebar-banner span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-source-sidebar-banner.error {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.08);
+}
+
+.git-source-sidebar-banner.notice {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 7%, transparent);
+}
+
+.git-source-sidebar-composer {
+  display: grid;
+  gap: var(--space-6);
+  padding: 7px 10px 8px;
+}
+
+.git-source-sidebar-message {
+  position: relative;
+}
+
+.git-source-sidebar-message textarea {
+  width: 100%;
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 8px 35px 8px 9px;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.git-source-sidebar-message textarea:focus {
+  border-color: var(--border-strong);
+}
+
+.git-source-sidebar-message > button {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+}
+
+.git-source-sidebar-primary {
+  position: relative;
+  gap: 0;
+}
+
+.git-source-sidebar-primary > button {
+  min-width: 0;
+  height: 30px;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: var(--bg-hover);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.git-source-sidebar-primary > button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.git-source-sidebar-primary > button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.git-source-sidebar-primary details {
+  position: relative;
+  width: 34px;
+  height: 30px;
+}
+
+.git-source-sidebar-primary details > summary {
+  width: 34px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-left: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.git-source-sidebar-primary details > summary:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.git-source-sidebar-primary details > div {
+  right: 0;
+  bottom: 34px;
+}
+
+.git-source-sidebar-list {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  padding-bottom: 14px;
+}
+
+.git-source-sidebar-group {
+  border-bottom: 1px solid var(--border);
+}
+
+.git-source-sidebar-group > header {
+  min-height: 30px;
+  justify-content: space-between;
+  padding: 0 8px 0 12px;
+}
+
+.git-source-sidebar-group > header strong {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.git-source-sidebar-group > header strong em {
+  min-width: 17px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+  font-style: normal;
+}
+
+.git-source-sidebar-group > header > span {
+  display: flex;
+  gap: 2px;
+}
+
+.git-source-sidebar-group.conflicts > header strong {
+  color: var(--danger);
+}
+
+.git-source-sidebar-group.staged > header strong {
+  color: var(--success);
+}
+
+.git-source-sidebar-file {
+  min-width: 0;
+  min-height: 37px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.git-source-sidebar-file:hover {
+  background: var(--bg-hover);
+}
+
+.git-source-sidebar-file-main {
+  min-width: 0;
+  min-height: 37px;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: var(--space-6);
+  align-items: center;
+  padding: 4px 3px 4px 11px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-source-sidebar-file-main > i {
+  color: var(--warn);
+  font: 700 9px var(--mono-font);
+  font-style: normal;
+}
+
+.git-source-sidebar-file-main > span:not(.git-file-stats) {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.git-source-sidebar-file-main strong,
+.git-source-sidebar-file-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-source-sidebar-file-main strong {
+  font-size: var(--text-sm);
+  font-weight: 620;
+}
+
+.git-source-sidebar-file-main small {
+  color: var(--text-faint);
+  font: 8px var(--mono-font);
+}
+
+.git-source-sidebar-file-actions {
+  display: flex;
+  padding-right: var(--space-5);
+  opacity: 0;
+}
+
+.git-source-sidebar-file:hover .git-source-sidebar-file-actions,
+.git-source-sidebar-file:focus-within .git-source-sidebar-file-actions {
+  opacity: 1;
+}
+
+.git-source-sidebar-empty {
+  min-height: 150px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-5);
+  padding: 20px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.git-source-sidebar-empty svg {
+  color: var(--success);
+}
+
+.git-source-sidebar-empty strong {
+  color: var(--text);
+  font-size: var(--text-md);
+}
+
+.git-source-sidebar-empty span {
+  font-size: var(--text-xs);
+}
+
+.git-source-sidebar-diff {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-overlay-raised);
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  background: var(--bg-elev);
+}
+
+.git-source-sidebar-diff > header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-source-sidebar-diff > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.git-source-sidebar-diff > header strong,
+.git-source-sidebar-diff > header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-source-sidebar-diff > header strong {
+  font-size: var(--text-sm);
+}
+
+.git-source-sidebar-diff > header small {
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+}
+
+.git-source-sidebar-diff-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 8px 24px;
+  background: #0f1115;
+  color: #c8d1dc;
+  font: 9px/1.55 var(--mono-font);
+  white-space: pre;
+}
+
+.git-source-sidebar-diff-content code {
+  display: block;
+  min-width: max-content;
+  padding: 0 3px;
+  font: inherit;
+}
+
+.git-source-sidebar-diff-content code.addition {
+  background: rgba(63, 185, 80, 0.1);
+  color: #9be9a8;
+}
+
+.git-source-sidebar-diff-content code.deletion {
+  background: rgba(244, 135, 113, 0.1);
+  color: #ffb4a8;
+}
+
+.git-source-sidebar-diff-content code.hunk {
+  margin: 3px 0;
+  background: rgba(88, 166, 255, 0.1);
+  color: #79c0ff;
+}
+
+.git-source-sidebar-diff-content code.header,
+.git-source-sidebar-diff-content code.meta {
+  color: #8b949e;
+}
+
+/* ---- Git 设置：仅保留低频偏好与安全策略 ---- */
+.git-settings-only {
+  width: 100%;
+  display: grid;
+  gap: 16px;
+  margin: 0;
+}
+
+.git-settings-card {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-elev), #ffffff 2%);
+}
+
+.git-settings-card > header {
+  padding: 15px 17px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.git-settings-card > header > div {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-10);
+}
+
+.git-settings-card > header svg {
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.git-settings-card > header span {
+  display: grid;
+  gap: 3px;
+}
+
+.git-settings-card > header strong {
+  font-size: var(--text-xl);
+}
+
+.git-settings-card > header small {
+  color: var(--text-dim);
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+
+.git-settings-row {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: 18px;
+  align-items: center;
+  padding: 0 17px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  transition: background 140ms ease;
+}
+
+.git-settings-row:hover {
+  background: color-mix(in srgb, var(--text) 2.5%, transparent);
+}
+
+.git-settings-card > header + .git-settings-row {
+  border-top: 0;
+}
+
+.git-settings-row > span {
+  display: grid;
+  gap: 3px;
+}
+
+.git-settings-row strong {
+  font-size: var(--text-lg);
+}
+
+.git-settings-row small {
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.git-settings-row input,
+.git-settings-row select,
+.git-settings-block textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: 11px var(--mono-font);
+}
+
+.git-settings-row input,
+.git-settings-row select {
+  height: 34px;
+  padding: 0 10px;
+}
+
+.git-settings-row input:focus,
+.git-settings-row select:focus,
+.git-settings-block textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.git-settings-block {
+  display: grid;
+  gap: var(--space-7);
+  padding: 15px 17px 17px;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.git-settings-block textarea {
+  min-height: 96px;
+  padding: 10px 11px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.git-settings-guarantees {
+  list-style: none;
+  margin: 0;
+  padding: 6px 17px 15px;
+  display: grid;
+  gap: 10px;
+}
+
+.git-settings-guarantees li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+
+.git-settings-guarantees li svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--success);
+}
+
+.git-settings-guarantees strong {
+  margin-right: 6px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.git-settings-guarantees code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font: 10px var(--mono-font);
+}
+
+.git-settings-feedback {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: var(--text-sm);
+}
+
+.git-settings-feedback.error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--danger);
+}
+
+.git-settings-feedback.success {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  color: var(--success);
+}
+
+.git-settings-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-10);
+  padding: 14px 2px 4px;
+  background: linear-gradient(180deg, transparent, var(--settings-canvas, var(--bg)) 45%);
+}
+
+.git-settings-dirty {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+}
+
+.git-settings-dirty::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d6a94f;
+}
+
+@media (max-width: 760px) {
+  .git-source-sidebar {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: min(360px, 100%);
+  }
+
+  .git-settings-row {
+    grid-template-columns: 1fr;
+    gap: var(--space-8);
+    padding-block: var(--space-12);
+  }
+
+  .git-settings-row.readonly em {
+    justify-self: start;
+  }
+}
+
+/* ---- Git Merge 与冲突恢复 ---- */
+.git-source-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.git-source-sidebar-list {
+  flex: 1;
+}
+
+.git-source-sidebar-merge-state {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: var(--space-7);
+  align-items: center;
+  padding: 6px 9px 6px 11px;
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border));
+  background: rgba(var(--danger-rgb), 0.08);
+  color: var(--danger);
+}
+
+.git-source-sidebar-merge-state > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.git-source-sidebar-merge-state strong,
+.git-source-sidebar-merge-state small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-source-sidebar-merge-state strong {
+  font-size: var(--text-sm);
+}
+
+.git-source-sidebar-merge-state small {
+  color: color-mix(in srgb, var(--danger) 72%, var(--text-dim));
+  font-size: var(--text-2xs);
+}
+
+.git-source-sidebar-merge-state button {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--border));
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--danger);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.git-source-sidebar-merge-dialog {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+}
+
+.git-source-sidebar-merge-dialog > header {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 0 9px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-source-sidebar-merge-dialog > header > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.git-source-sidebar-merge-dialog > header svg {
+  color: var(--accent);
+}
+
+.git-source-sidebar-merge-dialog > header span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.git-source-sidebar-merge-dialog > header strong,
+.git-source-sidebar-merge-dialog > header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-source-sidebar-merge-dialog > header strong {
+  font-size: var(--text-md);
+}
+
+.git-source-sidebar-merge-dialog > header small {
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+}
+
+.git-source-sidebar-merge-dialog > header > button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.git-source-sidebar-merge-dialog > header > button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.git-source-sidebar-merge-form {
+  display: grid;
+  gap: 14px;
+  padding: 16px 14px;
+}
+
+.git-source-sidebar-merge-form > label:not(.git-source-sidebar-merge-mode) {
+  display: grid;
+  gap: var(--space-6);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.git-source-sidebar-merge-form select {
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.git-source-sidebar-merge-form select:focus {
+  border-color: var(--accent);
+}
+
+.git-source-sidebar-merge-mode {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-sunken);
+  cursor: pointer;
+}
+
+.git-source-sidebar-merge-mode input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.git-source-sidebar-merge-mode span {
+  display: grid;
+  gap: 3px;
+}
+
+.git-source-sidebar-merge-mode strong {
+  font-size: var(--text-sm);
+}
+
+.git-source-sidebar-merge-mode small {
+  color: var(--text-dim);
+  font-size: var(--text-2xs);
+}
+
+.git-source-sidebar-merge-warning {
+  display: flex;
+  gap: var(--space-7);
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 38%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  color: var(--warn);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.git-source-sidebar-merge-form footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-7);
+  padding-top: 2px;
+}
+
+
+/* ---- 右侧栏浏览器面板（原生子 webview 宿主） ---- */
+
+.browser-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 42px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.browser-toolbar button {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.browser-toolbar button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.browser-toolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.browser-address {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-input);
+  color: var(--text-faint);
+}
+
+.browser-address:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+}
+
+.browser-address input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-md);
+}
+
+/* 加载中：地址栏地球图标原地旋转，页面加载完成即停。 */
+.browser-address .browser-address-icon {
+  flex: none;
+}
+
+.browser-address.loading .browser-address-icon {
+  animation: browser-icon-spin 0.9s linear infinite;
+  color: var(--accent);
+}
+
+@keyframes browser-icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 原生子 webview 的宿主矩形：Rust 侧按此 getBoundingClientRect 对位。
+   未创建（起始视图）时展示引导文案。 */
+.browser-host-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.browser-host {
+  position: absolute;
+  inset: 0;
+}
+
+.browser-start {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-6);
+  padding: 0 24px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.browser-start svg {
+  color: var(--text-dim);
+  margin-bottom: var(--space-4);
+}
+
+.browser-start p {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.browser-start .browser-start-hint {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+.browser-error {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--danger) 42%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+/* 工作面板：统一资源标签与轻量工具入口 */
+.unified-right-sidebar { background: var(--bg-elev); box-shadow: none; border-left-color: var(--border); }
+.unified-right-sidebar.is-maximized { position: absolute; inset: 0; width: 100%; z-index: var(--z-drawer); }
+.right-sidebar-activity-bar { position: relative; z-index: var(--z-header); flex: 0 0 44px; min-height: 44px; gap: 4px; padding: 6px 8px; align-items: center; background: var(--bg-elev); }
+.right-sidebar-activity-bar > .right-sidebar-resource-tabs { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; gap: 3px; align-items: center; }
+.right-sidebar-resource-tab { display: flex; flex: 0 0 auto; align-items: center; border-radius: 6px; height: 30px; color: var(--text-dim); }
+.right-sidebar-resource-tab.selected { background: var(--bg-hover); color: var(--text); }
+.right-sidebar-activity-bar .right-sidebar-resource-tab [role="tab"] { display: flex; width: auto; min-width: 0; gap: 7px; padding: 0 6px 0 9px; height: 30px; color: inherit; font-size: 12px; white-space: nowrap; border-radius: 6px; }
+.right-sidebar-activity-bar [role="tab"][aria-selected="true"]::after { display: none; }
+.right-sidebar-activity-bar .right-sidebar-tab-close { width: 22px; min-width: 22px; height: 24px; margin-right: 3px; border-radius: 4px; color: var(--text-dim); }
+.right-sidebar-activity-bar > .right-sidebar-actions { flex: 0 0 auto; align-items: center; gap: 2px; }
+.right-sidebar-actions > button { width: 27px; min-width: 27px; height: 30px; border-radius: 5px; }
+.right-sidebar-activity-bar .right-sidebar-menu-backdrop { position: fixed; inset: 0; width: auto; height: auto; z-index: 1; cursor: default; background: transparent; }
+.right-sidebar-activity-bar .right-sidebar-menu-backdrop:hover { background: transparent; }
+.right-sidebar-new-menu { position: absolute; top: 43px; right: 8px; z-index: 2; width: 220px; display: flex; flex-direction: column; padding: 5px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-elev); box-shadow: 0 6px 24px rgba(0,0,0,.1); }
+.right-sidebar-new-menu > button { width: 100%; min-width: 0; height: 34px; display: flex; justify-content: flex-start; gap: 10px; padding: 0 10px; border-radius: 5px; color: var(--text); font-size: 12px; }
+.right-sidebar-new-menu > button:disabled { opacity: .4; cursor: default; }
+.right-sidebar-start { height: 100%; display: flex; flex-direction: column; align-items: center; padding: 28px 24px; overflow: auto; color: var(--text); }
+.right-sidebar-start > * { flex-shrink: 0; }
+.right-sidebar-start-mark { color: var(--text-dim); opacity: .32; margin-top: auto; margin-bottom: 17px; }
+.right-sidebar-start h2 { font-size: 17px; font-weight: 500; margin: 0 0 8px; }
+.right-sidebar-start > p { font-size: 12px; margin: 0 0 30px; color: var(--text-dim); }
+.right-sidebar-start-tools { width: 100%; max-width: 390px; display: grid; gap: 12px; }
+.right-sidebar-start-tools > button { min-height: 74px; display: flex; align-items: center; gap: 16px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 11px; background: transparent; color: var(--text); text-align: left; }
+.right-sidebar-start-tools > button:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.right-sidebar-start-tools > button > svg { flex-shrink: 0; color: var(--accent); }
+.right-sidebar-start-tools > button:first-child > svg { color: #d39b47; }
+.right-sidebar-start-tools strong { display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px; }
+.right-sidebar-start-tools small { display: block; color: var(--text-dim); font-size: 11px; line-height: 1.5; }
+.right-sidebar-start-arrow { margin-left: auto; color: var(--text-dim); font-size: 16px; }
+.right-sidebar-start-tools > button:disabled { opacity: .4; cursor: default; }
+.right-sidebar-start-context { margin-top: 24px; margin-bottom: auto; color: var(--text-dim); opacity: .8; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
+.right-sidebar-terminal > .pane { height: 100%; }
+.right-sidebar-terminal .pane-head { display: none; }
+.right-sidebar-activity-bar button:focus-visible, .right-sidebar-start-tools > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* 保持主网格的 flex 高度链路，前置横幅占位后仍撑满剩余空间。 */
+.main-terminal-host { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.main-terminal-host[hidden] { display: none; }

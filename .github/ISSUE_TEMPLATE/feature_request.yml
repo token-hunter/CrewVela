@@ -1,0 +1,19 @@
+name: Feature / 功能建议
+description: 说明你想解决的具体工作流问题。
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你在什么场景遇到什么问题？ / Problem and workflow
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 希望的行为与替代方案 / Proposal and alternatives
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: 相关平台与 Agent / Platform and agents

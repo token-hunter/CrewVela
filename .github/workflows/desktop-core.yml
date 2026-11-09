@@ -1,0 +1,65 @@
+name: Desktop core compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'start-first-run-test.command'
+      - 'package*.json'
+      - '.github/workflows/desktop-core.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+      - name: Verify Apple Silicon runner
+        if: runner.os == 'macOS'
+        run: test "$(uname -m)" = arm64
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: Verify Finder launcher syntax and executable mode
+        if: runner.os == 'macOS'
+        run: |
+          bash -n start-first-run-test.command
+          test -x start-first-run-test.command
+      - name: Rust regression tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }} --lib -- --test-threads=1
+      - name: Build Windows application
+        if: runner.os == 'Windows'
+        run: npm run tauri -- build --target ${{ matrix.target }} --no-bundle
+      - name: Build Apple Silicon application and DMG
+        if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
+        run: npm run build:macos
+      - name: Upload macOS test package (ad-hoc signed, not notarized)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crewvela-macos-arm64-test
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error

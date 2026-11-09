@@ -1,0 +1,46 @@
+.collaboration-runtime-header {
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.collaboration-runtime-header h3 { margin: 0; }
+.collaboration-runtime-header > div { display: flex; gap: 7px; }
+.collaboration-runtime-item { flex-wrap: wrap; }
+
+.collaboration-runtime-copy {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 3px;
+}
+
+.collaboration-runtime-copy small {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaboration-runtime-copy .runtime-update-error { color: var(--danger); }
+
+.collaboration-runtime-action {
+  max-width: calc(100% - 34px);
+  margin-left: 34px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

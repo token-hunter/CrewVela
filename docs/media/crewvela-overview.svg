@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+<title id="title">CrewVela — multiple agents, one workspace</title><desc id="desc">Workflow illustration: Claude Code implements, Codex reviews, and findings return to the source session. This is an illustration, not an application screenshot.</desc>
+<rect width="1280" height="640" fill="#151518"/>
+<g fill="none" stroke="#303036"><path d="M0 600H1280M80 0V640M1200 0V640"/></g>
+<g font-family="Segoe UI,Arial,sans-serif"><text x="80" y="81" fill="#bba5fa" font-size="22" font-weight="600" letter-spacing="3">CREWVELA</text>
+<text x="80" y="164" fill="#f2f0f8" font-size="56" font-weight="700">Multiple agents.</text><text x="80" y="231" fill="#f2f0f8" font-size="56" font-weight="700">One workspace.</text>
+<text x="80" y="277" fill="#aaa6b5" font-size="23">Communicate. Collaborate. Hand off.</text>
+<g fill="#222126" stroke="#44404d"><rect x="80" y="345" width="310" height="136" rx="16"/><rect x="485" y="345" width="310" height="136" rx="16"/><rect x="890" y="345" width="310" height="136" rx="16"/></g>
+<g fill="#bba5fa" font-size="14" letter-spacing="2"><text x="106" y="376">01 / IMPLEMENT</text><text x="511" y="376">02 / REVIEW</text><text x="916" y="376">03 / CONTINUE</text></g>
+<g fill="#f2f0f8" font-size="26" font-weight="600"><text x="106" y="416">Claude Code</text><text x="511" y="416">Codex</text><text x="916" y="416">Your next agent</text></g>
+<g fill="#aaa6b5" font-size="17"><text x="106" y="450">Keep the original session.</text><text x="511" y="450">Send findings back.</text><text x="916" y="450">Preview the handoff.</text></g>
+<g fill="none" stroke="#bba5fa" stroke-width="2"><path d="M408 411h56m-9-7 9 7-9 7M813 411h56m-9-7 9 7-9 7"/><path d="M640 492v31H235v-26m-6 8 6-8 6 8"/></g>
+<text x="80" y="572" fill="#aaa6b5" font-size="18">An open-source desktop workspace for coding agents.</text><text x="1200" y="572" fill="#736e80" font-size="13" text-anchor="end">WORKFLOW ILLUSTRATION</text></g></svg>

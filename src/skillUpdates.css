@@ -1,0 +1,127 @@
+.skill-updates {
+  padding: 18px;
+  min-width: 0;
+}
+.skill-updates > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.skill-updates h3,
+.skill-updates h4 {
+  margin: 0 0 8px;
+}
+.skill-updates p,
+.skill-updates small {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.skill-update-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 20px;
+}
+.skill-update-layout > aside article {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.skill-update-layout > aside article.selected {
+  border-color: var(--accent);
+}
+.skill-update-layout > aside article > button:first-child {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 0 0 10px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.skill-update-layout > main {
+  min-width: 0;
+}
+.skill-update-source {
+  overflow-wrap: anywhere;
+}
+.skill-update-review,
+.skill-update-targets,
+.skill-update-versions {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 14px 0;
+}
+.skill-update-review details {
+  border-top: 1px solid var(--border);
+  padding: 10px 0;
+}
+.skill-update-review summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.skill-update-diff {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.skill-update-diff pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 340px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg-sunken);
+  font-size: 11px;
+}
+.skill-update-review footer {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.skill-update-targets > label {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.skill-update-targets label span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.skill-update-targets input,
+.skill-update-review input {
+  accent-color: var(--accent);
+}
+.skill-updates .skill-update-risk {
+  color: var(--warn);
+}
+.skill-update-versions article {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+@media (max-width: 1000px) {
+  .skill-update-layout {
+    grid-template-columns: 1fr;
+  }
+  .skill-update-diff {
+    grid-template-columns: 1fr;
+  }
+  .skill-updates > header {
+    flex-wrap: wrap;
+  }
+}

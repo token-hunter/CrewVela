@@ -1,0 +1,15 @@
+title = "CrewVela secret scanning"
+
+[extend]
+useDefault = true
+
+# 仅放行这个 loopback 服务测试的固定合成 UUID；保留所有默认密钥规则。
+# 路径和完整值必须同时匹配，不排除整个 tests/ 或任何历史提交。
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "Synthetic loopback authentication UUID in browser bridge test"
+condition = "AND"
+paths = ['''(^|/)tests/browserControlLazyBridge\.test\.mjs$''']
+regexTarget = "secret"
+regexes = ['''^12345678-1234-4321-abcd-123456789012$''']

@@ -1,0 +1,8 @@
+.native-chat-tab { position: relative; user-select: none; touch-action: pan-y; }
+.native-chat-tab [role="tab"] { cursor: pointer; }
+.native-chat-tab.sorting { opacity: .55; cursor: move; }
+.native-chat-tab.sorting [role="tab"] { cursor: move; }
+.native-chat-drop-marker { position: absolute; top: 3px; bottom: 3px; width: 3px; background: var(--accent, #a78bfa); border-radius: 2px; pointer-events: none; }
+.native-chat-drop-marker.before { left: -5px; }
+.native-chat-drop-marker.after { right: -5px; }
+.native-chat-tab-order-error { color: #f59e0b; font-size: 12px; margin: 6px 0; }

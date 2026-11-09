@@ -1,0 +1,237 @@
+.native-agent-character:has(.native-mascot) { height:280px; }
+.native-agent-character button.native-mascot {
+  position:relative; display:block; width:100%; height:100%; margin:0 auto; padding:0;
+  overflow:visible; border:0; border-radius:24px; background:transparent; color:inherit;
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+  transition:transform .22s ease,filter .22s ease;
+}
+.native-mascot:hover { transform:translateY(-2px) scale(1.015); filter:drop-shadow(0 9px 14px #0003); }
+.native-mascot:focus-visible { outline:2px solid var(--harness-link,#8aa5ff); outline-offset:5px; }
+.native-mascot__art { display:block; width:100%; height:100%; overflow:visible; }
+.native-mascot__figure { transform-box:fill-box; transform-origin:center bottom; }
+.native-mascot__intro-sparkles { opacity:0; transform-box:fill-box; transform-origin:center; }
+.native-mascot__ground-shadow { transform-box:fill-box; transform-origin:center; }
+.native-mascot--claude .claude__eyes,.native-mascot--codex .codex__eyes,
+.native-mascot--kimi .kimi__eyes,.native-mascot--opencode .opencode__eyes,
+.native-mascot--pi .pi__eyes { transition:transform .22s ease; transform-box:fill-box; transform-origin:center; }
+.native-mascot:hover .claude__eyes,.native-mascot:hover .codex__eyes,
+.native-mascot:hover .kimi__eyes,.native-mascot:hover .opencode__eyes,
+.native-mascot:hover .pi__eyes { transform:translate(3px,-1px); }
+
+/* Claude: folded clay paper, with a held command fold becoming a little star. */
+.native-mascot--claude .claude__head { transform-box:fill-box; transform-origin:54% 90%; animation:claude-consider 5.8s ease-in-out infinite; }
+.native-mascot--claude .claude__chevron-arm { transform-box:fill-box; transform-origin:75% 90%; animation:claude-paper-rest 4.6s ease-in-out infinite; }
+.native-mascot--claude .claude__paper-crease { transform-box:fill-box; transform-origin:center; animation:claude-crease-glint 4.6s ease-in-out infinite; }
+.native-mascot--claude .claude__fold-star,.native-mascot--claude .claude__smoothing-hand { opacity:0; transform-box:fill-box; transform-origin:center; }
+.native-mascot[data-motion="intro"] .native-mascot--claude .native-mascot__figure { animation:mascot-arrive .95s cubic-bezier(.2,.9,.25,1.15) both; }
+.native-mascot[data-motion="intro"] .native-mascot--claude .claude__head { animation:claude-intro-fold 1.65s cubic-bezier(.18,.9,.2,1) both; }
+.native-mascot[data-motion="intro"] .native-mascot--claude .native-mascot__intro-sparkles { animation:mascot-sparkle 1.2s ease-out .45s both; }
+.native-mascot[data-motion="story"] .native-mascot--claude .claude__head { animation:claude-think-story 5.4s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--claude .claude__chevron-arm { animation:claude-unfold 5.4s cubic-bezier(.34,.02,.28,1) both; }
+.native-mascot[data-motion="story"] .native-mascot--claude .claude__fold-star { animation:claude-star-fold 5.4s cubic-bezier(.2,.8,.2,1) both; }
+.native-mascot[data-motion="story"] .native-mascot--claude .claude__smoothing-hand { animation:claude-smooth 5.4s ease-in-out both; }
+.native-mascot[data-reaction="active"] .native-mascot--claude .claude__fold-star { animation:claude-click-star 5.4s cubic-bezier(.2,.8,.2,1) both; }
+.native-mascot[data-motion="idle"][data-reaction=""]:hover .native-mascot--claude .claude__head { animation:claude-hover-look .8s ease-out both; }
+
+/* Codex: a floating white shell whose brace hands gather and verify loose code. */
+.native-mascot--codex .codex__float { animation:codex-hover 4.9s ease-in-out infinite; }
+.native-mascot--codex .codex__feet { transform-box:fill-box; transform-origin:center top; animation:codex-feet 2.8s ease-in-out infinite; }
+.native-mascot--codex .codex__left-bracket,.native-mascot--codex .codex__right-bracket { transform-box:fill-box; transform-origin:center; }
+.native-mascot--codex .codex__check { opacity:0; transform-box:fill-box; transform-origin:center; }
+.native-mascot--codex .codex__loose-cube { transform-box:fill-box; transform-origin:center; }
+.native-mascot[data-motion="intro"] .native-mascot--codex .native-mascot__figure { animation:mascot-arrive .85s cubic-bezier(.2,.9,.25,1.18) both; }
+.native-mascot[data-motion="intro"] .native-mascot--codex .codex__left-bracket { animation:codex-intro-left .9s cubic-bezier(.2,.85,.2,1) both; }
+.native-mascot[data-motion="intro"] .native-mascot--codex .codex__right-bracket { animation:codex-intro-right .9s cubic-bezier(.2,.85,.2,1) both; }
+.native-mascot[data-motion="intro"] .native-mascot--codex .native-mascot__intro-sparkles { animation:mascot-sparkle 1.3s ease-out .4s both; }
+.native-mascot[data-motion="story"] .native-mascot--codex .codex__left-bracket { animation:codex-left-build 5.45s cubic-bezier(.22,.8,.22,1) both; }
+.native-mascot[data-motion="story"] .native-mascot--codex .codex__right-bracket { animation:codex-right-build 5.45s cubic-bezier(.22,.8,.22,1) both; }
+.native-mascot[data-motion="story"] .native-mascot--codex .codex__block--one { animation:codex-block-one 5.45s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--codex .codex__block--two { animation:codex-block-two 5.45s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--codex .codex__block--three { animation:codex-block-three 5.45s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--codex .codex__check { animation:codex-verify 5.45s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--codex .codex__second-check { animation:codex-verify-second 5.45s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--codex .codex__loose-cube { animation:codex-catch 5.45s ease-in-out both; }
+.native-mascot[data-reaction="active"] .native-mascot--codex .codex__check { animation:codex-verify 5.45s ease-in-out both; }
+.native-mascot[data-motion="idle"][data-reaction=""]:hover .native-mascot--codex .codex__left-bracket { animation:codex-attend-left .8s ease-out both; }
+.native-mascot[data-motion="idle"][data-reaction=""]:hover .native-mascot--codex .codex__right-bracket { animation:codex-attend-right .8s ease-out both; }
+
+/* Kimi: the antenna ear points toward a hand-drawn map and reconnects its stars. */
+.native-mascot--kimi .kimi__float { animation:kimi-planet-hover 5.1s ease-in-out infinite; }
+.native-mascot--kimi .kimi__ears { transform-box:fill-box; transform-origin:52% 92%; animation:kimi-listen 5.6s ease-in-out infinite; }
+.native-mascot--kimi .kimi__ear-star { transform-box:fill-box; transform-origin:center; animation:kimi-star-glint 3.2s ease-in-out infinite; }
+.native-mascot--kimi .kimi__star-map { opacity:0; transform-box:fill-box; transform-origin:100% 70%; }
+.native-mascot--kimi .kimi__constellation { stroke-dashoffset:50; }
+.native-mascot[data-motion="intro"] .native-mascot--kimi .native-mascot__figure { animation:mascot-arrive 1.15s cubic-bezier(.2,.9,.25,1.15) both; }
+.native-mascot[data-motion="intro"] .native-mascot--kimi .kimi__float { animation:kimi-peek 1.8s cubic-bezier(.18,.9,.2,1) both; }
+.native-mascot[data-motion="intro"] .native-mascot--kimi .kimi__ears { animation:kimi-ears-peek 1.9s cubic-bezier(.2,.9,.2,1) .42s both; }
+.native-mascot[data-motion="intro"] .native-mascot--kimi .native-mascot__intro-sparkles { animation:mascot-sparkle 1.4s ease-out .5s both; }
+.native-mascot[data-motion="story"] .native-mascot--kimi .kimi__ears { animation:kimi-find-constellation 5.8s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--kimi .kimi__ear-star { animation:kimi-beacon 5.8s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--kimi .kimi__star-map { animation:kimi-map-unroll 5.8s cubic-bezier(.2,.85,.2,1) both; }
+.native-mascot[data-motion="story"] .native-mascot--kimi .kimi__constellation { animation:kimi-connect-stars 5.8s ease-in-out both; }
+.native-mascot[data-reaction="active"] .native-mascot--kimi .kimi__ear-star { animation:kimi-beacon 5.8s ease-in-out both; }
+.native-mascot[data-motion="idle"][data-reaction=""]:hover .native-mascot--kimi .kimi__ears { animation:kimi-hover-listen .7s ease-out both; }
+
+/* OpenCode: a friendly terminal boots three side panes, then closes them neatly. */
+.native-mascot--opencode .opencode__body { transform-box:fill-box; transform-origin:center bottom; animation:opencode-ready 5.2s ease-in-out infinite; }
+.native-mascot--opencode .opencode__cursor { animation:opencode-cursor 1.25s steps(2,end) infinite; }
+.native-mascot--opencode .opencode__typed-char,.native-mascot--opencode .opencode__corrected-char { opacity:0; }
+.native-mascot--opencode .opencode__text-cursor { opacity:0; }
+.native-mascot--opencode .opencode__side-panel { opacity:0; transform-box:fill-box; transform-origin:center; }
+.native-mascot--opencode .opencode__patch-cable { opacity:0; transform-box:fill-box; transform-origin:top left; }
+.native-mascot[data-motion="intro"] .native-mascot--opencode .opencode__body { animation:opencode-startup 1.15s ease-out both; }
+.native-mascot[data-motion="intro"] .native-mascot--opencode .native-mascot__intro-sparkles { animation:mascot-sparkle 1.2s ease-out .55s both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__body { animation:opencode-type 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__typed-char--1 { animation:opencode-type-one 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__typed-char--2 { animation:opencode-type-two 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__typed-char--3 { animation:opencode-type-three 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__typed-char--4 { animation:opencode-type-four 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__corrected-char--1 { animation:opencode-fix-one 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__corrected-char--2 { animation:opencode-fix-two 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__corrected-char--3 { animation:opencode-fix-three 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__corrected-char--4 { animation:opencode-fix-four 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__text-cursor { animation:opencode-text-cursor 5.25s steps(1,end) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__panel-left { animation:opencode-panel-left 5.25s cubic-bezier(.2,.8,.2,1) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__panel-right { animation:opencode-panel-right 5.25s cubic-bezier(.2,.8,.2,1) both; }
+.native-mascot[data-motion="story"] .native-mascot--opencode .opencode__patch-cable { animation:opencode-connect 5.25s ease-in-out both; }
+.native-mascot[data-reaction="active"] .native-mascot--opencode .opencode__cursor { animation:opencode-fast-type .72s steps(2,end) 3; }
+.native-mascot[data-motion="idle"][data-reaction=""]:hover .native-mascot--opencode .opencode__body { filter:drop-shadow(0 0 8px #63efbd55); }
+.native-mascot[data-motion="idle"][data-reaction=""]:hover .native-mascot--opencode .opencode__cursor { animation:opencode-fast-type .55s steps(2,end) infinite; }
+
+/* Pi: the tiny block bird sorts plum pixels, builds a pi glyph, and catches a stray tile. */
+.native-mascot--pi .pi__body { transform-box:view-box; transform-origin:50% 91%; animation:pi-perch 5.2s ease-in-out infinite; }
+.native-mascot--pi .pi__shadow { transform-box:fill-box; transform-origin:center; animation:pi-shadow 5.2s ease-in-out infinite; }
+.native-mascot--pi .pi__leg-left,.native-mascot--pi .pi__leg-right { transform-box:view-box; }
+.native-mascot--pi .pi__leg-left { transform-origin:43.7% 86%; animation:pi-step-left 5.2s ease-in-out infinite; }
+.native-mascot--pi .pi__leg-right { transform-origin:66.9% 86%; animation:pi-step-right 5.2s ease-in-out infinite; }
+.native-mascot--pi .pi__fallen-pixel { opacity:0; transform-box:view-box; transform-origin:95% 59%; }
+.native-mascot--pi .pi__wing { transform-box:view-box; }
+.native-mascot--pi .pi__wing--back { transform-origin:75% 62%; animation:pi-wing-back 4.4s ease-in-out infinite; }
+.native-mascot--pi .pi__wing--near { transform-origin:38% 61%; animation:pi-wing-fold 4.1s ease-in-out infinite; }
+.native-mascot--pi .pi__tail { transform-box:view-box; transform-origin:27% 47%; animation:pi-tail-flick 4.6s ease-in-out infinite; }
+.native-mascot--pi .pi__built-pi > g { opacity:0; transform-box:view-box; transform-origin:89% 50%; }
+.native-mascot--pi .pi__body-texture { display:block; }
+.native-mascot[data-motion="intro"] .native-mascot--pi .native-mascot__figure { animation:pi-assemble 1.25s cubic-bezier(.2,.9,.25,1.25) both; }
+.native-mascot[data-motion="intro"] .native-mascot--pi .native-mascot__intro-sparkles { animation:mascot-sparkle 1.2s ease-out .55s both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__body { animation:pi-build-glyph 5.9s cubic-bezier(.22,.8,.24,1) both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__leg-left { animation:pi-walk-left 5.9s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__leg-right { animation:pi-walk-right 5.9s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__wing--near { animation:pi-place-pixel 5.9s ease-in-out both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__glyph-bar { animation:pi-form-bar 5.9s ease-out both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__glyph-left { animation:pi-form-left 5.9s ease-out both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__glyph-right { animation:pi-form-right 5.9s ease-out both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__glyph-foot-left { animation:pi-form-foot-left 5.9s ease-out both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__glyph-foot-right { animation:pi-form-foot-right 5.9s ease-out both; }
+.native-mascot[data-motion="story"] .native-mascot--pi .pi__fallen-pixel { animation:pi-catch-pixel 5.9s ease-in-out both; }
+.native-mascot[data-reaction="active"] .native-mascot--pi .pi__body { filter:drop-shadow(0 0 12px #f5c0ed55); }
+.native-mascot[data-motion="idle"][data-reaction=""]:hover .native-mascot--pi .pi__wing--near { animation:pi-hover-wing .6s ease-in-out 2; }
+
+.motion-paused .native-mascot *, .motion-paused .native-mascot { animation-play-state:paused!important; transition:none!important; }
+@keyframes mascot-arrive { 0% { opacity:0; transform:translateY(28px) scale(.8); } 72% { opacity:1; transform:translateY(-5px) scale(1.035); } 100% { opacity:1; transform:translateY(0) scale(1); } }
+@keyframes pi-assemble { 0% { opacity:.2; transform:translateY(18px) scale(.82); filter:brightness(1.7); } 65% { opacity:1; transform:translateY(-5px) scale(1.04); filter:brightness(1.15); } 100% { opacity:1; transform:none; filter:none; } }
+@keyframes mascot-sparkle { 0%,100% { opacity:0; transform:scale(.5); } 25%,75% { opacity:.9; transform:scale(1); } }
+
+@keyframes claude-consider { 0%,100% { transform:rotate(0); } 44% { transform:rotate(-1deg); } 52% { transform:rotate(2deg); } 63% { transform:rotate(-.7deg); } }
+@keyframes claude-intro-fold { 0% { transform:scaleX(.42) rotateY(55deg); opacity:.35; } 40% { transform:scaleX(1.04) rotateY(-8deg); opacity:1; } 67% { transform:scaleX(.98) rotateY(3deg); } 100% { transform:scaleX(1) rotateY(0); opacity:1; } }
+@keyframes claude-paper-rest { 0%,100% { transform:rotate(0); } 50% { transform:rotate(-2deg); } }
+@keyframes claude-crease-glint { 0%,100% { opacity:.4; } 48%,55% { opacity:1; } }
+@keyframes claude-hover-look { 0% { transform:rotate(0); } 45% { transform:rotate(-6deg); } 100% { transform:rotate(-2deg); } }
+@keyframes claude-think-story { 0%,20%,100% { transform:rotate(0); } 31%,43% { transform:rotate(-5deg); } 61% { transform:rotate(3deg); } 72% { transform:rotate(-2deg); } 80% { transform:rotate(0); } }
+@keyframes claude-unfold { 0%,13% { transform:rotate(0) translate(0); } 31% { transform:rotate(-14deg) translate(-5px,-6px); } 48% { transform:rotate(8deg) translate(-2px,-2px); } 65% { transform:rotate(-5deg); } 77%,100% { transform:rotate(0); } }
+@keyframes claude-star-fold { 0%,32% { opacity:0; transform:translate(12px,12px) scale(.15) rotate(-80deg); } 48% { opacity:1; transform:translate(0) scale(1.18) rotate(12deg); } 60%,82% { opacity:1; transform:scale(1) rotate(0); } 100% { opacity:0; transform:scale(.5); } }
+@keyframes claude-smooth { 0%,56% { opacity:0; transform:translate(14px,14px) rotate(-20deg); } 67% { opacity:1; transform:translate(0) rotate(5deg); } 78% { opacity:1; transform:translate(-4px,0) rotate(-5deg); } 88%,100% { opacity:0; transform:translate(4px,9px); } }
+@keyframes claude-click-star { 0%,30% { opacity:0; transform:translate(12px,12px) scale(.15) rotate(-80deg); } 45% { opacity:1; transform:scale(1.2) rotate(12deg); } 60%,84% { opacity:1; transform:scale(1) rotate(0); } 100% { opacity:0; transform:scale(.5); } }
+
+@keyframes codex-hover { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-5px); } }
+@keyframes codex-intro-left { 0% { opacity:0; transform:translateX(18px) rotate(13deg); } 72% { opacity:1; transform:translateX(-2px) rotate(-3deg); } 100% { opacity:1; transform:none; } }
+@keyframes codex-intro-right { 0% { opacity:0; transform:translateX(-18px) rotate(-13deg); } 72% { opacity:1; transform:translateX(2px) rotate(3deg); } 100% { opacity:1; transform:none; } }
+@keyframes codex-attend-left { 0%,100% { transform:translateX(0); } 38% { transform:translateX(7px) rotate(-5deg); } 72% { transform:translateX(-2px); } }
+@keyframes codex-attend-right { 0%,100% { transform:translateX(0); } 38% { transform:translateX(-7px) rotate(5deg); } 72% { transform:translateX(2px); } }
+@keyframes codex-feet { 0%,100% { transform:translateY(0); } 48% { transform:translateY(2px); } 56% { transform:translateY(-3px); } }
+@keyframes codex-left-build { 0%,12%,100% { transform:translateX(0) rotate(0); } 28% { transform:translateX(28px) rotate(-7deg); } 45% { transform:translateX(22px) rotate(5deg); } 61%,76% { transform:translateX(0); } 84% { transform:translateX(9px); } 92% { transform:translateX(0); } }
+@keyframes codex-right-build { 0%,12%,100% { transform:translateX(0) rotate(0); } 28% { transform:translateX(-28px) rotate(7deg); } 45% { transform:translateX(-22px) rotate(-5deg); } 61%,76% { transform:translateX(0); } 84% { transform:translateX(-9px); } 92% { transform:translateX(0); } }
+@keyframes codex-block-one { 0%,17% { transform:translate(-16px,18px) scale(.7); opacity:0; } 29% { transform:translate(0) scale(1.1); opacity:1; } 38%,100% { transform:none; opacity:1; } }
+@keyframes codex-block-two { 0%,26% { transform:translateY(18px) scale(.7); opacity:0; } 38% { transform:translateY(0) scale(1.08); opacity:1; } 47%,100% { transform:none; opacity:1; } }
+@keyframes codex-block-three { 0%,35% { transform:translate(16px,18px) scale(.7); opacity:0; } 47% { transform:translate(0) scale(1.1); opacity:1; } 56%,100% { transform:none; opacity:1; } }
+@keyframes codex-verify { 0%,48% { opacity:0; transform:scale(.3) rotate(-45deg); } 60% { opacity:1; transform:scale(1.16) rotate(8deg); } 68%,81% { opacity:1; transform:scale(1); } 100% { opacity:0; transform:scale(.5); } }
+@keyframes codex-verify-second { 0%,57% { opacity:0; transform:scale(.3) rotate(-45deg); } 66% { opacity:1; transform:scale(1.16) rotate(8deg); } 73%,82% { opacity:1; transform:scale(1); } 100% { opacity:0; transform:scale(.5); } }
+@keyframes codex-catch { 0%,20% { transform:translate(0) rotate(0); } 36% { transform:translate(-30px,47px) rotate(90deg); } 47% { transform:translate(-38px,43px) rotate(135deg); } 58%,76% { transform:translate(-43px,42px) rotate(0); } 84%,100% { transform:translate(0) rotate(0); } }
+@keyframes codex-delight { 0%,100% { transform:translateY(0) rotate(0); } 20% { transform:translateY(-10px) rotate(-3deg); } 38% { transform:translateY(2px) rotate(4deg); } 58% { transform:translateY(-7px) rotate(-2deg); } 76% { transform:translateY(1px); } }
+
+@keyframes kimi-planet-hover { 0%,100% { transform:translateY(0) rotate(0); } 48% { transform:translateY(-4px) rotate(-1deg); } 58% { transform:translateY(-3px) rotate(1deg); } }
+@keyframes kimi-peek { 0% { opacity:.35; transform:translate(15px,15px) scale(.8) rotate(4deg); } 47% { opacity:1; transform:translate(-3px,-4px) scale(1.04) rotate(-2deg); } 72% { transform:translate(2px,1px) scale(.99) rotate(1deg); } 100% { opacity:1; transform:none; } }
+@keyframes kimi-ears-peek { 0% { opacity:0; transform:translateY(14px) scaleY(.4); } 36% { opacity:1; transform:translateY(-4px) scaleY(1.08); } 100% { opacity:1; transform:none; } }
+@keyframes kimi-hover-listen { 0%,100% { transform:rotate(0); } 40% { transform:rotate(6deg); } 74% { transform:rotate(-3deg); } }
+@keyframes kimi-listen { 0%,100% { transform:rotate(0); } 44% { transform:rotate(-2deg); } 54% { transform:rotate(3deg); } }
+@keyframes kimi-star-glint { 0%,100% { filter:brightness(1); transform:scale(1); } 48% { filter:brightness(1.1); transform:scale(1.05); } 53% { filter:brightness(1.8); transform:scale(1.13); } 60% { filter:brightness(1); transform:scale(1); } }
+@keyframes kimi-find-constellation { 0%,14%,100% { transform:rotate(0); } 27% { transform:rotate(-8deg); } 43% { transform:rotate(5deg); } 55% { transform:rotate(-2deg); } 71% { transform:rotate(0); } }
+@keyframes kimi-beacon { 0%,35%,100% { filter:brightness(1); transform:scale(1); } 48%,62% { filter:brightness(1.8) drop-shadow(0 0 5px #6df8ff); transform:scale(1.22); } }
+@keyframes kimi-map-unroll { 0%,18% { opacity:0; transform:translate(-22px,14px) rotate(-20deg) scale(.5); } 31% { opacity:1; transform:translate(0) rotate(7deg) scale(1.04); } 40%,67% { opacity:1; transform:rotate(0) scale(1); } 74% { opacity:1; transform:translate(3px,0) rotate(12deg) scale(.92); } 87%,100% { opacity:0; transform:translate(-20px,13px) rotate(-8deg) scale(.4); } }
+@keyframes kimi-connect-stars { 0%,30% { stroke-dashoffset:50; } 53%,68% { stroke-dashoffset:0; } 78%,100% { stroke-dashoffset:50; } }
+@keyframes kimi-ear-tap { 0%,100% { transform:rotate(0); } 22% { transform:rotate(-9deg); } 43% { transform:rotate(9deg); } 64% { transform:rotate(-3deg); } }
+
+@keyframes opencode-ready { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-3px); } }
+@keyframes opencode-cursor { 0%,48% { opacity:1; } 49%,100% { opacity:0; } }
+@keyframes opencode-startup { 0% { opacity:.6; transform:scale(.94); filter:brightness(.7); } 35% { opacity:1; transform:scale(1.015); filter:brightness(1.3); } 100% { transform:scale(1); filter:none; } }
+@keyframes opencode-type { 0%,18%,100% { transform:translateY(0); } 25% { transform:translateY(-2px); } 30%,43% { transform:translateY(0); } 48% { transform:translateX(2px); } 54%,66% { transform:translateX(0); } }
+@keyframes opencode-type-one { 0%,29% { opacity:0; } 31%,58% { opacity:1; } 60%,100% { opacity:0; } }
+@keyframes opencode-type-two { 0%,32% { opacity:0; } 34%,54% { opacity:1; } 56%,100% { opacity:0; } }
+@keyframes opencode-type-three { 0%,35% { opacity:0; } 37%,51% { opacity:1; } 53%,100% { opacity:0; } }
+@keyframes opencode-type-four { 0%,38% { opacity:0; } 40%,48% { opacity:1; } 50%,100% { opacity:0; } }
+@keyframes opencode-fix-one { 0%,59% { opacity:0; } 61%,81% { opacity:1; } 83%,100% { opacity:0; } }
+@keyframes opencode-fix-two { 0%,63% { opacity:0; } 65%,81% { opacity:1; } 83%,100% { opacity:0; } }
+@keyframes opencode-fix-three { 0%,67% { opacity:0; } 69%,81% { opacity:1; } 83%,100% { opacity:0; } }
+@keyframes opencode-fix-four { 0%,71% { opacity:0; } 73%,81% { opacity:1; } 83%,100% { opacity:0; } }
+@keyframes opencode-text-cursor {
+  0%,29% { opacity:1; transform:translateX(0); }
+  31% { opacity:1; transform:translateX(6px); }
+  34% { opacity:1; transform:translateX(12px); }
+  37% { opacity:1; transform:translateX(18px); }
+  40%,48% { opacity:1; transform:translateX(24px); }
+  50% { opacity:1; transform:translateX(18px); }
+  53% { opacity:1; transform:translateX(12px); }
+  56% { opacity:1; transform:translateX(6px); }
+  60% { opacity:1; transform:translateX(0); }
+  61% { opacity:1; transform:translateX(6px); }
+  65% { opacity:1; transform:translateX(12px); }
+  69% { opacity:1; transform:translateX(18px); }
+  73% { opacity:1; transform:translateX(24px); }
+  81%,100% { opacity:0; }
+}
+@keyframes opencode-panel-left { 0%,14%,100% { opacity:0; transform:translateX(22px) scaleX(.2); } 27%,65% { opacity:1; transform:translateX(0) scaleX(1); } 78% { opacity:1; transform:translateX(5px) scaleX(.85); } 88% { opacity:0; transform:translateX(22px) scaleX(.2); } }
+@keyframes opencode-panel-right { 0%,14%,100% { opacity:0; transform:translateX(-22px) scaleX(.2); } 27%,65% { opacity:1; transform:translateX(0) scaleX(1); } 78% { opacity:1; transform:translateX(-5px) scaleX(.85); } 88% { opacity:0; transform:translateX(-22px) scaleX(.2); } }
+@keyframes opencode-connect { 0%,40%,100% { opacity:0; transform:scale(.4) rotate(-10deg); } 49%,68% { opacity:1; transform:scale(1) rotate(0); } 77%,88% { opacity:1; transform:scale(.9) rotate(4deg); } }
+@keyframes opencode-fast-type { 0%,50% { opacity:1; } 51%,100% { opacity:0; } }
+
+@keyframes pi-perch { 0%,100% { transform:translateY(0) rotate(0); } 46% { transform:translateY(-6px) rotate(-.45deg); } 53% { transform:translateY(-1px) rotate(.4deg); } 59% { transform:translateY(0) rotate(0); } }
+@keyframes pi-shadow { 0%,100% { transform:scaleX(1); opacity:.24; } 46% { transform:scaleX(.96); opacity:.2; } 53% { transform:scaleX(1.015); opacity:.26; } }
+@keyframes pi-step-left { 0%,100% { transform:translateY(0) rotate(0); } 47% { transform:translateY(-1px) rotate(-.6deg); } 54% { transform:translateY(1px) rotate(.35deg); } }
+@keyframes pi-step-right { 0%,100% { transform:translateY(0) rotate(0); } 44% { transform:translateY(1px) rotate(-.35deg); } 52% { transform:translateY(-1px) rotate(.6deg); } }
+@keyframes pi-walk-left { 0%,15%,100% { transform:translateY(0) rotate(0); } 24% { transform:translateY(-2px) rotate(-1.2deg); } 33% { transform:translateY(1px) rotate(.5deg); } 43% { transform:translateY(0) rotate(0); } 51% { transform:translateY(-2px) rotate(-.9deg); } 59% { transform:translateY(0) rotate(0); } }
+@keyframes pi-walk-right { 0%,29%,100% { transform:translateY(0) rotate(0); } 38% { transform:translateY(-2px) rotate(1.2deg); } 46% { transform:translateY(1px) rotate(-.5deg); } 55% { transform:translateY(0) rotate(0); } 63% { transform:translateY(-2px) rotate(.9deg); } 71% { transform:translateY(0) rotate(0); } }
+@keyframes pi-wing-fold { 0%,100% { transform:rotate(0); } 46% { transform:rotate(-1deg); } 54% { transform:rotate(1.5deg); } }
+@keyframes pi-wing-back { 0%,100% { transform:rotate(0); } 45% { transform:rotate(.55deg); } 53% { transform:rotate(-.8deg); } }
+@keyframes pi-tail-flick { 0%,100% { transform:rotate(0); } 47% { transform:rotate(-.9deg); } 55% { transform:rotate(1.25deg); } }
+@keyframes pi-build-glyph { 0%,100% { transform:translateY(0) rotate(0); } 21% { transform:translateY(-7px) rotate(.8deg); } 34% { transform:translateY(0) rotate(-1.15deg); } 47% { transform:translateY(-9px) rotate(.65deg); } 59% { transform:translateY(0) rotate(0); } 73% { transform:translateY(-5px) rotate(-.35deg); } 85% { transform:translateY(0) rotate(0); } }
+@keyframes pi-place-pixel { 0%,35%,100% { transform:rotate(0); } 45% { transform:rotate(-2deg); } 58% { transform:rotate(.8deg); } 68% { transform:rotate(0); } }
+@keyframes pi-hover-wing { 0%,100% { transform:rotate(0); } 38% { transform:rotate(-2.2deg); } 72% { transform:rotate(1.2deg); } }
+@keyframes pi-form-bar { 0%,44% { opacity:0; transform:translateY(12px) scaleX(.45); } 53% { opacity:1; transform:translateY(-1px) scaleX(1.04); } 61%,100% { opacity:1; transform:none; } }
+@keyframes pi-form-left { 0%,51% { opacity:0; transform:translateY(-12px) scaleY(.45); } 60% { opacity:1; transform:translateY(1px) scaleY(1.03); } 68%,100% { opacity:1; transform:none; } }
+@keyframes pi-form-right { 0%,58% { opacity:0; transform:translateY(-12px) scaleY(.45); } 67% { opacity:1; transform:translateY(1px) scaleY(1.03); } 75%,100% { opacity:1; transform:none; } }
+@keyframes pi-form-foot-left { 0%,64% { opacity:0; transform:translateY(-6px) scale(.65); } 72% { opacity:1; transform:scale(1.03); } 80%,100% { opacity:1; transform:none; } }
+@keyframes pi-form-foot-right { 0%,70% { opacity:0; transform:translateY(-6px) scale(.65); } 78% { opacity:1; transform:scale(1.03); } 86%,100% { opacity:1; transform:none; } }
+@keyframes pi-catch-pixel { 0%,48% { opacity:0; transform:translate(0,-3px) rotate(0); } 58% { opacity:1; transform:translate(-8px,-5px) rotate(14deg); } 69% { opacity:1; transform:translate(-24px,4px) rotate(42deg); } 77%,82% { opacity:1; transform:translate(-52px,15px) rotate(2deg); } 92%,100% { opacity:0; transform:translate(-54px,17px) scale(.7); } }
+
+@media (prefers-reduced-motion:reduce) {
+  .native-mascot,.native-mascot * { animation:none!important; transition:none!important; }
+  .native-mascot { transform:none!important; filter:none!important; }
+  .native-mascot__intro-sparkles { opacity:0!important; }
+  .native-mascot .claude__fold-star,.native-mascot .claude__smoothing-hand,
+  .native-mascot .codex__check,.native-mascot .kimi__star-map,
+  .native-mascot .opencode__side-panel,.native-mascot .opencode__patch-cable,
+  .native-mascot .pi__built-pi,.native-mascot .pi__fallen-pixel,
+  .native-mascot .opencode__typed-char,.native-mascot .opencode__corrected-char,
+  .native-mascot .opencode__text-cursor { opacity:0!important; }
+}
+@media (max-height:800px) { .native-agent-character:has(.native-mascot) { width:250px; height:150px; } }
+@container (max-width:650px) { .native-agent-character:has(.native-mascot) { width:260px; height:190px; } }

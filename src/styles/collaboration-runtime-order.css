@@ -1,0 +1,56 @@
+.collab-runtime-order-item{position:relative;display:flex;align-items:center;gap:3px;flex:0 1 auto;min-width:0}
+.collab-runtime-order-grip{display:inline-flex;align-items:center;justify-content:center;align-self:stretch;padding:0 2px;color:#858585;font-size:17px;line-height:1;cursor:grab;user-select:none}
+.collab-runtime-order-grip:active{cursor:grabbing}
+.collab-runtime-order-item.dragging{opacity:.48}
+.collab-runtime-order-item[data-drop-position="before"]:before,.collab-runtime-order-item[data-drop-position="after"]:after{content:"";position:absolute;top:3px;bottom:3px;width:2px;border-radius:2px;background:#a78bfa;pointer-events:none}
+.collab-runtime-order-item[data-drop-position="before"]:before{left:-4px}
+.collab-runtime-order-item[data-drop-position="after"]:after{right:-4px}
+.collab-runtime-reorder-controls{display:flex;gap:6px;margin:12px 0}
+.collab-runtime-reorder-controls button{min-width:32px;height:28px;border:1px solid #484848;border-radius:5px;background:#333;color:#ddd;cursor:pointer}
+.collab-runtime-reorder-controls button:disabled{opacity:.4;cursor:default}
+.collab-runtime-preference-error{flex-basis:100%;color:#e5a0a0;font-size:12px}
+
+/* Compact Runtime items wrap by content width below the separate heading row. */
+.collab-overview-page .collab-runtime-toolbar{
+  container:collab-runtime-toolbar / inline-size;
+  box-sizing:border-box;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:10px;
+  height:auto;
+  min-height:0;
+  padding:14px 20px 10px;
+  border-top:0;
+}
+.collab-runtime-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;min-width:0}
+.collab-runtime-heading-title{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+.collab-runtime-heading-title strong{font-size:15px;font-weight:600}
+.collab-runtime-heading-title>span{color:#929292;font-size:13px}
+.collab-runtime-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex:0 0 auto}
+.collab-runtime-actions .collab-check-updates{white-space:nowrap}
+.collab-runtime-actions .collab-upgrade-menu{display:flex;align-items:center}
+.collab-runtime-actions .collab-upgrade-menu>summary{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:6px;color:#aaa}
+.collab-runtime-actions .collab-upgrade-menu>summary:hover{background:#303030;color:#eee}
+.collab-runtime-actions .collab-upgrade-menu>button{top:38px;right:0;left:auto}
+.collab-runtime-chips{display:flex;align-items:center;flex:1 1 auto;flex-wrap:wrap;gap:8px;width:100%;min-width:0}
+.collab-runtime-order-item{box-sizing:border-box;display:flex;flex:0 0 auto;align-items:center;gap:3px;min-width:0;min-height:44px;padding:2px;transition:background-color .15s ease}
+.collab-runtime-order-item:hover{background:#252525;border-radius:7px}
+.collab-runtime-order-grip{box-sizing:border-box;flex:0 0 15px;width:15px;padding:0;color:#777;font-size:15px}
+.collab-runtime-chip{position:relative;display:flex;align-items:center;min-width:0;flex:0 0 auto}
+.collab-runtime-chip summary{box-sizing:border-box;display:flex;width:auto;height:42px;min-width:0;justify-content:flex-start;gap:7px;padding:0 8px;border:1px solid transparent;border-radius:7px;background:transparent;font-size:14px}
+.collab-runtime-chip summary:hover{border-color:#3b3b3b;background:#292929}
+.collab-runtime-chip summary img{width:24px;height:24px;flex:0 0 24px}
+.collab-runtime-chip summary>span{flex:0 0 auto;white-space:nowrap;overflow:visible;text-overflow:clip}
+.collab-runtime-chip summary>i{width:7px;height:7px;flex:0 0 7px;margin-left:0}
+.collab-runtime-popover{top:calc(100% - 2px);left:0;right:auto;box-sizing:border-box;width:min(290px,calc(100cqi - 32px),calc(100vw - 32px));max-width:calc(100vw - 32px)}
+.collab-runtime-order-item.dragging{background:#2c2934;border-radius:7px}
+.collab-runtime-order-item[data-drop-position="before"]:before,.collab-runtime-order-item[data-drop-position="after"]:after{top:4px;bottom:4px}
+.collab-runtime-status{display:flex;flex-direction:column;gap:4px}
+.collab-runtime-status .collab-runtime-preference-error{flex:none}
+.collab-runtime-management-empty{padding:10px 2px;color:#969696}
+
+@container collab-runtime-toolbar (max-width:439px){
+  .collab-runtime-heading{align-items:flex-start;flex-direction:column}
+  .collab-runtime-actions{width:100%;justify-content:flex-start;flex-wrap:wrap}
+}

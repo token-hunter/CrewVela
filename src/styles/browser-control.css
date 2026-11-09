@@ -1,0 +1,145 @@
+/* Layout shared by the general, browser control and computer control settings. */
+.settings-content-inner:has(.runtime-settings) {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+}
+.settings-content-inner:has(.runtime-settings) .settings-heading p { max-width: 80ch; }
+.runtime-settings {
+  container-type: inline-size;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.runtime-settings fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.runtime-group {
+  display: grid;
+  grid-template-columns: minmax(116px, 16%) minmax(0, 1fr);
+  gap: 20px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border);
+}
+.runtime-group h3 { margin: 0; font-size: 17px; line-height: 1.45; }
+.runtime-group header > p, .runtime-settings small, .runtime-details, .runtime-actions > div {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.runtime-group header > p { margin: 4px 0 0; }
+.runtime-group-body { min-width: 0; }
+.runtime-field, .runtime-settings .browser-control-toggle {
+  display: flex;
+  position: relative;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  gap: 20px;
+  padding: 7px 0;
+}
+.runtime-field + .runtime-field, .browser-control-toggle + .browser-control-toggle { border-top: 1px solid var(--border); }
+.runtime-settings strong, .runtime-field label { font-weight: 600; font-size: 16px; }
+.runtime-settings small { display: block; margin-top: 2px; font-weight: 400; }
+.runtime-field input, .runtime-field select, .runtime-path input {
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.runtime-field :is(input, select) { width: 38%; }
+.runtime-settings :is(input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.runtime-settings .browser-control-toggle { cursor: pointer; }
+.runtime-settings .browser-control-toggle > span { flex: 1; min-width: 0; }
+.runtime-settings .browser-control-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.runtime-settings .browser-control-toggle i {
+  position: relative;
+  width: 38px;
+  height: 21px;
+  flex: none;
+  border-radius: 99px;
+  background: var(--border-strong);
+}
+.runtime-settings .browser-control-toggle i::after {
+  content: "";
+  position: absolute;
+  inset: 3px auto auto 3px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: white;
+}
+.runtime-settings .browser-control-toggle input:checked + i { background: var(--accent); }
+.runtime-settings .browser-control-toggle input:checked + i::after { transform: translateX(17px); }
+.runtime-settings .browser-control-toggle input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 3px; }
+.runtime-settings label:has(input:disabled) { cursor: default; }
+.runtime-settings input:disabled + i, .runtime-settings fieldset:disabled .runtime-radios { opacity: .55; }
+.browser-settings fieldset fieldset .runtime-group {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+.browser-settings fieldset fieldset .runtime-group > header {
+  display: grid;
+  grid-template-columns: minmax(110px, 28%) 1fr;
+  align-content: start;
+  gap: 20px;
+}
+.runtime-radios { display: grid; gap: 12px; }
+.runtime-radios label { display: flex; align-items: baseline; gap: 10px; cursor: pointer; }
+.runtime-radios input { accent-color: var(--accent); }
+.runtime-path { display: grid; margin-top: 12px; gap: 6px; }
+.runtime-result { margin: 0; overflow-wrap: anywhere; }
+.runtime-details { padding: 8px 0; }
+.runtime-details summary { width: fit-content; cursor: pointer; }
+.runtime-details p { margin: 6px 0; }
+.runtime-details dl, .runtime-facts { margin: 0; }
+.runtime-details dl > div, .runtime-facts > div { display: flex; justify-content: space-between; align-items: baseline; gap: 18px; padding: 8px 0; }
+.runtime-details dd, .runtime-facts dd { margin: 0; text-align: end; overflow-wrap: anywhere; min-width: 0; }
+.runtime-facts dt { flex-shrink: 0; }
+.runtime-warning { margin: 8px 0; color: var(--warn); overflow-wrap: anywhere; }
+.computer-settings .runtime-group { display: block; padding: 8px 0 20px; border: 0; }
+.computer-settings .runtime-group > header { margin-bottom: 16px; }
+.computer-settings .runtime-group h3 { font-size: 20px; }
+.computer-settings .browser-control-toggle, .runtime-facts {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-elev) 45%, var(--bg));
+  padding: 14px 20px;
+}
+.computer-settings .browser-control-toggle { min-height: 78px; }
+.computer-settings .browser-control-toggle + .browser-control-toggle { margin-top: 10px; }
+.runtime-facts > div + div { border-top: 1px solid var(--border); }
+.runtime-actions {
+  position: sticky;
+  z-index: 1;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.runtime-actions > div { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.runtime-actions button { flex-shrink: 0; }
+@container (max-width: 740px) {
+  .runtime-group, .browser-settings fieldset fieldset .runtime-group { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .browser-settings fieldset fieldset .runtime-group > header { display: block; }
+  .runtime-field :is(input, select) { width: 47%; }
+}
+@container (max-width: 480px) {
+  .runtime-field, .runtime-facts > div { flex-direction: column; align-items: stretch; gap: 5px; }
+  .runtime-field :is(input, select) { width: 100%; }
+  .runtime-facts dd { text-align: start; }
+  .computer-settings .browser-control-toggle { padding: 12px; gap: 10px; }
+}

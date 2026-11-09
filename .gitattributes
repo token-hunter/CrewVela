@@ -1,0 +1,2 @@
+# Finder launchers must retain their shebang and LF endings on every checkout.
+*.command text eol=lf

@@ -1,0 +1,135 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+
+# Build output
+dist/
+src-tauri/target/
+src-tauri/gen/
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.log
+*.swp
+*.swo
+*~
+
+# Build artifacts & screenshots
+output/
+outputs/
+
+# Demo & smoke test artifacts
+demo/
+.smoke-tests/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Local tooling caches & session scratch output
+.codegraph/
+.playwright-cli/
+artifacts/
+tmp-staged-target/
+.cache/
+.pytest_cache/
+
+# Local audit backups, browser captures and machine configuration
+.scratch/
+/.test-data/
+.playwright-mcp/
+.zcode/
+.agent-memory/
+.ai-memory.toml
+__pycache__/
+*.pyc
+
+# Environment files: only empty, reviewed examples may be published
+.env
+.env.*
+!.env.example
+.envrc
+
+# Private credentials, signing keys, account exports and browser state
+secrets/
+credentials.json
+auth.json
+.netrc
+.npmrc
+.pypirc
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+cookies.txt
+cookies.json
+storage-state*.json
+storageState*.json
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+
+# Local agent settings and state (shared commands/skills stay publishable)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
+.claude/routines/.state/
+.claude/worktrees/
+.claude/checkpoints/
+.claude/mailbox/
+.claude/agent-registry.json
+.claude/agent-memory-local/
+.claude/first-run
+.claude/assistant-daemon-state.json
+.codex/auth.json
+.codex/sessions/
+.codex/history.jsonl
+.impeccable/hook.cache.json
+.impeccable/hook.pending.json
+.impeccable/config.local.json
+
+# Installers and downloaded model weights; keep application images/icons
+*.exe
+*.msi
+*.msix
+*.dmg
+*.app/
+*.AppImage
+*.onnx
+*.safetensors
+*.gguf
+
+# Root-only personal working notes and one-off QA captures/scripts
+/task_plan.md
+/findings.md
+/progress.md
+/design-qa.md
+/*-deepseek-harness-handoff-*.md
+/baidu-*.png
+/qa-*.png
+/qa-*.mjs
+# Existing reusable regression scripts are part of the source distribution
+!/qa-general-settings.mjs
+!/qa-kimi-computer-use.mjs
+/$dest/

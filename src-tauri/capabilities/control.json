@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "control",
+  "description": "独立总控窗口的最小权限",
+  "windows": ["control"],
+  "permissions": ["core:default"]
+}

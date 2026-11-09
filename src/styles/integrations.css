@@ -1,0 +1,1775 @@
+/* ---- CC Switch 风格 Skill 市场与 skills.sh 搜索 ---- */
+.skill-center-scopebar.hidden {
+  display: none;
+}
+
+.skill-market {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.skill-market-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr) minmax(160px, 230px) minmax(120px, 150px) auto;
+  gap: var(--space-10);
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--skill-line);
+}
+
+.skill-market-source-tabs {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.skill-market-source-tabs button {
+  min-width: 72px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-md);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.skill-market-source-tabs button.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.skill-market-search {
+  min-width: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.skill-market-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.skill-market-search svg {
+  width: 16px;
+  height: 16px;
+}
+
+.skill-market-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-md);
+}
+
+.skill-market-toolbar > select {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  outline: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-md);
+}
+
+.skill-market-toolbar-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-6);
+}
+
+.skill-market-toolbar-actions .btn svg,
+.skill-market-toolbar > .btn svg,
+.skill-market-card footer button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.skill-market-message,
+.skill-market-partial {
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  margin: var(--space-10) 16px 0;
+  padding: 8px 10px;
+  border: 1px solid;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+}
+
+.skill-market-message.error {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+
+.skill-market-message.success {
+  border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+  background: color-mix(in srgb, var(--success) 8%, transparent);
+  color: var(--success);
+}
+
+.skill-market-partial {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+  color: var(--warning);
+}
+
+.skill-market-message svg,
+.skill-market-partial svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.skill-market-grid {
+  min-height: 0;
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-12);
+  align-content: start;
+  padding: 16px;
+  overflow: auto;
+}
+
+.skill-market-card {
+  min-width: 0;
+  min-height: 180px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 52px;
+  overflow: hidden;
+  border: 1px solid var(--skill-line);
+  border-radius: 11px;
+  background: var(--skill-surface);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.07);
+}
+
+.skill-market-card-body {
+  min-width: 0;
+  padding: 18px 20px 14px;
+}
+
+.skill-market-card h3 {
+  overflow: hidden;
+  margin: 0 0 var(--space-9);
+  color: var(--text);
+  font-size: var(--text-2xl);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-market-meta {
+  min-width: 0;
+  display: flex;
+  gap: var(--space-7);
+  align-items: center;
+  margin-bottom: var(--space-12);
+}
+
+.skill-market-meta span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 2px 7px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-market-meta span:first-child {
+  max-width: 70%;
+}
+
+.skill-market-meta svg {
+  width: 11px;
+  height: 11px;
+}
+
+.skill-market-card p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.skill-market-card footer {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.8fr) minmax(130px, 1.2fr);
+  gap: var(--space-12);
+  align-items: center;
+  padding: 8px 20px;
+  border-top: 1px solid var(--skill-line);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+}
+
+.skill-market-card footer button {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-md);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.skill-market-card footer button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.skill-market-card footer button.install {
+  background: var(--success);
+  color: white;
+}
+
+.skill-market-card footer button.install:hover {
+  filter: brightness(1.06);
+}
+
+.skill-market-card footer button.installed {
+  border: 1px solid color-mix(in srgb, var(--success) 38%, var(--border));
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
+}
+
+.skill-market-card footer button:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.skill-market-empty {
+  grid-column: 1 / -1;
+  min-height: 270px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-8);
+  color: var(--muted);
+  text-align: center;
+}
+
+.skill-market-empty strong {
+  color: var(--text);
+}
+
+.skill-market-empty span {
+  font-size: var(--text-sm);
+}
+
+.skill-market-load-more {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-10);
+  border-top: 1px solid var(--skill-line);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.skill-market-manager {
+  width: min(780px, 92vw);
+}
+
+.skill-market-manager > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.skill-market-manager > header p {
+  margin-top: var(--space-4);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.skill-market-repository-list {
+  max-height: 330px;
+  overflow: auto;
+  border: 1px solid var(--skill-line);
+  border-radius: var(--radius-lg);
+}
+
+.skill-market-repository-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 30px;
+  gap: var(--space-12);
+  align-items: center;
+  min-height: 52px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid var(--skill-line);
+}
+
+.skill-market-repository-list article:last-child {
+  border-bottom: 0;
+}
+
+.skill-market-repository-list article > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.skill-market-repository-list strong,
+.skill-market-repository-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-market-repository-list strong {
+  font-size: var(--text-md);
+}
+
+.skill-market-repository-list small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.skill-market-repository-list label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.skill-market-repository-list input {
+  accent-color: var(--accent);
+}
+
+.skill-market-repository-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 120px auto;
+  gap: var(--space-8);
+  align-items: end;
+}
+
+.skill-market-repository-form label {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-5);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.skill-market-repository-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 9px;
+}
+
+@media (max-width: 1120px) {
+  .skill-market-toolbar {
+    grid-template-columns: auto minmax(220px, 1fr) minmax(150px, 210px) auto;
+  }
+
+  .skill-market-toolbar > select:last-of-type {
+    display: none;
+  }
+
+  .skill-market-repository-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 820px) {
+  .skill-market-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .skill-market-toolbar-actions {
+    justify-content: flex-start;
+  }
+
+  .skill-market-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* 独立悬浮通知：方案 3 */
+:root[data-view="notification"],
+:root[data-view="notification"] body,
+:root[data-view="notification"] #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+.git-source-sidebar-limit {
+  margin: var(--space-8);
+  padding: 8px 9px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-7);
+  border: 1px solid color-mix(in srgb, var(--warn) 38%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.git-source-sidebar-limit svg {
+  flex: none;
+  color: var(--warn);
+}
+
+.notification-overlay-stage {
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  padding: 7px;
+  display: grid;
+  place-items: stretch;
+  background: transparent;
+  color: #f7f3eb;
+  font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+}
+
+.notification-overlay-card {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 126px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 84% 45%, rgba(255, 142, 43, 0.09), transparent 30%),
+    rgba(20, 20, 21, 0.96);
+  box-shadow:
+    0 16px 42px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(18px);
+  animation: notification-overlay-enter 220ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+.notification-overlay-copy {
+  min-width: 0;
+  padding: 23px 8px 22px 27px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.notification-overlay-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.notification-overlay-title h1 {
+  margin: 0;
+  overflow: hidden;
+  color: #fffaf2;
+  font-size: 22px;
+  font-weight: 760;
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notification-overlay-title svg {
+  flex: none;
+  color: #fd963e;
+  filter: drop-shadow(0 0 8px rgba(255, 139, 47, 0.28));
+}
+
+.notification-overlay-copy p {
+  min-width: 0;
+  margin: var(--space-8) 0 15px;
+  overflow: hidden;
+  color: rgba(245, 241, 234, 0.68);
+  font-size: var(--text-lg);
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notification-overlay-copy button {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-7);
+  background: transparent;
+  color: #fd963e;
+  font: inherit;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 140ms ease, transform 140ms ease;
+}
+
+.notification-overlay-copy button:hover {
+  color: #ffb56f;
+  transform: translateX(2px);
+}
+
+.notification-overlay-copy button:focus-visible {
+  outline: 2px solid rgba(255, 151, 61, 0.72);
+  outline-offset: 5px;
+  border-radius: 2px;
+}
+
+.notification-overlay-copy button span {
+  font-size: 18px;
+  line-height: 0.8;
+}
+
+.notification-overlay-card > img {
+  justify-self: center;
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  border-radius: 50%;
+  clip-path: circle(49% at 50% 50%);
+  filter: drop-shadow(0 10px 16px rgba(233, 102, 19, 0.24));
+  user-select: none;
+  pointer-events: none;
+}
+
+.notification-overlay-progress {
+  position: absolute;
+  right: 18px;
+  bottom: 9px;
+  left: 18px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.notification-overlay-progress::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff7b1c, #ffb160);
+  transform-origin: left center;
+  animation: notification-overlay-countdown 6500ms linear forwards;
+}
+
+@keyframes notification-overlay-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes notification-overlay-countdown {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-overlay-card,
+  .notification-overlay-progress::after {
+    animation: none;
+  }
+}
+
+/* 内置模型隐藏与恢复默认 */
+.settings-dialog .settings-provider-list-header,
+.settings-dialog .settings-provider-row {
+  grid-template-columns: 40px minmax(260px, 1fr) 110px 104px 82px 124px;
+}
+
+.settings-dialog .settings-provider-row.is-hidden {
+  opacity: 0.58;
+}
+
+.settings-dialog .badge.provider-hidden {
+  border-color: color-mix(in srgb, var(--text-dim) 24%, transparent);
+  background: color-mix(in srgb, var(--text-dim) 10%, transparent);
+  color: var(--text-dim);
+}
+
+.settings-dialog .settings-provider-icon-action {
+  width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.settings-dialog .settings-provider-icon-action:hover {
+  background: rgba(var(--settings-blue-rgb), 0.1);
+  color: var(--settings-blue);
+}
+
+@media (max-width: 1050px) {
+  .settings-dialog .settings-provider-list-header,
+  .settings-dialog .settings-provider-row {
+    grid-template-columns: 34px minmax(200px, 1fr) 92px 88px 64px 112px;
+  }
+}
+
+/* ---- MCP 服务器管理（设置页） ---- */
+
+.mcp-settings-panel {
+  display: grid;
+  gap: 14px;
+  justify-items: stretch;
+}
+
+.mcp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+}
+
+.mcp-toolbar .mcp-summary {
+  margin-left: auto;
+  font-size: var(--text-lg);
+  color: var(--muted);
+}
+
+.mcp-add-button,
+.mcp-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 7px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+
+.mcp-add-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-weight: 600;
+}
+
+.mcp-refresh-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.mcp-notice {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elev);
+  color: var(--muted);
+  font-size: var(--text-lg);
+}
+
+.mcp-server-form {
+  display: grid;
+  gap: var(--space-12);
+  padding: 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+}
+
+.mcp-server-form > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.mcp-server-form > header svg {
+  color: var(--accent);
+}
+
+.mcp-server-form > header button {
+  margin-left: auto;
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mcp-form-row {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  align-items: center;
+  gap: var(--space-12);
+  font-size: var(--text-lg);
+}
+
+.mcp-form-row > span {
+  color: var(--muted);
+}
+
+.mcp-form-row input,
+.mcp-form-row textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--text-lg);
+  font-family: inherit;
+}
+
+.mcp-form-row.mcp-form-tall {
+  align-items: start;
+}
+
+.mcp-form-row.mcp-form-tall > span {
+  padding-top: var(--space-8);
+}
+
+.mcp-form-row textarea {
+  min-height: 66px;
+  resize: vertical;
+  font-family: var(--mono-font, ui-monospace, monospace);
+}
+
+.mcp-transport-options {
+  display: inline-flex;
+  gap: var(--space-6);
+}
+
+.mcp-transport-options button {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mcp-transport-options button.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mcp-form-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-lg);
+  color: var(--muted);
+}
+
+.mcp-form-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: 0;
+  color: #e5484d;
+  font-size: var(--text-lg);
+}
+
+.mcp-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.mcp-form-actions button {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+
+.mcp-form-actions button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-weight: 600;
+}
+
+.mcp-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-6);
+  padding: 34px 0;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+}
+
+.mcp-empty svg {
+  opacity: 0.6;
+}
+
+.mcp-empty p {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.mcp-empty small {
+  font-size: var(--text-md);
+}
+
+.mcp-server-list {
+  display: grid;
+  gap: var(--space-10);
+}
+
+.mcp-server-card {
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+}
+
+.mcp-server-card[data-status="connected"] {
+  border-left-color: #30a46c;
+}
+
+.mcp-server-card[data-status="failed"] {
+  border-left-color: #e5484d;
+}
+
+.mcp-server-card[data-status="disabled"],
+.mcp-server-card[data-status="unknown"] {
+  border-left-color: var(--border);
+}
+
+.mcp-server-card > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.mcp-server-card > header strong {
+  font-size: var(--text-xl);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.mcp-status-dot[data-status="connected"] {
+  background: #30a46c;
+  box-shadow: 0 0 0 3px rgba(48, 164, 108, 0.18);
+}
+
+.mcp-status-dot[data-status="failed"] {
+  background: #e5484d;
+}
+
+.mcp-status-dot[data-status="disabled"] {
+  opacity: 0.4;
+}
+
+.mcp-transport-badge {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.mcp-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.mcp-card-actions .icon {
+  display: inline-flex;
+  padding: 5px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mcp-card-actions .icon:hover {
+  color: var(--text);
+}
+
+.mcp-card-actions .icon.danger:hover {
+  color: #e5484d;
+}
+
+.mcp-card-actions .icon:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mcp-toggle input {
+  accent-color: var(--accent);
+}
+
+.mcp-card-detail {
+  margin: var(--space-7) 0 0;
+  color: var(--muted);
+  font-size: var(--text-md);
+  font-family: var(--mono-font, ui-monospace, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-card-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  margin-top: var(--space-7);
+}
+
+.mcp-status-label {
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
+.mcp-status-label.failed {
+  color: #e5484d;
+}
+
+.mcp-status-label.muted {
+  opacity: 0.7;
+}
+
+.mcp-tools-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+
+.mcp-tools-toggle:hover {
+  color: var(--text);
+}
+
+.mcp-tool-list {
+  display: grid;
+  gap: var(--space-6);
+  margin: var(--space-9) 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.mcp-tool-list li {
+  display: grid;
+  gap: 2px;
+}
+
+.mcp-tool-list code {
+  font-size: var(--text-md);
+  color: var(--text);
+}
+
+.mcp-tool-list small {
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+
+/* ---- 插件市场（设置页） ---- */
+
+.plugin-market-panel {
+  display: grid;
+  gap: var(--space-12);
+}
+
+.plugin-market-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.plugin-market-toolbar .mcp-add-button {
+  flex: none;
+}
+
+.plugin-market-search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--muted);
+  transition: border-color 0.15s ease;
+}
+
+.plugin-market-search:focus-within {
+  border-color: var(--accent);
+}
+
+.plugin-market-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: var(--text-lg);
+  outline: none;
+}
+
+.plugin-market-search button {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.plugin-market-search button:hover {
+  color: var(--text);
+}
+
+.plugin-market-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.plugin-market-chips > button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: var(--text-md);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.plugin-market-chips > button em {
+  font-style: normal;
+  font-size: var(--text-sm);
+  opacity: 0.75;
+}
+
+.plugin-market-chips > button:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--text) 25%, transparent);
+}
+
+.plugin-market-chips > button.active {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.plugin-market-chip-actions {
+  display: inline-flex;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.plugin-market-chip-actions .icon {
+  display: inline-flex;
+  padding: 5px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.plugin-market-chip-actions .icon:hover {
+  color: var(--text);
+}
+
+.plugin-market-chip-actions .icon.danger:hover {
+  color: #e5484d;
+}
+
+.plugin-market-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(229, 72, 77, 0.4);
+  border-radius: var(--radius-md);
+  color: #e5484d;
+  font-size: var(--text-md);
+}
+
+.plugin-installed-strip {
+  display: grid;
+  gap: var(--space-8);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+}
+
+.plugin-installed-strip > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.plugin-installed-strip > header svg {
+  color: #30a46c;
+}
+
+.plugin-installed-strip > header em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.plugin-installed-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.plugin-installed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: 3px 5px 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: var(--text-md);
+}
+
+.plugin-installed-chip strong {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-md);
+}
+
+.plugin-installed-chip small {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.plugin-installed-chip button {
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.plugin-installed-chip button:hover {
+  color: #e5484d;
+}
+
+.plugin-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-10);
+}
+
+.plugin-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.plugin-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  transform: translateY(-1px);
+}
+
+.plugin-card > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  min-width: 0;
+}
+
+.plugin-card > header strong {
+  font-size: var(--text-xl);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-version {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.plugin-category {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.plugin-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.plugin-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  opacity: 0.8;
+}
+
+.plugin-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.plugin-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.plugin-badge.skill {
+  border-color: rgba(48, 164, 108, 0.45);
+  color: #30a46c;
+}
+
+.plugin-badge.mcp {
+  border-color: rgba(105, 64, 214, 0.45);
+  color: #9d7bff;
+}
+
+.plugin-badge.claude-only {
+  opacity: 0.75;
+}
+
+.plugin-card-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+.plugin-source {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.plugin-card-footer button {
+  flex: none;
+  padding: 5px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+
+.plugin-card-footer button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-weight: 600;
+}
+
+.plugin-card-footer button.danger:hover {
+  border-color: #e5484d;
+  color: #e5484d;
+}
+
+.plugin-card-footer button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.plugin-market-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+
+.mcp-form-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+
+/* ---- 文件预览：头部单行布局与操作按钮 ---- */
+
+.file-preview-file-line {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.file-preview-file-line svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.file-preview-file-line strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xl);
+}
+
+.file-preview-file-line span {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+.file-preview-header-actions {
+  flex: none;
+  display: inline-flex;
+  gap: var(--space-5);
+  padding-left: var(--space-12);
+  margin-left: auto;
+}
+
+.file-preview-header-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.file-preview-header-actions button:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.file-preview-edit-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.file-preview-edit-bar > span {
+  font-size: var(--text-md);
+  color: var(--muted);
+}
+
+.file-preview-edit-bar > span.dirty {
+  color: #f5a623;
+  font-weight: 600;
+}
+
+.file-preview-edit-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+
+.file-preview-edit-bar button:first-of-type {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-weight: 600;
+}
+
+.file-preview-edit-bar button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.file-preview-editor {
+  flex: 1;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: var(--text-lg);
+  line-height: 1.6;
+  resize: none;
+  tab-size: 2;
+}
+
+/* 协作任务图阶段分组 */
+
+
+
+
+
+
+
+
+
+
+
+
+.collaboration-stage-group {
+  display: contents;
+}
+
+.collaboration-stage-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-10);
+  padding: 8px 10px;
+  margin-top: var(--space-6);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--muted);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.collaboration-stage-header.gate {
+  background: rgba(245, 166, 35, 0.12);
+  color: #f5a623;
+}
+
+.collaboration-stage-header.done {
+  background: rgba(48, 164, 108, 0.1);
+  color: #30a46c;
+}
+
+.collaboration-stage-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.collaboration-stage-progress em {
+  font-style: normal;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(245, 166, 35, 0.18);
+  font-size: var(--text-sm);
+}
+
+.collaboration-gate-approve {
+  margin-left: var(--space-8);
+  padding: 3px 11px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.collaboration-gate-approve:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ---- 提示词优化：composer 优化按钮与建议卡 ---- */
+
+.multi-agent-optimize-trigger {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.multi-agent-optimize-trigger:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.multi-agent-optimize-trigger.busy {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  animation: optimize-pulse 1.2s ease-in-out infinite;
+}
+
+.multi-agent-optimize-trigger:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@keyframes optimize-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* Composer footer：单行紧凑布局。
+   左 = 目标分段控件（+ | 总控）与权限模式；右 = 动作组。 */
+.multi-agent-composer .multi-agent-composer-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--space-5);
+  padding: 6px 8px 8px;
+  min-width: 0;
+}
+
+.multi-agent-composer .multi-agent-target-picker {
+  flex: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+}
+
+.multi-agent-composer .multi-agent-target-picker:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.multi-agent-composer .multi-agent-target-trigger {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.multi-agent-composer .multi-agent-target-trigger:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: var(--border);
+}
+
+.multi-agent-composer .multi-agent-quick-target-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--text-md);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.multi-agent-composer .multi-agent-quick-target-trigger:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+}
+
+.multi-agent-composer .multi-agent-target-summary {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 9px;
+  font-size: var(--text-md);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.multi-agent-composer .multi-agent-quick-mode-control {
+  flex: none;
+  position: relative;
+}
+
+.multi-agent-composer .multi-agent-quick-mode-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--text-md);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.multi-agent-composer .multi-agent-quick-mode-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--text);
+}
+
+.multi-agent-composer .multi-agent-composer-actions {
+  flex: none;
+  margin-left: auto;
+  gap: 3px;
+}
+/* Composer 动作按钮统一 28px，与上下文控件同高。 */
+.multi-agent-composer .multi-agent-optimize-trigger {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+
+/* 目标菜单：贴触发器、固定宽度向上展开，不被窄容器压扁。 */
+.multi-agent-quick-target-menu {
+  left: 0;
+  bottom: calc(100% + 6px);
+  width: 216px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38), 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+.multi-agent-composer .multi-agent-target-menu {
+  left: 0;
+  right: auto;
+  bottom: calc(100% + 6px);
+  width: min(264px, 78vw);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38), 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+

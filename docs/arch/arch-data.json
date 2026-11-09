@@ -1,0 +1,1346 @@
+{
+  "project": "crewvela",
+  "generated": "2026-09-07",
+  "deps": {
+    "nodes": [
+      {
+        "id": "App",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "React 主界面与工作区装配"
+      },
+      {
+        "id": "acp",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 acp 模块"
+      },
+      {
+        "id": "appearance",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 appearance 模块"
+      },
+      {
+        "id": "archivedSessions",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 archivedSessions 模块"
+      },
+      {
+        "id": "automation",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "定时与事件触发任务"
+      },
+      {
+        "id": "clipboard_image",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 clipboard_image 模块"
+      },
+      {
+        "id": "codexAccounts",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 codexAccounts 模块"
+      },
+      {
+        "id": "codex_accounts",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 codex_accounts 模块"
+      },
+      {
+        "id": "codex_quota",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 codex_quota 模块"
+      },
+      {
+        "id": "companionMotion",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 companionMotion 模块"
+      },
+      {
+        "id": "companionPosition",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 companionPosition 模块"
+      },
+      {
+        "id": "companionSettings",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 companionSettings 模块"
+      },
+      {
+        "id": "components",
+        "path": "src/components",
+        "files": 50,
+        "lang": "ts",
+        "summary": "会话、项目协作、Git、设置等 UI"
+      },
+      {
+        "id": "control",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "普通会话消息队列、广播与 PTY 投递"
+      },
+      {
+        "id": "controlSurface",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 controlSurface 模块"
+      },
+      {
+        "id": "customSkins",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 customSkins 模块"
+      },
+      {
+        "id": "deepSkins",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 deepSkins 模块"
+      },
+      {
+        "id": "dynamic_skins",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 dynamic_skins 模块"
+      },
+      {
+        "id": "edge_speech",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 edge_speech 模块"
+      },
+      {
+        "id": "format",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 format 模块"
+      },
+      {
+        "id": "gitSidebarLimit",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 gitSidebarLimit 模块"
+      },
+      {
+        "id": "git_source_control",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "Git 状态、Diff、提交、同步和合并"
+      },
+      {
+        "id": "launcher",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 launcher 模块"
+      },
+      {
+        "id": "lib",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 lib 模块"
+      },
+      {
+        "id": "liveAvatarVideo",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 liveAvatarVideo 模块"
+      },
+      {
+        "id": "livekitVoice",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 livekitVoice 模块"
+      },
+      {
+        "id": "livekit_voice",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 livekit_voice 模块"
+      },
+      {
+        "id": "local_audio",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 local_audio 模块"
+      },
+      {
+        "id": "local_speech",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 local_speech 模块"
+      },
+      {
+        "id": "local_wake",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 local_wake 模块"
+      },
+      {
+        "id": "main",
+        "path": "src",
+        "files": 2,
+        "lang": "rust/ts",
+        "summary": "src 中的 main 模块"
+      },
+      {
+        "id": "messaging",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "crewvela sessions/send 命令与 outbox"
+      },
+      {
+        "id": "modelEvalGallery",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 modelEvalGallery 模块"
+      },
+      {
+        "id": "model_eval",
+        "path": "src-tauri/src",
+        "files": 2,
+        "lang": "rust",
+        "summary": "模型评测任务与结果"
+      },
+      {
+        "id": "multiAgentDraftState",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 multiAgentDraftState 模块"
+      },
+      {
+        "id": "multiAgentMention",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 multiAgentMention 模块"
+      },
+      {
+        "id": "multiAgentTaskPresentation",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 multiAgentTaskPresentation 模块"
+      },
+      {
+        "id": "multi_agent",
+        "path": "src-tauri/src/multi_agent",
+        "files": 8,
+        "lang": "rust",
+        "summary": "计划、调度、Runtime 适配、协作桥与持久化"
+      },
+      {
+        "id": "native_speech",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 native_speech 模块"
+      },
+      {
+        "id": "notificationCenter",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 notificationCenter 模块"
+      },
+      {
+        "id": "notificationHistory",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 notificationHistory 模块"
+      },
+      {
+        "id": "notificationSettings",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 notificationSettings 模块"
+      },
+      {
+        "id": "notification_history",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "通知记录持久化"
+      },
+      {
+        "id": "pet-preview",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 pet-preview 模块"
+      },
+      {
+        "id": "petBehavior",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 petBehavior 模块"
+      },
+      {
+        "id": "petSettings",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 petSettings 模块"
+      },
+      {
+        "id": "presets",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 presets 模块"
+      },
+      {
+        "id": "projects",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 projects 模块"
+      },
+      {
+        "id": "providerConfig",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 providerConfig 模块"
+      },
+      {
+        "id": "providerLogos",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 providerLogos 模块"
+      },
+      {
+        "id": "providerPresets",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 providerPresets 模块"
+      },
+      {
+        "id": "provider_network",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 provider_network 模块"
+      },
+      {
+        "id": "providers",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "模型服务配置与 Runtime 环境变量"
+      },
+      {
+        "id": "pty",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "跨平台伪终端进程托管和增量输出"
+      },
+      {
+        "id": "runtimeLogos",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 runtimeLogos 模块"
+      },
+      {
+        "id": "scripts",
+        "path": "scripts",
+        "files": 1,
+        "lang": "python",
+        "summary": "scripts 中的 scripts 模块"
+      },
+      {
+        "id": "secrets",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "凭据安全存储"
+      },
+      {
+        "id": "sessionNotifications",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 sessionNotifications 模块"
+      },
+      {
+        "id": "sessionSnapshot",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 sessionSnapshot 模块"
+      },
+      {
+        "id": "sessions",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "会话身份、状态机、恢复定位与 Hook 事件"
+      },
+      {
+        "id": "skill_center",
+        "path": "src-tauri/src",
+        "files": 2,
+        "lang": "rust",
+        "summary": "Skill 中央库、分发和版本管理"
+      },
+      {
+        "id": "skinIds",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 skinIds 模块"
+      },
+      {
+        "id": "src-tauri",
+        "path": "src-tauri",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri 中的 src-tauri 模块"
+      },
+      {
+        "id": "telemetry",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 telemetry 模块"
+      },
+      {
+        "id": "title_summary",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 title_summary 模块"
+      },
+      {
+        "id": "tools",
+        "path": "tools/livekit-agent",
+        "files": 2,
+        "lang": "python",
+        "summary": "tools/livekit-agent 中的 tools 模块"
+      },
+      {
+        "id": "transcript",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 transcript 模块"
+      },
+      {
+        "id": "types",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 types 模块"
+      },
+      {
+        "id": "unifiedControlRouter",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 unifiedControlRouter 模块"
+      },
+      {
+        "id": "usage",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 usage 模块"
+      },
+      {
+        "id": "vite.config",
+        "path": ".",
+        "files": 1,
+        "lang": "asset",
+        "summary": ". 中的 vite.config 模块"
+      },
+      {
+        "id": "voiceAudioLevels",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 voiceAudioLevels 模块"
+      },
+      {
+        "id": "voiceCommandRouter",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 voiceCommandRouter 模块"
+      },
+      {
+        "id": "voiceTurnPipeline",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 voiceTurnPipeline 模块"
+      },
+      {
+        "id": "voiceWake",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 voiceWake 模块"
+      },
+      {
+        "id": "windows_notification",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "Windows 原生通知"
+      },
+      {
+        "id": "workspaceTabs",
+        "path": "src",
+        "files": 1,
+        "lang": "ts",
+        "summary": "src 中的 workspaceTabs 模块"
+      },
+      {
+        "id": "workspace_trust",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "src-tauri/src 中的 workspace_trust 模块"
+      },
+      {
+        "id": "worktree",
+        "path": "src-tauri/src",
+        "files": 1,
+        "lang": "rust",
+        "summary": "普通会话的 Git Worktree 生命周期"
+      }
+    ],
+    "edges": [
+      {
+        "from": "petSettings",
+        "to": "assets",
+        "weight": 16
+      },
+      {
+        "from": "components",
+        "to": "assets",
+        "weight": 15
+      },
+      {
+        "from": "companionSettings",
+        "to": "assets",
+        "weight": 8
+      },
+      {
+        "from": "runtimeLogos",
+        "to": "assets",
+        "weight": 5
+      },
+      {
+        "from": "control",
+        "to": "sessions",
+        "weight": 3
+      },
+      {
+        "from": "messaging",
+        "to": "sessions",
+        "weight": 2
+      },
+      {
+        "from": "provider_network",
+        "to": "providers",
+        "weight": 2
+      },
+      {
+        "from": "main",
+        "to": "styles",
+        "weight": 1
+      },
+      {
+        "from": "main",
+        "to": "companion",
+        "weight": 1
+      },
+      {
+        "from": "pet-preview",
+        "to": "styles",
+        "weight": 1
+      },
+      {
+        "from": "components",
+        "to": "runtimeUpdates",
+        "weight": 1
+      },
+      {
+        "from": "components",
+        "to": "skillUpdates",
+        "weight": 1
+      },
+      {
+        "from": "control",
+        "to": "launcher",
+        "weight": 1
+      },
+      {
+        "from": "control",
+        "to": "providers",
+        "weight": 1
+      },
+      {
+        "from": "control",
+        "to": "pty",
+        "weight": 1
+      },
+      {
+        "from": "git_source_control",
+        "to": "launcher",
+        "weight": 1
+      },
+      {
+        "from": "git_source_control",
+        "to": "providers",
+        "weight": 1
+      },
+      {
+        "from": "launcher",
+        "to": "providers",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "acp",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "automation",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "clipboard_image",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "codex_accounts",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "codex_quota",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "control",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "dynamic_skins",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "edge_speech",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "git_source_control",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "launcher",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "livekit_voice",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "local_audio",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "local_speech",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "local_wake",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "messaging",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "model_eval",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "multi_agent",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "native_speech",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "notification_history",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "presets",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "projects",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "provider_network",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "providers",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "pty",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "secrets",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "sessions",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "skill_center",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "telemetry",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "title_summary",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "transcript",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "usage",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "windows_notification",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "workspace_trust",
+        "weight": 1
+      },
+      {
+        "from": "lib",
+        "to": "worktree",
+        "weight": 1
+      },
+      {
+        "from": "local_speech",
+        "to": "local_audio",
+        "weight": 1
+      },
+      {
+        "from": "local_wake",
+        "to": "local_audio",
+        "weight": 1
+      },
+      {
+        "from": "messaging",
+        "to": "control",
+        "weight": 1
+      },
+      {
+        "from": "model_eval",
+        "to": "launcher",
+        "weight": 1
+      },
+      {
+        "from": "model_eval",
+        "to": "multi_agent",
+        "weight": 1
+      },
+      {
+        "from": "model_eval",
+        "to": "providers",
+        "weight": 1
+      },
+      {
+        "from": "model_eval",
+        "to": "default_cases",
+        "weight": 1
+      },
+      {
+        "from": "pty",
+        "to": "launcher",
+        "weight": 1
+      },
+      {
+        "from": "pty",
+        "to": "providers",
+        "weight": 1
+      },
+      {
+        "from": "pty",
+        "to": "sessions",
+        "weight": 1
+      },
+      {
+        "from": "pty",
+        "to": "workspace_trust",
+        "weight": 1
+      },
+      {
+        "from": "sessions",
+        "to": "worktree",
+        "weight": 1
+      },
+      {
+        "from": "skill_center",
+        "to": "updates",
+        "weight": 1
+      },
+      {
+        "from": "telemetry",
+        "to": "pty",
+        "weight": 1
+      },
+      {
+        "from": "telemetry",
+        "to": "sessions",
+        "weight": 1
+      },
+      {
+        "from": "telemetry",
+        "to": "usage",
+        "weight": 1
+      },
+      {
+        "from": "title_summary",
+        "to": "launcher",
+        "weight": 1
+      },
+      {
+        "from": "title_summary",
+        "to": "providers",
+        "weight": 1
+      },
+      {
+        "from": "transcript",
+        "to": "sessions",
+        "weight": 1
+      },
+      {
+        "from": "transcript",
+        "to": "usage",
+        "weight": 1
+      },
+      {
+        "from": "usage",
+        "to": "sessions",
+        "weight": 1
+      },
+      {
+        "from": "multi_agent",
+        "to": "pty",
+        "weight": 1
+      },
+      {
+        "from": "multi_agent",
+        "to": "sessions",
+        "weight": 1
+      }
+    ]
+  },
+  "domains": {
+    "groups": [
+      {
+        "id": "ui",
+        "label": "React 控制面",
+        "summary": "操作入口与状态投影",
+        "members": [
+          "App",
+          "MultiAgentControl",
+          "MultiAgentWorkspace",
+          "ControlSidebar"
+        ]
+      },
+      {
+        "id": "tauri",
+        "label": "Tauri IPC 边界",
+        "summary": "前端 invoke 到 Rust command",
+        "members": [
+          "lib",
+          "types",
+          "controlSurface"
+        ]
+      },
+      {
+        "id": "coordination",
+        "label": "Multi-Agent 控制平面",
+        "summary": "计划、DAG 调度、治理",
+        "members": [
+          "coordinator",
+          "store",
+          "executor",
+          "governance"
+        ]
+      },
+      {
+        "id": "bridge",
+        "label": "Agent 协作桥",
+        "summary": "本机 HTTP/MCP + Bearer Scope",
+        "members": [
+          "bridge",
+          "message",
+          "artifact",
+          "approval",
+          "memory"
+        ]
+      },
+      {
+        "id": "runtimes",
+        "label": "Runtime 适配层",
+        "summary": "统一协作请求与 CLI 执行",
+        "members": [
+          "Claude Code",
+          "Codex",
+          "Kimi Code",
+          "Pi",
+          "OpenCode"
+        ]
+      },
+      {
+        "id": "execution",
+        "label": "执行与隔离",
+        "summary": "PTY、进程、会话恢复、Worktree",
+        "members": [
+          "pty",
+          "sessions",
+          "worktree",
+          "git_source_control"
+        ]
+      },
+      {
+        "id": "storage",
+        "label": "持久化事实源",
+        "summary": "SQLite 状态机与 FTS5",
+        "members": [
+          "ma_tasks",
+          "ma_runs",
+          "ma_messages",
+          "ma_artifacts",
+          "ma_events",
+          "ma_memory_entries"
+        ]
+      },
+      {
+        "id": "session-messaging",
+        "label": "普通会话互发",
+        "summary": "CLI outbox 到 PTY 输入",
+        "members": [
+          "messaging",
+          "mailbox.json",
+          "outbox/*.json",
+          "SessionActionQueue"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "ui",
+        "to": "tauri",
+        "label": "invoke"
+      },
+      {
+        "from": "tauri",
+        "to": "coordination",
+        "label": "command"
+      },
+      {
+        "from": "coordination",
+        "to": "storage",
+        "label": "事务"
+      },
+      {
+        "from": "coordination",
+        "to": "execution",
+        "label": "调度"
+      },
+      {
+        "from": "execution",
+        "to": "runtimes",
+        "label": "CLI/PTY"
+      },
+      {
+        "from": "runtimes",
+        "to": "bridge",
+        "label": "MCP/HTTP"
+      },
+      {
+        "from": "bridge",
+        "to": "storage",
+        "label": "读写"
+      },
+      {
+        "from": "session-messaging",
+        "to": "execution",
+        "label": "PTY 投递"
+      }
+    ]
+  },
+  "flows": [
+    {
+      "id": "plan-schedule",
+      "title": "需求到并行任务",
+      "symptom": "任务未启动时，依次检查结构化计划、依赖状态、wakeup、Agent 并发与工作区互斥。",
+      "nodes": [
+        {
+          "id": "user",
+          "label": "用户自然语言",
+          "code": "MultiAgentControl.tsx",
+          "detail": "选择 Runtime/Agent 并提交目标"
+        },
+        {
+          "id": "planner",
+          "label": "Claude 协调器",
+          "code": "coordinator.rs:415",
+          "detail": "JSON Schema 约束输出 Agent、任务和 DAG"
+        },
+        {
+          "id": "apply",
+          "label": "计划落库",
+          "code": "lib.rs:1295",
+          "detail": "创建项目、Agent、任务和依赖"
+        },
+        {
+          "id": "router",
+          "label": "任务路由",
+          "code": "executor.rs:897",
+          "detail": "筛选依赖已满足且能力匹配的候选任务"
+        },
+        {
+          "id": "claim",
+          "label": "事务领取",
+          "code": "store.rs:260",
+          "detail": "Immediate transaction 防止重复领取"
+        },
+        {
+          "id": "parallel",
+          "label": "并行 Run",
+          "code": "executor.rs:993",
+          "detail": "按 Agent 与写工作区互斥规则启动线程"
+        }
+      ],
+      "edges": [
+        {
+          "from": "user",
+          "to": "planner",
+          "label": "invoke"
+        },
+        {
+          "from": "planner",
+          "to": "apply",
+          "label": "CoordinatorPlan"
+        },
+        {
+          "from": "apply",
+          "to": "router",
+          "label": "SQLite DAG"
+        },
+        {
+          "from": "router",
+          "to": "claim",
+          "label": "ready"
+        },
+        {
+          "from": "claim",
+          "to": "parallel",
+          "label": "AgentRun"
+        }
+      ]
+    },
+    {
+      "id": "runtime-execution",
+      "title": "统一 Runtime 执行",
+      "symptom": "某个 Runtime 行为异常时，先看 adapter 命令参数，再看 PTY 输出规范化与 session locator。",
+      "nodes": [
+        {
+          "id": "request",
+          "label": "RuntimeRequest",
+          "code": "executor.rs:60",
+          "detail": "任务、Agent、依赖交付、消息、记忆和协作令牌"
+        },
+        {
+          "id": "adapter",
+          "label": "Runtime Adapter",
+          "code": "executor.rs:1604",
+          "detail": "八个适配器翻译为各 CLI 参数"
+        },
+        {
+          "id": "terminal",
+          "label": "PTY/子进程",
+          "code": "executor.rs:2290",
+          "detail": "执行、输出采集、取消与超时"
+        },
+        {
+          "id": "runtime",
+          "label": "Agent Runtime",
+          "code": "claude/codex/kimi/...",
+          "detail": "真实 CLI 进程执行工具和代码修改"
+        },
+        {
+          "id": "result",
+          "label": "结果与恢复定位",
+          "code": "executor.rs:2326",
+          "detail": "规范化输出并保存 sessionId/ptyId/cwd"
+        },
+        {
+          "id": "verify",
+          "label": "验收与结算",
+          "code": "executor.rs:1192",
+          "detail": "运行验收命令、保存提交和更新状态"
+        }
+      ],
+      "edges": [
+        {
+          "from": "request",
+          "to": "adapter",
+          "label": "统一接口"
+        },
+        {
+          "from": "adapter",
+          "to": "terminal",
+          "label": "Command"
+        },
+        {
+          "from": "terminal",
+          "to": "runtime",
+          "label": "stdin/stdout"
+        },
+        {
+          "from": "runtime",
+          "to": "result",
+          "label": "JSON/文本"
+        },
+        {
+          "from": "result",
+          "to": "verify",
+          "label": "summary"
+        }
+      ]
+    },
+    {
+      "id": "agent-communication",
+      "title": "Agent 跨 Runtime 通信",
+      "symptom": "消息不可见时，检查 Run token 是否有效、目标 Agent scope、ma_messages 是否落库及下一次 Prompt 是否带入。",
+      "nodes": [
+        {
+          "id": "agent-a",
+          "label": "Agent A",
+          "code": "任意 Runtime",
+          "detail": "调用 cc_message_send；无 MCP 时 POST /v1/command"
+        },
+        {
+          "id": "local-bridge",
+          "label": "本地协作桥",
+          "code": "bridge.rs:81",
+          "detail": "127.0.0.1 随机端口，Bearer token 绑定 RunScope"
+        },
+        {
+          "id": "dispatch",
+          "label": "Scope 校验与分发",
+          "code": "bridge.rs:214",
+          "detail": "只允许当前 project/task/run/agent/cwd"
+        },
+        {
+          "id": "sqlite",
+          "label": "SQLite 事实源",
+          "code": "store.rs:780",
+          "detail": "ma_messages、artifacts、approvals、events"
+        },
+        {
+          "id": "agent-b",
+          "label": "Agent B 下一次 Run",
+          "code": "executor.rs:1173",
+          "detail": "scoped_messages 写入统一任务 Prompt"
+        }
+      ],
+      "edges": [
+        {
+          "from": "agent-a",
+          "to": "local-bridge",
+          "label": "MCP/HTTP"
+        },
+        {
+          "from": "local-bridge",
+          "to": "dispatch",
+          "label": "Bearer"
+        },
+        {
+          "from": "dispatch",
+          "to": "sqlite",
+          "label": "事务写入"
+        },
+        {
+          "from": "sqlite",
+          "to": "agent-b",
+          "label": "按范围读取"
+        }
+      ]
+    },
+    {
+      "id": "worktree-handoff",
+      "title": "依赖交付与集成",
+      "symptom": "集成失败时，检查前置 artifact 的 commit hash、目标 Worktree、主工作区脏状态和 cherry-pick/merge 冲突。",
+      "nodes": [
+        {
+          "id": "worker",
+          "label": "Worker 修改代码",
+          "code": "独立 Worktree",
+          "detail": "每个写任务隔离工作目录"
+        },
+        {
+          "id": "checkpoint",
+          "label": "任务检查点",
+          "code": "executor.rs:1319",
+          "detail": "提交变更并记录 content hash"
+        },
+        {
+          "id": "artifact",
+          "label": "Artifact",
+          "code": "ma_artifacts",
+          "detail": "URI、摘要、提交哈希持久化"
+        },
+        {
+          "id": "dependency",
+          "label": "后继 Worktree",
+          "code": "executor.rs:3621",
+          "detail": "把依赖提交 cherry-pick 到后继任务"
+        },
+        {
+          "id": "review",
+          "label": "Reviewer/Integrator",
+          "code": "cc_review_submit",
+          "detail": "结构化批准或要求修改"
+        },
+        {
+          "id": "main",
+          "label": "主工作区",
+          "code": "executor.rs:1429",
+          "detail": "批准后 --no-ff merge，冲突则 abort"
+        }
+      ],
+      "edges": [
+        {
+          "from": "worker",
+          "to": "checkpoint",
+          "label": "git commit"
+        },
+        {
+          "from": "checkpoint",
+          "to": "artifact",
+          "label": "publish"
+        },
+        {
+          "from": "artifact",
+          "to": "dependency",
+          "label": "cherry-pick"
+        },
+        {
+          "from": "dependency",
+          "to": "review",
+          "label": "验收"
+        },
+        {
+          "from": "review",
+          "to": "main",
+          "label": "approve"
+        }
+      ]
+    }
+  ]
+}

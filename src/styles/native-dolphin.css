@@ -1,0 +1,108 @@
+.native-dolphin-swim {
+  --native-dolphin-cycle: 22s;
+  --native-dolphin-tail-cycle: 1.25s;
+  --native-dolphin-fin-cycle: 3.2s;
+  --native-dolphin-pose-cycle: 4.4s;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.native-agent-character:has(.native-dolphin-swim) {
+  width: min(520px, 100%);
+  height: auto;
+  aspect-ratio: 13 / 7;
+}
+
+.native-dolphin-travel {
+  position: absolute;
+  top: 50%;
+  left: 14%;
+  width: 72%;
+  aspect-ratio: 4 / 3;
+  perspective: 900px;
+  transform: translate3d(-13%,-50%,0);
+  animation: native-dolphin-travel var(--native-dolphin-cycle) linear infinite;
+}
+
+.native-dolphin-heading,
+.native-dolphin-pose,
+.native-dolphin-gesture,
+.native-dolphin-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.native-dolphin-heading {
+  transform-style: preserve-3d;
+  animation: native-dolphin-heading var(--native-dolphin-cycle) linear infinite;
+}
+
+.native-dolphin-pose { animation: native-dolphin-buoy var(--native-dolphin-pose-cycle) ease-in-out infinite; }
+.native-dolphin-gesture { transform-origin: 78% 45%; animation: native-dolphin-spout-pose var(--native-dolphin-cycle) ease-in-out infinite; }
+.native-dolphin-layer { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; }
+.native-dolphin-body { -webkit-mask-image: linear-gradient(90deg, transparent 19%, #000 29%); mask-image: linear-gradient(90deg, transparent 19%, #000 29%); }
+.native-dolphin-tail { -webkit-mask-image: linear-gradient(90deg, #000 19%, transparent 29%); mask-image: linear-gradient(90deg, #000 19%, transparent 29%); transform-origin: 27% 54%; animation: native-dolphin-tail-kick var(--native-dolphin-tail-cycle) cubic-bezier(.56, 0, .4, 1) infinite; }
+
+.native-dolphin-fin { position: absolute; inset: 0; transform-origin: 59% 69%; }
+.native-dolphin-fin-art { transform-origin: inherit; }
+.native-dolphin-fin--front { animation: native-dolphin-front-open var(--native-dolphin-cycle) linear infinite; }
+.native-dolphin-fin--front .native-dolphin-fin-art { clip-path: polygon(38% 84%,40% 79%,44% 74%,49% 69%,54% 65%,58% 62%,61% 61%,64% 63%,66% 66%,65% 69%,62% 73%,58% 77%,54% 81%,49% 84%,44% 85%); animation: native-dolphin-front-stroke var(--native-dolphin-fin-cycle) ease-in-out infinite; }
+.native-dolphin-fin--rear { transform-origin: 65% 85%; animation: native-dolphin-rear-open var(--native-dolphin-cycle) linear infinite; }
+.native-dolphin-fin--rear .native-dolphin-fin-art { clip-path: polygon(57% 89%,59% 84%,62% 81%,65% 79%,68% 79%,71% 81%,73% 83%,72% 86%,70% 89%,67% 91%,63% 91%,60% 90%); animation: native-dolphin-rear-stroke var(--native-dolphin-fin-cycle) ease-in-out -1s infinite; }
+
+.native-dolphin-spray { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.native-dolphin-blowhole { fill: #1557af; stroke: #91e5ff; stroke-width: .28; }
+.native-dolphin-jet { opacity: 0; transform-box: view-box; transform-origin: 78px 23.4px; animation: native-dolphin-jet var(--native-dolphin-cycle) linear infinite; }
+.native-dolphin-water-highlight { fill: none; stroke: #f1fcff; stroke-opacity: .8; stroke-width: .28; stroke-linecap: round; }
+.native-dolphin-drop { opacity: 0; transform-box: fill-box; transform-origin: center; animation: native-dolphin-droplets var(--native-dolphin-cycle) linear infinite; }
+.native-dolphin-drop-highlight { fill: #f4fcff; fill-opacity: .85; }
+.native-dolphin-drop--0 { --water-drift: -3px; --water-rise: -2px; }
+.native-dolphin-drop--1 { --water-drift: -1px; --water-rise: -4px; }
+.native-dolphin-drop--2 { --water-drift: 1.5px; --water-rise: -3px; }
+.native-dolphin-drop--3 { --water-drift: 3px; --water-rise: -2px; }
+.native-dolphin-drop--4 { --water-drift: -4px; --water-rise: -1px; }
+.native-dolphin-drop--5 { --water-drift: 4px; --water-rise: -.5px; }
+
+@keyframes native-dolphin-travel {
+  0%,4%,100% { transform: translate3d(-13%,-50%,0); }
+  4% { animation-timing-function: cubic-bezier(.42,0,.58,1); }
+  46%,50%,58% { transform: translate3d(13%,-50%,0); }
+  58% { animation-timing-function: cubic-bezier(.42,0,.58,1); }
+  96% { transform: translate3d(-13%,-50%,0); }
+}
+@keyframes native-dolphin-heading {
+  0%,46% { transform: rotateY(0deg); }
+  46% { animation-timing-function: cubic-bezier(.42,0,.58,1); }
+  50%,58% { transform: rotateY(180deg); }
+  96% { transform: rotateY(180deg); animation-timing-function: cubic-bezier(.42,0,.58,1); }
+  100% { transform: rotateY(360deg); }
+}
+@keyframes native-dolphin-spout-pose { 0%,50%,58%,100% { transform: translateY(0) rotate(0); } 51% { transform: translateY(-3px) rotate(-.4deg); } 53%,55% { transform: translateY(-8px) rotate(-1deg); } 57% { transform: translateY(-1px) rotate(-.2deg); } }
+@keyframes native-dolphin-buoy { 0%,100% { transform: translateY(2px) rotate(-.7deg); } 35% { transform: translateY(-4px) rotate(.8deg); } 67% { transform: translateY(1px) rotate(.2deg); } }
+@keyframes native-dolphin-tail-kick { 0%,100% { transform: rotate(-6deg) scaleY(.98); } 35% { transform: rotate(-1deg) scaleY(1); } 58% { transform: rotate(8deg) scaleY(1.035); } 76% { transform: rotate(4deg) scaleY(1.01); } }
+@keyframes native-dolphin-front-stroke { 0%,100% { transform: rotate(-2.5deg); } 38% { transform: rotate(2deg); } 64% { transform: rotate(3.5deg); } }
+@keyframes native-dolphin-rear-stroke { 0%,100% { transform: rotate(1.5deg); } 39% { transform: rotate(-1deg); } 69% { transform: rotate(-2deg); } }
+@keyframes native-dolphin-front-open { 0%,4%,100% { rotate: -8deg; } 8%,42%,62%,92% { rotate: 0deg; } 46%,50%,58%,96% { rotate: -8deg; } }
+@keyframes native-dolphin-rear-open { 0%,4%,100% { rotate: 5deg; } 8%,42%,62%,92% { rotate: 0deg; } 46%,50%,58%,96% { rotate: 5deg; } }
+@keyframes native-dolphin-jet {
+  0%,50%,57.5%,100% { opacity: 0; transform: scale(.7,0); }
+  51% { opacity: .7; transform: scale(.85,.45); }
+  52.5% { opacity: .95; transform: scale(1,1); }
+  54% { opacity: .9; transform: scale(1.07,.93); }
+  55% { opacity: .8; transform: scale(.95,.85); }
+  56.5% { opacity: .3; transform: scale(.8,.3); }
+}
+@keyframes native-dolphin-droplets {
+  0%,51%,59%,100% { opacity: 0; transform: translate(0,5px) scale(.3); }
+  52% { opacity: .85; transform: translate(0,0) scale(.8,1.15); animation-timing-function: ease-out; }
+  54% { opacity: .95; transform: translate(var(--water-drift),var(--water-rise)) scale(1); animation-timing-function: ease-in; }
+  56% { opacity: .85; transform: translate(var(--water-drift),3px) scale(.95,1.1); }
+  58% { opacity: 0; transform: translate(var(--water-drift),12px) scale(.65,.9); }
+}
+
+@media (max-height: 800px) { .native-agent-character:has(.native-dolphin-swim) { width: min(450px,100%); } }
+@container (max-width: 650px) { .native-agent-character:has(.native-dolphin-swim) { width: min(420px,100%); } }
+@media (prefers-reduced-motion: reduce) { .native-dolphin-travel { transform: translate3d(0,-50%,0); } .native-dolphin-jet,.native-dolphin-droplets { display: none; } }

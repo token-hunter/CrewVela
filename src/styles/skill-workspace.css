@@ -1,0 +1,141 @@
+/* Shared settings chrome must not change size when switching sections. */
+.settings-overlay > .settings-dialog .settings-content > .settings-content-inner {
+  width: min(1240px, calc(100% - 64px));
+  max-width: none;
+  padding-top: 32px;
+  padding-bottom: 32px;
+}
+.settings-overlay > .settings-dialog .settings-content .settings-heading {
+  min-height: 0;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+}
+.settings-overlay > .settings-dialog .settings-content .settings-heading h2 { font-size: 26px; line-height: 1.3; }
+.settings-overlay > .settings-dialog .settings-content .settings-heading p { font-size: 13px; line-height: 1.6; color: var(--text-dim); }
+.settings-dialog .settings-nav { padding-top: 16px; }
+.settings-dialog .settings-nav-group .settings-nav-item { min-height: 34px; padding-top: 4px; padding-bottom: 4px; }
+.settings-dialog .settings-nav-group .settings-nav-item + .settings-nav-item { margin-top: 2px; }
+.settings-dialog .settings-nav-group + .settings-nav-group { margin-top: 12px; }
+.skill-center.skill-workspace {
+  --skill-muted: color-mix(in srgb, var(--text) 72%, var(--bg));
+  container-type: inline-size;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+  font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+}
+.skill-workspace .skill-center-toolbar { flex-direction: column; align-items: stretch; padding: 0; gap: 16px; border: 0; }
+.skill-workspace .skill-center-tabs { gap: 20px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.skill-workspace .skill-center-tabs button {
+  flex: none;
+  min-height: 42px;
+  padding: 0 0 10px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--skill-muted);
+  font: inherit;
+  white-space: nowrap;
+}
+.skill-workspace .skill-center-tabs button.active {
+  border-bottom-color: var(--accent);
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+}
+.skill-workspace .skill-center-actions { flex-wrap: wrap; gap: 8px; padding: 0 0 16px; }
+.skill-workspace .btn { min-height: 34px; border-radius: 5px; font-size: 13px; box-shadow: none; }
+.skill-workspace .skill-center-scopebar {
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+  background: transparent;
+}
+.skill-workspace .skill-center-scopebar label { min-width: 0; color: var(--skill-muted); font-size: 12px; grid-template-columns: auto minmax(100px, 180px); }
+.skill-workspace .skill-center-scopebar :is(input, select) { width: 100%; min-width: 0; padding: 6px 8px; font-size: 13px; border-radius: 5px; }
+.skill-workspace .skill-center-callout { margin-left: auto; font-size: 12px; color: var(--skill-muted); }
+.skill-workspace .skill-center-callout svg { flex: none; }
+.skill-workspace .skill-center-matrix-wrap {
+  min-height: 220px;
+  max-height: 58vh;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  isolation: isolate;
+}
+.skill-workspace .skill-center-matrix { min-width: 980px; }
+.skill-workspace .skill-center-matrix :is(th, td) { border-right: 0; padding: 8px; }
+.skill-workspace .skill-center-matrix thead th { height: 64px; padding: 12px; }
+.skill-workspace .skill-center-matrix thead th:first-child,
+.skill-workspace .skill-center-matrix tbody th { width: 220px; }
+.skill-workspace .skill-center-matrix thead strong { font-size: 13px; font-weight: 600; }
+.skill-workspace .skill-center-matrix thead strong i { display: block; margin: 4px 0 0; font-size: 11px; }
+.skill-workspace .skill-center-matrix thead small { font-size: 11px; overflow-wrap: anywhere; }
+.skill-workspace .skill-asset-cell { font-size: 14px; }
+.skill-workspace .skill-asset-cell small { font-size: 11px; color: var(--skill-muted); }
+.skill-workspace .skill-asset-update { padding: 0; border: 0; border-radius: 0; font-size: 12px; color: var(--skill-muted); }
+.skill-workspace .skill-matrix-cell { min-height: 58px; padding: 10px 8px; border-radius: 5px; background: transparent; }
+.skill-workspace .skill-matrix-cell:hover { background: var(--bg-hover); }
+.skill-workspace .skill-matrix-cell.checked { background: var(--accent-soft); }
+.skill-workspace td:has(.skill-cell-remove) .skill-matrix-cell { padding-right: 28px; }
+.skill-workspace .skill-deploy-status { font-size: 12px; font-weight: 500; }
+.skill-workspace .skill-matrix-cell small { font-size: 11px; color: var(--skill-muted); }
+.skill-workspace .skill-cell-remove { display: grid; opacity: .65; width: 24px; height: 24px; }
+.skill-workspace .skill-cell-remove:is(:hover, :focus-visible) { opacity: 1; }
+.skill-workspace .skill-center-footer { flex-wrap: wrap; margin: 0; padding: 16px 0 0; border: 0; background: transparent; }
+.skill-workspace .skill-center-footer > div { flex-wrap: wrap; }
+.skill-workspace .skill-center-footer > span { font-size: 12px; color: var(--skill-muted); }
+.skill-workspace .skill-center-footer input { min-width: 0; min-height: 34px; padding: 6px 8px; font-size: 13px; }
+.skill-workspace .skill-sets-layout { grid-template-columns: 280px minmax(0, 1fr); min-height: 0; padding: 12px 0; gap: 24px; }
+.skill-workspace .skill-set-compose { border: 0; border-radius: 6px; background: var(--bg-elev); }
+.skill-workspace .skill-set-compose h3 { font-size: 14px; }
+.skill-workspace .skill-set-compose :is(p, small) { color: var(--skill-muted); font-size: 12px; }
+.skill-workspace .skill-set-compose :is(input, select) { min-width: 0; width: 100%; padding: 7px 10px; font-size: 13px; }
+.skill-workspace .skill-set-list article { border-width: 0 0 1px; border-radius: 0; background: transparent; }
+.skill-workspace .skill-preview-layout { grid-template-columns: 200px minmax(0, 1fr); min-height: 420px; border-top: 1px solid var(--border); }
+.skill-workspace .skill-preview-main { padding: 16px 0 0 20px; }
+.skill-workspace .skill-preview-main > header { flex-wrap: wrap; }
+.skill-workspace .skill-risk-strip { gap: 8px 16px; font-size: 12px; overflow-wrap: anywhere; }
+.skill-workspace .skill-risk-strip span { min-width: 0; }
+.skill-workspace .skill-preview-columns { grid-template-columns: minmax(0, 1fr) 200px; }
+.skill-workspace .skill-preview-columns pre { font-size: 13px; overflow-wrap: anywhere; }
+.skill-workspace .skill-preview-code > strong { font-size: 12px; }
+.skill-workspace .skill-preview-columns aside span { font-size: 12px; }
+.skill-workspace :is(.skill-asset-list small, .skill-preview-main p) { font-size: 12px; color: var(--skill-muted); }
+.skill-workspace .skill-center-message { margin: 0 0 12px; font-size: 13px; overflow-wrap: anywhere; }
+.skill-workspace .skill-center-modal { box-sizing: border-box; max-width: 100%; border-radius: 8px; }
+.skill-workspace .skill-center-modal input { width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 10px; }
+.skill-workspace .skill-center-modal label { min-width: 0; }
+.skill-workspace .skill-market-toolbar { grid-template-columns: auto minmax(160px, 1fr) minmax(120px, 180px) 120px auto; padding: 12px 0; }
+.skill-workspace :is(button, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@container (max-width: 920px) {
+  .skill-workspace .skill-center-callout { width: 100%; margin-left: 0; }
+  .skill-workspace .skill-market-toolbar { display: flex; flex-wrap: wrap; }
+  .skill-workspace .skill-market-search { flex: 1 1 220px; }
+  .skill-workspace .skill-preview-columns { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .skill-workspace .skill-preview-code { min-height: 300px; max-height: 480px; }
+  .skill-workspace .skill-preview-columns aside { max-height: 180px; }
+}
+@container (max-width: 640px) {
+  .skill-workspace .skill-center-matrix thead th:first-child,
+  .skill-workspace .skill-center-matrix tbody th { width: 140px; }
+  .skill-workspace .skill-sets-layout, .skill-workspace .skill-preview-layout { grid-template-columns: minmax(0, 1fr); }
+  .skill-workspace .skill-preview-main { padding: 16px 0 0; }
+  .skill-workspace .skill-asset-list { max-height: 180px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .skill-workspace .skill-set-list article { grid-template-columns: minmax(0, 1fr) auto; }
+  .skill-workspace .skill-center-footer > div { width: 100%; }
+  .skill-workspace .skill-center-scopebar label { width: 100%; grid-template-columns: 80px minmax(0, 1fr); }
+  .skill-workspace .skill-center-tabs { gap: 16px; }
+}
+@media (max-width: 760px) {
+  .settings-overlay > .settings-dialog .settings-content > .settings-content-inner {
+    width: calc(100% - 32px);
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
+}
+@media (max-width: 400px) {
+  .skill-workspace .skill-import-grid { grid-template-columns: minmax(0, 1fr); }
+  .skill-workspace .skill-center-footer input { width: 100%; }
+}

@@ -1,0 +1,41 @@
+import assert from "node:assert/strict";
+import { chromium } from "playwright";
+import { mkdirSync } from "node:fs";
+
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  const release = (command, error) => page.evaluate(([command, error]) => window.mcpFixture.release(command, error), [command, error]);
+  await page.goto(new URL("/tests/fixtures/mcp-settings-ui.html", process.env.CREWVELA_UI_URL || "http://127.0.0.1:1432").href);
+  await page.getByText("正在读取 MCP 服务器…").waitFor();
+  assert.equal(await page.getByRole("button", { name: "新增服务器" }).isDisabled(), true);
+  await release("mcp_list_servers", "fixture initial read failed");
+  await page.getByText(/读取失败：.*fixture initial read failed/).waitFor();
+  await page.getByRole("button", { name: "检测连接" }).click();
+  await release("mcp_list_servers"); await release("mcp_probe_servers");
+  await page.getByText("已连接 · 1 个工具").waitFor();
+  await page.getByRole("button", { name: "编辑 fixture-server" }).click();
+  await page.getByRole("radio", { name: "HTTP", exact: true }).click();
+  await page.getByPlaceholder("https://mcp.example.com/mcp").fill("https://example.com/mcp");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await page.getByRole("button", { name: "保存中…" }).waitFor();
+  assert.equal(await page.getByPlaceholder("https://mcp.example.com/mcp").isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "取消", exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "新增服务器" }).isDisabled(), true);
+  await page.getByRole("button", { name: "保存中…" }).evaluate(button => button.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  assert.equal(await page.evaluate(() => window.mcpFixture.calls.filter(command => command === "mcp_save_server").length), 1);
+  await release("mcp_save_server", "fixture save failed");
+  await page.getByText(/fixture save failed/).waitFor();
+  mkdirSync("output/playwright", { recursive: true });
+  await page.screenshot({ path: "output/playwright/mcp-settings-form.png", fullPage: true });
+  assert.equal(await page.getByPlaceholder("https://mcp.example.com/mcp").inputValue(), "https://example.com/mcp");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await release("mcp_save_server");
+  await page.getByText("未检测", { exact: true }).waitFor();
+  assert.equal(await page.getByText("已连接 · 1 个工具").count(), 0);
+  assert.deepEqual(errors, []);
+  mkdirSync("output/playwright", { recursive: true });
+  await page.screenshot({ path: "output/playwright/mcp-settings-async.png", fullPage: true });
+  console.log("PASS: MCP initial failure, retry, transport switch, save lock, duplicate submit, failure draft and stale probe invalidation");
+} finally { await browser.close(); }

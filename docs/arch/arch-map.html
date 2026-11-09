@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>架构图 - CrewVela</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background: #14161c; color: #d7dae2; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    padding: 10px 16px 0; border-bottom: 1px solid #262a35; flex-shrink: 0;
+  }
+  header .top { display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .meta { color: #7c8194; font-size: 11px; }
+  #tabs { display: flex; gap: 2px; margin-top: 10px; overflow-x: auto; }
+  #tabs button {
+    background: none; border: none; border-bottom: 2px solid transparent; color: #8a90a2;
+    font: 12px/1 inherit; padding: 7px 12px; cursor: pointer; white-space: nowrap;
+  }
+  #tabs button:hover { color: #d7dae2; }
+  #tabs button.active { color: #b3a8ff; border-bottom-color: #8f7ff5; }
+  #main { flex: 1; display: flex; min-height: 0; }
+  #graph-wrap { flex: 1; position: relative; min-width: 0; }
+  svg { width: 100%; height: 100%; display: block; cursor: grab; }
+  svg:active { cursor: grabbing; }
+  .edge { stroke: #4a5064; stroke-opacity: .55; fill: none; }
+  .edge.hl { stroke: #8f7ff5; stroke-opacity: 1; }
+  .edge-label { fill: #7c8194; font-size: 10px; text-anchor: middle; paint-order: stroke; stroke: #14161c; stroke-width: 3px; }
+  .node circle { stroke: #14161c; stroke-width: 1.5; cursor: pointer; }
+  .node text { fill: #d7dae2; font-size: 11px; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #14161c; stroke-width: 3px; }
+  .dim { opacity: .12; }
+  .flow-node rect { stroke: #3a4054; stroke-width: 1; fill: #1e222c; rx: 8; cursor: pointer; }
+  .flow-node.hl rect { stroke: #8f7ff5; fill: #262a3a; }
+  .flow-node text { fill: #d7dae2; font-size: 12px; text-anchor: middle; pointer-events: none; }
+  .flow-node .code { fill: #6d7ac9; font-size: 9.5px; }
+  .group rect { fill: #1a1d26; stroke: #2e3342; rx: 10; cursor: pointer; }
+  .group.hl rect { stroke: #8f7ff5; }
+  .group .g-label { fill: #d7dae2; font-size: 12.5px; font-weight: 600; }
+  .group .g-summary { fill: #7c8194; font-size: 10px; }
+  .group .g-member { fill: #a9aebe; font-size: 11px; }
+  #tooltip {
+    position: absolute; display: none; pointer-events: none; max-width: 340px;
+    background: #1e222c; border: 1px solid #353b4a; border-radius: 8px; padding: 8px 10px; font-size: 12px; z-index: 10;
+    box-shadow: 0 6px 24px rgba(0,0,0,.45);
+  }
+  #tooltip .t-id { font-weight: 600; margin-bottom: 2px; }
+  #tooltip .t-meta { color: #6d7ac9; font-size: 10.5px; margin-bottom: 4px; word-break: break-all; }
+  #tooltip .t-summary { color: #b7bcc9; }
+  #sidebar {
+    width: 290px; flex-shrink: 0; border-left: 1px solid #262a35; overflow-y: auto; padding: 10px 0;
+  }
+  #sidebar h2 { font-size: 11px; color: #7c8194; padding: 4px 14px 8px; text-transform: uppercase; letter-spacing: .08em; }
+  .mod-item { padding: 6px 14px; cursor: pointer; border-left: 2px solid transparent; }
+  .mod-item:hover { background: #1c202a; }
+  .mod-item.active { border-left-color: #8f7ff5; background: #1c202a; }
+  .mod-item .m-name { font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .mod-item .m-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .mod-item .m-summary { color: #9aa0b0; font-size: 11px; margin-top: 1px; }
+  .mod-item .m-code { color: #6d7ac9; font-size: 10px; margin-top: 1px; word-break: break-all; }
+  #hint { position: absolute; left: 12px; bottom: 10px; color: #565c6e; font-size: 11px; pointer-events: none; max-width: 70%; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1 id="title"></h1>
+    <span class="meta" id="stats"></span>
+  </div>
+  <nav id="tabs"></nav>
+</header>
+<div id="main">
+  <div id="graph-wrap">
+    <svg id="svg"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 9 5 L 0 9 z" fill="#4a5064"/></marker></defs><g id="viewport"></g></svg>
+    <div id="tooltip"></div>
+    <div id="hint"></div>
+  </div>
+  <div id="sidebar"><h2 id="sidebar-title"></h2><div id="mod-list"></div></div>
+</div>
+<script>
+const DATA = {"project": "CrewVela", "generated": "2026-08-09", "deps": {"nodes": [{"id": "App", "path": "src", "files": 1, "lang": "ts", "summary": "前端主状态机：provider 选择到多会话网格的启动流程"}, {"id": "acp", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "ACP 协议适配：外部 agent 编辑器协议接入"}, {"id": "automation", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "定时任务调度：一次性/间隔/每天/每周/cron 触发，熔断与运行历史"}, {"id": "clipboard_image", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "剪贴板位图编码为 PNG 临时文件"}, {"id": "components", "path": "src/components", "files": 21, "lang": "ts", "summary": "React 组件库：终端网格、总控面板、自动化面板等全部 UI"}, {"id": "control", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "会话动作队列：消息投递（文本与回车分两次写）、互发限流、权限模式切换"}, {"id": "controlSurface", "path": "src", "files": 1, "lang": "ts", "summary": "总控命令面板的意图解析与执行"}, {"id": "edge_speech", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "Edge 在线 TTS 语音合成"}, {"id": "launcher", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "claude 启动：resolve_claude、ANTHROPIC_* 环境变量组装"}, {"id": "lib", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "Tauri 命令层：launch_multi/pty_poll_all 等 IPC 入口与应用装配"}, {"id": "livekitVoice", "path": "src", "files": 1, "lang": "ts", "summary": "前端 LiveKit 语音通话逻辑"}, {"id": "livekit_voice", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "LiveKit 房间令牌生成（语音通话）"}, {"id": "main", "path": "src", "files": 2, "lang": "rust/ts", "summary": "前端入口：React 挂载（故意不用 StrictMode）"}, {"id": "messaging", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "CrewVela CLI：sessions 列表与 send 消息投递"}, {"id": "multiAgentDraftState", "path": "src", "files": 1, "lang": "ts", "summary": "总控消息草稿状态管理"}, {"id": "multiAgentMention", "path": "src", "files": 1, "lang": "ts", "summary": "@mention 的解析、补全与替换"}, {"id": "multiAgentTaskPresentation", "path": "src", "files": 1, "lang": "ts", "summary": "多智能体任务的展示层格式化"}, {"id": "multi_agent", "path": "src-tauri/src/multi_agent", "files": 7, "lang": "rust", "summary": "多智能体协作：项目/任务/运行/评审的 SQLite 持久化与执行器"}, {"id": "native_speech", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "Windows 原生语音识别（WinRT SpeechRecognition）"}, {"id": "pet-preview", "path": "src", "files": 1, "lang": "ts", "summary": "宠物预览页面"}, {"id": "providers", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "provider 配置：5 个内置 provider 的加载与自动迁移"}, {"id": "pty", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "PTY 管理器：portable-pty 拉起 claude 进程，输出缓冲与自动 trust 确认"}, {"id": "secrets", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "API key 的 keychain 存取（keyring）"}, {"id": "sessions", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "会话元数据持久化：状态机、标题生成、hook 事件摄取"}, {"id": "src-tauri", "path": "src-tauri", "files": 1, "lang": "rust", "summary": "Rust 构建脚本（build.rs）与 app 图标"}, {"id": "title_summary", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "会话标题总结：调 claude 生成标题并清洗"}, {"id": "tools", "path": "tools/livekit-agent", "files": 1, "lang": "python", "summary": "辅助工具脚本（LiveKit agent）"}, {"id": "types", "path": "src", "files": 1, "lang": "ts", "summary": "前端共享 TypeScript 类型定义"}, {"id": "vite.config", "path": ".", "files": 1, "lang": "ts", "summary": "Vite 构建配置"}, {"id": "workspaceTabs", "path": "src", "files": 1, "lang": "ts", "summary": "工作区标签栏与无边框窗口控制按钮"}, {"id": "workspace_trust", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "claude workspace trust 对话框的输出检测"}, {"id": "worktree", "path": "src-tauri/src", "files": 1, "lang": "rust", "summary": "Git worktree 隔离：会话独立工作区的创建与清理"}], "edges": [{"from": "components", "to": "assets", "weight": 18}, {"from": "control", "to": "sessions", "weight": 3}, {"from": "messaging", "to": "sessions", "weight": 2}, {"from": "main", "to": "styles", "weight": 1}, {"from": "pet-preview", "to": "styles", "weight": 1}, {"from": "components", "to": "src-tauri", "weight": 1}, {"from": "control", "to": "launcher", "weight": 1}, {"from": "control", "to": "providers", "weight": 1}, {"from": "control", "to": "pty", "weight": 1}, {"from": "launcher", "to": "providers", "weight": 1}, {"from": "lib", "to": "acp", "weight": 1}, {"from": "lib", "to": "automation", "weight": 1}, {"from": "lib", "to": "clipboard_image", "weight": 1}, {"from": "lib", "to": "control", "weight": 1}, {"from": "lib", "to": "edge_speech", "weight": 1}, {"from": "lib", "to": "launcher", "weight": 1}, {"from": "lib", "to": "livekit_voice", "weight": 1}, {"from": "lib", "to": "messaging", "weight": 1}, {"from": "lib", "to": "multi_agent", "weight": 1}, {"from": "lib", "to": "native_speech", "weight": 1}, {"from": "lib", "to": "providers", "weight": 1}, {"from": "lib", "to": "pty", "weight": 1}, {"from": "lib", "to": "secrets", "weight": 1}, {"from": "lib", "to": "sessions", "weight": 1}, {"from": "lib", "to": "title_summary", "weight": 1}, {"from": "lib", "to": "workspace_trust", "weight": 1}, {"from": "lib", "to": "worktree", "weight": 1}, {"from": "messaging", "to": "control", "weight": 1}, {"from": "pty", "to": "launcher", "weight": 1}, {"from": "pty", "to": "providers", "weight": 1}, {"from": "pty", "to": "sessions", "weight": 1}, {"from": "pty", "to": "workspace_trust", "weight": 1}, {"from": "sessions", "to": "worktree", "weight": 1}, {"from": "title_summary", "to": "launcher", "weight": 1}, {"from": "title_summary", "to": "providers", "weight": 1}, {"from": "multi_agent", "to": "pty", "weight": 1}, {"from": "multi_agent", "to": "sessions", "weight": 1}]}, "domains": {"groups": [{"id": "shell", "label": "应用外壳", "summary": "窗口、状态机、IPC 命令层", "members": ["lib（IPC 命令层）", "App（前端主状态机）", "components（全部 UI）", "workspaceTabs（标签栏）", "types / main"]}, {"id": "session", "label": "会话终端", "summary": "PTY 拉起 claude，多会话网格", "members": ["pty（PTY 管理器·核心）", "sessions（元数据与状态机）", "launcher（启动与 env 组装）", "worktree（目录隔离）", "workspace_trust（trust 检测）"]}, {"id": "msg", "label": "消息与控制", "summary": "会话间投递、限流、总控指挥", "members": ["control（队列·限流·延迟回车）", "messaging（CrewVela CLI）", "controlSurface（总控面板）", "multiAgentMention（@定向）"]}, {"id": "ma", "label": "多智能体协作", "summary": "项目/任务/评审的持久化协作", "members": ["multi_agent（SQLite store+executor）", "acp（外部 agent 协议）"]}, {"id": "auto", "label": "自动化", "summary": "定时任务调度与熔断", "members": ["automation（5 种触发器）", "AutomationPanel（前端面板）"]}, {"id": "provider", "label": "Provider 与密钥", "summary": "多 provider 配置与 keychain", "members": ["providers（5 内置+迁移）", "secrets（keyring）", "title_summary（标题生成）"]}, {"id": "voice", "label": "语音", "summary": "TTS / 语音识别 / 语音通话", "members": ["edge_speech（在线 TTS）", "native_speech（WinRT 识别）", "livekit_voice + livekitVoice（通话）"]}], "edges": [{"from": "shell", "to": "session", "label": "launch_multi 拉起"}, {"from": "msg", "to": "session", "label": "文本注入 PTY"}, {"from": "ma", "to": "session", "label": "agent 即会话"}, {"from": "auto", "to": "session", "label": "定时起会话"}, {"from": "auto", "to": "msg", "label": "复用投递路径"}, {"from": "provider", "to": "session", "label": "env/key 注入"}]}, "flows": [{"id": "terminal-io", "title": "终端数据通道", "symptom": "终端无输出/卡死/输入无效：沿链路从后往前查，先确认 poll 是否还在跑", "nodes": [{"id": "user", "label": "用户键盘", "detail": "网格终端里的按键输入"}, {"id": "xterm", "label": "xterm.js onData", "code": "src/components/TerminalPane.tsx", "detail": "必须过滤 focus 事件 \\x1b[I / \\x1b[O，否则杀掉 trust 对话框"}, {"id": "pty-input", "label": "pty_input 命令", "code": "src-tauri/src/lib.rs", "detail": "IPC 入口，带 session_id 路由"}, {"id": "conpty", "label": "ConPTY 写入", "code": "src-tauri/src/pty.rs", "detail": "portable-pty writer，直接 spawn 原生 claude.exe"}, {"id": "claude", "label": "claude.exe 进程", "detail": "Bun 编译的原生 TUI，不经 cmd.exe"}, {"id": "reader", "label": "reader 线程", "code": "src-tauri/src/pty.rs", "detail": "输出累积进 Arc<Mutex<Vec<u8>>> 缓冲"}, {"id": "poll", "label": "pty_poll_all 30ms 轮询", "code": "src/components/MultiTerminal.tsx", "detail": "单个 setInterval，invoke 轮询（不用 Tauri event，实测收不到）"}, {"id": "dispatch", "label": "CustomEvent 分发", "code": "src/components/MultiTerminal.tsx", "detail": "'pty:chunk' 事件按 session_id 分发到各格"}, {"id": "render", "label": "xterm 渲染", "code": "src/components/TerminalPane.tsx", "detail": "写入对应 TerminalPane 的 xterm 实例"}], "edges": [{"from": "user", "to": "xterm"}, {"from": "xterm", "to": "pty-input", "label": "过滤后"}, {"from": "pty-input", "to": "conpty"}, {"from": "conpty", "to": "claude", "label": "stdin"}, {"from": "claude", "to": "reader", "label": "stdout"}, {"from": "reader", "to": "poll", "label": "拉取缓冲"}, {"from": "poll", "to": "dispatch"}, {"from": "dispatch", "to": "render"}]}, {"id": "agent-msg", "title": "会话间消息投递", "symptom": "消息没送达：查 outbox 文件→限流通知→mailbox 队列；消息进框不提交：查延迟回车", "nodes": [{"id": "sender", "label": "发送方 agent", "detail": "CrewVela send --to X --body ..."}, {"id": "outbox", "label": "outbox 目录", "detail": "temp+rename 原子写，纳秒前缀排序"}, {"id": "ingest", "label": "摄取 + 限流", "code": "src-tauri/src/control.rs", "detail": "同一对会话 10 条/小时，超限丢弃并回发停止通知"}, {"id": "mailbox", "label": "mailbox.json 队列", "code": "src-tauri/src/control.rs", "detail": "持久化 FIFO，peek/commit 模式"}, {"id": "flush", "label": "flush_ready 写文本", "code": "src-tauri/src/control.rs", "detail": "只写消息文本，不带回车（同 chunk 的 \\r 会被 ink 吞）"}, {"id": "submit", "label": "flush_pending_submits 补回车", "code": "src-tauri/src/control.rs", "detail": "600ms 后单独写 \\r 实现自动提交"}, {"id": "target", "label": "接收方 claude", "detail": "ink 输入框收到文本并提交"}], "edges": [{"from": "sender", "to": "outbox"}, {"from": "outbox", "to": "ingest", "label": "pty_poll_all 摄取"}, {"from": "ingest", "to": "mailbox"}, {"from": "mailbox", "to": "flush", "label": "空闲时"}, {"from": "flush", "to": "submit", "label": "登记 600ms"}, {"from": "submit", "to": "target"}]}, {"id": "automation", "title": "定时任务触发", "symptom": "任务没触发：查 next_run_at 与启用状态；执行失败：查 recent_runs 历史与熔断", "nodes": [{"id": "tick", "label": "pty_poll_all 主循环", "code": "src-tauri/src/lib.rs", "detail": "调度 tick 挂在 30ms 轮询上，无独立定时器"}, {"id": "due", "label": "collect_due 到期检查", "code": "src-tauri/src/automation.rs", "detail": "错过不补跑，触发后从 now 推进下一次"}, {"id": "exec", "label": "execute_automation_action", "code": "src-tauri/src/lib.rs", "detail": "起新会话 / 发给现有会话 / 广播，复用现有投递路径"}, {"id": "report", "label": "report_result 落历史", "code": "src-tauri/src/automation.rs", "detail": "recent_runs 20 条封顶，连续失败熔断自动停用"}], "edges": [{"from": "tick", "to": "due"}, {"from": "due", "to": "exec", "label": "到点"}, {"from": "exec", "to": "report", "label": "成败都记录"}]}, {"id": "launch", "title": "会话启动链路", "symptom": "起不来查 resolve/spawn；env 不生效查 --settings；启动即退出 code=1 查 trust 检测", "nodes": [{"id": "launch", "label": "launch_multi", "code": "src-tauri/src/lib.rs", "detail": "provider+数量+目录+YOLO，循环 launch_one_session"}, {"id": "env", "label": "build_env 组装", "code": "src-tauri/src/launcher.rs", "detail": "ANTHROPIC_* env + keychain 取 key"}, {"id": "settings", "label": "--settings JSON 注入", "code": "src-tauri/src/pty.rs", "detail": "唯一覆盖 user settings.json env 的途径，含 *_MODEL_NAME 显示名"}, {"id": "spawn", "label": "spawn claude.exe", "code": "src-tauri/src/launcher.rs", "detail": "resolve_claude 找原生二进制，不经 cmd.exe（否则 TUI 不渲染）"}, {"id": "trust", "label": "trust 对话框检测", "code": "src-tauri/src/workspace_trust.rs", "detail": "YOLO 下累积缓冲单词级检测，sleep 800ms 后发 1\\r"}, {"id": "ready", "label": "会话就绪", "detail": "进入正常 PTY 数据通道"}], "edges": [{"from": "launch", "to": "env"}, {"from": "env", "to": "settings"}, {"from": "settings", "to": "spawn"}, {"from": "spawn", "to": "trust"}, {"from": "trust", "to": "ready", "label": "确认后"}]}]};
+// 兼容旧格式：nodes/edges 在顶层时视作 deps 视图
+if (!DATA.deps) DATA.deps = { nodes: DATA.nodes || [], edges: DATA.edges || [] };
+
+const svg = document.getElementById("svg");
+const viewport = document.getElementById("viewport");
+const tooltip = document.getElementById("tooltip");
+const wrap = document.getElementById("graph-wrap");
+const hint = document.getElementById("hint");
+const NS = "http://www.w3.org/2000/svg";
+
+document.getElementById("title").textContent = DATA.project + " · 架构图谱";
+document.getElementById("stats").textContent =
+  `${DATA.deps.nodes.length} 个模块 · ${DATA.flows ? DATA.flows.length + " 条关键链路 · " : ""}生成于 ${DATA.generated}`;
+
+const LANG_COLORS = { rust: "#e0713a", ts: "#5b8def", python: "#5fbf77", mixed: "#9a7ff5", asset: "#8a90a2" };
+function nodeColor(n) {
+  if (n.lang === "asset") return LANG_COLORS.asset;
+  if (n.lang && n.lang.includes("/")) return LANG_COLORS.mixed;
+  return LANG_COLORS[n.lang] || LANG_COLORS.asset;
+}
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function textEl(parent, attrs, content) {
+  const t = el("text", attrs, parent);
+  t.textContent = content;
+  return t;
+}
+
+// ---------- 视图状态 ----------
+let view = { x: 0, y: 0, k: 1 };
+function applyView() { viewport.setAttribute("transform", `translate(${view.x},${view.y}) scale(${view.k})`); }
+const W = () => wrap.clientWidth, H = () => wrap.clientHeight;
+function fitTo(xs, ys, pad) {
+  if (!xs.length) { view = { x: 0, y: 0, k: 1 }; applyView(); return; }
+  const bw = Math.max(...xs) - Math.min(...xs) + pad * 2;
+  const bh = Math.max(...ys) - Math.min(...ys) + pad * 2;
+  view.k = Math.min(1.5, W() / bw, H() / bh);
+  view.x = W() / 2 - (Math.min(...xs) + Math.max(...xs)) / 2 * view.k;
+  view.y = H() / 2 - (Math.min(...ys) + Math.max(...ys)) / 2 * view.k;
+  applyView();
+}
+function svgPoint(evt) {
+  const rect = svg.getBoundingClientRect();
+  return { x: (evt.clientX - rect.left - view.x) / view.k, y: (evt.clientY - rect.top - view.y) / view.k };
+}
+
+svg.addEventListener("wheel", evt => {
+  evt.preventDefault();
+  const rect = svg.getBoundingClientRect();
+  const mx = evt.clientX - rect.left, my = evt.clientY - rect.top;
+  const k2 = Math.min(4, Math.max(0.15, view.k * (evt.deltaY < 0 ? 1.15 : 0.87)));
+  view.x = mx - (mx - view.x) * (k2 / view.k);
+  view.y = my - (my - view.y) * (k2 / view.k);
+  view.k = k2;
+  applyView();
+}, { passive: false });
+
+let drag = null;
+let onTap = null;  // 当前视图注册的点按回调
+svg.addEventListener("pointerdown", evt => {
+  const pt = svgPoint(evt);
+  const hit = currentHitTest ? currentHitTest(pt) : null;
+  drag = hit ? { target: hit, moved: false } : { pan: true, sx: evt.clientX, sy: evt.clientY, ox: view.x, oy: view.y };
+  svg.setPointerCapture(evt.pointerId);
+});
+svg.addEventListener("pointermove", evt => {
+  const pt = svgPoint(evt);
+  if (drag && drag.target && drag.target.draggable) {
+    drag.target.x = pt.x; drag.target.y = pt.y; drag.target.pinned = true; drag.moved = true;
+    if (currentOnDrag) currentOnDrag();
+  } else if (drag && drag.pan) {
+    view.x = drag.ox + evt.clientX - drag.sx;
+    view.y = drag.oy + evt.clientY - drag.sy;
+    applyView();
+  } else if (currentHitTest && currentTooltip) {
+    const hit = currentHitTest(pt);
+    if (hit) {
+      const t = currentTooltip(hit);
+      tooltip.style.display = "block";
+      tooltip.style.left = (evt.clientX - wrap.getBoundingClientRect().left + 14) + "px";
+      tooltip.style.top = (evt.clientY - wrap.getBoundingClientRect().top + 10) + "px";
+      tooltip.innerHTML = t;
+    } else tooltip.style.display = "none";
+  }
+});
+svg.addEventListener("pointerup", () => {
+  if (drag && drag.target && !drag.moved && onTap) onTap(drag.target);
+  else if (drag && drag.pan && onTap) onTap(null);
+  drag = null;
+});
+svg.addEventListener("pointerleave", () => { tooltip.style.display = "none"; });
+
+let currentHitTest = null, currentTooltip = null, currentOnDrag = null;
+
+// ---------- 视图 1：功能模块图 ----------
+function renderDomains() {
+  const groups = DATA.domains.groups;
+  const cols = Math.ceil(Math.sqrt(groups.length));
+  const colW = 330, padX = 60, padTop = 50, gapY = 46;
+  const colRows = [];
+  groups.forEach(g => { g.h = 56 + g.members.length * 20 + 10; });
+  // 按列分配，列内累加高度
+  const colHeights = new Array(cols).fill(padTop);
+  groups.forEach((g, i) => {
+    let col = 0;
+    for (let c = 1; c < cols; c++) if (colHeights[c] < colHeights[col]) col = c;
+    g.x = padX + col * colW;
+    g.y = colHeights[col];
+    colHeights[col] += g.h + gapY;
+  });
+  const byId = {};
+  groups.forEach(g => byId[g.id] = g);
+
+  const edgeEls = (DATA.domains.edges || []).map(e => {
+    const s = byId[e.from], t = byId[e.to];
+    if (!s || !t) return null;
+    const g = el("g", {}, viewport);
+    const line = el("path", { class: "edge", "stroke-width": 1.6, "marker-end": "url(#arrow)" }, g);
+    const label = textEl(g, { class: "edge-label" }, e.label || "");
+    return { s, t, line, label };
+  }).filter(Boolean);
+
+  const groupEls = groups.map(g => {
+    const gg = el("g", { class: "group" }, viewport);
+    el("rect", { width: 250, height: g.h }, gg);
+    textEl(gg, { class: "g-label", x: 14, y: 24 }, g.label);
+    textEl(gg, { class: "g-summary", x: 14, y: 41 }, g.summary || "");
+    g.members.forEach((m, i) => textEl(gg, { class: "g-member", x: 14, y: 62 + i * 20 }, "· " + m));
+    gg.setAttribute("transform", `translate(${g.x},${g.y})`);
+    return gg;
+  });
+
+  function drawEdges() {
+    edgeEls.forEach(({ s, t, line, label }) => {
+      const sx = s.x + 125, sy = s.y + s.h / 2, tx = t.x + 125, ty = t.y + t.h / 2;
+      const mx = (sx + tx) / 2;
+      line.setAttribute("d", `M ${sx} ${sy} C ${mx} ${sy}, ${mx} ${ty}, ${tx} ${ty}`);
+      label.setAttribute("x", mx);
+      label.setAttribute("y", (sy + ty) / 2 - 6);
+    });
+  }
+  drawEdges();
+  fitTo(groups.map(g => g.x + 125), groups.map(g => g.y + g.h / 2), 170);
+
+  let focused = null;
+  function applyFocus() {
+    groupEls.forEach((gg, i) => gg.classList.toggle("hl", groups[i].id === focused));
+    edgeEls.forEach(({ s, t, line, label }) => {
+      const on = focused && (s.id === focused || t.id === focused);
+      line.classList.toggle("hl", !!on);
+      line.classList.toggle("dim", !!(focused && !on));
+      label.classList.toggle("dim", !!(focused && !on));
+    });
+  }
+  currentHitTest = pt => groups.find(g => pt.x >= g.x && pt.x <= g.x + 250 && pt.y >= g.y && pt.y <= g.y + g.h);
+  currentTooltip = g => `<div class="t-id">${g.label}</div>` +
+    (g.summary ? `<div class="t-summary">${g.summary}</div>` : "") +
+    `<div class="t-meta" style="margin-top:4px">${g.members.join("、")}</div>`;
+  currentOnDrag = null;
+  onTap = g => { focused = g && focused !== g.id ? g.id : null; applyFocus(); };
+  hint.textContent = "功能域一览：点击分组高亮与其他域的交互 · 滚轮缩放 · 拖拽平移";
+}
+
+// ---------- 视图 2：模块依赖图（力导向）----------
+let depsState = null;
+function renderDeps() {
+  if (!depsState) {
+    const nodes = DATA.deps.nodes.map((n, i) => ({
+      ...n,
+      x: W() / 2 + Math.cos(i * 2.399) * (80 + i * 4),
+      y: H() / 2 + Math.sin(i * 2.399) * (80 + i * 4),
+      vx: 0, vy: 0,
+      r: 9 + Math.min(18, Math.sqrt(n.files) * 3.2)
+    }));
+    const byId = {};
+    nodes.forEach(n => byId[n.id] = n);
+    const edges = DATA.deps.edges.map(e => ({ ...e, s: byId[e.from], t: byId[e.to] }))
+      .filter(e => e.s && e.t && e.s !== e.t);
+    depsState = { nodes, edges, laid: false };
+  }
+  const { nodes, edges } = depsState;
+  const cx = () => W() / 2, cy = () => H() / 2;
+  function tick() {
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let d2 = dx * dx + dy * dy || 0.01;
+        if (d2 > 240000) continue;
+        const d = Math.sqrt(d2);
+        const f = Math.min(6, 2600 / d2);
+        dx = dx / d * f; dy = dy / d * f;
+        a.vx += dx; a.vy += dy; b.vx -= dx; b.vy -= dy;
+      }
+      a.vx += (cx() - a.x) * 0.012;
+      a.vy += (cy() - a.y) * 0.012;
+    }
+    for (const e of edges) {
+      const dx = e.t.x - e.s.x, dy = e.t.y - e.s.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const f = (d - 130) * 0.02;
+      const fx = dx / d * f, fy = dy / d * f;
+      e.s.vx += fx; e.s.vy += fy; e.t.vx -= fx; e.t.vy -= fy;
+    }
+    for (const n of nodes) {
+      if (n.pinned) { n.vx = 0; n.vy = 0; continue; }
+      n.x += n.vx *= 0.82;
+      n.y += n.vy *= 0.82;
+    }
+  }
+  if (!depsState.laid) { for (let i = 0; i < 280; i++) tick(); depsState.laid = true; }
+
+  const edgeEls = edges.map(e => el("line", {
+    class: "edge", "stroke-width": 0.6 + Math.min(3.5, Math.log2(e.weight + 1)), "marker-end": "url(#arrow)"
+  }, viewport));
+  const nodeEls = nodes.map(n => {
+    const g = el("g", { class: "node" }, viewport);
+    el("circle", { r: n.r, fill: nodeColor(n) }, g);
+    textEl(g, { y: n.r + 13 }, n.id);
+    return g;
+  });
+  function render() {
+    edges.forEach((e, i) => {
+      const d = Math.hypot(e.t.x - e.s.x, e.t.y - e.s.y) || 1;
+      edgeEls[i].setAttribute("x1", e.s.x + (e.t.x - e.s.x) / d * (e.s.r + 2));
+      edgeEls[i].setAttribute("y1", e.s.y + (e.t.y - e.s.y) / d * (e.s.r + 2));
+      edgeEls[i].setAttribute("x2", e.t.x - (e.t.x - e.s.x) / d * (e.t.r + 8));
+      edgeEls[i].setAttribute("y2", e.t.y - (e.t.y - e.s.y) / d * (e.t.r + 8));
+    });
+    nodes.forEach((n, i) => nodeEls[i].setAttribute("transform", `translate(${n.x},${n.y})`));
+  }
+  render();
+  if (!depsState.fitted) {
+    fitTo(nodes.map(n => n.x), nodes.map(n => n.y), 60);
+    depsState.fitted = true;
+  } else applyView();
+
+  const neighbors = {};
+  nodes.forEach(n => neighbors[n.id] = new Set([n.id]));
+  edges.forEach(e => { neighbors[e.from].add(e.to); neighbors[e.to].add(e.from); });
+  let focused = null;
+  function applyFocus() {
+    nodes.forEach((n, i) => nodeEls[i].classList.toggle("dim", !!(focused && !neighbors[focused].has(n.id))));
+    edges.forEach((e, i) => {
+      const on = focused && (e.from === focused || e.to === focused);
+      edgeEls[i].classList.toggle("hl", !!on);
+      edgeEls[i].classList.toggle("dim", !!(focused && !on));
+    });
+    document.querySelectorAll(".mod-item").forEach(item =>
+      item.classList.toggle("active", item.dataset.id === focused));
+  }
+  nodes.forEach(n => n.draggable = true);
+  currentHitTest = pt => nodes.find(n => Math.hypot(n.x - pt.x, n.y - pt.y) < n.r + 4);
+  currentTooltip = n => `<div class="t-id">${n.id}</div>` +
+    `<div class="t-meta">${n.path} · ${n.files} 个文件 · ${n.lang}</div>` +
+    (n.summary ? `<div class="t-summary">${n.summary}</div>` : "");
+  currentOnDrag = () => { for (let i = 0; i < 4; i++) tick(); render(); };
+  onTap = n => { focused = n && focused !== n.id ? n.id : null; applyFocus(); };
+  hint.textContent = "代码依赖视角（静态 import 分析）：拖拽节点 · 点击高亮上下游 · 滚轮缩放";
+
+  // 侧边栏：模块职责
+  document.getElementById("sidebar-title").textContent = "模块职责";
+  const list = document.getElementById("mod-list");
+  list.innerHTML = "";
+  nodes.slice().sort((a, b) => b.files - a.files).forEach(n => {
+    const div = document.createElement("div");
+    div.className = "mod-item";
+    div.dataset.id = n.id;
+    div.innerHTML = `<div class="m-name"><span class="m-dot" style="background:${nodeColor(n)}"></span>${n.id}</div>` +
+      (n.summary ? `<div class="m-summary">${n.summary}</div>` : "");
+    div.onclick = () => { focused = focused !== n.id ? n.id : null; applyFocus(); };
+    list.appendChild(div);
+  });
+}
+
+// ---------- 视图 3：数据流链路图（分层布局）----------
+function renderFlow(flow) {
+  const nodes = flow.nodes.map(n => ({ ...n }));
+  const byId = {};
+  nodes.forEach(n => byId[n.id] = n);
+  const edges = flow.edges.filter(e => byId[e.from] && byId[e.to]);
+
+  // 最长路径分层
+  const layer = {}, indeg = {}, adj = {};
+  nodes.forEach(n => { layer[n.id] = 0; indeg[n.id] = 0; });
+  edges.forEach(e => { indeg[e.to]++; (adj[e.from] = adj[e.from] || []).push(e.to); });
+  const deg = { ...indeg };
+  const queue = nodes.filter(n => !indeg[n.id]).map(n => n.id);
+  while (queue.length) {
+    const u = queue.shift();
+    for (const v of adj[u] || []) {
+      layer[v] = Math.max(layer[v], layer[u] + 1);
+      if (--deg[v] === 0) queue.push(v);
+    }
+  }
+  const byLayer = {};
+  nodes.forEach(n => (byLayer[layer[n.id]] = byLayer[layer[n.id]] || []).push(n));
+  // 层内重心排序（两轮）
+  const pos = {};
+  for (let round = 0; round < 3; round++) {
+    Object.keys(byLayer).forEach(l => {
+      byLayer[l].forEach((n, i) => pos[n.id] = i);
+      if (+l === 0) return;
+      byLayer[l].sort((a, b) => {
+        const ba = edges.filter(e => e.to === a.id).map(e => pos[e.from] ?? 0);
+        const bb = edges.filter(e => e.to === b.id).map(e => pos[e.from] ?? 0);
+        const av = ba.length ? ba.reduce((x, y) => x + y, 0) / ba.length : 0;
+        const bv = bb.length ? bb.reduce((x, y) => x + y, 0) / bb.length : 0;
+        return av - bv;
+      });
+    });
+  }
+  const NODE_W = 190, NODE_H = 54, GAP_X = 90, GAP_Y = 34;
+  Object.keys(byLayer).forEach(l => {
+    byLayer[l].forEach((n, i) => {
+      n.x = 60 + (+l) * (NODE_W + GAP_X);
+      n.y = 50 + i * (NODE_H + GAP_Y) + (+l % 2) * 14;
+    });
+  });
+
+  const edgeEls = edges.map(e => {
+    const s = byId[e.from], t = byId[e.to];
+    const g = el("g", {}, viewport);
+    const line = el("path", { class: "edge", "stroke-width": 1.6, "marker-end": "url(#arrow)" }, g);
+    const label = e.label ? textEl(g, { class: "edge-label" }, e.label) : null;
+    const sx = s.x + NODE_W, sy = s.y + NODE_H / 2, tx = t.x, ty = t.y + NODE_H / 2;
+    const sameLane = layer[s.id] === layer[t.id];
+    let d, lx, ly;
+    if (sameLane) {  // 同层回边绕上方
+      d = `M ${sx - NODE_W / 2} ${s.y} C ${sx - NODE_W / 2} ${s.y - 44}, ${tx + NODE_W / 2} ${t.y - 44}, ${tx + NODE_W / 2} ${t.y}`;
+      lx = (sx + tx) / 2; ly = Math.min(s.y, t.y) - 38;
+    } else {
+      const mx = (sx + tx) / 2;
+      d = `M ${sx} ${sy} C ${mx} ${sy}, ${mx} ${ty}, ${tx} ${ty}`;
+      lx = mx; ly = (sy + ty) / 2 - 6;
+    }
+    line.setAttribute("d", d);
+    if (label) { label.setAttribute("x", lx); label.setAttribute("y", ly); }
+    return { s, t, line, label };
+  });
+
+  const nodeEls = nodes.map(n => {
+    const g = el("g", { class: "flow-node" }, viewport);
+    el("rect", { width: NODE_W, height: NODE_H }, g);
+    textEl(g, { x: NODE_W / 2, y: n.code ? 24 : 32 }, n.label);
+    if (n.code) textEl(g, { class: "code", x: NODE_W / 2, y: 41 }, n.code);
+    g.setAttribute("transform", `translate(${n.x},${n.y})`);
+    return g;
+  });
+  fitTo(nodes.map(n => n.x + NODE_W / 2), nodes.map(n => n.y + NODE_H / 2), 90);
+
+  let focused = null;
+  function applyFocus() {
+    nodeEls.forEach((g, i) => {
+      g.classList.toggle("hl", nodes[i].id === focused);
+      g.classList.toggle("dim", !!(focused && nodes[i].id !== focused &&
+        !edges.some(e => (e.from === focused && e.to === nodes[i].id) || (e.to === focused && e.from === nodes[i].id))));
+    });
+    edgeEls.forEach(({ s, t, line, label }) => {
+      const on = focused && (s.id === focused || t.id === focused);
+      line.classList.toggle("hl", !!on);
+      line.classList.toggle("dim", !!(focused && !on));
+      if (label) label.classList.toggle("dim", !!(focused && !on));
+    });
+    document.querySelectorAll(".mod-item").forEach(item =>
+      item.classList.toggle("active", item.dataset.id === focused));
+  }
+  currentHitTest = pt => nodes.find(n => pt.x >= n.x && pt.x <= n.x + NODE_W && pt.y >= n.y && pt.y <= n.y + NODE_H);
+  currentTooltip = n => `<div class="t-id">${n.label}</div>` +
+    (n.code ? `<div class="t-meta">${n.code}</div>` : "") +
+    (n.detail ? `<div class="t-summary">${n.detail}</div>` : "");
+  currentOnDrag = null;
+  onTap = n => { focused = n && focused !== n.id ? n.id : null; applyFocus(); };
+  hint.textContent = flow.symptom ? `排查指引：${flow.symptom}` : "数据沿箭头方向流动 · 点击环节高亮上下游";
+
+  // 侧边栏：环节说明
+  document.getElementById("sidebar-title").textContent = "环节说明";
+  const list = document.getElementById("mod-list");
+  list.innerHTML = "";
+  nodes.forEach(n => {
+    const div = document.createElement("div");
+    div.className = "mod-item";
+    div.dataset.id = n.id;
+    div.innerHTML = `<div class="m-name">${n.label}</div>` +
+      (n.code ? `<div class="m-code">${n.code}</div>` : "") +
+      (n.detail ? `<div class="m-summary">${n.detail}</div>` : "");
+    div.onclick = () => { focused = focused !== n.id ? n.id : null; applyFocus(); };
+    list.appendChild(div);
+  });
+}
+
+// ---------- 页签 ----------
+const views = [{ id: "domains", label: "功能模块", render: renderDomains }];
+if (DATA.deps.nodes.length) views.push({ id: "deps", label: "依赖图", render: renderDeps });
+(DATA.flows || []).forEach(f => views.push({ id: "flow:" + f.id, label: "链路·" + f.title, render: () => renderFlow(f) }));
+if (!DATA.domains) views.shift();
+
+const tabsEl = document.getElementById("tabs");
+views.forEach(v => {
+  const btn = document.createElement("button");
+  btn.textContent = v.label;
+  btn.dataset.view = v.id;
+  btn.onclick = () => activate(v.id);
+  tabsEl.appendChild(btn);
+});
+function activate(id) {
+  viewport.innerHTML = "";
+  tooltip.style.display = "none";
+  currentHitTest = currentTooltip = currentOnDrag = onTap = null;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.view === id));
+  view = { x: 0, y: 0, k: 1 };
+  applyView();
+  const v = views.find(x => x.id === id);
+  if (id === "domains" || id.startsWith("flow:")) {
+    document.getElementById("sidebar-title").textContent = id === "domains" ? "功能域" : "环节说明";
+    if (id === "domains") {
+      const list = document.getElementById("mod-list");
+      list.innerHTML = "";
+      DATA.domains.groups.forEach(g => {
+        const div = document.createElement("div");
+        div.className = "mod-item";
+        div.innerHTML = `<div class="m-name">${g.label}</div><div class="m-summary">${g.summary || ""}</div>`;
+        list.appendChild(div);
+      });
+    }
+  }
+  v.render();
+}
+activate(views[0].id);
+</script>
+</body>
+</html>

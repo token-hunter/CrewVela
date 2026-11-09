@@ -1,0 +1,235 @@
+.cli-session-pet {
+  display: inline-flex;
+  flex: 0 0 56px;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 32px;
+  margin-inline: 2px 6px;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.cli-session-pet .cli-neutral-activity { width: 28px; height: 28px; object-fit: contain; }
+.cli-session-pet.is-running .cli-neutral-activity { animation: cli-neutral-work 1.6s ease-in-out infinite; }
+.cli-session-pet.is-hidden .cli-neutral-activity { animation-play-state: paused; }
+@keyframes cli-neutral-work { 50% { transform: translateY(-2px) rotate(8deg); } }
+@media (prefers-reduced-motion: reduce) { .cli-session-pet .cli-neutral-activity { animation: none !important; } }
+
+.pane-has-cli-pet {
+  container-type: inline-size;
+}
+
+@container (max-width: 340px) {
+  .pane-has-cli-pet .cli-session-pet {
+    display: none;
+  }
+}
+
+.cli-session-pet svg {
+  display: block;
+  width: 56px;
+  height: 32px;
+  overflow: hidden;
+  shape-rendering: crispEdges;
+}
+
+.cli-session-pet .pet-codex-hand,
+.cli-session-pet .pet-kimi-flying-star,
+.cli-session-pet .pet-kimi-catch-arm,
+.cli-session-pet .pet-zcode-body,
+.cli-session-pet .pet-opencode-bracket,
+.cli-session-pet .pet-pi-token,
+.cli-session-pet .pet-pi-head {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.cli-session-pet--codex.is-running .pet-codex-hand {
+  animation: cli-codex-type 1.6s steps(1, end) infinite;
+}
+
+.cli-session-pet--codex.is-running .pet-codex-hand-right {
+  animation-delay: -0.2s;
+}
+
+.cli-session-pet--codex.is-idle .pet-codex-output {
+  opacity: 0;
+}
+
+.cli-session-pet--codex.is-running .pet-codex-output-one {
+  animation: cli-codex-output 1.6s steps(1, end) infinite;
+}
+
+.cli-session-pet--codex.is-running .pet-codex-output-two {
+  animation: cli-codex-output 1.6s steps(1, end) -0.35s infinite;
+}
+
+.cli-session-pet--codex.is-running .pet-codex-output-three {
+  animation: cli-codex-output 1.6s steps(1, end) -0.7s infinite;
+}
+
+.cli-session-pet--kimi_code .pet-kimi-flight-path,
+.cli-session-pet--kimi_code.is-idle .pet-kimi-flying-star,
+.cli-session-pet--zcode_cli .pet-zcode-speed,
+.cli-session-pet--zcode_cli .pet-zcode-brake-pixels,
+.cli-session-pet--opencode .pet-opencode-code-glint,
+.cli-session-pet--pi .pet-pi-catch-spark {
+  opacity: 0;
+}
+
+.cli-session-pet--kimi_code.is-running .pet-kimi-held-star {
+  animation: cli-kimi-catch 2.4s steps(1, end) infinite;
+}
+
+.cli-session-pet--kimi_code.is-running .pet-kimi-flying-star {
+  animation: cli-kimi-toss 2.4s cubic-bezier(0.36, 0, 0.24, 1) infinite;
+}
+
+.cli-session-pet--kimi_code.is-running .pet-kimi-catch-arm {
+  animation: cli-kimi-reach 2.4s ease-in-out infinite;
+}
+
+.cli-session-pet--kimi_code.is-running .pet-kimi-flight-path {
+  animation: cli-kimi-trail 2.4s ease-in-out infinite;
+}
+
+.cli-session-pet--zcode_cli.is-running .pet-zcode-body {
+  transform-origin: 27px 28px;
+  animation: cli-zcode-dash 1.8s steps(1, end) infinite;
+}
+
+.cli-session-pet--zcode_cli.is-running .pet-zcode-speed {
+  animation: cli-zcode-speed 1.8s steps(1, end) infinite;
+}
+
+.cli-session-pet--zcode_cli.is-running .pet-zcode-brake-pixels {
+  animation: cli-zcode-brake 1.8s steps(1, end) infinite;
+}
+
+.cli-session-pet--opencode.is-running .pet-opencode-bracket-left {
+  animation: cli-opencode-open-left 2s cubic-bezier(0.2, 0.65, 0.3, 1) infinite;
+}
+
+.cli-session-pet--opencode.is-running .pet-opencode-bracket-right {
+  animation: cli-opencode-open-right 2s cubic-bezier(0.2, 0.65, 0.3, 1) infinite;
+}
+
+.cli-session-pet--opencode.is-running .pet-opencode-cursor,
+.cli-session-pet--opencode.is-running .pet-opencode-code-glint {
+  animation: cli-opencode-code 2s steps(1, end) infinite;
+}
+
+.cli-session-pet--pi.is-running .pet-pi-token {
+  animation: cli-pi-flip 2.2s cubic-bezier(0.35, 0.05, 0.35, 1) infinite;
+}
+
+.cli-session-pet--pi.is-running .pet-pi-head {
+  animation: cli-pi-nod 2.2s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+
+.cli-session-pet--pi.is-running .pet-pi-catch-spark {
+  animation: cli-pi-catch 2.2s steps(1, end) infinite;
+}
+
+.cli-session-pet.is-hidden * {
+  animation-play-state: paused !important;
+}
+
+@keyframes cli-codex-type {
+  0%, 24%, 50%, 74%, 100% { transform: translateY(0); }
+  12%, 37%, 62%, 87% { transform: translateY(2px); }
+}
+
+@keyframes cli-codex-output {
+  0%, 18%, 100% { opacity: 0; }
+  30%, 85% { opacity: 1; }
+  91% { opacity: 0; }
+}
+
+@keyframes cli-kimi-toss {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  24% { opacity: 1; transform: translate(1px, -8px) rotate(35deg); }
+  48% { opacity: 1; transform: translate(-4px, -13px) rotate(100deg); }
+  72% { opacity: 1; transform: translate(-11px, -9px) rotate(180deg); }
+  87% { opacity: 1; transform: translate(-10px, -1px) rotate(260deg); }
+  92% { opacity: 0; transform: translate(-10px, -1px) rotate(300deg); }
+  99%, 100% { opacity: 0; transform: translate(0, 0) rotate(360deg); }
+}
+
+@keyframes cli-kimi-trail {
+  0%, 18%, 88%, 100% { opacity: 0; stroke-dashoffset: 24; }
+  28%, 82% { opacity: 0.9; stroke-dashoffset: 0; }
+}
+
+@keyframes cli-kimi-catch {
+  0%, 90% { opacity: 0; }
+  94%, 100% { opacity: 1; }
+}
+
+@keyframes cli-kimi-reach {
+  0%, 76%, 100% { transform: translate(0, 0); }
+  86%, 94% { transform: translate(-2px, -3px); }
+}
+
+@keyframes cli-zcode-dash {
+  0%, 100% { transform: translate(0, 0) scaleY(1) skewX(0); }
+  17% { transform: translate(0, 3px) scaleY(0.78) skewX(0); }
+  35% { transform: translate(8px, 0) scaleY(0.92) skewX(-8deg); }
+  51% { transform: translate(5px, 0) scaleY(1) skewX(8deg); }
+  67% { transform: translate(2px, 0) scaleY(1) skewX(0); }
+}
+
+@keyframes cli-zcode-speed {
+  0%, 26%, 66%, 100% { opacity: 0; transform: translateX(3px); }
+  35%, 54% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes cli-zcode-brake {
+  0%, 48%, 76%, 100% { opacity: 0; }
+  55%, 70% { opacity: 1; }
+}
+
+@keyframes cli-opencode-open-left {
+  0%, 18%, 90%, 100% { transform: translateX(0); }
+  42%, 66% { transform: translateX(-5px); }
+  76% { transform: translateX(-3px); }
+}
+
+@keyframes cli-opencode-open-right {
+  0%, 18%, 90%, 100% { transform: translateX(0); }
+  42%, 66% { transform: translateX(5px); }
+  76% { transform: translateX(3px); }
+}
+
+@keyframes cli-opencode-code {
+  0%, 18%, 92%, 100% { opacity: 0; }
+  38%, 72% { opacity: 1; }
+}
+
+@keyframes cli-pi-flip {
+  0%, 12%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  39% { transform: translate(-3px, -11px) rotate(45deg) scale(0.8, 1.05); }
+  54% { transform: translate(-2px, -12px) rotate(135deg) scale(1, 0.8); }
+  78% { transform: translate(-1px, -2px) rotate(300deg) scale(0.85, 1); }
+  88% { transform: translate(0, 0) rotate(360deg) scale(1); }
+}
+
+@keyframes cli-pi-nod {
+  0%, 78%, 100% { transform: rotate(0deg); }
+  84% { transform: rotate(8deg); }
+  91% { transform: rotate(-4deg); }
+}
+
+@keyframes cli-pi-catch {
+  0%, 76%, 100% { opacity: 0; }
+  87%, 94% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cli-session-pet * {
+    animation: none !important;
+    transform: none !important;
+  }
+}

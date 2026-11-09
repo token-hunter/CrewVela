@@ -1,0 +1,90 @@
+/* Readability and layout refinements for the audited surfaces only.
+   Keep global text tokens, terminal output and theme palettes unchanged. */
+.unified-sidebar,
+.settings-dialog,
+.pane-head {
+  --ui-readable-muted: color-mix(in srgb, var(--text) 76%, var(--bg) 24%);
+}
+
+.sidebar-new-session-row {
+  flex: none;
+  padding: 10px 12px 4px;
+}
+
+.sidebar-new-session-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: 600 13px/1.4 var(--display-font);
+  cursor: pointer;
+}
+
+.sidebar-new-session-button:hover,
+.sidebar-new-session-button[aria-expanded="true"] {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.sidebar-new-session-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.rail-new-menu.unified-new-menu.direct-new-menu {
+  top: 84px;
+  left: 12px;
+  width: min(300px, calc(100vw - 24px));
+  max-height: min(580px, calc(100dvh - 96px));
+  overscroll-behavior: contain;
+}
+
+.unified-sidebar .session-title { font-size: 13px; }
+.unified-sidebar .session-meta {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ui-readable-muted);
+}
+.unified-sidebar .session-item { min-height: 52px; }
+.unified-sidebar .session-search input,
+.unified-sidebar .session-type-filters button,
+.unified-sidebar .session-filter-trigger,
+.unified-sidebar .unified-sidebar-nav > button { font-size: 13px; }
+.unified-sidebar .unified-sidebar-nav-head,
+.unified-sidebar .session-project-head,
+.unified-sidebar .session-project-empty {
+  font-size: 12px;
+  color: var(--ui-readable-muted);
+}
+
+.pane-head .pane-id strong { font-size: 12px; }
+.pane-head .pane-id span,
+.pane-head .pane-status { font-size: 11px; }
+.pane-head .pane-id span { color: var(--ui-readable-muted); }
+
+.settings-dialog .settings-provider-copy small,
+.settings-dialog .settings-provider-usage {
+  font-size: 12px;
+  color: var(--ui-readable-muted);
+}
+.settings-dialog .settings-provider-status .status-chip {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.settings-dialog .settings-provider-status { flex-wrap: wrap; }
+.settings-dialog .settings-provider-quota-note,
+.settings-dialog .settings-provider-quota-list .provider-quota small,
+.settings-dialog .settings-provider-quota-usage > small {
+  font-size: 12px;
+  color: var(--ui-readable-muted);
+}
+
+/* The page already supplies the workbench heading. Keep domain switching
+   compact and give the editor most of the available horizontal space. */

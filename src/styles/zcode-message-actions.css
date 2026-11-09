@@ -1,0 +1,15 @@
+.zcode-message-actions { display: flex; gap: 4px; justify-content: flex-end; margin-top: 6px; }
+.zcode-message-actions button { border: 0; background: transparent; color: var(--text-dim); padding: 5px; border-radius: 5px; cursor: pointer; }
+.zcode-message-actions button:hover { background: var(--bg-hover); color: var(--text); }
+.zcode-message-edit textarea { width: 100%; min-height: 110px; resize: vertical; padding: 10px; color: inherit; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px; }
+.zcode-message-edit div { display: flex; justify-content: flex-end; gap: 8px; margin: 8px 0; }
+.zcode-selection-menu { position: fixed; z-index: 100; display: flex; padding: 4px; gap: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); box-shadow: 0 4px 16px #0004; }
+.zcode-selection-menu button { white-space: nowrap; font-size: 12px; padding: 6px; border: 0; background: transparent; color: var(--text); border-radius: 5px; cursor: pointer; }
+.zcode-selection-menu button:hover { background: var(--bg-hover); }
+.zcode-quote-cards { display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 0; max-height: 130px; overflow: auto; }
+.zcode-quote-cards > div { display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px; max-width: 300px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); }
+.zcode-quote-cards span { white-space: pre-wrap; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; font-size: 12px; }
+.zcode-quote-cards button { border: 0; background: transparent; color: inherit; cursor: pointer; }
+.zcode-side-composer .zcode-quote-cards { grid-column: 1 / -1; flex-basis: 100%; }
+
+.zcode-side-composer { flex-wrap: wrap; }

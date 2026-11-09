@@ -1,0 +1,126 @@
+.collab-runtime-management {
+  width: min(620px, 94vw);
+  max-height: 85vh;
+  overflow: auto;
+  padding: 24px;
+  background: var(--bg-panel, #222);
+  color: var(--text-primary, #ddd);
+  border: 1px solid var(--border, #484848);
+  border-radius: 10px;
+}
+.collab-runtime-management header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.collab-runtime-management h3 { margin: 0; }
+.collab-runtime-management > p { color: var(--text-secondary, #aaa); line-height: 1.6; }
+.collab-runtime-management-list { display: grid; gap: 8px; }
+.collab-runtime-management-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border, #484848);
+  border-radius: 6px;
+  position: relative;
+  user-select: none;
+}
+.collab-runtime-management-list .collab-runtime-drag-handle { display: flex; flex: none; align-self: stretch; align-items: center; color: var(--text-secondary, #aaa); cursor: move; }
+.collab-runtime-management-row.dragging { opacity: 0.5; cursor: move; }
+.collab-runtime-management-row[data-drop-position="before"] { box-shadow: inset 0 2px 0 var(--accent, #a78bfa); }
+.collab-runtime-management-row[data-drop-position="after"] { box-shadow: inset 0 -2px 0 var(--accent, #a78bfa); }
+.collab-runtime-management-list .collab-runtime-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.collab-runtime-toggle > small { flex-shrink: 0; }
+.collab-runtime-order-actions { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.collab-runtime-order-actions button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+}
+.collab-runtime-order-actions button:hover:not(:disabled) { background: var(--bg-hover, #333); color: var(--text-primary, #ddd); }
+.collab-runtime-order-actions button:focus-visible { outline: 2px solid var(--accent, #a78bfa); outline-offset: 1px; }
+.collab-runtime-order-actions button:disabled { opacity: 0.3; cursor: default; }
+.collab-runtime-management-list img { width: 24px; height: 24px; object-fit: contain; }
+.collab-runtime-management-list span { flex: 1; }
+.collab-runtime-management-list small { color: var(--text-secondary, #aaa); }
+.collab-runtime-management-list .collab-runtime-scope { display: block; margin-top: 4px; font-size: 12px; }
+.collab-runtime-management-list input { accent-color: var(--accent, #a78bfa); }
+.collab-runtime-management-empty { align-self: center; color: var(--text-secondary, #aaa); }
+.collab-runtime-management-group {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #aaa);
+}
+.collab-runtime-management-group-section + .collab-runtime-management-group-section {
+  margin-top: 16px;
+}
+
+.collab-ai-memory-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border, #484848);
+  border-radius: 6px;
+}
+.collab-ai-memory-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.collab-ai-memory-status small { color: var(--text-secondary, #aaa); }
+.collab-ai-memory-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-secondary, #888);
+  flex: none;
+}
+.collab-ai-memory-dot.on { background: #34d399; }
+.collab-ai-memory-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.collab-ai-memory-note {
+  margin: 0;
+  color: var(--text-secondary, #aaa);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.collab-ai-memory-note code { user-select: text; }
+
+.shared-memory-settings { display: grid; gap: 16px; }
+.shared-memory-endpoint { color: var(--text-secondary, #aaa); }
+.shared-memory-endpoint code { user-select: text; }
+.shared-memory-explain { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--text-secondary, #ccc); line-height: 1.7; font-size: 13px; }
+.shared-memory-hook-hint { margin: 0 0 8px; }
+.shared-memory-hook-command {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  background: var(--background-muted, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border, #484848);
+  border-radius: 6px;
+  font-size: 12px;
+  user-select: text;
+  overflow-x: auto;
+}
+.shared-memory-hook-note { margin: 0; color: var(--text-secondary, #aaa); font-size: 12px; line-height: 1.6; }
+.shared-memory-hook-note code { user-select: text; }

@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+const {apply}=await import(pathToFileURL(process.argv[2]).href);
+const handlers=[];
+const definition={name:'demo-skill',provider:'test',content:'Use the supplied argument.',resourceBase:{kind:'directory',path:'test'},invocation:{userInvocable:true,modelInvocable:false}};
+const agent={session:{header:{cwd:'test'}}};
+apply({tools:{register(){}},on:(event,handler)=>{if(event==='agent/pre-step')handlers.push(handler);},skills:{get:async(name,options)=>{assert.equal(options.scope,agent);assert.equal(options.cwd,'test');return name==='demo-skill'?definition:undefined;}}});
+const input={source:{kind:'user'},content:[{type:'text',text:'/demo-skill 中文参数'}]};
+const result=await handlers[0]({agent,messages:[input],signal:new AbortController().signal},async()=>({kind:'continue',messages:[input]}));
+assert.equal(result.messages[0],input);
+assert.equal(result.messages[1].source.kind,'skill-invocation');
+assert.equal(result.messages[1].source.name,'demo-skill');
+assert.match(result.messages[1].content[0].text,/Use the supplied argument/);
+definition.invocation.userInvocable=false;
+const rejected=await handlers[0]({agent,messages:[input],signal:new AbortController().signal},async()=>({kind:'continue',messages:[input]}));
+assert.equal(rejected.messages.length,1);
+console.log('Installed Harness explicit skill hook: passed (no model call)');

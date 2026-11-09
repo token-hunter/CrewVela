@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="../src/styles.css" />
+    <style>
+      html, body { width: 430px; height: 900px; margin: 0; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div class="control-overlay control-detached">
+      <aside class="control-sidebar">
+        <header class="control-header"><strong>项目协作</strong></header>
+        <div class="control-multi-agent-surface">
+          <div class="multi-agent-control">
+            <section class="multi-agent-coordinator">
+              <div class="multi-agent-coordinator-messages">
+                <p class="empty">协作任务状态</p>
+              </div>
+              <form>
+                <div class="multi-agent-composer-field">
+                  <div class="multi-agent-composer-editor">
+                    <textarea aria-label="项目协作输入框"></textarea>
+                  </div>
+                  <div class="multi-agent-composer-footer">橙子语音和发送操作</div>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <output id="layout-result"></output>
+    <script>
+      // Stylesheets (including @import chains) block script execution, so layout is
+      // measurable synchronously; no rAF wait — --dump-dom may snapshot before rAF fires.
+      const sidebar = document.querySelector(".control-sidebar");
+      const composer = document.querySelector(".multi-agent-coordinator > form");
+      const gap = Math.round(
+        sidebar.getBoundingClientRect().bottom -
+          composer.getBoundingClientRect().bottom,
+      );
+      document.querySelector("#layout-result").textContent = String(gap);
+    </script>
+  </body>
+</html>

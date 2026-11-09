@@ -1,0 +1,148 @@
+import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
+import { chromium } from "playwright";
+
+const baseUrl = process.env.CREWVELA_UI_URL || "http://127.0.0.1:1420";
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+mkdirSync("output/playwright", { recursive: true });
+const page = await browser.newPage({ viewport: { width: 1180, height: 780 } });
+const runtimeErrors = [];
+page.on("pageerror", error => runtimeErrors.push(error.message));
+const editor = page.getByRole("textbox", { name: "编辑 a.txt", exact: true });
+const row = name => page.locator(".file-tree-row").filter({ hasText: name }).first();
+const hold = (root, command) => page.evaluate(([root, command]) => window.fileExplorerMock.held.add(`${root}:${command}`), [root, command]);
+const unhold = (root, command) => page.evaluate(([root, command]) => window.fileExplorerMock.held.delete(`${root}:${command}`), [root, command]);
+const release = (root, command, failure) => page.evaluate(([root, command, failure]) => window.fileExplorerMock.release(command, root, failure), [root, command, failure]);
+const pending = (root, command) => page.waitForFunction(([root, command]) => window.fileExplorerMock.pending.some(item => item.args.root === root && item.command === command), [root, command]);
+try {
+  await page.goto(new URL("/tests/fixtures/file-explorer-editing-ui.html", baseUrl).href);
+  await row("a.txt").click();
+  // Independent browser failures stay visible without replacing a valid preview.
+  await hold("A", "workspace_list_directory");
+  await row("folder").click(); await pending("A", "workspace_list_directory");
+  await release("A", "workspace_list_directory", "nested directory denied");
+  await page.getByRole("alert").filter({ hasText: "nested directory denied" }).waitFor();
+  await page.screenshot({ path: "output/playwright/file-explorer-tree-error.png", fullPage: true });
+  assert.equal(await page.locator(".file-preview-code").isVisible(), true);
+  await unhold("A", "workspace_list_directory");
+  await row("folder").click(); await row("folder").click(); await row("nested.txt").waitFor();
+  await page.getByRole("button", { name: "关闭文件", exact: true }).click();
+  await hold("A", "workspace_search_files");
+  await page.getByPlaceholder("筛选文件…").fill("denied"); await pending("A", "workspace_search_files");
+  await release("A", "workspace_search_files", "search denied");
+  await page.getByRole("alert").filter({ hasText: "search denied" }).waitFor();
+  await unhold("A", "workspace_search_files");
+  await page.getByPlaceholder("筛选文件…").fill("recovered"); await row("recovered.txt").waitFor();
+  assert.equal(await page.getByRole("alert").count(), 0);
+  await page.getByPlaceholder("筛选文件…").fill("");
+  await row("a.txt").click();
+  await page.getByRole("button", { name: "文件预览设置" }).click();
+  await page.evaluate(() => { window.originalStorageSetItem = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) { if (key === "crewvela-file-preview-settings-v1") throw new DOMException("fixture quota", "QuotaExceededError"); return window.originalStorageSetItem.call(this, key, value); }; });
+  const codeSetting = page.locator(".file-preview-settings label").filter({ hasText: "代码" }).getByRole("checkbox");
+  await codeSetting.uncheck();
+  await page.getByRole("alert").filter({ hasText: "预览设置未保存" }).waitFor();
+  assert.equal(await codeSetting.isChecked(), false, "storage failure preserves the in-memory preference");
+  await page.getByRole("button", { name: "文件预览设置" }).click();
+  await page.screenshot({ path: "output/playwright/file-explorer-settings-error.png", fullPage: true });
+  await page.getByRole("button", { name: "文件预览设置" }).click();
+  await page.evaluate(() => { Storage.prototype.setItem = window.originalStorageSetItem; });
+  await codeSetting.check();
+  assert.equal(await page.getByRole("alert").count(), 0);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("crewvela-file-preview-settings-v1")).code), true);
+  await page.getByRole("button", { name: "文件预览设置" }).click();
+  await page.getByRole("button", { name: "编辑文件", exact: true }).click();
+  await editor.fill("keep this draft");
+  await row("b.txt").click();
+  await row("a.txt").click();
+  await editor.waitFor();
+  assert.equal(await editor.inputValue(), "keep this draft", "switching files must retain unsaved edits");
+
+  await page.getByRole("button", { name: "文件预览设置" }).click();
+  await page.locator(".file-preview-settings label").filter({ hasText: "代码" }).getByRole("checkbox").uncheck();
+  assert.equal(await editor.inputValue(), "keep this draft", "preview settings must not reset the editor");
+  await page.getByRole("button", { name: "文件预览设置" }).click();
+  await page.getByRole("button", { name: "工作区 B", exact: true }).click();
+  await row("a.txt").click();
+  assert.equal(await editor.count(), 0, "another workspace must not inherit the draft");
+  await page.getByRole("button", { name: "工作区 A", exact: true }).click();
+  await editor.waitFor();
+  assert.equal(await editor.inputValue(), "keep this draft", "returning to a workspace restores its selected draft");
+
+  page.once("dialog", dialog => dialog.dismiss());
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  assert.equal(await editor.inputValue(), "keep this draft", "cancel requires confirmation before dropping changes");
+  page.once("dialog", dialog => dialog.dismiss());
+  await page.getByRole("button", { name: "关闭文件", exact: true }).click();
+  assert.equal(await editor.inputValue(), "keep this draft");
+
+  await hold("A", "workspace_write_text");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await pending("A", "workspace_write_text");
+  assert.equal(await editor.isDisabled(), true, "saving locks the submitted draft against further edits");
+  await page.getByRole("button", { name: "工作区 B", exact: true }).click();
+  await row("other.txt").waitFor();
+  await row("a.txt").click();
+  await release("A", "workspace_write_text");
+  await unhold("A", "workspace_write_text");
+  assert.equal(await page.locator(".file-preview-file-line strong").textContent(), "a.txt");
+  assert.equal(await editor.count(), 0, "a completed save from A must not change B's edit state");
+  assert.equal(await page.evaluate(() => window.fileExplorerMock.files.get("A/a.txt")), "keep this draft");
+
+  // Directory responses from an old workspace cannot replace the current tree.
+  await hold("B", "workspace_list_directory");
+  await page.getByRole("button", { name: "刷新文件树" }).click();
+  await pending("B", "workspace_list_directory");
+  await page.getByRole("button", { name: "工作区 A", exact: true }).click();
+  await row("b.txt").waitFor();
+  await release("B", "workspace_list_directory");
+  await unhold("B", "workspace_list_directory");
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('.file-tree-row[title="other.txt"]').count(), 0);
+
+  // A superseded search must not replace a newer result, even in the same root.
+  const search = page.getByPlaceholder("筛选文件…");
+  await hold("A", "workspace_search_files");
+  await search.fill("older");
+  await pending("A", "workspace_search_files");
+  await unhold("A", "workspace_search_files");
+  await search.fill("latest");
+  await row("latest.txt").waitFor();
+  await release("A", "workspace_search_files");
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator(".file-search-result").textContent(), "latest.txt");
+  await row("latest.txt").click();
+  await page.getByRole("button", { name: "编辑文件", exact: true }).click();
+  const searchEditor = page.getByRole("textbox", { name: "编辑 latest.txt", exact: true });
+  await searchEditor.fill("search draft");
+  await search.fill("");
+  await row("b.txt").click();
+  await search.fill("latest");
+  await row("latest.txt").click();
+  assert.equal(await searchEditor.inputValue(), "search draft", "search result selection also preserves drafts");
+
+  await hold("A", "workspace_write_text");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await pending("A", "workspace_write_text");
+  await release("A", "workspace_write_text", "simulated write failure");
+  assert.equal(await searchEditor.inputValue(), "search draft", "failed saves retain recoverable content");
+  await page.getByRole("alert").filter({ hasText: "simulated write failure" }).waitFor();
+  assert.equal(await searchEditor.isEnabled(), true);
+  const errorBox = page.getByRole("alert").filter({ hasText: "simulated write failure" });
+  assert.equal(await errorBox.evaluate(element => getComputedStyle(element).flexGrow), "0", "save errors must not grow into the editing area");
+  assert.ok((await errorBox.boundingBox()).height < 80, "one-line save error stays compact");
+  assert.ok((await searchEditor.boundingBox()).height > 400, "recoverable draft keeps the available editor space");
+  // An Agent updating a file while it is edited must not lose its newer content.
+  await unhold("A", "workspace_write_text");
+  await page.evaluate(() => window.fileExplorerMock.files.set("A/latest.txt", "external update"));
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => window.fileExplorerMock.files.get("A/latest.txt")), "external update", "saving an old draft must preserve external changes");
+  await page.getByRole("alert").filter({ hasText: "已被其他程序修改" }).waitFor();
+  assert.equal(await searchEditor.inputValue(), "search draft", "conflicts retain the full draft for recovery");
+  const writeCall = await page.evaluate(() => window.fileExplorerMock.calls.filter(call => call.command === "workspace_write_text").at(-1));
+  assert.equal(writeCall.args.expectedContents, "latest.txt", "save carries the original editing baseline");
+  await page.screenshot({ path: "output/playwright/file-explorer-conflict.png", fullPage: true });
+  assert.deepEqual(runtimeErrors, []);
+  await page.screenshot({ path: "output/playwright/file-explorer-editing.png", fullPage: true });
+  console.log("PASS: file/search/root draft retention, confirmation, save isolation and failure recovery, directory/search races");
+} finally { await browser.close(); }

@@ -1,0 +1,37 @@
+import assert from "node:assert/strict";
+import { chromium } from "playwright";
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  const url = new URL("/tests/fixtures/terminal-init-ui.html", process.env.CREWVELA_UI_URL || "http://127.0.0.1:1432");
+  await page.goto(url.href);
+  await page.waitForFunction(() => !!window.terminalMock.pending);
+  assert.equal(await page.locator(".xterm").count(), 1, "terminal must exist while settings are still pending");
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent("pty:chunk", { detail: { "1": { data: "first prompt 中文\r\n", exitCode: null } } })));
+  await page.waitForFunction(() => window.terminalMock.terminal.buffer.active.getLine(0).translateToString().includes("first prompt 中文"));
+  await page.evaluate(() => window.terminalMock.emitAppearance());
+  assert.equal(await page.evaluate(() => window.terminalMock.terminal.options.fontSize), 24);
+  await page.evaluate(() => window.terminalMock.release());
+  await page.waitForTimeout(40);
+  assert.equal(await page.evaluate(() => window.terminalMock.terminal.options.fontSize), 24, "late initial settings cannot undo a saved font change");
+  await page.evaluate(() => window.terminalMock.terminal.paste("input"));
+  await page.getByRole("alert").filter({ hasText: "fixture input refused" }).waitFor();
+  await page.screenshot({ path: "output/playwright/terminal-init.png", fullPage: true });
+  await page.getByRole("button", { name: "关闭终端", exact: true }).click();
+  await page.locator(".xterm").waitFor({ state: "detached" });
+  await page.evaluate(() => window.terminalMock.emitAppearance());
+  await page.goto(new URL("?drag=1", url).href);
+  const panes = page.locator(".pane");
+  await panes.nth(1).waitFor();
+  const data = await page.evaluateHandle(() => new DataTransfer());
+  await panes.first().locator(".pane-head").dispatchEvent("dragstart", { dataTransfer: data });
+  assert.equal(await page.locator(".pane-dragging").count(), 1, "relayed physical session must use its logical drag slot");
+  await panes.nth(1).dispatchEvent("dragover", { dataTransfer: data });
+  assert.equal(await page.locator(".pane-drop-target").count(), 1);
+  await panes.nth(1).dispatchEvent("drop", { dataTransfer: data });
+  assert.match(await panes.first().innerText(), /ordinary/);
+  assert.equal(await page.locator(".pane-dragging").count(), 0);
+  assert.deepEqual(errors, []);
+  console.log("Terminal UI: early output, newer font settings, input errors, cleanup and relayed pane drag passed");
+} finally { await browser.close(); }

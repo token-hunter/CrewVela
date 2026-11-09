@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { chromium } from "playwright";
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+try {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(e.message));
+  await page.goto(new URL("/tests/fixtures/collaboration-async-ui.html", process.env.CREWVELA_UI_URL || "http://127.0.0.1:1421").href);
+  const input = page.getByPlaceholder(/^人工插话/);
+  const send = page.getByRole("button", { name: "发送", exact: true });
+  await input.fill("first team message");
+  await send.click();
+  await page.waitForFunction(() => window.collabMock.pending.filter(m => m.command === "send_session_message").length === 3);
+  await input.fill("a different next draft");
+  const targets = () => page.evaluate(() => window.collabMock.calls.filter(m => m.command === "send_session_message").map(m => m.args));
+  const first = await targets();
+  assert.equal(new Set(first.map(m => m.requestId)).size, 3);
+  await page.evaluate(() => { for (const failure of [undefined, "disk full", undefined]) window.collabMock.release("send_session_message", failure); });
+  const retry = page.getByRole("button", { name: "仅补发失败成员（1）" });
+  await retry.waitFor();
+  assert.equal(await input.inputValue(), "a different next draft");
+  await retry.evaluate(el => { el.click(); el.click(); });
+  await page.waitForFunction(() => window.collabMock.pending.some(m => m.command === "send_session_message"));
+  const retried = await targets();
+  assert.equal(retried.length, 4);
+  assert.deepEqual(retried[3], first[1]);
+  await page.evaluate(() => window.collabMock.release("send_session_message"));
+  await retry.waitFor({ state: "detached" });
+  assert.equal(await input.inputValue(), "a different next draft");
+  assert.equal(await send.isEnabled(), true);
+  assert.deepEqual(errors, []);
+  console.log("PASS: partial broadcast retries only failed session, preserves ID, body and new draft");
+} finally { await browser.close(); }

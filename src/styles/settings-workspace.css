@@ -1,0 +1,239 @@
+/* Two-column settings workspace. Tokens follow the active app theme. */
+.settings-content-inner:has(.settings-workspace) {
+  max-width: 1240px;
+  width: 100%;
+}
+.settings-content-inner:has(.settings-workspace) .settings-heading {
+  padding-bottom: 24px;
+}
+.runtime-settings.settings-workspace {
+  --workspace-muted: color-mix(in srgb, var(--text) 72%, var(--bg));
+  --workspace-surface: color-mix(in srgb, var(--bg-elev) 55%, var(--bg));
+  --workspace-line: color-mix(in srgb, var(--border) 65%, transparent);
+  flex: 0 0 auto;
+  gap: 16px;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.settings-workspace .workspace-general-grid,
+.settings-workspace .workspace-control-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+.settings-workspace .workspace-general-grid { align-items: stretch; }
+.settings-workspace .workspace-section {
+  min-width: 0;
+  padding: 20px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--workspace-surface);
+}
+.settings-workspace .workspace-network { grid-row: span 2; }
+.settings-workspace .workspace-advanced { grid-column: 1 / -1; }
+.runtime-settings.settings-workspace .runtime-group {
+  display: block;
+  padding: 0;
+  border: 0;
+}
+.runtime-settings.settings-workspace .runtime-group > header {
+  display: block;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--workspace-line);
+}
+.runtime-settings.settings-workspace .runtime-group h3 {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+.runtime-settings.settings-workspace .runtime-group header > p,
+.runtime-settings.settings-workspace small,
+.runtime-settings.settings-workspace .runtime-details,
+.runtime-settings.settings-workspace .runtime-actions > div {
+  color: var(--workspace-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.runtime-settings.settings-workspace strong,
+.runtime-settings.settings-workspace .runtime-field label,
+.settings-workspace .runtime-path > label {
+  font-size: 14px;
+  font-weight: 500;
+}
+.settings-workspace .runtime-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  align-items: start;
+  gap: 8px;
+  padding: 0 0 20px;
+  min-height: 0;
+}
+.settings-workspace .runtime-field:last-child { padding-bottom: 0; }
+.settings-workspace .runtime-field + .runtime-field { border: 0; }
+.runtime-settings.settings-workspace .runtime-field :is(input, select),
+.settings-workspace .runtime-path input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+.settings-workspace .runtime-field input::placeholder,
+.settings-workspace .runtime-path input::placeholder { color: var(--workspace-muted); }
+.runtime-settings.settings-workspace .browser-control-toggle {
+  min-height: 0;
+  padding: 12px 0;
+  gap: 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.runtime-settings.settings-workspace .browser-control-toggle:first-child { padding-top: 0; }
+.runtime-settings.settings-workspace .browser-control-toggle:last-child { padding-bottom: 0; }
+.runtime-settings.settings-workspace .browser-control-toggle + .browser-control-toggle {
+  margin-top: 0;
+  border-top: 1px solid var(--workspace-line);
+}
+.runtime-settings.settings-workspace .browser-control-toggle > svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--workspace-muted);
+}
+.settings-workspace .workspace-advanced .runtime-group {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: start;
+  gap: 20px;
+}
+.settings-workspace .workspace-advanced .runtime-group > header {
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.settings-workspace .workspace-terminal .runtime-group-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 16px;
+}
+.settings-workspace .workspace-terminal .runtime-field { padding-bottom: 0; }
+.runtime-settings.settings-workspace .workspace-configuration > .runtime-group + fieldset {
+  margin-top: 24px;
+}
+.runtime-settings.settings-workspace .workspace-configuration fieldset > .runtime-group + .runtime-group {
+  margin-top: 24px;
+}
+.settings-workspace .runtime-radios {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.settings-workspace .runtime-radios label {
+  align-items: flex-start;
+  min-width: 0;
+  padding: 10px;
+  gap: 8px;
+  border: 1px solid var(--workspace-line);
+  border-radius: 5px;
+}
+.settings-workspace .runtime-radios label:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.settings-workspace .runtime-radios input { flex: none; margin: 5px 0 0; }
+.settings-workspace .runtime-radios label > span { min-width: 0; overflow-wrap: anywhere; }
+.settings-workspace .runtime-path { margin-top: 16px; }
+.settings-workspace .runtime-result {
+  margin-bottom: 12px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+}
+.settings-workspace .runtime-facts {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+}
+.settings-workspace .runtime-facts dt,
+.settings-workspace .runtime-details dt { color: var(--workspace-muted); }
+.settings-workspace .runtime-facts > div + div { border-color: var(--workspace-line); }
+.settings-workspace .runtime-details { padding: 0; }
+.settings-workspace .runtime-details[open] > summary { margin-bottom: 12px; }
+.settings-workspace .runtime-details summary { color: var(--text); font-size: 13px; }
+.settings-workspace .runtime-details h4 {
+  margin: 16px 0 4px;
+  color: var(--text);
+  font-size: 13px;
+}
+.settings-workspace .runtime-details p,
+.settings-workspace .runtime-warning { overflow-wrap: anywhere; }
+.settings-workspace .runtime-warning { margin: 0; font-size: 13px; }
+.settings-workspace .workspace-status > .runtime-warning { margin-top: 12px; }
+/* Browser settings: the switch introduces the form; peers share a row, and
+   environment details sit below instead of leaving an empty side column. */
+.browser-settings .workspace-browser-stack { display: grid; gap: 24px; }
+.browser-settings .workspace-browser-stack > .workspace-section { padding: 0; background: transparent; border-radius: 0; }
+.runtime-settings.browser-settings .workspace-configuration > .runtime-group > header { display: none; }
+.runtime-settings.browser-settings .workspace-configuration > .runtime-group .browser-control-toggle { padding: 0 0 20px; border-bottom: 1px solid var(--workspace-line); }
+.runtime-settings.browser-settings .workspace-configuration > .runtime-group + fieldset { margin-top: 24px; }
+.browser-settings .workspace-browser-options { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.runtime-settings.browser-settings .workspace-configuration fieldset > .runtime-group + .runtime-group { margin-top: 0; }
+.runtime-settings.browser-settings .workspace-browser-options .runtime-group > header { margin-bottom: 16px; padding-bottom: 0; border: 0; }
+.runtime-settings.browser-settings .workspace-browser-options .runtime-group > header h3 { font-size: 15px; }
+.runtime-settings.browser-settings .workspace-browser-options .runtime-group > header > p { margin-top: 4px; }
+.browser-settings .runtime-radios label { min-height: 68px; padding: 12px; box-sizing: border-box; background: var(--workspace-surface); }
+.browser-settings .workspace-browser-options .runtime-group + .runtime-group { padding-left: 32px; border-left: 1px solid var(--workspace-line); }
+.runtime-settings.browser-settings .workspace-browser-options .browser-control-toggle { padding: 12px 0; }
+.runtime-settings.browser-settings .workspace-browser-options .browser-control-toggle:first-child { padding-top: 0; }
+.runtime-settings.browser-settings .workspace-status { padding-top: 20px; border-top: 1px solid var(--workspace-line); }
+.runtime-settings.browser-settings .workspace-status .runtime-group { display: grid; grid-template-columns: 156px minmax(0, 1fr); gap: 24px; }
+.runtime-settings.browser-settings .workspace-status .runtime-group > header { margin: 0; padding: 0; border: 0; }
+.browser-settings .workspace-status .runtime-result { margin: 0 0 10px; color: var(--text); font-size: 13px; font-family: inherit; overflow-wrap: anywhere; }
+.browser-settings .runtime-details dl > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: 16px; padding: 8px 0; }
+.browser-settings .runtime-details dt { white-space: nowrap; }
+.browser-settings .runtime-details dd { text-align: left; }
+.browser-settings .runtime-details p { max-width: 90ch; margin: 12px 0 0; }
+@container (max-width: 760px) {
+  .browser-settings .workspace-browser-options { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .browser-settings .workspace-browser-options .runtime-group + .runtime-group { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--workspace-line); }
+}
+@container (max-width: 520px) {
+  .runtime-settings.browser-settings .workspace-status .runtime-group { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
+.runtime-settings.settings-workspace .runtime-actions {
+  position: static;
+  margin: 0;
+  padding: 16px 0 24px;
+  border-color: var(--workspace-line);
+}
+.settings-dialog .settings-workspace .runtime-actions .btn {
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+}
+@container (max-width: 760px) {
+  .settings-workspace .workspace-general-grid,
+  .settings-workspace .workspace-control-grid { grid-template-columns: minmax(0, 1fr); }
+  .settings-workspace .workspace-network { grid-row: auto; }
+  .settings-workspace .workspace-advanced { grid-column: auto; }
+}
+@container (max-width: 440px) {
+  .settings-workspace .workspace-section { padding: 16px; }
+  .settings-workspace .workspace-advanced .runtime-group { display: block; }
+  .settings-workspace .workspace-advanced .runtime-group > header { margin-bottom: 12px; }
+  .settings-workspace .runtime-radios { grid-template-columns: minmax(0, 1fr); }
+  .settings-workspace .workspace-terminal .runtime-group-body { grid-template-columns: minmax(0, 1fr); }
+  .runtime-settings.settings-workspace .runtime-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .runtime-settings.settings-workspace .runtime-actions > div { width: 100%; }
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZCode message overflow regression</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <style>
+      html, body, #root { width:100%; height:100%; margin:0; }
+      body { background:var(--bg); color:var(--text); }
+      .fixture-composer { height:72px; flex:0 0 72px; }
+    </style>
+  </head>
+  <body>
+    <main id="root">
+      <section class="harness-chat native-agent-chat zcode-chat" aria-label="ZCode Desktop 原生会话">
+        <header class="harness-chat-header"><div><strong>ZCode Desktop</strong><span>连接中</span></div></header>
+        <div class="harness-chat-messages">
+          <div class="zcode-message-column">
+            <details class="harness-tool zcode-tool">
+              <summary>
+                <strong>点击元素（优先，走可访问性语义）或窗口坐标（需 snapshotId）。返回动作后的新快照，并校验页面交互结果、可访问性树变化以及触发动作前后的状态差异。</strong>
+                <span class="zcode-tool-status">已完成</span>
+                <span class="zcode-tool-description" title="MCP · computer-control">MCP · computer-control</span>
+              </summary>
+              <div class="zcode-tool-details">
+                <small>调用参数</small>
+                <pre>{
+  "app": "Feishu",
+  "elementIndex": 13
+}</pre>
+                <small>返回内容</small>
+                <pre id="tool-output">等待测试脚本填充长工具输出</pre>
+              </div>
+            </details>
+          </div>
+        </div>
+        <form class="harness-chat-composer fixture-composer"><textarea aria-label="发送给 ZCode Desktop" placeholder="描述任务"></textarea></form>
+      </section>
+    </main>
+  </body>
+</html>

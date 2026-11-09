@@ -1,0 +1,39 @@
+name: Bug / 问题反馈
+description: 报告可复现的功能、安装或平台问题。
+body:
+  - type: markdown
+    attributes:
+      value: "请先脱敏。不要上传 Key、登录文件、私人会话或完整用户目录；安全漏洞按 SECURITY.md 私密报告。"
+  - type: input
+    id: version
+    attributes:
+      label: CrewVela 版本或提交 / Version or commit
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: 系统、版本、架构 / OS and architecture
+      placeholder: "Windows 11 x64 / macOS 15 arm64"
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Agent 与 CLI 版本 / Agent and CLI version
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 最小复现步骤 / Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期与实际结果 / Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏截图与错误摘要 / Sanitized evidence
