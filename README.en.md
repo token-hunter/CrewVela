@@ -13,7 +13,7 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 [![React and TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT license](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
 
-[Get started](#get-started) · [See the workspace](#see-the-workspace) · [Workflow guide](docs/workflows.md) · [User guide](docs/user-guide.md) · [Join the community](#join-the-community) · [简体中文](README.md)
+[Get started](#get-started) · [See the workspace](#see-the-workspace) · [Workflow guide](docs/workflows.md) · [User guide](docs/user-guide.md) · [简体中文](README.md)
 
 **Want your coding agents to work together? Star the project and come back to see what they can do next.**
 
@@ -53,11 +53,17 @@ This diagram illustrates a workflow, not an execution record. Messaging requires
 
 ## See the workspace
 
-### Choose an agent
+### A split-view workspace for multiple agents
 
-![CrewVela agent picker on Windows](docs/media/desktop-agent-picker.jpg)
+![CrewVela split-view workspace for agent CLIs](docs/media/desktop-multi-agent-workspace-redacted.png)
 
-Choose a CLI or native chat entry and organize different agents in one workspace. Switch tabs, arrange split views, and use session communication to choose message recipients.
+Arrange Claude Code, Codex, OpenCode, ZCode CLI, and other sessions side by side to follow their status and output. The work panel provides access to files, terminals, the browser, and multi-agent tools.
+
+### Native chat and agent tabs
+
+![CrewVela native chat with multiple agent tabs](docs/media/desktop-native-chat-redacted.png)
+
+Switch between agents in a unified chat interface while keeping each session's tabs and history. Use the collaboration panel to organize tasks and team messages.
 
 <details>
 <summary>See the session communication tutorial</summary>
@@ -66,7 +72,7 @@ Choose the sender and recipient, copy the example, and check the target session 
 
 </details>
 
-The picker was captured in an isolated native Windows test window without personal session content. It does not establish acceptance of every model or message delivery. See [media provenance](docs/media/README.md).
+Both images are real Windows captures with local paths and previous task text masked. They show the interface at the time of capture.
 
 ## What is in the workspace
 
@@ -186,20 +192,6 @@ The near-term priorities are clean-machine installation, bidirectional messaging
 | **Contribute code or docs** | Improve integrations, guides, accessibility, and platform experience |
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md). Sanitize public reports and follow [SECURITY.md](SECURITY.md) for security issues.
-
-## Join the community
-
-Join our Chinese-language WeChat group to discuss agents, Vibe Coding, and multi-agent workflows, share projects, and exchange CrewVela tips.
-
-<div align="center">
-
-<img src="docs/media/wechat-agent-group.jpg" alt="QR code for the Agent WeChat discussion group" width="360" />
-
-Scan with WeChat to join “Agent 交流群” · [Open full-size image](docs/media/wechat-agent-group.jpg)
-
-</div>
-
-The current group code is marked valid **before November 16, 2026**. If it has expired, open an issue to request an update. Remove credentials, account details, and personal information before sharing questions or screenshots.
 
 ## A drumstick for the author 🍗
 

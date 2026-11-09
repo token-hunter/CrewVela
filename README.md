@@ -13,7 +13,7 @@
 [![React 与 TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT 许可](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
 
-[开始使用](#开始使用) · [界面预览](#界面预览) · [协作玩法](docs/workflows.md) · [使用手册](docs/user-guide.md) · [加入交流群](#加入交流群) · [English](README.en.md)
+[开始使用](#开始使用) · [界面预览](#界面预览) · [协作玩法](docs/workflows.md) · [使用手册](docs/user-guide.md) · [English](README.en.md)
 
 **如果你也想让多个编程 Agent 配合干活，点个 Star，方便回来看看它们又学会了什么。**
 
@@ -53,11 +53,17 @@ flowchart LR
 
 ## 界面预览
 
-### 选择 Agent
+### 多 Agent 分屏工作台
 
-![CrewVela Windows Agent 选择器](docs/media/desktop-agent-picker.jpg)
+![CrewVela 多 Agent CLI 分屏工作台](docs/media/desktop-multi-agent-workspace-redacted.png)
 
-选择 CLI 或原生聊天入口，在同一工作区组织不同 Agent 的会话。支持标签切换与分屏；会话通信入口用于选择消息双方。
+把 Claude Code、Codex、OpenCode、ZCode CLI 等会话并排放进同一窗口，快速查看各自的状态与输出。右侧工作面板提供文件、终端、浏览器和多智能体入口。
+
+### 原生聊天与标签切换
+
+![CrewVela 原生聊天与多 Agent 标签](docs/media/desktop-native-chat-redacted.png)
+
+在统一聊天界面切换不同 Agent，保留各自的会话标签与历史；右侧协作面板用于组织任务和团队消息。
 
 <details>
 <summary>查看会话通信教程</summary>
@@ -66,7 +72,7 @@ flowchart LR
 
 </details>
 
-选择器图来自 Windows 原生应用的独立测试窗口，不包含个人会话内容。图片不代表所有模型或消息收发均已验收。来源见[媒体说明](docs/media/README.md)。
+两张图均为 Windows 实拍，已遮挡本机路径与历史任务文字；图中外观以拍摄时版本为准。
 
 ## 工作台里有什么
 
@@ -186,20 +192,6 @@ APPLE_SIGNING_IDENTITY=- npm run build:macos
 | **贡献代码或文档** | 改善接入、教程、无障碍和平台体验 |
 
 从[贡献指南](CONTRIBUTING.md)开始。公开反馈前请先脱敏；安全问题按 [SECURITY.md](SECURITY.md) 处理。
-
-## 加入交流群
-
-一起聊 Agent、Vibe Coding 和多智能体协作，分享作品、交流踩坑与 CrewVela 使用经验。
-
-<div align="center">
-
-<img src="docs/media/wechat-agent-group.jpg" alt="Agent 交流微信群二维码" width="360" />
-
-微信扫码加入「Agent 交流群」 · [查看原图](docs/media/wechat-agent-group.jpg)
-
-</div>
-
-当前群二维码标注 **2026 年 11 月 16 日前有效**。如果已过期，可通过 Issue 提醒更新。提问或分享截图时，请隐藏密钥、账号与个人信息。
 
 ## 给作者加个鸡腿 🍗
 
