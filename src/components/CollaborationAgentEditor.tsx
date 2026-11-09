@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { useRef, useState } from "react";
 import { COLLABORATION_RUNTIMES, isRetiredRuntime } from "../runtimeTaxonomy";
@@ -35,6 +36,7 @@ export function CollaborationAgentEditor({ agent, runtimeLocked, onClose, onSave
   const [draft, setDraft] = useState<AgentDraft>({ avatarId: agent?.avatarId ?? null, name: agent?.name ?? "", runtimeKind: agent?.runtimeKind ?? "claude_code", role: agent?.role ?? "worker", description: agent?.description ?? "", persona: agent?.persona ?? "efficient", personaCustom: agent?.personaCustom ?? "", model: agent?.model ?? null, enabled: isRetiredRuntime(agent?.runtimeKind) ? false : agent?.enabled ?? true });
   const [saving, setSaving] = useState(false);
   const saveInFlight = useRef(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const save = async () => {
     if (saveInFlight.current) return;
@@ -47,7 +49,8 @@ export function CollaborationAgentEditor({ agent, runtimeLocked, onClose, onSave
     catch (reason) { setError(String(reason)); }
     finally { saveInFlight.current = false; setSaving(false); }
   };
-  return <Modal className="collab-agent-editor" ariaLabel={agent ? "编辑团队成员" : "新增团队成员"} onClose={() => { if (!saving) onClose(); }}>
+  // Keep the editor outside the settings scroll/paint layers (notably WKWebView).
+  return createPortal(<Modal initialFocusRef={nameInputRef} overlayClassName="dialog-overlay collab-agent-editor-overlay" className="collab-agent-editor" ariaLabel={agent ? "编辑团队成员" : "新增团队成员"} onClose={() => { if (!saving) onClose(); }}>
     <header><h3>{agent ? "编辑团队成员" : "新增团队成员"}</h3><button type="button" aria-label="关闭成员编辑" disabled={saving} onClick={onClose}>×</button></header>
     <p>按项目分工设置成员，同一个 Runtime 可以创建多个成员。</p>
     <div className="collab-agent-editor-body">
@@ -56,7 +59,7 @@ export function CollaborationAgentEditor({ agent, runtimeLocked, onClose, onSave
           <button type="button" className={draft.avatarId === null ? "selected" : ""} aria-pressed={draft.avatarId === null} disabled={saving} onClick={() => setDraft({ ...draft, avatarId: null })}><AgentAvatar runtimeKind={draft.runtimeKind} decorative /><span>Runtime 默认</span></button>
           <div>{AGENT_AVATARS.map((avatar) => <button type="button" key={avatar.id} className={draft.avatarId === avatar.id ? "selected" : ""} aria-pressed={draft.avatarId === avatar.id} disabled={saving} onClick={() => setDraft({ ...draft, avatarId: avatar.id })}><AgentAvatar avatarId={avatar.id} runtimeKind={draft.runtimeKind} decorative /><span>{avatar.name}</span></button>)}
         </div><small>头像只标识成员，Runtime 与职责可以独立调整。</small></fieldset>
-        <label>成员名称<input autoFocus value={draft.name} maxLength={100} disabled={saving} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="例如：Codex 后端工程师" /></label>
+        <label>成员名称<input ref={nameInputRef} value={draft.name} maxLength={100} disabled={saving} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="例如：Codex 后端工程师" /></label>
         <div className="collab-agent-editor-pair"><label>Runtime<select aria-label="Runtime" value={draft.runtimeKind} disabled={saving || runtimeLocked || !ready} onChange={(e) => setDraft({ ...draft, runtimeKind: e.target.value as AgentRuntimeKind })}>{AVAILABLE.filter(isRuntimeEnabled).map((kind) => <option value={kind} key={kind}>{RUNTIME_LABELS[kind]}</option>)}{!isRuntimeEnabled(draft.runtimeKind) && <option value={draft.runtimeKind} disabled>{RUNTIME_LABELS[draft.runtimeKind]}（不可用）</option>}</select></label>
         <label>角色<select aria-label="角色" value={draft.role} disabled={saving} onChange={(e) => setDraft({ ...draft, role: e.target.value as AgentRole })}>{Object.entries(ROLES).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
         {runtimeLocked && <small>该成员有执行中的任务，等待空闲后可切换 Runtime。</small>}
@@ -79,5 +82,5 @@ export function CollaborationAgentEditor({ agent, runtimeLocked, onClose, onSave
       </aside>
     </div>
     <footer><button className="btn secondary" disabled={saving} onClick={onClose}>取消</button><button className="btn primary" disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存成员"}</button></footer>
-  </Modal>;
+  </Modal>, document.body);
 }

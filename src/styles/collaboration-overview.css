@@ -246,3 +246,6 @@
   cursor: pointer;
 }
 .collab-activity-panel article p button:hover { text-decoration: underline; }
+
+/* The member editor is portalled above the settings workspace. */
+.dialog-overlay.collab-agent-editor-overlay { z-index: var(--z-modal-raised); }
