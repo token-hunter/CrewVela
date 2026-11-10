@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { CollaborationAgentEditor, type AgentDraft } from "./CollaborationAgentEditor";
+import { CollaborationProjectDialog } from "./CollaborationProjectDialog";
 import { SettingsSection } from "./ui/SettingsSection";
 import { Modal } from "./ui/Modal";
 import { activityLabel, diagnosticChecks, HANDOFF_LABELS, taskMatchesFilter, taskPriority } from "../collaborationDiagnostics";
@@ -219,6 +220,8 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     UI_PREVIEW ? PREVIEW_RUNTIMES : [],
   );
   const [error, setError] = useState<string | null>(null);
+  const [projectsLoading, setProjectsLoading] = useState(!UI_PREVIEW);
+  const [creatingProject, setCreatingProject] = useState(false);
   const [skillSets, setSkillSets] = useState<SuggestedSkillSet[]>([]);
   const [checkingRuntimes, setCheckingRuntimes] = useState(false);
   const pendingUpgrades = useRef(new Set<AgentRuntimeKind>());
@@ -277,6 +280,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   useEffect(() => {
     if (UI_PREVIEW) return;
     let cancelled = false;
+    setProjectsLoading(true);
     Promise.all([
       invoke<MultiAgentProject[]>("ma_list_projects"),
       invoke<RuntimeProbe[]>("ma_probe_runtimes"),
@@ -311,6 +315,9 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
       })
       .catch((reason) => {
         if (!cancelled) setError(String(reason));
+      })
+      .finally(() => {
+        if (!cancelled) setProjectsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -516,6 +523,11 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     setDetail({ title: record.title, content: original ? JSON.stringify(original, null, 2) : record.content + "\n\n引用：" + record.sourceUri });
   };
   const agents = currentSnapshot?.agents ?? [];
+  const memberUnavailableReason = currentSnapshot ? null : projectsLoading
+    ? "正在加载协作项目，请稍候再新增成员。"
+    : error ? "协作项目未能加载，请先处理上方错误，再新增成员。"
+    : !projects.length ? "成员必须归属协作项目。点击「创建项目」，完成后即可在这里新增成员。"
+    : selectedProjectId ? "正在加载当前项目，请稍候再新增成员。" : "请先在顶部选择一个协作项目，再新增成员。";
   const enabledAgents = agents.filter((agent) => availability.isRuntimeEnabled(agent.runtimeKind));
   const memberCount = currentSnapshot && availability.ready ? enabledAgents.length : "—";
   const hiddenMemberCount = availability.ready ? agents.length - enabledAgents.length : 0;
@@ -526,6 +538,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     {error && <p role="alert" className="collaboration-settings-error">{error}</p>}
     <section className="collab-project-toolbar">
       <select aria-label="当前项目" value={selectedProjectId ?? ""} disabled={!projects.length} onChange={(event) => selectProject(event.target.value || null)}>{!projects.length && <option value="">暂无协作项目</option>}{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+      <button type="button" className="btn collab-primary" disabled={projectsLoading} onClick={() => setCreatingProject(true)}>创建项目</button>
       <span className={"collab-project-state " + (currentSnapshot?.project.status ?? "")}><i />{currentSnapshot ? projectStatusLabel(currentSnapshot.project) : selectedProjectId ? "加载中…" : "未选择项目"}</span>
       <span className="collab-project-counts"><b>{currentSnapshot?.tasks.length ?? "—"}</b> 个任务<span>· <b>{memberCount}</b> 位成员</span></span>
       <div className="collab-project-actions"><button className="btn secondary" disabled={!currentSnapshot || projectBusy} onClick={() => void pauseProject()}>{projectBusy ? "处理中…" : currentSnapshot?.project.status === "active" ? "暂停项目" : "继续项目"}</button><button className="btn collab-primary" disabled={Boolean(selectedProjectId && !currentSnapshot)} onClick={() => requestHandoff()}>交接工作</button></div>
@@ -593,13 +606,14 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
         (teamRoleFilter === "all" || agent.role === teamRoleFilter)
         && (query === "" || `${agent.name} ${agent.description} ${RUNTIME_LABELS[agent.runtimeKind]}`.toLowerCase().includes(query)));
       const roleCount = (role: AgentRole) => enabledAgents.filter((agent) => agent.role === role).length;
-      return <><div className="collab-team-toolbar"><div className="collab-team-filter-row">
+      return <><div className={`collab-team-toolbar${memberUnavailableReason ? " collab-team-unavailable" : ""}`}><div className="collab-team-filter-row">
         {([["all", "全部"], ["orchestrator", ROLE_LABELS.orchestrator], ["worker", ROLE_LABELS.worker], ["reviewer", ROLE_LABELS.reviewer], ["integrator", ROLE_LABELS.integrator]] as const).map(([value, label]) => (
           <button key={value} type="button" className={`collab-team-filter-pill${teamRoleFilter === value ? " active" : ""}`} aria-pressed={teamRoleFilter === value} onClick={() => setTeamRoleFilter(value)}>{label}<b>{value === "all" ? enabledAgents.length : roleCount(value)}</b></button>
         ))}
         <div className="collab-team-search"><input aria-label="搜索成员" placeholder="搜索成员 / 职责…" value={teamSearch} onChange={(event) => setTeamSearch(event.target.value)} /></div>
-        <button className="btn secondary" disabled={!currentSnapshot} onClick={() => { setEditorProjectId(currentSnapshot!.project.id); setEditingAgent(null); }}>新增成员</button>
-      </div><p>默认团队可自由编辑，点击名片调整人格、模型与职责。{hiddenMemberCount > 0 && ` 共 ${agents.length} 位，隐藏 ${hiddenMemberCount} 位（对应 Runtime 未启用）。`}</p></div><SettingsSection title="团队"><div className="collab-agent-card-grid">
+        <button className="btn secondary" disabled={!currentSnapshot} title={memberUnavailableReason ?? undefined} aria-describedby={memberUnavailableReason ? "collab-member-unavailable" : undefined} onClick={() => { setEditorProjectId(currentSnapshot!.project.id); setEditingAgent(null); }}>新增成员</button>
+      </div>{memberUnavailableReason ? <p id="collab-member-unavailable" role="status">{memberUnavailableReason}</p> : <p>默认团队可自由编辑，点击名片调整人格、模型与职责。{hiddenMemberCount > 0 && ` 共 ${agents.length} 位，隐藏 ${hiddenMemberCount} 位（对应 Runtime 未启用）。`}</p>}
+      </div><SettingsSection title="团队"><div className="collab-agent-card-grid">
         {filteredAgents.map((agent) => {
           const active = currentSnapshot?.runs.some((run) => run.agentId === agent.id && ["queued", "starting", "running", "waiting_input", "waiting_approval"].includes(run.status));
           return <div className="collab-agent-card-cell" key={agent.id}>
@@ -609,9 +623,17 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
               : <span className="collab-agent-card-edit-hint">点击名片编辑</span>}
           </div>;
         })}
-        {!filteredAgents.length && <p className="collab-empty">{enabledAgents.length === 0 ? "暂无可用成员，点击右上角「新增成员」创建。" : "没有匹配的成员。"}</p>}
+        {currentSnapshot && !filteredAgents.length && <p className="collab-empty">{enabledAgents.length === 0 ? "暂无可用成员，点击右上角「新增成员」创建。" : "没有匹配的成员。"}</p>}
       </div></SettingsSection>{suggestedSkillSets.length > 0 && <SettingsSection title="Skill 配置建议">{suggestedSkillSets.map((set) => <article key={set.id}><strong>{set.name}</strong><p>{set.description}</p><button className="btn secondary" onClick={() => { if (!UI_PREVIEW) void applySkillSet(set); }}>应用配置集</button></article>)}</SettingsSection>}</>;
     })()}
+    {creatingProject && <CollaborationProjectDialog onClose={() => setCreatingProject(false)} onCreate={async draft => {
+      const created = UI_PREVIEW ? { ...PREVIEW_PROJECT, ...draft, id: crypto.randomUUID(), status: "active" as const, createdAt: Date.now(), updatedAt: Date.now() } : await invoke<MultiAgentProject>("ma_create_project", { input: { ...draft, defaultBranch: "main" } });
+      setProjects(current => [created, ...current.filter(project => project.id !== created.id)]);
+      if (UI_PREVIEW) setSnapshot({ ...COLLABORATION_UI_PREVIEW_SNAPSHOT, project: created, agents: [], tasks: [], events: [], runs: [], agentSessions: [], messages: [], artifacts: [], approvals: [], dependencies: [], wakeups: [], runLogs: [], instructions: [], runtimeEvents: [], memories: [], reviewDecisions: [] });
+      setError(null);
+      selectProject(created.id);
+      setTab("team");
+    }} />}
     {editingAgent !== undefined && editorProjectId && <CollaborationAgentEditor agent={editingAgent} runtimeLocked={false} onClose={() => setEditingAgent(undefined)} onSave={async (draft: AgentDraft) => {
       if (!currentSnapshot || currentSnapshot.project.id !== editorProjectId) throw new Error("项目已切换，请关闭后重新编辑");
       if (currentSnapshot.agents.some((item) => item.id !== editingAgent?.id && item.name.toLocaleLowerCase() === draft.name.toLocaleLowerCase())) throw new Error("本项目已存在同名成员，请使用不同名称");

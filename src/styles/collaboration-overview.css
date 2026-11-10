@@ -249,3 +249,9 @@
 
 /* The member editor is portalled above the settings workspace. */
 .dialog-overlay.collab-agent-editor-overlay { z-index: var(--z-modal-raised); }
+.collab-team-toolbar.collab-team-unavailable { flex-direction: column; align-items: stretch; }
+.collab-team-unavailable > p { margin: 0; line-height: 1.6; }
+.collab-team-unavailable > button { align-self: flex-start; }
+.collab-project-editor { width: min(560px, calc(100vw - 32px)); }
+.collab-project-editor form { display: flex; flex-direction: column; gap: 16px; }
+.collab-project-editor form > button { align-self: flex-start; }
