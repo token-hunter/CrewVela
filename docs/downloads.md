@@ -2,7 +2,7 @@
 
 当前版本为 **v0.1.0**，安装包与校验文件见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。
 
-**附件发布在 `v0.1.0` Release 下，后续 `main` 更新不会自动更新附件。** 不同平台附件的源码提交以 Release 说明为准；本次 macOS DMG 对应 [`00d3370`](https://github.com/token-hunter/CrewVela/commit/00d337014c7967e697ebc86d163ac42ee65a2436)。 新仓库使用清理后的源码与 Windows 安装包，旧历史及旧包保留在独立的私有备份中。隐私脱敏、依赖、素材与安装验收记录见[发布检查清单](release-checklist.md)。
+**附件发布在 `v0.1.0` Release 下，后续 `main` 更新不会自动更新附件。** 不同平台附件的源码提交以 Release 说明为准；本次 macOS DMG 对应 [`66df105`](https://github.com/token-hunter/CrewVela/commit/66df105a714f89c70120bd42b2c30a6db2aa7549)。 新仓库使用清理后的源码与 Windows 安装包，旧历史及旧包保留在独立的私有备份中。隐私脱敏、依赖、素材与安装验收记录见[发布检查清单](release-checklist.md)。
 
 | 资产 | 用途与当前状态 |
 | --- | --- |
@@ -44,7 +44,7 @@ shasum -a 256 -c CrewVela_0.1.0_macos_aarch64.dmg.sha256
 
 校验通过后打开 DMG，将应用拖入 Applications；替换旧版本前先完整退出应用。使用下载版无需安装 Rust 或克隆源码，但 Node/npm、所用 Agent CLI 与账号仍需本机准备。
 
-该包基于 `00d3370` 原生构建，包含协作中心直接创建项目、统一设置窗口布局，以及按 Runtime 管理 Skill 的更新。具体检查结果和未完成的原生验收范围见 [Release 说明](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。自行构建见 [Mac 指南](../MACOS-CODEX-HANDOFF.md)。
+该包基于 `66df105` 原生构建，包含关闭工作区时遗留原生聊天记录的修复，并保留协作中心直接创建项目、统一设置窗口布局和按 Runtime 管理 Skill 的更新。具体检查结果和未完成的原生验收范围见 [Release 说明](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。自行构建见 [Mac 指南](../MACOS-CODEX-HANDOFF.md)。
 
 本地 ad-hoc 构建不等于 Developer ID 签名或公证；不提供批量删除隔离属性或关闭 Gatekeeper 的安装步骤。签名凭据不得写入源码或报告。
 
