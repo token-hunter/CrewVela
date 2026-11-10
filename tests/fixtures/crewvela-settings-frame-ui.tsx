@@ -6,12 +6,14 @@ import { DEFAULT_PET_SETTINGS } from "../../src/petSettings";
 import { DEFAULT_NOTIFICATION_SETTINGS } from "../../src/notificationSettings";
 import { DEFAULT_COMPANION_SETTINGS } from "../../src/companionSettings";
 import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
+import { installSkillRuntimeFixture } from "./skill-runtime-first-mock";
 import type { AppAppearance, ProviderConfig, SessionRecord } from "../../src/types";
 import "../../src/styles.css";
 
 const params = new URLSearchParams(location.search);
 const theme = params.get("theme") === "light" ? "light" : "dark";
 document.documentElement.dataset.theme = theme;
+if (params.get("mock") === "skills") installSkillRuntimeFixture(params);
 // Explicit fixture-only IPC. Never contacts a real runtime or user profile.
 if (params.get("mock") === "general") {
   let general = structuredClone(GENERAL_SETTINGS_PREVIEW);
@@ -46,7 +48,8 @@ function Fixture() {
   const [appearance, setAppearance] = useState<AppAppearance>({ ...DEFAULT_APPEARANCE, theme });
   return <>
     <button type="button" onClick={() => setOpen(true)}>打开设置回归</button>
-    {open && <SettingsDialog sessions={[]} archivedSessions={archive} projects={[]} providers={sampleProviders}
+    {params.get("debug") === "1" && <pre id="fixture-skills-log" />}
+    {open && <SettingsDialog sessions={[]} archivedSessions={archive} projects={params.get("mock") === "skills" ? [{ id: "fixture-project", name: "示例项目", path: "/fixture/project", badgeColor: "blue", createdAt: 0, updatedAt: 0 }] : []} providers={sampleProviders}
       keyStates={{}} usageByProvider={{}} appearance={appearance} resolvedAppearanceTheme={theme}
       petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS}
       companionSettings={DEFAULT_COMPANION_SETTINGS} onAppearanceChange={setAppearance}
@@ -54,7 +57,7 @@ function Fixture() {
       onEdit={() => {}} onNew={() => {}} onDelete={() => {}} onSetHidden={() => {}}
       onRestoreDefault={() => {}} onReorder={async () => {}} onRestoreArchivedSession={() => {}}
       onDeleteArchivedSession={() => {}} onViewArchivedTranscript={() => {}} onClose={() => setOpen(false)}
-      initialSection={params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : "generalSettings"} />}
+      initialSection={params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : params.get("section") === "skills" ? "skills" : "generalSettings"} />}
   </>;
 }
 

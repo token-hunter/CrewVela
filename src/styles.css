@@ -21,6 +21,7 @@
 @import "./styles/ui-polish.css";
 @import "./styles/skill-workspace.css";
 @import "./styles/settings-native.css";
+@import "./styles/skill-runtime-first.css";
 /* 普通会话 Agent 接力；作用域限定到显式入口和弹窗。 */
 .pane-switch-agent { border: 1px solid var(--border); background: transparent; color: inherit; border-radius: 5px; padding: 3px 7px; cursor: pointer; font-size: 11px; white-space: nowrap; }
 .pane-handoff-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 26px; height: 26px; padding: 0; }

@@ -67,6 +67,16 @@ export function Modal({
       if (event.isComposing || event.keyCode === 229) return;
       if (event.key === "Escape") {
         if (event.target instanceof Element && event.target.closest('.model-combobox.open')) return;
+        // Close the open import disclosure before its containing dialog, including
+        // keyboard events dispatched from the dialog rather than its summary.
+        const importMenu = dialogRef.current?.querySelector<HTMLDetailsElement>('.skill-import-menu[open]');
+        if (importMenu) {
+          event.preventDefault();
+          event.stopPropagation();
+          importMenu.open = false;
+          importMenu.querySelector('summary')?.focus();
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         onCloseRef.current();

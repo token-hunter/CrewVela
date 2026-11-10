@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { EmptyState } from "./ui/EmptyState";
 import {
   ArrowClockwise,
-  Check,
+  CaretDown,
+  DotsThree,
   DownloadSimple,
   FileCode,
   FolderOpen,
@@ -14,10 +16,14 @@ import {
   ShieldCheck,
   Trash,
   Warning,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { SkillMarketPanel } from "./SkillMarketPanel";
 import { SkillUpdatesPanel } from "./SkillUpdatesPanel";
-import type { Project } from "../types";
+import type { AgentRuntimeKind, Project } from "../types";
+import { RUNTIME_LOGOS } from "../runtimeLogos";
+import { Modal } from "./ui/Modal";
+import { distributionAssets, distributionSelection, scopedDistribution, type DistributionFilter } from "../skillDistribution";
 
 interface Props { projects: Project[]; }
 
@@ -59,7 +65,6 @@ const STATUS: Record<string, { label: string; tone: string }> = {
 };
 
 const cellKey = (skillId: string, runtime: string) => `${skillId}::${runtime}`;
-const shortHash = (value: string) => value.slice(0, 10);
 const UI_PREVIEW = new URLSearchParams(window.location.search).get("ui-preview") === "1";
 const previewRuntimes = [
   ["claude_code", "Claude Code", ".claude/skills"], ["codex", "Codex", ".codex/skills"],
@@ -86,6 +91,12 @@ export function SkillCenterPanel({ projects }: Props) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
+  const [runtimeId, setRuntimeId] = useState("claude_code");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<DistributionFilter>("all");
+  const [rowActionsId, setRowActionsId] = useState<string | null>(null);
+  const [showSaveSet, setShowSaveSet] = useState(false);
+  const importMenu = useRef<HTMLDetailsElement>(null);
   const [scope, setScope] = useState<"global" | "project" | "task">("global");
   const [projectPath, setProjectPath] = useState(projects[0]?.path ?? "");
   const [taskWorkspacePath, setTaskWorkspacePath] = useState("");
@@ -121,12 +132,14 @@ export function SkillCenterPanel({ projects }: Props) {
 
   const selectedAsset = snapshot?.assets.find((asset) => asset.id === selectedAssetId) ?? null;
   const effectiveProject = scope === "global" ? null : scope === "task" ? taskWorkspacePath || null : projectPath || null;
-  const scopedDeployments = useMemo(() => (snapshot?.deployments ?? []).filter((item) =>
-    item.scope === scope && (scope === "global" || item.projectPath === effectiveProject)
-    && (scope !== "task" || ((!taskId || item.taskId === taskId) && (!agentId || item.agentId === agentId))),
-  ), [snapshot, scope, effectiveProject, taskId, agentId]);
+  const scopedDeployments = useMemo(() => scopedDistribution(snapshot?.deployments ?? [], scope, effectiveProject, taskId, agentId), [snapshot, scope, effectiveProject, taskId, agentId]);
 
   const deploymentFor = (skillId: string, runtime: string) => scopedDeployments.find((item) => item.skillId === skillId && item.runtime === runtime);
+  const currentRuntime = snapshot?.runtimes.find(runtime => runtime.runtime === runtimeId) ?? snapshot?.runtimes[0];
+  const visibleAssets = distributionAssets(snapshot?.assets ?? [], scopedDeployments.filter(item => item.runtime === currentRuntime?.runtime), search, statusFilter);
+  const selectedKeys = distributionSelection(selectedCells, currentRuntime?.runtime ?? "", visibleAssets);
+  const rowAsset = snapshot?.assets.find(asset => asset.id === rowActionsId);
+  useEffect(() => { setSelectedCells(new Set()); }, [currentRuntime?.runtime, scope, effectiveProject, taskId, agentId, search, statusFilter]);
 
   const run = async (work: () => Promise<void>, success?: string) => {
     if (operationInFlight.current) return;
@@ -186,11 +199,11 @@ export function SkillCenterPanel({ projects }: Props) {
   });
 
   const deploySelected = async () => {
-    if (!selectedCells.size) return;
+    if (!selectedKeys.length) return;
     if (scope === "project" && !projectPath) { setMessage({ tone: "error", text: "请选择项目" }); return; }
     if (scope === "task" && !taskWorkspacePath.trim()) { setMessage({ tone: "error", text: "请选择任务或 Agent 的独立工作目录 / Worktree" }); return; }
     if (scope === "task" && !taskId.trim() && !agentId.trim()) { setMessage({ tone: "error", text: "任务作用域至少填写任务 ID 或 Agent ID" }); return; }
-    const inputs = [...selectedCells].map((key) => {
+    const inputs = selectedKeys.map((key) => {
       const [skillId, runtime] = key.split("::");
       return { skillId, runtime, scope, projectPath: effectiveProject, taskId: scope === "task" ? taskId.trim() || null : null, agentId: scope === "task" ? agentId.trim() || null : null, trustConfirmed: true };
     });
@@ -202,7 +215,7 @@ export function SkillCenterPanel({ projects }: Props) {
   };
 
   const undeploySelected = async () => {
-    const deployments = [...selectedCells]
+    const deployments = selectedKeys
       .map((key) => { const [skillId, runtime] = key.split("::"); return deploymentFor(skillId, runtime); })
       .filter((item): item is Deployment => Boolean(item));
     if (!deployments.length) return;
@@ -248,12 +261,12 @@ export function SkillCenterPanel({ projects }: Props) {
   };
 
   const saveSet = async () => {
-    if (!setName.trim() || !selectedCells.size) { setMessage({ tone: "error", text: "填写配置集名称并选择至少一个分发单元格" }); return; }
-    const items = [...selectedCells].map((key) => {
+    if (!setName.trim() || !selectedKeys.length) { setMessage({ tone: "error", text: "填写配置集名称并选择至少一个 Skill" }); return; }
+    const items = selectedKeys.map((key) => {
       const [skillId, runtime] = key.split("::");
       return { skillId, runtime, scope, projectPath: effectiveProject, taskId: scope === "task" ? taskId.trim() || null : null, agentId: scope === "task" ? agentId.trim() || null : null };
     });
-    await run(async () => { await invoke("skill_center_save_set", { input: { name: setName.trim(), items, projectPath: effectiveProject, agentRole: setAgentRole || null } }); setSetName(""); }, "Skill 配置集已保存");
+    await run(async () => { await invoke("skill_center_save_set", { input: { name: setName.trim(), items, projectPath: effectiveProject, agentRole: setAgentRole || null } }); setSetName(""); setShowSaveSet(false); }, "Skill 配置集已保存");
   };
 
   const applySet = async (set: SkillSetRecord) => {
@@ -267,7 +280,7 @@ export function SkillCenterPanel({ projects }: Props) {
   if (!snapshot) return <div className="skill-center-loading">{message?.tone === "error" ? <><p role="alert">{message.text}</p><button className="btn" disabled={busy} onClick={() => void run(async () => {})}>重新读取中央库</button></> : <><ArrowClockwise className="spin" /> 正在读取 Skill 中央库…</>}</div>;
 
   return (
-    <section className="skill-center skill-workspace" aria-label="Skill 中心">
+    <section className="skill-center skill-workspace skill-runtime-first" data-skill-view={activeTab} aria-label="Skill 中心">
       <fieldset disabled={busy} style={{ display: "contents" }}>
       <header className="skill-center-toolbar">
         <div className="skill-center-tabs" role="tablist" aria-label="Skill 管理视图" onKeyDown={(event) => {
@@ -282,60 +295,76 @@ export function SkillCenterPanel({ projects }: Props) {
             <button key={id} type="button" role="tab" aria-selected={activeTab === id} tabIndex={activeTab === id ? 0 : -1} className={activeTab === id ? "active" : ""} onClick={() => setActiveTab(id)}>{label}{id === "sets" && <span>{snapshot.skillSets.length}</span>}</button>
           )}
         </div>
-        {activeTab !== "market" && <div className="skill-center-actions">
-          <button className="btn" onClick={() => void scan()} disabled={busy}><ArrowClockwise />扫描现有 Skill</button>
+        {activeTab !== "market" && <details className="skill-import-menu" ref={importMenu} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
+          <summary className="btn primary"><DownloadSimple />导入 Skill<CaretDown /></summary>
+          <div className="skill-center-actions" onClick={() => { if (importMenu.current) importMenu.current.open = false; }}>
           <button className="btn" onClick={() => void importPaths("local")} disabled={busy}><FolderOpen />导入目录</button>
           <button className="btn" onClick={() => void importPaths("archive")} disabled={busy}><Package />导入包</button>
           <button className="btn primary" onClick={() => setShowGitImport(true)} disabled={busy}><GitBranch />Git 导入</button>
-        </div>}
+          </div>
+        </details>}
       </header>
 
       {message && <div role={message.tone === "error" ? "alert" : "status"} className={`skill-center-message ${message.tone}`}>{message.text}</div>}
 
+      <div className={activeTab === "matrix" ? "skill-distribution-body" : "skill-secondary-body"}>
+      {activeTab === "matrix" && <div className="skill-runtime-tabs" role="group" aria-label="分发 Runtime" onKeyDown={event => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button"));
+        const index = buttons.indexOf(event.target as HTMLButtonElement);
+        if (index < 0) return;
+        event.preventDefault();
+        const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[next]?.focus(); buttons[next]?.click();
+      }}>{snapshot.runtimes.map(runtime => <button type="button" data-runtime={runtime.runtime} className={runtime.runtime === currentRuntime?.runtime ? "active" : ""} aria-pressed={runtime.runtime === currentRuntime?.runtime} key={runtime.runtime} onClick={() => setRuntimeId(runtime.runtime)}>
+        {RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind] ? <img src={RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind]} alt="" /> : <Package />}<span>{runtime.label}</span>
+      </button>)}</div>}
       <div className={`skill-center-scopebar${activeTab === "market" || activeTab === "updates" ? " hidden" : ""}`}>
-        <label>作用域<select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="global">全局</option><option value="project">项目</option><option value="task">任务 / Agent</option></select></label>
+        {activeTab === "matrix" && <strong className="skill-current-target">当前目标：{currentRuntime?.label ?? "暂无 Runtime"}</strong>}
+        <label>作用域<select aria-label="作用域" value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="global">全局</option><option value="project">项目</option><option value="task">任务 / Agent</option></select></label>
         {scope === "project" && <label>项目<select value={projectPath} onChange={(event) => setProjectPath(event.target.value)}><option value="">选择项目</option>{projects.map((project) => <option key={project.id} value={project.path}>{project.name}</option>)}</select></label>}
         {scope === "task" && <><label>独立工作目录<input value={taskWorkspacePath} onChange={(event) => setTaskWorkspacePath(event.target.value)} placeholder="任务 Worktree 绝对路径" /></label><button className="btn" type="button" onClick={() => void run(async () => { const path = await open({ directory: true, title: "选择任务 Worktree" }); if (typeof path === "string") setTaskWorkspacePath(path); })}>选择目录</button><label>任务 ID<input value={taskId} onChange={(event) => setTaskId(event.target.value)} placeholder="可选" /></label><label>Agent ID<input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="可选" /></label></>}
-        <div className="skill-center-callout"><ShieldCheck />批量操作先预检全部目标，冲突时不会写入任何 Runtime。</div>
+        {activeTab === "matrix" && <><button className="btn" onClick={() => void scan()} disabled={busy}><ArrowClockwise />扫描现有 Skill</button>
+          <label className="skill-filter-search"><MagnifyingGlass /><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="搜索 Skill" aria-label="搜索 Skill" /></label>
+          <select aria-label="分发状态筛选" value={statusFilter} onChange={event => setStatusFilter(event.target.value as DistributionFilter)}><option value="all">全部状态</option><option value="undeployed">未部署</option><option value="synced">已同步</option><option value="attention">需要处理</option><option value="untrusted">待审阅 / 已阻止</option></select></>}
       </div>
 
       {activeTab === "market" && <SkillMarketPanel onInstalled={load} />}
       {activeTab === "updates" && <SkillUpdatesPanel assets={snapshot.assets} deployments={snapshot.deployments} initialSkillId={selectedAssetId} onChanged={load} />}
 
       {activeTab === "matrix" && (
+        <>
+        {currentRuntime && <details className="skill-target-details"><summary>目标详情 <small>查看 {currentRuntime.label} 的运行时路径等信息</small></summary>
+          <dl><div><dt>安装状态</dt><dd>{currentRuntime.installed ? "已检测到 Runtime" : "未检测到 Runtime，请检查安装"}</dd></div><div><dt>全局目录</dt><dd>{currentRuntime.globalRoot}</dd></div><div><dt>项目相对目录</dt><dd>{currentRuntime.projectRoot}</dd></div><div><dt>发现目录</dt><dd>{currentRuntime.discoveryRoots.join("、") || "使用默认目录"}</dd></div></dl>
+        </details>}
         <div className="skill-center-matrix-wrap">
-          <table className="skill-center-matrix" style={{ minWidth: 220 + snapshot.runtimes.length * 144 }}>
-            <thead><tr><th>中央 Skill</th>{snapshot.runtimes.map((runtime) => <th key={runtime.runtime}><strong>{runtime.label} <i className={runtime.installed ? "runtime-online" : "runtime-offline"}>{runtime.installed ? "已安装" : "未检测"}</i></strong><small>{runtime.projectRoot}</small></th>)}</tr></thead>
-            <tbody>{snapshot.assets.map((asset) => (
-              <tr key={asset.id} className={asset.id === selectedAssetId ? "selected" : ""}>
+          <table className="skill-center-matrix skill-distribution-table">
+            <thead><tr><th><input type="checkbox" aria-label="选择当前列表全部 Skill" disabled={!visibleAssets.length || !currentRuntime} checked={!!visibleAssets.length && selectedKeys.length === visibleAssets.length} ref={input => { if (input) input.indeterminate = selectedKeys.length > 0 && selectedKeys.length < visibleAssets.length; }} onChange={event => setSelectedCells(new Set(event.target.checked && currentRuntime ? visibleAssets.map(asset => cellKey(asset.id, currentRuntime.runtime)) : []))} /></th><th>Skill 名称</th><th>信任状态</th><th>分发状态</th><th><span className="sr-only">操作</span></th></tr></thead>
+            <tbody>{visibleAssets.map((asset) => {
+              const deployment = deploymentFor(asset.id, currentRuntime?.runtime ?? "");
+              const key = cellKey(asset.id, currentRuntime?.runtime ?? "");
+              const status = deployment ? STATUS[deployment.status] ?? STATUS.unverified : null;
+              return <tr key={asset.id} className={selectedCells.has(key) ? "selected" : ""}>
+                <td><input type="checkbox" aria-label={`选择 ${asset.name}`} disabled={!currentRuntime} checked={selectedCells.has(key)} onChange={() => toggleCell(key)} /></td>
                 <th scope="row">
                   <button className="skill-asset-cell" title={asset.name} onClick={() => void showPreview(asset)}>
                     <span>{asset.name}</span>
-                    <small>{asset.trustState === "trusted" ? "已信任" : asset.trustState === "blocked" ? "已阻止" : "待审阅"} · {shortHash(asset.contentHash)}</small>
-                  </button>
-                  <button className="skill-asset-update" aria-label={`检查 ${asset.name} 版本与更新`} onClick={() => { setSelectedAssetId(asset.id); setActiveTab("updates"); }}>
-                    <ArrowClockwise size={13} aria-hidden="true" />版本更新
                   </button>
                 </th>
-                {snapshot.runtimes.map((runtime) => {
-                  const deployment = deploymentFor(asset.id, runtime.runtime);
-                  const key = cellKey(asset.id, runtime.runtime);
-                  const status = deployment ? STATUS[deployment.status] ?? STATUS.unverified : null;
-                  return <td key={runtime.runtime}><button className={`skill-matrix-cell${selectedCells.has(key) ? " checked" : ""}`} aria-label={`${asset.name} · ${runtime.label} · ${status?.label ?? "未部署"}`} aria-pressed={selectedCells.has(key)} onClick={() => toggleCell(key)} title={deployment?.targetPath ?? "选择后批量部署"}>
-                    <i>{selectedCells.has(key) ? <Check weight="bold" /> : null}</i>
-                    <span className={`skill-deploy-status ${status?.tone ?? "empty"}`}>{status?.label ?? "未部署"}</span>
-                    {deployment && <small>{deployment.mode}</small>}
-                  </button>{deployment && <button className="skill-cell-remove" onClick={() => void removeDeployment(deployment)} aria-label="撤下"><Trash /></button>}</td>;
-                })}
-              </tr>
-            ))}</tbody>
+                <td><span className={`skill-trust-label ${asset.trustState === "trusted" ? "ok" : asset.trustState === "blocked" ? "danger" : "warn"}`}>{asset.trustState === "trusted" ? "已信任" : asset.trustState === "blocked" ? "已阻止" : "待审阅"}</span></td>
+                <td><span className={`skill-deploy-status ${status?.tone ?? "empty"}`} title={deployment?.lastError ?? deployment?.targetPath}>{status?.label ?? "未部署"}</span></td>
+                <td><button type="button" className="icon-btn" aria-label={`${asset.name} 更多操作`} onClick={() => setRowActionsId(asset.id)}><DotsThree size={20} /></button></td>
+              </tr>;
+            })}</tbody>
           </table>
           {!snapshot.assets.length && <EmptyState className="skill-center-empty" icon={<Package size={28} />} title="中央库还没有 Skill" description="导入目录、压缩包、Git 仓库，或扫描八个 Runtime 的现有目录。" descriptionAs="span" />}
+          {!!snapshot.assets.length && !visibleAssets.length && <p className="skill-center-empty">没有匹配的 Skill，请调整搜索或状态筛选。</p>}
         </div>
+        </>
       )}
 
       {activeTab === "sets" && <div className="skill-sets-layout">
-        <section className="skill-set-compose"><h3>保存当前选择为配置集</h3><p>配置集是 Skill、Runtime 和作用域的可复用组合；多个配置集可以同时生效。</p><input value={setName} onChange={(event) => setSetName(event.target.value)} placeholder="例如：前端开发、代码审查" /><select value={setAgentRole} onChange={(event) => setSetAgentRole(event.target.value)}><option value="">不绑定 Agent 角色</option><option value="orchestrator">协调者</option><option value="worker">执行者</option><option value="reviewer">审查者</option><option value="integrator">集成者</option></select><button className="btn primary" onClick={() => void saveSet()} disabled={busy || !selectedCells.size}><Plus />保存配置集</button><small>当前选择 {selectedCells.size} 个分发目标</small></section>
+        <section className="skill-set-compose"><h3>保存当前选择为配置集</h3><p>配置集是 Skill、Runtime 和作用域的可复用组合；多个配置集可以同时生效。</p><input value={setName} onChange={(event) => setSetName(event.target.value)} placeholder="例如：前端开发、代码审查" /><select value={setAgentRole} onChange={(event) => setSetAgentRole(event.target.value)}><option value="">不绑定 Agent 角色</option><option value="orchestrator">协调者</option><option value="worker">执行者</option><option value="reviewer">审查者</option><option value="integrator">集成者</option></select><button className="btn primary" onClick={() => void saveSet()} disabled={busy || !selectedKeys.length}><Plus />保存配置集</button><small>当前选择 {selectedKeys.length} 个分发目标</small></section>
         <div className="skill-set-list">{snapshot.skillSets.map((set) => <article key={set.id}><div><strong>{set.name}</strong><p>{set.description || `${set.items.length} 个 Skill / Runtime 目标`}{set.items.some((item) => item.runtime === "oh_my_pi") ? " · 包含 Oh My Pi（已移除）" : ""}</p></div><span>{set.agentRole ? `角色：${set.agentRole}` : set.projectPath ? "项目" : "全局/混合"}</span><button className="btn" disabled={busy || set.items.some((item) => item.runtime === "oh_my_pi")} onClick={() => void applySet(set)}><DownloadSimple />应用</button><button className="icon-btn danger" onClick={() => void run(async () => { await invoke("skill_center_delete_set", { id: set.id }); })}><Trash /></button></article>)}</div>
       </div>}
 
@@ -344,11 +373,41 @@ export function SkillCenterPanel({ projects }: Props) {
         <section className="skill-preview-main">{selectedAsset ? <><header><div><h3>{selectedAsset.name}</h3><p>{selectedAsset.description || "未提供描述"}</p></div><div className="skill-trust-actions"><button className={selectedAsset.trustState === "trusted" ? "active" : ""} onClick={() => void trust("trusted")}><ShieldCheck />信任</button><button className={selectedAsset.trustState === "blocked" ? "blocked" : ""} onClick={() => void trust("blocked")}><Warning />阻止</button><button className="icon-btn danger" onClick={() => { if (window.confirm("删除中央库中的 Skill？")) void run(async () => { await invoke("skill_center_delete_asset", { skillId: selectedAsset.id }); }); }}><Trash /></button></div></header><div className="skill-risk-strip"><span>来源：{selectedAsset.sourceRef ?? selectedAsset.centralPath}</span>{selectedAsset.sourceRevision && <span>版本：{selectedAsset.sourceRevision}</span>}<span>SHA-256：{selectedAsset.contentHash}</span><span>{selectedAsset.scriptCount} 个脚本</span></div>{selectedAsset.riskSummary.map((risk) => <div className="skill-risk" key={risk}><Warning />{risk}</div>)}<div className="skill-preview-columns"><div className="skill-preview-code"><strong>{previewFile}</strong><pre>{previewContent || preview?.skillMd || "选择 Skill 读取 SKILL.md"}</pre></div><aside>{preview?.files.map((file) => <button type="button" key={file.path} className={previewFile === file.path ? "active" : ""} onClick={() => void readPreviewFile(file.path)}><FileCode /><span>{file.path}</span><small>{Math.ceil(file.size / 1024)} KB</small></button>)}</aside></div></> : <div className="skill-center-empty">选择一个 Skill</div>}</section>
       </div>}
 
-      {activeTab === "matrix" && <footer className="skill-center-footer"><div><input value={setName} onChange={(event) => setSetName(event.target.value)} placeholder="配置集名称（可选）" /><button className="btn" disabled={!selectedCells.size || !setName.trim()} onClick={() => void saveSet()}>保存配置集</button></div><span>已选择 {selectedCells.size} 个目标</span><button className="btn danger" disabled={busy || ![...selectedCells].some((key) => { const [skillId, runtime] = key.split("::"); return Boolean(deploymentFor(skillId, runtime)); })} onClick={() => void undeploySelected()}><Trash />撤下选中</button><button className="btn primary" disabled={busy || !selectedCells.size} onClick={() => void deploySelected()}><DownloadSimple />部署选中</button></footer>}
+      </div>
+      {activeTab === "matrix" && <footer className="skill-center-footer">
+        <div className="skill-selection-summary"><strong>已选择 {selectedKeys.length} 个 Skill</strong><small><ShieldCheck />冲突检查通过后才会写入目标。</small></div>
+        <button className="btn" disabled={busy || !selectedKeys.length} onClick={() => { setMessage(null); setShowSaveSet(true); }}>保存配置集</button>
+        <button className="btn" disabled={busy || !selectedKeys.some(key => { const [skillId, runtime] = key.split("::"); return Boolean(deploymentFor(skillId, runtime)); })} onClick={() => void undeploySelected()}>撤下选中</button>
+        <button className="btn primary" disabled={busy || !selectedKeys.length} onClick={() => void deploySelected()}>部署到 {currentRuntime?.label ?? "Runtime"}</button>
+      </footer>}
 
-      {showGitImport && <div className="skill-center-popover"><div className="skill-center-modal"><h3>从 Git 导入 Skill</h3><label>仓库地址<input value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} placeholder="https://github.com/org/repo.git" /></label><div className="skill-import-grid"><label>分支<input value={gitBranch} onChange={(event) => setGitBranch(event.target.value)} placeholder="可选" /></label><label>子目录<input value={gitSubpath} onChange={(event) => setGitSubpath(event.target.value)} placeholder="skills/example" /></label></div><label>固定 Commit<input value={gitRevision} onChange={(event) => setGitRevision(event.target.value)} placeholder="可选，建议生产环境固定" /></label><footer><button className="btn" onClick={() => setShowGitImport(false)}>取消</button><button className="btn primary" onClick={() => void importGit()} disabled={busy}>导入中央库</button></footer></div></div>}
+      {showSaveSet && createPortal(<Modal className="skill-center-modal skill-runtime-modal" ariaLabel="保存 Skill 配置集" onClose={() => { if (!busy) setShowSaveSet(false); }}>
+        <h3>保存配置集</h3><p>将选中的 {selectedKeys.length} 个 Skill 与当前 Runtime、作用域保存为可复用组合。</p>
+        <label>配置集名称<input value={setName} disabled={busy} onChange={event => setSetName(event.target.value)} placeholder="例如：前端开发" /></label>
+        {message?.tone === "error" && <p role="alert">{message.text}</p>}
+        <footer><button className="btn" disabled={busy} onClick={() => setShowSaveSet(false)}>取消</button><button className="btn primary" disabled={busy || !setName.trim() || !selectedKeys.length} onClick={() => void saveSet()}>保存</button></footer>
+      </Modal>, document.body)}
 
-      {showDiscovery && <div className="skill-center-popover"><div className="skill-center-modal discovery"><h3>Runtime 中发现的 Skill</h3><p>扫描只读取目录；点击“纳管”后才复制进中央库，不会删除原目录。</p><div className="skill-discovery-list">{discovered.map((item) => <article key={`${item.runtime}:${item.path}`}><div><strong>{item.name}</strong><p>{item.runtime} · {item.path}</p></div>{item.alreadyManaged ? <span className="status-chip ok">已纳管</span> : <button className="btn" onClick={() => void adopt(item)}>纳管</button>}</article>)}</div><footer><span>{discovered.length} 个发现结果</span><button className="btn primary" onClick={() => setShowDiscovery(false)}>完成</button></footer></div></div>}
+      {rowAsset && createPortal(<Modal className="skill-center-modal skill-runtime-modal" ariaLabel={`${rowAsset.name} 操作`} onClose={() => { if (!busy) setRowActionsId(null); }}>
+        <h3>{rowAsset.name}</h3><p>{rowAsset.description || "未提供描述"}</p>
+        <dl className="skill-row-facts"><div><dt>内容版本</dt><dd>{rowAsset.contentHash}</dd></div>{(() => { const deployment = deploymentFor(rowAsset.id, currentRuntime?.runtime ?? ""); return deployment && <><div><dt>部署路径</dt><dd>{deployment.targetPath}</dd></div><div><dt>部署方式</dt><dd>{deployment.mode}</dd></div>{deployment.lastError && <p role="alert">{deployment.lastError}</p>}</>; })()}</dl>
+        <button className="btn" disabled={busy} onClick={() => { setRowActionsId(null); void showPreview(rowAsset); }}><FileCode />文件预览与信任审阅</button>
+        <button className="btn" disabled={busy} onClick={() => { setSelectedAssetId(rowAsset.id); setRowActionsId(null); setActiveTab("updates"); }}><ArrowClockwise />版本更新</button>
+        {(() => { const deployment = deploymentFor(rowAsset.id, currentRuntime?.runtime ?? ""); return deployment && <button className="btn danger" disabled={busy} onClick={() => { setRowActionsId(null); void removeDeployment(deployment); }}><Trash />撤下此部署</button>; })()}
+        <footer><button className="btn" disabled={busy} onClick={() => setRowActionsId(null)}>关闭</button></footer>
+      </Modal>, document.body)}
+
+      {showGitImport && createPortal(<Modal className="skill-center-modal skill-runtime-modal" ariaLabel="从 Git 导入 Skill" onClose={() => { if (!busy) setShowGitImport(false); }}>
+        <h3>从 Git 导入 Skill</h3><fieldset disabled={busy} className="skill-modal-fields"><label>仓库地址<input value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} placeholder="https://github.com/org/repo.git" /></label><div className="skill-import-grid"><label>分支<input value={gitBranch} onChange={(event) => setGitBranch(event.target.value)} placeholder="可选" /></label><label>子目录<input value={gitSubpath} onChange={(event) => setGitSubpath(event.target.value)} placeholder="skills/example" /></label></div><label>固定 Commit<input value={gitRevision} onChange={(event) => setGitRevision(event.target.value)} placeholder="可选，建议生产环境固定" /></label></fieldset>
+        {message?.tone === "error" && <p role="alert">{message.text}</p>}
+        <footer><button className="btn" disabled={busy} onClick={() => setShowGitImport(false)}>取消</button><button className="btn primary" onClick={() => void importGit()} disabled={busy}>导入中央库</button></footer>
+      </Modal>, document.body)}
+
+      {showDiscovery && createPortal(<Modal className="skill-center-modal skill-runtime-modal discovery" ariaLabel="Runtime 中发现的 Skill" onClose={() => { if (!busy) setShowDiscovery(false); }}>
+        <h3>Runtime 中发现的 Skill</h3><p>扫描只读取目录；点击“纳管”后才复制进中央库，不会删除原目录。</p>
+        {message?.tone === "error" && <p role="alert">{message.text}</p>}
+        <div className="skill-discovery-list">{discovered.map((item) => <article key={`${item.runtime}:${item.path}`}><div><strong>{item.name}</strong><p>{item.runtime} · {item.path}</p></div>{item.alreadyManaged ? <span className="status-chip ok">已纳管</span> : <button className="btn" disabled={busy} onClick={() => void adopt(item)}>纳管</button>}</article>)}</div><footer><span>{discovered.length} 个发现结果</span><button className="btn primary" disabled={busy} onClick={() => setShowDiscovery(false)}>完成</button></footer>
+      </Modal>, document.body)}
       </fieldset>
     </section>
   );

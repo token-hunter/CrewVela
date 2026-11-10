@@ -15,11 +15,13 @@ try {
   await page.getByRole("button", { name: "重新读取中央库", exact: true }).click();
   await page.locator(".skill-center-matrix").waitFor();
   const local = page.getByRole("button", { name: "导入目录", exact: true });
+  const openImport = async () => { if (!await local.isVisible()) await page.locator(".skill-import-menu > summary").click(); };
+  await openImport();
   await local.evaluate(button => { button.click(); button.click(); });
   await pending("plugin:dialog|open"); assert.equal(await count("plugin:dialog|open"), 1);
   await release("plugin:dialog|open", null, "fixture picker denied");
   await page.locator(".skill-center-message").filter({ hasText: "fixture picker denied" }).waitFor();
-  await local.click(); await pending("plugin:dialog|open"); await release("plugin:dialog|open", ["one", "two"]);
+  await openImport(); await local.click(); await pending("plugin:dialog|open"); await release("plugin:dialog|open", ["one", "two"]);
   await pending("skill_center_import"); await release("skill_center_import", {});
   await pending("skill_center_import"); await release("skill_center_import", null, "second source failed");
   await page.locator(".skill-center-message").filter({ hasText: "已导入 1 个来源" }).waitFor();
@@ -39,7 +41,7 @@ try {
   await page.getByRole("button", { name: "选择目录", exact: true }).click();
   await pending("plugin:dialog|open"); await release("plugin:dialog|open", null, "fixture task directory denied");
   await page.locator(".skill-center-message").filter({ hasText: "fixture task directory denied" }).waitFor();
-  await page.getByRole("button", { name: "Git 导入", exact: true }).click();
+  await openImport(); await page.getByRole("button", { name: "Git 导入", exact: true }).click();
   const gitUrl = page.getByPlaceholder("https://github.com/org/repo.git");
   await gitUrl.fill("https://example.com/fixture.git");
   const gitImport = page.getByRole("button", { name: "导入中央库", exact: true });
