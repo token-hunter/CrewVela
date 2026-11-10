@@ -65,6 +65,10 @@ flowchart LR
 
 在统一聊天界面切换不同 Agent，保留各自的会话标签与历史；右侧协作面板用于组织任务和团队消息。
 
+![CrewVela Pi Chat 与会话通信面板](docs/media/desktop-pi-chat-communication-redacted.png)
+
+Pi Chat 原生 RPC 会话与会话通信面板同屏展示：选择发送方和接收方、复制通信示例，再到目标会话核对消息与回复。
+
 <details>
 <summary>查看会话通信教程</summary>
 
@@ -72,7 +76,7 @@ flowchart LR
 
 </details>
 
-两张图均为 Windows 实拍，已遮挡本机路径与历史任务文字；图中外观以拍摄时版本为准。
+以上截图均为 Windows 实拍，已遮挡本机路径与历史任务文字；图中外观以拍摄时版本为准。
 
 ## 工作台里有什么
 

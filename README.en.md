@@ -65,6 +65,10 @@ Arrange Claude Code, Codex, OpenCode, ZCode CLI, and other sessions side by side
 
 Switch between agents in a unified chat interface while keeping each session's tabs and history. Use the collaboration panel to organize tasks and team messages.
 
+![CrewVela Pi Chat with the session communication panel](docs/media/desktop-pi-chat-communication-redacted.png)
+
+Pi Chat's native RPC session appears alongside the communication panel. Choose a sender and recipient, copy the example, then check the target session for the message and reply.
+
 <details>
 <summary>See the session communication tutorial</summary>
 
@@ -72,7 +76,7 @@ Choose the sender and recipient, copy the example, and check the target session 
 
 </details>
 
-Both images are real Windows captures with local paths and previous task text masked. They show the interface at the time of capture.
+The screenshots are real Windows captures with local paths and previous task text masked. They show the interface at the time of capture.
 
 ## What is in the workspace
 
