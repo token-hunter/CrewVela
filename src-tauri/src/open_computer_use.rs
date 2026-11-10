@@ -306,13 +306,22 @@ mod tests {
 
     #[test]
     fn exe_at_npm_root_uses_current_arch() {
+        #[cfg(windows)]
         let path = exe_at_npm_root(Path::new(r"C:\npm\node_modules"));
+        #[cfg(not(windows))]
+        let path = exe_at_npm_root(Path::new("/fixture/npm/node_modules"));
         let expected_arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+        #[cfg(windows)]
         assert_eq!(
             path,
             PathBuf::from(format!(
                 r"C:\npm\node_modules\open-computer-use\dist\windows\{expected_arch}\open-computer-use.exe"
             ))
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            path,
+            PathBuf::from(format!("/fixture/npm/node_modules/open-computer-use/dist/windows/{expected_arch}/open-computer-use.exe"))
         );
     }
 

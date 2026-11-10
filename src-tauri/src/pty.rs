@@ -1933,7 +1933,7 @@ mod tests {
         let manager = PtyManager::new();
         let error = manager.open_agent_program(&command, "reader-init-failure", false).err().unwrap();
         assert!(error.to_string().contains("reader 初始化失败"), "{error:#}");
-        assert!(manager.sessions.lock().unwrap().is_empty());
+        assert!(manager.sessions.lock().unwrap().is_empty(), "{error:#}");
         assert_eq!(pids.lock().unwrap().len(), 2);
         for pid in pids.lock().unwrap().iter() {
             let status = Command::new("ps").args(["-p", &pid.to_string(), "-o", "stat="]).output().unwrap();

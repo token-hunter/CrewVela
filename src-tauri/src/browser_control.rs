@@ -1253,10 +1253,14 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let server = std::thread::spawn(move || {
             use std::io::{Read, Write};
-            if let Ok((mut stream, _)) = listener.accept() {
+            // Probe HTTP on every platform; the panel wrapper is Windows-only.
+            for _ in 0..(1 + usize::from(cfg!(target_os = "windows"))) {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
                 let mut buf = [0u8; 256];
-                let _ = stream.read(&mut buf);
-                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}");
+                let count = stream.read(&mut buf).unwrap();
+                assert!(String::from_utf8_lossy(&buf[..count]).starts_with("GET /json/version "));
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
             }
         });
         std::fs::write(
@@ -1264,7 +1268,9 @@ mod tests {
             format!(r#"{{"port":{port},"startedAt":0}}"#),
         )
         .unwrap();
-        assert!(panel_cdp_port_alive(&dir));
+        assert_eq!(panel_cdp_port(&dir), Some(port));
+        assert!(panel_cdp_http_ready(port));
+        assert_eq!(panel_cdp_port_alive(&dir), cfg!(target_os = "windows"));
         server.join().unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }

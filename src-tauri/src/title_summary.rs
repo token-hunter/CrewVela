@@ -353,13 +353,23 @@ mod tests {
     }
 
     #[test]
-    fn title_windows_npm_wrapper_preserves_literal_user_arguments_without_shell() {
+    fn title_platform_npm_wrapper_preserves_literal_user_arguments_without_shell() {
         let root = std::env::temp_dir().join(format!("cc title argv {}", uuid::Uuid::new_v4()));
         let entry = root.join("node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
         std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
         std::fs::write(&entry, "console.log(JSON.stringify(process.argv.slice(2)));").unwrap();
+        #[cfg(windows)]
         let wrapper = root.join("pi.cmd");
+        #[cfg(windows)]
         std::fs::write(&wrapper, "@echo off\nnode \"%~dp0%node_modules\\@earendil-works\\pi-coding-agent\\dist\\bundle\\cli.js\" %*\n").unwrap();
+        #[cfg(unix)]
+        let wrapper = {
+            use std::os::unix::fs::PermissionsExt;
+            let wrapper = root.join("pi");
+            std::fs::write(&wrapper, "#!/bin/sh\nexec node \"$(dirname \"$0\")/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js\" \"$@\"\n").unwrap();
+            std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+            wrapper
+        };
         let literal = "中文请求 & echo forbidden | more\n包含 \"引号\" 和 %变量%";
         let output = summary_command(&wrapper, crate::multi_agent::AgentRuntimeKind::Pi).unwrap().args(["--system-prompt", SYSTEM_PROMPT, "--", literal]).output().unwrap();
         assert!(output.status.success());

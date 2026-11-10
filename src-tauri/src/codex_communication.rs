@@ -368,8 +368,8 @@ fn validate_parent(effective: &Value, initial: &str, cwd: &Path, outbox: &Path) 
                         .context("无法解析权限根目录")?
                         .to_path_buf()],
                     ":minimal" => vec![outbox.to_path_buf()],
-                    ":tmpdir" => vec![std::env::temp_dir()],
-                    ":slash_tmp" => vec![PathBuf::from("/tmp")],
+                    ":tmpdir" => vec![permission_base(std::env::temp_dir())?],
+                    ":slash_tmp" => vec![permission_base(PathBuf::from("/tmp"))?],
                     token if token.starts_with(':') => {
                         bail!("Codex 权限含未知特殊路径；未扩大权限")
                     }
@@ -386,6 +386,8 @@ fn validate_parent(effective: &Value, initial: &str, cwd: &Path, outbox: &Path) 
                             } else {
                                 base.join(child)
                             };
+                            #[cfg(unix)]
+                            let child = expand_path(&child.to_string_lossy())?;
                             if access == "deny" && denied_by(&child.to_string_lossy(), outbox) {
                                 bail!("Codex 原权限显式拒绝通信目录；保留原策略，未扩大权限");
                             }
@@ -401,13 +403,24 @@ fn validate_parent(effective: &Value, initial: &str, cwd: &Path, outbox: &Path) 
     }
 }
 
+fn permission_base(path: PathBuf) -> Result<PathBuf> {
+    #[cfg(unix)]
+    return absolute_path(&path);
+    #[cfg(not(unix))]
+    Ok(path)
+}
+
 fn expand_path(path: &str) -> Result<PathBuf> {
-    if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
-        return Ok(dirs::home_dir()
+    let home_relative = path == "~" || path.starts_with("~/") || path.starts_with("~\\");
+    let path = if home_relative {
+        let expanded = dirs::home_dir()
             .context("无法解析 Codex 权限中的用户目录")?
-            .join(path.get(2..).unwrap_or_default()));
-    }
-    let path = PathBuf::from(path);
+            .join(path.get(2..).unwrap_or_default());
+        #[cfg(not(unix))]
+        return Ok(expanded);
+        #[cfg(unix)]
+        expanded
+    } else { PathBuf::from(path) };
     if !path.is_absolute() {
         bail!("Codex 权限路径无法安全解析；未扩大权限");
     }
@@ -417,6 +430,21 @@ fn expand_path(path: &str) -> Result<PathBuf> {
     {
         return absolute_path(&path);
     }
+    #[cfg(unix)]
+    {
+        // Canonicalize only the literal prefix. In particular, /var on macOS
+        // aliases /private/var; leaving a deny glob unnormalized can reopen it.
+        let mut base = PathBuf::new();
+        let mut pattern = PathBuf::new();
+        let mut in_pattern = false;
+        for component in path.components() {
+            in_pattern |= component.as_os_str().to_string_lossy().contains(['*', '?', '[', ']', '{', '}']);
+            if in_pattern { pattern.push(component.as_os_str()); }
+            else { base.push(component.as_os_str()); }
+        }
+        return Ok(absolute_path(&base)?.join(pattern));
+    }
+    #[cfg(not(unix))]
     Ok(path)
 }
 
@@ -689,6 +717,43 @@ mod tests {
         }
         original["permissions"]["restricted"]["filesystem"] = json!({":root":"deny"});
         assert!(permission_overrides(&original, &business, &outbox).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deny_globs_resolve_symlink_prefixes_without_widening_permissions() {
+        let root = root();
+        let actual = root.join("actual");
+        std::fs::create_dir_all(&actual).unwrap();
+        let alias = root.join("alias");
+        std::os::unix::fs::symlink(&actual, &alias).unwrap();
+        let business = actual.join("business");
+        let outbox = actual.join("outbox");
+        for rule in [alias.join("out*"), alias.join("outbox")] {
+            let rule = rule.to_string_lossy().into_owned();
+            let effective = json!({"default_permissions":"restricted","permissions":{"restricted":{"extends":":read-only","filesystem":{rule:"deny"}}}});
+            assert!(permission_overrides(&effective, &business, &outbox).unwrap_err().to_string().contains("显式拒绝"));
+        }
+        let base = root.to_string_lossy().into_owned();
+        for child in ["alias/out*", "alias/outbox"] {
+            let effective = json!({"default_permissions":"restricted","permissions":{"restricted":{"extends":":read-only","filesystem":{base.clone():{child:"deny"}}}}});
+            assert!(permission_overrides(&effective, &business, &outbox).unwrap_err().to_string().contains("显式拒绝"));
+        }
+        let unrelated = alias.join("other*").to_string_lossy().into_owned();
+        let effective = json!({"default_permissions":"restricted","permissions":{"restricted":{"extends":":read-only","filesystem":{unrelated:"deny"}}}});
+        assert!(permission_overrides(&effective, &business, &outbox).is_ok());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temporary_directory_denials_cover_canonical_aliases() {
+        let root = root();
+        let effective = json!({"default_permissions":"restricted","permissions":{"restricted":{"extends":":read-only","filesystem":{":tmpdir":"deny"}}}});
+        assert!(permission_overrides(&effective, &root.join("business"), &root.join("outbox")).unwrap_err().to_string().contains("显式拒绝"));
+        let slash_tmp = Path::new("/tmp").join(format!("crewvela-communication-{}", uuid::Uuid::new_v4()));
+        let effective = json!({"default_permissions":"restricted","permissions":{"restricted":{"extends":":read-only","filesystem":{":slash_tmp":"deny"}}}});
+        assert!(permission_overrides(&effective, &slash_tmp.join("business"), &slash_tmp.join("outbox")).unwrap_err().to_string().contains("显式拒绝"));
     }
 
     #[test]

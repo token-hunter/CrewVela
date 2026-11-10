@@ -428,7 +428,9 @@ fn parse_codex_desktop_processes(output: &str) -> Vec<u32> {
         .collect()
 }
 
-#[cfg(windows)]
+// Pure script construction stays testable on Unix; only the Windows restart
+// entry point below may execute it.
+#[cfg(any(windows, test))]
 fn restart_codex_helper_script() -> &'static str {
     r#"$processIds = @($env:CREWVELA_CODEX_PROCESS_IDS -split ',' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ })
 if ($processIds.Count -gt 0) {
@@ -439,11 +441,6 @@ if ($processIds.Count -gt 0) {
   Wait-Process -Id $processIds -Timeout 5 -ErrorAction SilentlyContinue
 }
 Start-Process -FilePath 'codex://'"#
-}
-
-#[cfg(not(windows))]
-fn restart_codex_helper_script() -> &'static str {
-    ""
 }
 
 #[cfg(windows)]
@@ -730,5 +727,11 @@ mod tests {
         assert!(script.contains("Where-Object { $_ -match '^\\d+$' }"));
         assert!(guarded_stop < stop && stop < reopen);
         assert!(script[..reopen].trim_end().ends_with('}'));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn restart_helper_reports_unsupported_platform_without_starting_processes() {
+        assert_eq!(restart_codex_app().unwrap_err(), "重启 Codex App 当前仅支持 Windows");
     }
 }

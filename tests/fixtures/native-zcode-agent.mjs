@@ -101,7 +101,9 @@ for await (const line of readline.createInterface({input:process.stdin})) {
         assert.ok(p.payload.newText === '' || p.payload.newText.includes('# userselect:'));
         reply(value.id,{commandId:p.commandId,status:'accepted'});
         command=p.commandId;revision++;phase='running';
-        frame({kind:'deltas',deltas:[{op:'row.removed',fromRowId:13}]});
+        // Publish the new CAS revision with the rewind, before edited rows can
+        // become visible and trigger the next command from the test client.
+        frame({kind:'deltas',deltas:[{op:'state.updated',patch:state()},{op:'row.removed',fromRowId:13}]});
         deltas([row(11,'turnHeader',{state:'running',sourceCommandId:command}),row(12,'userInput',{text:p.payload.newText,entityId:'user-1',attachments:canonicalAttachments})]);
         if (p.payload.newText) {
           phase='completedSuccess';

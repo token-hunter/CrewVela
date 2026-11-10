@@ -52,9 +52,15 @@ fn read_string(reader: &mut File, length: u32) -> anyhow::Result<String> {
 }
 
 fn safe_entry_name(name: &str) -> anyhow::Result<&str> {
-    let path = Path::new(name);
+    // Resource packages use Windows paths too, even when read on macOS/Linux.
+    let normalized = name.replace('\\', "/");
+    let bytes = normalized.as_bytes();
+    let drive_prefix = bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+    let path = Path::new(&normalized);
     anyhow::ensure!(
-        !path.is_absolute()
+        !normalized.is_empty()
+            && !drive_prefix
+            && !path.is_absolute()
             && path
                 .components()
                 .all(|part| matches!(part, Component::Normal(_))),
@@ -590,9 +596,12 @@ mod tests {
 
     #[test]
     fn rejects_parent_directory_entries() {
-        assert!(safe_entry_name("../escape.mp4").is_err());
-        assert!(safe_entry_name("C:\\escape.mp4").is_err());
-        assert!(safe_entry_name("wallpaper.mp4").is_ok());
+        for name in ["", "../escape.mp4", "C:\\escape.mp4", "C:/escape.mp4", "C:escape.mp4", "\\\\server\\share\\escape.mp4", "\\escape.mp4", "sounds\\..\\escape.mp4", "sounds/../escape.mp4", "sounds\\../escape.mp4"] {
+            assert!(safe_entry_name(name).is_err(), "unsafe package entry: {name}");
+        }
+        for name in ["wallpaper.mp4", "sounds/music.mp3", "sounds\\music.mp3", "视频/背景.mp4"] {
+            assert!(safe_entry_name(name).is_ok(), "valid package entry: {name}");
+        }
     }
 
     #[test]

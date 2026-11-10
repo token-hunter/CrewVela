@@ -426,16 +426,22 @@ fn expand_shim_path(token: &str, shim_directory: &Path) -> Option<PathBuf> {
     let token = token.trim();
     if let Some(rest) = token.strip_prefix("%~dp0") {
         let rest = rest.trim_start_matches(['\\', '/']);
+        #[cfg(windows)]
         return Some(shim_directory.join(rest.replace('/', "\\")));
+        #[cfg(not(windows))]
+        return Some(shim_directory.join(rest.replace('\\', "/")));
     }
-    let bytes = token.as_bytes();
-    if bytes.len() >= 3
-        && bytes[0] == b'/'
-        && bytes[1].is_ascii_alphabetic()
-        && bytes[2] == b'/'
+    #[cfg(windows)]
     {
-        let drive = bytes[1].to_ascii_uppercase() as char;
-        return Some(PathBuf::from(format!("{drive}:{}", &token[2..])));
+        let bytes = token.as_bytes();
+        if bytes.len() >= 3
+            && bytes[0] == b'/'
+            && bytes[1].is_ascii_alphabetic()
+            && bytes[2] == b'/'
+        {
+            let drive = bytes[1].to_ascii_uppercase() as char;
+            return Some(PathBuf::from(format!("{drive}:{}", &token[2..])));
+        }
     }
     Some(PathBuf::from(token))
 }
@@ -2865,7 +2871,8 @@ mod tests {
         let npm = root.join("zcode.cmd");
         std::fs::write(&npm, "@echo off\r\nnode \"%~dp0\\dist\\zcode.cjs\" %*\r\n").unwrap();
         assert_eq!(resolve_shim_entry(&npm).as_deref(), Some(entry.as_path()));
-        // 源码构建 sh shim：MSYS 盘符路径 + 裸 token。
+        // Source sh shims use MSYS drive paths on Windows, native paths on Unix.
+        #[cfg(windows)]
         fn msys_style(path: &Path) -> String {
             let text = path.to_string_lossy();
             let mut components = text.split(['\\', '/']);
@@ -2876,6 +2883,10 @@ mod tests {
                 .to_ascii_lowercase();
             let rest = components.fold(String::new(), |acc, part| format!("{acc}/{part}"));
             format!("/{drive}{rest}")
+        }
+        #[cfg(not(windows))]
+        fn msys_style(path: &Path) -> String {
+            path.to_string_lossy().into_owned()
         }
         let standalone = root.join("dist/standalone.cjs");
         std::fs::write(&standalone, "// fixture").unwrap();
@@ -2898,6 +2909,20 @@ mod tests {
         .unwrap();
         assert_eq!(resolve_shim_entry(&stale), None);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn shim_path_expansion_keeps_native_roots_and_platform_separators() {
+        #[cfg(windows)]
+        {
+            assert_eq!(expand_shim_path("/c/tools/zcode.cjs", Path::new(r"C:\bin")), Some(PathBuf::from(r"C:\tools\zcode.cjs")));
+            assert_eq!(expand_shim_path(r"%~dp0\dist/zcode.cjs", Path::new(r"C:\bin")), Some(PathBuf::from(r"C:\bin\dist\zcode.cjs")));
+        }
+        #[cfg(not(windows))]
+        {
+            assert_eq!(expand_shim_path("/c/tools/zcode.cjs", Path::new("/fixture/bin")), Some(PathBuf::from("/c/tools/zcode.cjs")));
+            assert_eq!(expand_shim_path(r"%~dp0\dist/zcode.cjs", Path::new("/fixture/bin")), Some(PathBuf::from("/fixture/bin/dist/zcode.cjs")));
+        }
     }
     #[test]
     fn zcode_cli_bundled_builtin_mirrors_cli_candidates() {
@@ -3018,7 +3043,10 @@ mod tests {
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
         let result: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(result["main"], true);
-        assert_eq!(result["entry"], entry.to_string_lossy().as_ref());
+        assert_eq!(
+            Path::new(result["entry"].as_str().unwrap()).canonicalize().unwrap(),
+            entry.canonicalize().unwrap()
+        );
         assert_eq!(result["args"], json!([literal]));
         assert_eq!(result["text"], "中文🙂");
         std::fs::remove_dir_all(&root).unwrap();

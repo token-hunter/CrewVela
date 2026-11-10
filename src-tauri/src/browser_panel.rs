@@ -719,10 +719,17 @@ mod tests {
 
     #[test]
     fn panel_cdp_file_lives_under_browser_control_dir() {
+        #[cfg(windows)]
         let path = panel_cdp_file(Path::new(r"C:\conf"));
+        #[cfg(windows)]
         assert_eq!(
             path,
             PathBuf::from(r"C:\conf\browser-control\panel-cdp.json")
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            panel_cdp_file(Path::new("/fixture/conf")),
+            PathBuf::from("/fixture/conf/browser-control/panel-cdp.json")
         );
     }
 

@@ -2631,11 +2631,15 @@ mod tests {
         let root = std::env::temp_dir().join(format!("crewvela-native-acp-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let blocker = root.join("file");
-        fs::write(&blocker, "not a directory").unwrap();
+        fs::create_dir(&blocker).unwrap();
         let manager = NativeAcpSessions::open_at(blocker.join("sessions.json")).unwrap();
+        // Fail the mutation's write, not the initial history read (ENOTDIR on Unix).
+        fs::remove_dir(&blocker).unwrap();
+        fs::write(&blocker, "not a directory").unwrap();
         let session_id = uuid::Uuid::new_v4().to_string();
         assert!(manager.register(&session_id, &root.display().to_string()).is_err());
         assert!(!manager.contains(&session_id));
+        assert_eq!(fs::read_to_string(&blocker).unwrap(), "not a directory");
         let _ = fs::remove_dir_all(root);
     }
 
