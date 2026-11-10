@@ -9,19 +9,19 @@ const settingsSource = readFileSync(
 );
 const stylesSource = readStyles();
 
-test("设置采用全屏工作区而不是居中小弹窗", () => {
-  assert.match(stylesSource, /\.settings-overlay\s*\{[^}]*padding:\s*0;/s);
-  assert.match(
-    stylesSource,
-    /\.settings-overlay\s*>\s*\.settings-dialog[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100dvh;/,
-  );
-  assert.match(stylesSource, /border-radius:\s*0;/);
-  assert.match(settingsSource, /settings-content-inner/);
+test("所有设置页共用固定窗口框架，标题栏不随正文滚动", () => {
+  assert.match(settingsSource, /className="settings-dialog settings-native"/);
+  assert.match(settingsSource, /labelledBy="settings-dialog-title"/);
+  assert.match(settingsSource, /className="settings-window-header"/);
+  assert.match(stylesSource, /width: min\(1280px, calc\(100vw - 64px\)\)/);
+  assert.match(stylesSource, /height: min\(900px, calc\(100dvh - 64px\)\)/);
+  assert.match(settingsSource, /className="settings-content" key=\{activeSection\}/);
+  assert.doesNotMatch(settingsSource, /settings-feature-dialog|settings-workspace-dialog|collaboration-content|shared-memory-content/);
 });
 
-test("全屏设置提供返回、搜索和分组导航", () => {
-  assert.match(settingsSource, /className="settings-back"/);
-  assert.match(settingsSource, /aria-label="返回应用"/);
+test("统一设置提供固定关闭入口、搜索和分组导航", () => {
+  assert.match(settingsSource, /aria-label="关闭设置"/);
+  assert.equal(settingsSource.match(/aria-label="关闭设置"/g)?.length, 1);
   assert.match(settingsSource, /aria-label="搜索设置"/);
   assert.match(settingsSource, /settings-nav-group/);
   assert.doesNotMatch(settingsSource, /工作流画布|Benchmark|赛博女友/);
@@ -39,14 +39,14 @@ test("全屏设置提供返回、搜索和分组导航", () => {
   assert.doesNotMatch(settingsSource, /模型服务管理/);
 });
 
-test("窄屏仍保持全屏并使用可访问的图标导航", () => {
+test("窄屏仍保留窗口关闭入口和可访问的图标导航", () => {
   assert.match(
     stylesSource,
-    /@media \(max-width:\s*720px\)[\s\S]*?grid-template-columns:\s*68px minmax\(0,\s*1fr\);/,
+    /@media \(max-width:\s*720px\)[\s\S]*?grid-template-columns:\s*64px minmax\(0,\s*1fr\);/,
   );
   assert.match(
     stylesSource,
-    /@media \(max-width:\s*720px\)[\s\S]*?\.settings-dialog \.settings-nav\s*\{[^}]*display:\s*flex;/,
+    /@media \(max-width:\s*720px\)[\s\S]*?\.settings-dialog.settings-native \.settings-nav\s*\{[^}]*display:\s*flex;/,
   );
   assert.match(settingsSource, /aria-label=\{item\.label\}/);
 });

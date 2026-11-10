@@ -7,7 +7,6 @@ import { DotsSixVertical } from "@phosphor-icons/react";
 import { stripOneM } from "../providerConfig";
 import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
-import { ArrowLeftIcon } from "@phosphor-icons/react/dist/csr/ArrowLeft";
 import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
 import { CubeIcon } from "@phosphor-icons/react/dist/csr/Cube";
 import { BrainIcon } from "@phosphor-icons/react/dist/csr/Brain";
@@ -23,9 +22,9 @@ import { UsersIcon } from "@phosphor-icons/react/dist/csr/Users";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { MonitorIcon } from "@phosphor-icons/react/dist/csr/Monitor";
-import { BooksIcon } from "@phosphor-icons/react/dist/csr/Books";
-import { PlugsIcon } from "@phosphor-icons/react/dist/csr/Plugs";
-import { PackageIcon } from "@phosphor-icons/react/dist/csr/Package";
+import { StackIcon } from "@phosphor-icons/react/dist/csr/Stack";
+import { GitForkIcon } from "@phosphor-icons/react/dist/csr/GitFork";
+import { PlugIcon } from "@phosphor-icons/react/dist/csr/Plug";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import type {
   AppAppearance,
@@ -235,19 +234,19 @@ export function SettingsDialog({
           id: "pluginMarket" as const,
           label: "插件市场",
           keywords: "插件 plugin marketplace 市场 安装 工具",
-          icon: <PackageIcon size={16} weight="regular" />,
+          icon: <PlugIcon size={16} weight="regular" />,
         },
         {
           id: "skills" as const,
           label: "Skill 中心",
           keywords: "Skill 技能 中央库 分发 项目 Agent",
-          icon: <BooksIcon size={16} weight="regular" />,
+          icon: <StackIcon size={16} weight="regular" />,
         },
         {
           id: "mcp" as const,
           label: "MCP",
           keywords: "MCP 服务器 server 工具源 Model Context Protocol",
-          icon: <PlugsIcon size={16} weight="regular" />,
+          icon: <GitForkIcon size={16} weight="regular" style={{ transform: "rotate(180deg)" }} />,
         },
       ],
     },
@@ -397,40 +396,21 @@ export function SettingsDialog({
       note: "",
     },
   }[activeSection];
-  const compactSectionHeading = false;
-  const workspaceSection = ["generalSettings", "browserControl", "computerControl", "skills"].includes(activeSection);
-  const wideContent =
-    activeSection === "mcp" ||
-    activeSection === "pluginMarket" ||
-    activeSection === "skills" ||
-    activeSection === "automation" ||
-    activeSection === "archivedSessions";
-
   return (
     <Modal
-      overlayClassName="dialog-overlay settings-overlay"
-      className={`settings-dialog${activeSection === "automation" ? " settings-feature-dialog" : ""}${workspaceSection ? " settings-workspace-dialog" : ""}`}
+      overlayClassName="dialog-overlay settings-overlay settings-native-overlay"
+      className="settings-dialog settings-native"
       onClose={onClose}
       closeOnOverlayClick
-      ariaLabel={compactSectionHeading ? `${sectionCopy.title}设置` : undefined}
-      labelledBy={compactSectionHeading ? undefined : "settings-title"}
+      labelledBy="settings-dialog-title"
     >
-        <aside className="settings-nav">
-          <button
-            className="settings-back"
-            type="button"
-            aria-label="返回应用"
-            onClick={onClose}
-          >
-            <ArrowLeftIcon size={16} aria-hidden="true" />
-            <span>返回应用</span>
+        <header className="settings-window-header">
+          <span id="settings-dialog-title">CrewVela · 设置</span>
+          <button type="button" className="dialog-close" aria-label="关闭设置" onClick={onClose}>
+            <XIcon size={18} aria-hidden="true" />
           </button>
-          <div className="settings-brand">
-            <span className="brand-mark" aria-hidden="true">
-              <GearSixIcon size={16} weight="regular" />
-            </span>
-            <span>设置</span>
-          </div>
+        </header>
+        <aside className="settings-nav">
           <label className="settings-search">
             <MagnifyingGlassIcon size={15} aria-hidden="true" />
             <input
@@ -486,25 +466,18 @@ export function SettingsDialog({
                 ),
               ) && <p className="settings-search-empty">没有匹配的设置</p>}
           </nav>
-          {sectionCopy.note && (
-            <div className="settings-nav-note">{sectionCopy.note}</div>
-          )}
         </aside>
 
-        <div className="settings-content">
+        <div className="settings-content" key={activeSection}>
           <div
-            className={`settings-content-inner${wideContent ? " wide" : ""}${activeSection === "collaboration" ? " collaboration-content" : ""}${activeSection === "sharedMemory" ? " shared-memory-content" : ""}`}
+            className="settings-content-inner"
+            data-settings-section={activeSection}
           >
-            <div
-              className={`dialog-heading settings-heading${compactSectionHeading ? " compact-heading" : ""}`}
-            >
-              {!compactSectionHeading && (
+            <div className="dialog-heading settings-heading">
                 <div>
-                  <span className="eyebrow">{sectionCopy.eyebrow}</span>
                   <h2 id="settings-title">{sectionCopy.title}</h2>
                   <p>{sectionCopy.description}</p>
                 </div>
-              )}
               <div className="settings-heading-actions">
                 {activeSection === "providers" && (
                   <button className="btn primary" onClick={onNew}>
@@ -535,15 +508,9 @@ export function SettingsDialog({
                       </span>
                     </Switch>
                   )}
-                <button
-                  className="dialog-close"
-                  aria-label="关闭设置"
-                  onClick={onClose}
-                >
-                  <XIcon size={16} aria-hidden="true" />
-                </button>
               </div>
             </div>
+            {sectionCopy.note && <p className="settings-page-note">{sectionCopy.note}</p>}
 
             {activeSection === "providers" ? (
               <div className="settings-provider-list settings-provider-quota-list">

@@ -71,8 +71,10 @@ try {
       for (const field of ["x", "width"]) near(g.inner[field], baseline.inner[field], `${label}/${menu}/body-${field}`);
       if (g.title.width > 0) near(g.title.x, baseline.title.x, `${label}/${menu}/title-x`);
       if (g.titleFont !== baseline.titleFont || g.titleLineHeight !== baseline.titleLineHeight) failures.push(`${label}/${menu}: common heading typography changed`);
-      near(g.frame.width, size.width, `${label}/${menu}/viewport-width`);
-      near(g.frame.height, size.height, `${label}/${menu}/viewport-height`);
+      const margin = size.width <= 720 ? 8 : size.width <= 1000 ? 16 : 32;
+      near(g.frame.width, Math.min(1280, size.width - margin * 2), `${label}/${menu}/frame-width`);
+      near(g.frame.height, Math.min(900, size.height - margin * 2), `${label}/${menu}/frame-height`);
+      assert.ok(await page.getByRole("button", { name: "关闭设置", exact: true }).isVisible(), `${label}: persistent close control`);
       near(g.documentWidth, size.width, `${label}/${menu}/root-width`);
       near(g.documentHeight, size.height, `${label}/${menu}/root-height`);
       near(g.documentTop, 0, `${label}/${menu}/root-scroll`);
@@ -94,7 +96,7 @@ try {
         }
       }
     }
-    await page.locator(".settings-nav").getByRole("button", { name: "返回应用", exact: true }).click();
+    await page.getByRole("button", { name: "关闭设置", exact: true }).click();
     assert.equal(await page.locator(".settings-dialog").count(), 0, `${label}: exit settings`);
     await page.getByRole("button", { name: "打开设置回归", exact: true }).click();
     const reopened = await geometry(page);

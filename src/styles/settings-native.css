@@ -1,0 +1,299 @@
+/* Shared settings chrome: a fixed frame, compact navigation and quiet rows.
+   Scoped to SettingsDialog; workbench themes and standalone panels are intact. */
+.settings-native-overlay {
+  padding: 32px;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 28%);
+}
+
+.settings-native-overlay > .settings-dialog.settings-native {
+  --accent: #1479ed;
+  --accent-rgb: 20, 121, 237;
+  --accent-strong: #0868d6;
+  --accent-soft: rgb(20 121 237 / 10%);
+  --on-accent: #fff;
+  --settings-blue: var(--accent);
+  --settings-blue-rgb: var(--accent-rgb);
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 12px;
+  --text-lg: 14px;
+  --text-xl: 15px;
+  --text-2xl: 16px;
+  --panel: var(--bg-elev);
+  --panel-bg: var(--bg-elev);
+  --bg-secondary: var(--bg-elev);
+  --text-primary: var(--text);
+  --text-muted: var(--text-dim);
+  --input-bg: var(--bg-elev);
+  --settings-canvas: var(--bg-elev);
+  --settings-panel: var(--bg-elev);
+  --settings-row: var(--bg-elev);
+  --settings-nav-bg: var(--bg-elev);
+  width: min(1280px, calc(100vw - 64px));
+  height: min(900px, calc(100dvh - 64px));
+  max-width: none;
+  max-height: none;
+  min-width: 0;
+  padding: 0;
+  display: grid;
+  grid-template: 56px minmax(0, 1fr) / 264px minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--settings-canvas);
+  color: var(--text);
+  box-shadow: 0 20px 64px rgb(0 0 0 / 22%);
+  font: 14px/1.5 var(--display-font);
+  overflow: hidden;
+  animation: none;
+}
+
+:root[data-theme="light"] .settings-dialog.settings-native {
+  --bg: #fff;
+  --bg-elev: #fff;
+  --bg-sunken: #f7f7f8;
+  --bg-hover: #f2f2f3;
+  --border: #e9e9eb;
+  --border-strong: #ceced2;
+  --text: #242426;
+  --text-dim: #717175;
+  --text-faint: #79797e;
+  --success: #21844b;
+  --warn: #986400;
+  --danger: #bf3838;
+  color-scheme: light;
+}
+
+.settings-native .settings-window-header {
+  grid-area: 1 / 1 / 2 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px 0 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--settings-canvas);
+  font-size: 16px;
+  font-weight: 600;
+}
+.settings-native .settings-window-header .dialog-close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.settings-native .settings-window-header .dialog-close:hover { background: var(--bg-hover); color: var(--text); }
+.settings-dialog.settings-native .settings-nav {
+  grid-area: 2 / 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 18px 14px 12px;
+  overflow: hidden;
+  background: var(--settings-nav-bg);
+  border-right: 1px solid var(--border);
+}
+.settings-native .settings-search { min-height: 34px; margin: 0 0 22px; border-radius: 7px; background: transparent; }
+.settings-native .settings-search input { font-size: 14px; line-height: 1.4; }
+.settings-native .settings-nav-list { padding: 0 0 8px; scrollbar-width: thin; }
+.settings-native .settings-nav-group-label { padding: 0 10px 7px; font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--text-dim); }
+.settings-native .settings-nav-group + .settings-nav-group { margin-top: 18px; }
+.settings-dialog.settings-native .settings-nav-group .settings-nav-item {
+  min-height: 36px;
+  padding: 5px 10px;
+  grid-template-columns: 19px minmax(0, 1fr);
+  gap: 10px;
+  border: 0;
+  border-radius: 7px;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text);
+}
+.settings-native .settings-nav-group .settings-nav-item + .settings-nav-item { margin-top: 1px; }
+.settings-dialog.settings-native .settings-nav-item.active {
+  background: color-mix(in srgb, var(--text) 9%, var(--settings-canvas));
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: none;
+}
+.settings-dialog.settings-native .settings-nav-icon { color: currentColor; }
+.settings-native .settings-nav-icon svg { width: 18px; height: 18px; }
+
+.settings-dialog.settings-native .settings-content {
+  grid-area: 2 / 2;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  background: var(--settings-canvas);
+  overscroll-behavior: contain;
+}
+.settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  margin: 0;
+  padding: 28px 32px 32px;
+  display: block;
+  box-sizing: border-box;
+}
+.settings-native-overlay > .settings-dialog.settings-native .settings-content .settings-heading {
+  min-height: 0;
+  margin: 0 0 28px;
+  padding: 0;
+  align-items: flex-start;
+  gap: 20px;
+  border: 0;
+}
+.settings-native-overlay > .settings-dialog.settings-native .settings-content .settings-heading h2 { margin: 0; font-size: 26px; line-height: 1.35; letter-spacing: -.02em; font-weight: 650; }
+.settings-native-overlay > .settings-dialog.settings-native .settings-content .settings-heading p { margin: 6px 0 0; max-width: 65ch; font-size: 14px; line-height: 1.6; color: var(--text-dim); }
+.settings-native .settings-heading-actions { flex-wrap: wrap; justify-content: flex-end; }
+.settings-native .settings-page-note { margin: -12px 0 24px; font-size: 12px; color: var(--text-dim); }
+.settings-native :is(input, select, textarea, button) { font-family: inherit; }
+.settings-native :is(input, select, textarea) { accent-color: var(--accent); }
+.settings-dialog.settings-native :is(.btn, .btn.primary, .btn.secondary) {
+  min-height: 32px;
+  height: auto;
+  padding: 6px 12px;
+  border-radius: 6px;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.settings-dialog.settings-native .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.settings-native :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) { border-radius: 6px; }
+.settings-dialog.settings-native :is(button, input, select, textarea, a, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Plain grouped rows, using the existing fields and save/error semantics. */
+.settings-native .runtime-settings.settings-workspace { --workspace-muted: var(--text-dim); --workspace-line: var(--border); gap: 24px; font-family: inherit; }
+.settings-native .settings-workspace :is(.workspace-general-grid, .workspace-control-grid, .workspace-browser-options) { display: flex; flex-direction: column; gap: 28px; }
+.settings-native .settings-workspace .workspace-section { width: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.settings-native .settings-workspace .workspace-terminal .runtime-group-body { display: block; }
+.settings-native .settings-workspace .workspace-advanced .runtime-group { display: block; }
+.settings-native .runtime-settings.settings-workspace .runtime-group > header { padding: 0; margin: 0 0 10px; border: 0; }
+.settings-native .runtime-settings.settings-workspace .runtime-group h3 { font-size: 18px; font-weight: 600; }
+.settings-native .settings-workspace .runtime-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, 38%);
+  align-items: center;
+  gap: 24px;
+  min-height: 62px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-native .runtime-settings.settings-workspace .runtime-field :is(input, select) { width: 100%; min-height: 32px; padding: 5px 9px; font-size: 14px; background: var(--settings-canvas); }
+.settings-native .runtime-settings.settings-workspace .browser-control-toggle,
+.settings-native .runtime-settings.settings-workspace .browser-control-toggle:first-child,
+.settings-native .runtime-settings.settings-workspace .browser-control-toggle:last-child { min-height: 62px; padding: 12px 0; margin: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; }
+.settings-native .runtime-settings.settings-workspace .browser-control-toggle strong,
+.settings-native .runtime-settings.settings-workspace .runtime-field label { font-size: 16px; font-weight: 500; }
+.settings-native .runtime-settings.settings-workspace small { color: var(--text-dim); font-size: 13px; line-height: 1.6; }
+.settings-native .runtime-settings.settings-workspace .runtime-actions { padding: 16px 0 0; margin: 0; background: transparent; flex-wrap: wrap; }
+.settings-native .runtime-actions > div { flex: 1; min-width: 180px; }
+.settings-native .browser-settings .workspace-browser-options .runtime-group + .runtime-group { padding: 0; border: 0; }
+.settings-native .browser-settings .workspace-status .runtime-group { display: block; }
+.settings-native .runtime-radios label { background: transparent; }
+
+/* Shared section language for all remaining settings menus. */
+.settings-native :is(.git-settings-card, .notification-card, .pet-settings-card, .appearance-terminal-section, .sm-page .sm-card, .mcp-server-card, .mcp-server-form) { padding: 16px 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; }
+.settings-native :is(.git-settings-card, .notification-card):first-child { padding-top: 0; }
+.settings-native :is(.git-settings-card h3, .appearance-settings-section h3, .pet-settings-panel h3, .sm-page h3, .automation-section h3) { font-size: 18px; font-weight: 600; }
+.settings-native :is(.notification-card strong, .git-settings-row strong) { font-size: 14px; font-weight: 500; }
+.settings-native :is(.notification-card small, .git-settings-card p, .pet-settings-panel p) { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+.settings-native :is(.settings-section-tabs, .notification-view-tabs, .sm-tabs, .sm-agent-tabs, .plugin-market-tabs) { gap: 16px; margin-bottom: 20px; }
+.settings-dialog.settings-native .shared-memory-settings.sm-page { --sm-accent: var(--accent); gap: 20px; }
+.settings-native .sm-page .sm-button.sm-primary { color: #fff; }
+.settings-native .settings-provider-list { border: 0; border-radius: 0; background: transparent; }
+.settings-native .settings-provider-row { background: transparent; }
+.settings-dialog.settings-native .settings-provider-quota-list { gap: 0; padding-top: 0; }
+.settings-dialog.settings-native .settings-provider-quota-list .settings-provider-row {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.settings-dialog.settings-native .settings-provider-quota-list .settings-provider-row:hover { background: var(--bg-hover); }
+.settings-dialog.settings-native .settings-provider-quota-list .settings-provider-row.drop-target { background: var(--accent-soft); border-bottom-color: var(--accent); }
+.settings-native .settings-provider-quota-note { padding: 0 0 16px; }
+.settings-native :is(.mcp-toolbar, .skill-workspace-header) { flex-wrap: wrap; }
+.settings-native .archived-settings-group { border-radius: 6px; background: transparent; }
+.settings-native .archived-settings-toolbar { grid-template-columns: minmax(0, 1fr) minmax(140px, 180px); }
+.settings-native .archived-settings-row { min-width: 0; }
+.settings-native :is(.archived-settings-search, .archived-settings-toolbar select) { height: 34px; background: transparent; border-radius: 6px; }
+.settings-native .automation-dialog.embedded { width: 100%; min-height: 0; height: auto; border: 0; background: transparent; }
+.settings-native .automation-dialog.embedded .automation-content { min-width: 0; }
+.settings-native .automation-dialog.embedded .automation-scroll-area { overflow: visible; }
+.settings-native .automation-section { padding: 16px 0; background: transparent; border-radius: 0; }
+.settings-native .pm-intro { margin: 8px 0 20px; }
+.settings-native .pm-intro h2 { font-size: 18px; }
+.settings-native .pm-summary-grid { display: flex; flex-wrap: wrap; gap: 0; }
+.settings-native .pm-summary { flex: 1 1 230px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 8px; background: transparent; }
+.settings-native .pm-catalog-grid { display: block; }
+.settings-native .pm-card { padding: 20px 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; }
+.settings-native .pm-icon { width: 36px; height: 36px; flex-basis: 36px; border-radius: 6px; }
+.settings-native .pm-primary { color: #fff; }
+.settings-native .pm-toolbar { flex-wrap: wrap; }
+.settings-native .pm-summary i { color: var(--success); }
+.settings-native .pm-summary i.attention { color: var(--warn); }
+
+/* These editors portal to body so they are never clipped by a settings page. */
+.collab-agent-editor { background: var(--bg-elev); color: var(--text); }
+.collab-agent-editor :is(input, textarea, select) { background: var(--bg); }
+.collab-agent-editor :is(p, small) { color: var(--text-dim); }
+
+/* Collaboration is a workspace within settings, sharing the same palette. */
+.settings-native .collab-overview-page { color: var(--text); }
+.settings-native .collab-page-header { height: auto; min-height: 0; margin-bottom: 20px; justify-content: flex-end; }
+.settings-native .collab-page-header > div:first-child { display: none; }
+.settings-native :is(.collab-project-toolbar, .collab-runtime-toolbar, .collab-task-panel, .collab-side-panels > section, .collab-diagnostic-summary, .collab-status, .collab-runtime-chip summary, .collab-agent-card) { background: transparent; border-color: var(--border); color: var(--text); }
+.settings-native .collab-project-toolbar { height: auto; min-height: 64px; padding: 12px 0; gap: 12px; flex-wrap: wrap; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; }
+.settings-native .collab-project-toolbar select { flex: 1 1 200px; width: 240px; max-width: 100%; background: var(--settings-canvas); color: var(--text); border-color: var(--border-strong); }
+.settings-native .collab-project-actions { flex-wrap: wrap; margin-left: 0; }
+.settings-native .collab-project-counts { gap: 8px; }
+.settings-native .collab-project-counts b { color: var(--text); margin-left: 0; }
+.settings-native .collab-project-state.active { color: var(--success); }
+.settings-native .collab-project-state.active i { background: var(--success); }
+.settings-native .collab-runtime-toolbar { padding: 16px 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; }
+.settings-native .collab-runtime-chips { flex-basis: 100%; }
+.settings-native .collab-runtime-popover { max-width: min(290px, 70vw); }
+.settings-native .collab-tabs { margin-top: 12px; border-color: var(--border); gap: 16px; }
+.settings-native .collab-tabs button { height: 42px; padding: 0 2px; font-size: 14px; color: var(--text-dim); }
+.settings-native .collab-tabs button.active { color: var(--accent); border-color: var(--accent); }
+.settings-native .collab-tabs b { background: var(--bg-hover); color: var(--text-dim); }
+.settings-native .collab-overview-page :is(.btn, .collab-primary) { border-color: var(--border-strong); background: var(--settings-canvas); color: var(--text); }
+.settings-native .collab-overview-page .collab-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.settings-native :is(.collab-team-filter-pill, .collab-team-search input, .collab-runtime-popover, .collab-task-menu > div, .collab-upgrade-menu > button) { background: var(--settings-canvas); color: var(--text); border-color: var(--border); }
+.settings-native :is(.collab-team-filter-pill.active, .collab-task-filters button.active, .collab-task-row.selected) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.settings-native :is(.collab-task-columns, .collab-task-panel > header, .collab-side-panels header, .collab-stage-title) { background: transparent; border-color: var(--border); color: var(--text-dim); }
+.settings-native :is(.collab-agent-card h4, .collab-agent-card strong, .collab-task-title, .collab-task-id) { color: var(--text); }
+.settings-native :is(.collab-agent-card p, .collab-agent-card footer, .collab-project-counts, .collab-runtime-popover p, .collab-task-meta, .collab-team-toolbar > p, .collab-diagnostic-summary > span) { color: var(--text-dim); }
+.settings-native :is(.collab-check-updates, .collab-diagnostic-summary button, .collab-side-panels header button) { color: var(--accent); }
+.settings-native .collab-agent-card { border-radius: 7px; }
+
+@media (max-width: 1000px) {
+  .settings-native-overlay { padding: 16px; }
+  .settings-native-overlay > .settings-dialog.settings-native { width: calc(100vw - 32px); height: calc(100dvh - 32px); grid-template-columns: 200px minmax(0, 1fr); }
+  .settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner { padding: 24px; }
+  .settings-native .settings-heading { flex-wrap: wrap; }
+  .settings-native .collab-agent-card-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+}
+@media (max-width: 720px) {
+  .settings-native-overlay { padding: 8px; }
+  .settings-native-overlay > .settings-dialog.settings-native { width: calc(100vw - 16px); height: calc(100dvh - 16px); grid-template-columns: 64px minmax(0, 1fr); border-radius: 10px; }
+  .settings-dialog.settings-native .settings-nav { display: flex; padding: 12px 8px; }
+  .settings-native .settings-search { display: none; }
+  .settings-native .settings-nav-group-label, .settings-native .settings-nav-label { display: none; }
+  .settings-native .settings-nav-group .settings-nav-item { grid-template-columns: 1fr; justify-items: center; min-height: 36px; padding: 6px; }
+  .settings-native .settings-nav-group + .settings-nav-group { margin-top: 12px; }
+  .settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner { padding: 20px 16px; }
+  .settings-native .settings-workspace .runtime-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .settings-native .archived-settings-toolbar, .settings-native .notification-controls { grid-template-columns: minmax(0, 1fr); }
+  .settings-native .settings-window-header { padding-left: 16px; }
+}

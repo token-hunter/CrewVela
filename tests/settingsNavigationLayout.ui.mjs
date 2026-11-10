@@ -47,10 +47,13 @@ async function geometry(page) {
 }
 
 function compare(actual, baseline, label, size) {
-  near(actual.frame.x, 0, `${label}: frame x`);
-  near(actual.frame.y, 0, `${label}: frame y`);
-  near(actual.frame.width, size.width, `${label}: viewport width`);
-  near(actual.frame.height, size.height, `${label}: viewport height`);
+  const margin = size.width <= 720 ? 8 : size.width <= 1000 ? 16 : 32;
+  const width = Math.min(1280, size.width - margin * 2);
+  const height = Math.min(900, size.height - margin * 2);
+  near(actual.frame.x, (size.width - width) / 2, `${label}: frame x`);
+  near(actual.frame.y, (size.height - height) / 2, `${label}: frame y`);
+  near(actual.frame.width, width, `${label}: frame width`);
+  near(actual.frame.height, height, `${label}: frame height`);
   assert.ok(actual.documentOverflow <= 1, `${label}: document horizontal overflow`);
   assert.ok(actual.contentOverflow <= 1, `${label}: content horizontal overflow`);
   for (const key of ["navHeight", "navScrollHeight", "navEntriesHeight", "navTop", "firstButtonTop", "titleFontSize", "titleTop", "bodyPaddingTop"]) {
