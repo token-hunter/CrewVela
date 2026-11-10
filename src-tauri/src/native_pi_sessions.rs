@@ -1327,13 +1327,13 @@ impl NativePiSessions {
 
     fn interrupt_stream_messages(&self, session_id: &str) -> Result<()> {
         self.mutate_store(|store| {
-            let locator = store
-                .sessions
-                .get_mut(session_id)
-                .ok_or_else(|| anyhow!("Pi Chat 会话不存在"))?;
-            for message in &mut locator.history {
-                if message.stream_status == "streaming" {
-                    message.stream_status = "interrupted".into();
+            // A failed launch can leave an outer record without Pi history.
+            // Missing history needs no settlement; save/flush errors still propagate.
+            if let Some(locator) = store.sessions.get_mut(session_id) {
+                for message in &mut locator.history {
+                    if message.stream_status == "streaming" {
+                        message.stream_status = "interrupted".into();
+                    }
                 }
             }
             Ok(())
@@ -1869,6 +1869,39 @@ mod tests {
         manager.test_peer = Some(Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/pi-chat-agent.mjs"));
         manager.register(&record.id, &record.cwd).unwrap();
         (root, manager, sessions, record, tauri::test::mock_app())
+    }
+
+    #[test]
+    fn stop_missing_history_does_not_discard_pending_reply() {
+        let (root, manager, sessions, record, app) = fixture();
+        manager.mutate_store(|store| { store.sessions.remove(&record.id); Ok(()) }).unwrap();
+        let live = manager.live_session(&record.id).unwrap();
+        *live.active_turn_id.lock().unwrap() = Some("pending".into());
+        live.pending_delta.lock().unwrap().0 = "unsaved reply".into();
+        assert!(manager.stop(&record.id, &sessions, app.handle()).is_err());
+        assert_eq!(live.pending_delta.lock().unwrap().0, "unsaved reply");
+        assert_eq!(live.active_turn_id.lock().unwrap().as_deref(), Some("pending"));
+        assert!(sessions.get(&record.id).is_some());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn stop_history_settlement_preserves_messages_and_reports_write_failure() {
+        let (root, manager, sessions, record, app) = fixture();
+        manager.append_assistant_delta(&record.id, "turn", "saved reply", "").unwrap();
+        manager.mutate_store(|store| {
+            store.sessions.get_mut(&record.id).unwrap().history[0].stream_status = "streaming".into();
+            Ok(())
+        }).unwrap();
+        manager.stop(&record.id, &sessions, app.handle()).unwrap();
+        let snapshot = manager.snapshot(&record.id).unwrap();
+        assert_eq!(snapshot.history[0].text, "saved reply");
+        assert_eq!(snapshot.history[0].stream_status, "interrupted");
+        fs::remove_file(&manager.path).unwrap();
+        fs::create_dir(&manager.path).unwrap();
+        assert!(manager.stop(&record.id, &sessions, app.handle()).is_err());
+        assert!(sessions.get(&record.id).is_some());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
