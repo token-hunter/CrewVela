@@ -6926,6 +6926,44 @@ mod tests {
     }
 
     #[test]
+    fn lifecycle_delete_failed_native_launches_without_locators() {
+        let (root, sessions) = lifecycle_fixture();
+        let app = tauri::test::mock_app();
+        let ptys = PtyManager::new();
+        let queue = SessionActionQueue::new();
+        let deepseek = NativeAcpSessions::open_at(root.join("deepseek.json")).unwrap();
+        let claude = NativeClaudeSessions(NativeAcpSessions::open_at_flavor(root.join("claude.json"), NativeChatFlavor::ClaudeChat).unwrap());
+        let kimi = NativeKimiSessions(NativeAcpSessions::open_at_flavor(root.join("kimi.json"), NativeChatFlavor::KimiChat).unwrap());
+        let codex = NativeCodexChatSessions(NativeAcpSessions::open_at_flavor(root.join("codex.json"), NativeChatFlavor::CodexChat).unwrap());
+        let opencode = NativeOpenCodeChatSessions(NativeAcpSessions::open_at_flavor(root.join("opencode.json"), NativeChatFlavor::OpenCodeChat).unwrap());
+        let pi = NativePiSessions::open_at(root.join("pi.json")).unwrap();
+        let zcode = NativeZCodeSessions::open_at(root.join("zcode.json")).unwrap();
+        let retained = sessions.create_runtime(NewRuntimeSession {
+            runtime_kind: "deepseek_harness".into(), cwd: root.display().to_string(), project_id: None,
+        }).unwrap();
+        deepseek.register(&retained.id, &retained.cwd).unwrap();
+        let retained_history = std::fs::read(root.join("deepseek.json")).unwrap();
+        let mut failures = Vec::new();
+        for kind in ["deepseek_harness", "claude_chat", "kimi_chat", "codex_chat", "opencode_chat", "pi_chat"] {
+            // A failed launch can persist the outer record before registration.
+            let record = sessions.create_runtime(NewRuntimeSession {
+                runtime_kind: kind.into(), cwd: root.display().to_string(), project_id: None,
+            }).unwrap();
+            let result = session_switch::with_isolated_switches(&root, || {
+                delete_session_inner(app.handle(), &record.id, &ptys, &sessions, &queue, None,
+                    &deepseek, &zcode, &claude, &kimi, &codex, &pi, &opencode)
+            });
+            if let Err(error) = result { failures.push(format!("{kind}: {error}")); }
+            else { assert!(sessions.get(&record.id).is_none(), "{kind}"); }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("; "));
+        assert!(sessions.get(&retained.id).is_some());
+        assert!(deepseek.contains(&retained.id));
+        assert_eq!(std::fs::read(root.join("deepseek.json")).unwrap(), retained_history);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn lifecycle_automation_direct_target_rechecks_retired_and_archived_at_creation_and_execution() {
         let (root, sessions) = lifecycle_fixture();
         let store = MultiAgentStore::open_at(root.join("agents.db")).unwrap();
