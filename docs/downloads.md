@@ -2,15 +2,16 @@
 
 当前版本为 **v0.1.0**，安装包与校验文件见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。
 
-**安装包对应 `v0.1.0` 标签，后续 `main` 更新不会自动更新附件。** 新仓库使用清理后的源码与 Windows 安装包，旧历史及旧包保留在独立的私有备份中。隐私脱敏、依赖、素材与安装验收记录见[发布检查清单](release-checklist.md)。
+**附件发布在 `v0.1.0` Release 下，后续 `main` 更新不会自动更新附件。** 不同平台附件的源码提交以 Release 说明为准；本次 macOS DMG 对应 [`00d3370`](https://github.com/token-hunter/CrewVela/commit/00d337014c7967e697ebc86d163ac42ee65a2436)。 新仓库使用清理后的源码与 Windows 安装包，旧历史及旧包保留在独立的私有备份中。隐私脱敏、依赖、素材与安装验收记录见[发布检查清单](release-checklist.md)。
 
 | 资产 | 用途与当前状态 |
 | --- | --- |
 | `CrewVela-0.1.0-windows-x64-setup.exe` | Release 附件；Windows NSIS 安装向导，当前用户安装、中英文界面；完整安装验收仍待完成 |
 | `CrewVela-0.1.0-windows-x64.exe` | 应用本体的对外命名；不是安装向导，尚未作为该 Release 的独立附件提供 |
 | `CrewVela-0.1.0-windows-x64-portable.zip` | 计划包含应用 EXE、许可、安装说明和构建信息；尚未作为 Release 附件提供 |
-| `CrewVela-0.1.0-macos-arm64.dmg` | 新包待在 Mac 重新构建和复核，当前不提供旧 DMG 下载 |
-| `SHA256SUMS.txt` | 覆盖实际上传的 Windows 安装包；完整性散列不代替签名 |
+| [CrewVela_0.1.0_macos_aarch64.dmg](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg) | macOS Apple Silicon（ARM64），约 23 MiB；ad-hoc 签名、未公证；原生完整验收仍待完成 |
+| [CrewVela_0.1.0_macos_aarch64.dmg.sha256](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg.sha256) | 上述 macOS DMG 的独立校验文件 |
+| `SHA256SUMS.txt` | 覆盖实际上传的 Windows 安装包与 macOS DMG；完整性散列不代替签名 |
 
 ## Windows
 
@@ -35,7 +36,15 @@ npm run bundle:windows
 
 ## macOS Apple Silicon
 
-此前 DMG 仍含构建路径，保留在私有备份，不作为新仓库附件提供。当前请按 [Mac 指南](../MACOS-CODEX-HANDOFF.md)从源码构建，完成最终应用的路径扫描、DMG 完整性、安装后启动与正常退出验证后再发布新包。
+直接下载 [macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg) 和[校验文件](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg.sha256)，放在同一目录后执行：
+
+```sh
+shasum -a 256 -c CrewVela_0.1.0_macos_aarch64.dmg.sha256
+```
+
+校验通过后打开 DMG，将应用拖入 Applications；替换旧版本前先完整退出应用。使用下载版无需安装 Rust 或克隆源码，但 Node/npm、所用 Agent CLI 与账号仍需本机准备。
+
+该包基于 `00d3370` 原生构建，包含协作中心直接创建项目、统一设置窗口布局，以及按 Runtime 管理 Skill 的更新。具体检查结果和未完成的原生验收范围见 [Release 说明](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。自行构建见 [Mac 指南](../MACOS-CODEX-HANDOFF.md)。
 
 本地 ad-hoc 构建不等于 Developer ID 签名或公证；不提供批量删除隔离属性或关闭 Gatekeeper 的安装步骤。签名凭据不得写入源码或报告。
 

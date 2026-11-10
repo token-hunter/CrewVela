@@ -21,7 +21,7 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 
 CrewVela is a desktop workspace built with **Tauri 2, React, and Rust**. It brings separate agent sessions, messaging, project collaboration, and work handoffs into one window, while retaining each agent's local installation, accounts, and permission mechanisms.
 
-> **Current version: v0.1.0.** The Windows installer is available on [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0). macOS can be built from source; its replacement package awaits native verification. See the [installation guide](docs/downloads.md).
+> **Current version: v0.1.0.** The Windows installer is available on [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0). [Download the macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg) (ARM64, ad-hoc signed, not notarized). See the [installation guide](docs/downloads.md) for setup and verification limits.
 
 ## Give your agents a shared workspace
 
@@ -165,7 +165,7 @@ Project members use the same entry point. Copying an example only writes to the 
 | Platform | Current validation |
 | --- | --- |
 | Windows x64 | Local source builds and regression passed; clean-machine installation and complete workflow acceptance pending |
-| macOS Apple Silicon | Build, isolation, and normal-startup observations reported; installed-app normal exit and real agent/model acceptance remain open |
+| macOS Apple Silicon | ARM64 DMG available, ad-hoc signed and not notarized; full native UI, installed-app normal exit, and real agent/model acceptance remain open |
 | macOS Intel / Linux | Native acceptance incomplete; no verified downloads offered |
 
 The packages correspond to the `v0.1.0` tag; `main` includes subsequent updates. See the [release checklist](docs/release-checklist.md), [security policy](SECURITY.md), and [asset record](docs/asset-provenance.md) for platform validation, privacy cleanup, dependency findings, and asset provenance records.

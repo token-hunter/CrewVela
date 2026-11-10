@@ -21,7 +21,7 @@
 
 CrewVela 是一个基于 **Tauri 2 + React + Rust** 的桌面多 Agent 工作台，把独立会话、会话通信、项目协作和工作交接放进同一个窗口。沿用各 Agent 的本机安装、账号与权限机制，让你围绕任务组织工具。
 
-> **当前版本 v0.1.0。** Windows 安装包见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)；macOS 可从源码构建，新安装包待原生复核。安装步骤见[下载说明](docs/downloads.md)。
+> **当前版本 v0.1.0。** Windows 安装包见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)；[下载 macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg)（ARM64，ad-hoc 签名，未公证）。安装步骤与验证限制见[下载说明](docs/downloads.md)。
 
 ## 让你的 Agent 成为一支队伍
 
@@ -165,7 +165,7 @@ APPLE_SIGNING_IDENTITY=- npm run build:macos
 | 平台 | 当前验证范围 |
 | --- | --- |
 | Windows x64 | 本机源码构建与回归通过；干净机器安装与完整业务验收待完成 |
-| macOS Apple Silicon | 已有构建、隔离及普通启动观察报告；安装副本正常退出、真实 Agent/模型等仍待验收 |
+| macOS Apple Silicon | 已提供 ARM64 DMG，ad-hoc 签名、未公证；原生界面完整交互、安装副本正常退出与真实 Agent/模型等仍待验收 |
 | macOS Intel / Linux | 未完成原生验收，当前不提供已验证安装包 |
 
 安装包对应 `v0.1.0` 标签，`main` 分支包含后续更新。平台验收、隐私脱敏、依赖风险与素材来源的核对记录见[发布检查清单](docs/release-checklist.md)、[安全说明](SECURITY.md)及[素材记录](docs/asset-provenance.md)。
