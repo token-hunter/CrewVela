@@ -22,3 +22,5 @@
 - `desktop-collaboration-team.png`：2026-11-11 用户提供的协作中心团队页截图，1122×793；原样收录，用于中英文 README 的团队成员、角色筛选、Runtime 管理与工作交接入口展示。截图中未见密钥或私人文件路径。SHA-256：`be6c1ace48eb458a19f890d0505aa15b009da3f9284ce6328ceb101b1ee2d9c9`。
 
 - `collaboration-workflow.zh.svg` / `collaboration-workflow.en.svg`：将 README 原有 Mermaid 的四个节点及实现、审查、反馈、接手连线改为静态 SVG；用于去掉 GitHub 自动附带的图表缩放、移动、重置与复制工具，属于工作方式示意。
+
+- `crewvela-architecture.zh.png`：2026-11-11 用 Image Gen 重新绘制的技术架构示意，白底、浅紫矩形与细灰连线；按用户选择放入独立的[技术架构文档](../architecture.md)，首页保留简洁的协作流程图。不是截图或实时数据流，不包含用户截图像素。

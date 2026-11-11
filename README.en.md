@@ -43,7 +43,7 @@ You may already use different agents for different jobs: building a feature, fin
 | Organize a project by role | Track members, tasks, dependencies, collaboration messages, and diagnostics |
 | Continue in a later session | Use session recovery and optional local shared-memory integration |
 
-## From one request to a collaboration
+## How multiple agents work together
 
 One possible division of work; you choose the roles:
 
@@ -52,6 +52,8 @@ One possible division of work; you choose the roles:
 **Implement → review → send findings back → hand off.** Keep work in each agent's own session, use explicit recipients, and preview the handoff material before switching.
 
 This diagram illustrates a workflow, not an execution record. Messaging requires supported sessions with the communication tools loaded. **Queued does not mean delivered, read, or answered.** See the [workflow guide](docs/workflows.md) for examples.
+
+For message flow and agent integration details, see the [technical architecture (Chinese)](docs/architecture.md).
 
 ## See the workspace
 
