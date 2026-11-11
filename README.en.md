@@ -88,6 +88,12 @@ Choose the sender and recipient, copy the example, and check the target session 
 
 The screenshots are real Windows captures with local paths and previous task text masked. They show the interface at the time of capture.
 
+### Collaboration center and team management
+
+![CrewVela collaboration center and agent team management](docs/media/desktop-collaboration-team.png)
+
+View project status, agent members, and roles in one place. Filter the team by coordinator, executor, or reviewer; open a member card to adjust its configuration, manage runtimes, or start a work handoff. The screenshot shows the interface at the time of capture.
+
 ## What is in the workspace
 
 | Capability | Purpose |

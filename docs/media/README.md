@@ -18,3 +18,5 @@
 - 产品宣传片：用户于 2026-11-11 提供，61.312 秒、1920×1080、30 fps，H.264/AAC，30,888,074 字节；按用户确认原样发布，保留制作时的画面与片尾文字。原片作为 `v0.1.0` 的 `CrewVela-product-film.mp4` 附件提供，不纳入源码历史；中英文 README 增加观看入口。SHA-256：`0290e847ab64148a0cc6cbb83031944d8c06fa10188301e1eebb867328793216`。
 
   README 使用同一原片的 [GitHub 原生视频附件](https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c)，支持直接播放；未使用本地转码预览副本。
+
+- `desktop-collaboration-team.png`：2026-11-11 用户提供的协作中心团队页截图，1122×793；原样收录，用于中英文 README 的团队成员、角色筛选、Runtime 管理与工作交接入口展示。截图中未见密钥或私人文件路径。SHA-256：`be6c1ace48eb458a19f890d0505aa15b009da3f9284ce6328ceb101b1ee2d9c9`。
