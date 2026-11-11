@@ -13,7 +13,7 @@
 [![React 与 TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT 许可](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
 
-[宣传片](#一分钟看-crewvela) · [开始使用](#开始使用) · [界面预览](#界面预览) · [协作玩法](docs/workflows.md) · [使用手册](docs/user-guide.md) · [English](README.en.md)
+[宣传片](#一分钟看-crewvela) · [开始使用](#开始使用) · [协作玩法](docs/workflows.md) · [使用手册](docs/user-guide.md) · [English](README.en.md)
 
 **如果你也想让多个编程 Agent 配合干活，点个 Star，方便回来看看它们又学会了什么。**
 
@@ -54,39 +54,6 @@ https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c
 这是工作方式示意，不是自动执行记录。通信需要受支持且已加载工具的会话；**已排队不等于已送达、已读或回复**。完整示例见[三种协作玩法](docs/workflows.md)。
 
 想了解消息如何流转、不同 Agent 如何接入？[查看技术架构](docs/architecture.md)。
-
-## 界面预览
-
-### 多 Agent 分屏工作台
-
-![CrewVela 多 Agent CLI 分屏工作台](docs/media/desktop-multi-agent-workspace-redacted.png)
-
-把 Claude Code、Codex、OpenCode、ZCode CLI 等会话并排放进同一窗口，快速查看各自的状态与输出。右侧工作面板提供文件、终端、浏览器和多智能体入口。
-
-### 原生聊天与标签切换
-
-![CrewVela 原生聊天与多 Agent 标签](docs/media/desktop-native-chat-redacted.png)
-
-在统一聊天界面切换不同 Agent，保留各自的会话标签与历史；右侧协作面板用于组织任务和团队消息。
-
-![CrewVela Pi Chat 与会话通信面板](docs/media/desktop-pi-chat-communication-redacted.png)
-
-Pi Chat 原生 RPC 会话与会话通信面板同屏展示：选择发送方和接收方、复制通信示例，再到目标会话核对消息与回复。
-
-<details>
-<summary>查看会话通信教程</summary>
-
-从左侧「会话通信」入口选择对象、复制示例，再到目标会话核对消息与回复。
-
-</details>
-
-以上截图均为 Windows 实拍，已遮挡本机路径与历史任务文字；图中外观以拍摄时版本为准。
-
-### 协作中心与团队管理
-
-![CrewVela 协作中心与 Agent 团队管理](docs/media/desktop-collaboration-team.png)
-
-在同一页面查看项目状态、Agent 成员与角色，按总控、执行、审查等角色筛选团队；通过成员名片调整配置，并从顶部管理 Runtime 或发起工作交接。界面以截图时的版本为准。
 
 ## 工作台里有什么
 

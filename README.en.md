@@ -13,7 +13,7 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 [![React and TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT license](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
 
-[Watch the film](#see-crewvela-in-one-minute) · [Get started](#get-started) · [See the workspace](#see-the-workspace) · [Workflow guide](docs/workflows.md) · [User guide](docs/user-guide.md) · [简体中文](README.md)
+[Watch the film](#see-crewvela-in-one-minute) · [Get started](#get-started) · [Workflow guide](docs/workflows.md) · [User guide](docs/user-guide.md) · [简体中文](README.md)
 
 **Want your coding agents to work together? Star the project and come back to see what they can do next.**
 
@@ -54,39 +54,6 @@ One possible division of work; you choose the roles:
 This diagram illustrates a workflow, not an execution record. Messaging requires supported sessions with the communication tools loaded. **Queued does not mean delivered, read, or answered.** See the [workflow guide](docs/workflows.md) for examples.
 
 For message flow and agent integration details, see the [technical architecture (Chinese)](docs/architecture.md).
-
-## See the workspace
-
-### A split-view workspace for multiple agents
-
-![CrewVela split-view workspace for agent CLIs](docs/media/desktop-multi-agent-workspace-redacted.png)
-
-Arrange Claude Code, Codex, OpenCode, ZCode CLI, and other sessions side by side to follow their status and output. The work panel provides access to files, terminals, the browser, and multi-agent tools.
-
-### Native chat and agent tabs
-
-![CrewVela native chat with multiple agent tabs](docs/media/desktop-native-chat-redacted.png)
-
-Switch between agents in a unified chat interface while keeping each session's tabs and history. Use the collaboration panel to organize tasks and team messages.
-
-![CrewVela Pi Chat with the session communication panel](docs/media/desktop-pi-chat-communication-redacted.png)
-
-Pi Chat's native RPC session appears alongside the communication panel. Choose a sender and recipient, copy the example, then check the target session for the message and reply.
-
-<details>
-<summary>See the session communication tutorial</summary>
-
-Choose the sender and recipient, copy the example, and check the target session for the message and reply.
-
-</details>
-
-The screenshots are real Windows captures with local paths and previous task text masked. They show the interface at the time of capture.
-
-### Collaboration center and team management
-
-![CrewVela collaboration center and agent team management](docs/media/desktop-collaboration-team.png)
-
-View project status, agent members, and roles in one place. Filter the team by coordinator, executor, or reviewer; open a member card to adjust its configuration, manage runtimes, or start a work handoff. The screenshot shows the interface at the time of capture.
 
 ## What is in the workspace
 
