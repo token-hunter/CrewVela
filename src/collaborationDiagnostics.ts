@@ -34,6 +34,13 @@ export function diagnosticChecks(health: Health) {
   ];
 }
 
+export function summarizeDiagnosticChecks(checks: ReadonlyArray<{ state: CheckState }>): string {
+  return (["异常", "等待授权", "已停止", "未验证", "忙碌", "正常"] as const).flatMap((state) => {
+    const count = checks.filter((check) => check.state === state).length;
+    return count ? [`${count} 项${state}`] : [];
+  }).join(" · ") || "0 项检查";
+}
+
 const ACTIVITY_LABELS: Record<string, string> = { "conversation.cleared": "对话已清空", "run.status_changed": "执行状态更新", "task.execution_completed": "任务执行结束", "task.created": "任务已创建", "task.status_changed": "任务状态更新", "artifact.created": "已提交交付物", "review.created": "审核已提交", "project.status_changed": "项目状态更新" };
 export function activityLabel(type: string): string { return ACTIVITY_LABELS[type] ?? (/[\u3400-\u9fff]/.test(type) ? type : "协作记录更新"); }
 export function taskPriority(status: string): number { return ["failed", "blocked", "changes_requested", "waiting_approval", "in_review", "running", "ready", "pending", "cancelled", "done"].indexOf(status) === -1 ? 8 : ["failed", "blocked", "changes_requested", "waiting_approval", "in_review", "running", "ready", "pending", "cancelled", "done"].indexOf(status); }

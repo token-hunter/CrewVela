@@ -42,7 +42,8 @@ const projectMock = { creates: [] as any[], holdCreate: false, releaseCreate: nu
     snapshots.set(created.id, { ...structuredClone(snapshot), project: created, agents: [], tasks: [], events: [] });
     return created;
   }
-  if (["ma_probe_runtimes", "ma_check_runtime_updates"].includes(command)) return snapshot.agents.map((a: any) => ({ kind: a.runtimeKind, installed: true, version: "fixture", capabilities: [], error: null }));
+  if (["ma_probe_runtimes", "ma_check_runtime_updates"].includes(command)) return snapshot.agents.map((a: any) => ({ kind: a.runtimeKind, installed: true, version: "fixture", capabilities: [], error: null, ...(fixtureState === "runtime-update-failed" ? { version: "1.0.0", latestVersion: "2.0.0", updateAvailable: true, canAutoUpdate: true } : {}) }));
+  if (command === "ma_upgrade_runtime" && fixtureState === "runtime-update-failed") throw Error("回归测试：升级失败");
   if (command === "skill_center_snapshot") return { skillSets: [] };
   if (command === "collaboration_health") return { sessions: [], runtimes: [], messages: [], handoffs: [], cliPath: "fixture", cliPathExists: true, replyEvidence: "fixture" };
   if (["ma_create_agent", "ma_update_agent"].includes(command)) {
