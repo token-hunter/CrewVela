@@ -49,7 +49,8 @@
   animation: none;
 }
 
-:root[data-theme="light"] .settings-dialog.settings-native {
+/* Sand shares the light color scheme but keeps its own warm palette. */
+:root[data-theme="light"]:not([data-appearance-theme="sand"]) .settings-dialog.settings-native {
   --bg: #fff;
   --bg-elev: #fff;
   --bg-sunken: #f7f7f8;
