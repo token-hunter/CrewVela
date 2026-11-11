@@ -27,6 +27,7 @@ mod process_group;
 
 const ACP_ADAPTER_PACKAGE: &str = "@agentclientprotocol/claude-agent-acp@0.63.0";
 const CODEX_ACP_ADAPTER_PACKAGE: &str = "@agentclientprotocol/codex-acp@1.11.0";
+const CODEX_ACP_NPX_BOOTSTRAP: &str = "node --eval \"import(require('node:url').pathToFileURL(process.env.CREWVELA_CODEX_ACP_WRAPPER).href)\"";
 const START_TIMEOUT: Duration = Duration::from_secs(45);
 const PROMPT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
@@ -1998,8 +1999,15 @@ fn codex_adapter_command() -> Result<Command> {
 
 fn codex_npx_command(npx: &Path, node: &Path, wrapper: &Path) -> Result<Command> {
     let mut command = npx_command(npx)?;
-    command.args(["--yes", "--package", CODEX_ACP_ADAPTER_PACKAGE, "--"])
-        .arg(node).arg(wrapper);
+    // npm exec joins positional arguments into shell text. An absolute Node
+    // path under Program Files gets split, and wrapper paths can contain shell
+    // metacharacters. Keep shell text constant; pass the path only via env.
+    command.args(["--yes", "--package", CODEX_ACP_ADAPTER_PACKAGE, "--call", CODEX_ACP_NPX_BOOTSTRAP]);
+    command.env("CREWVELA_CODEX_ACP_WRAPPER", wrapper);
+    let node_dir = node.parent().context("Node.js 路径没有父目录")?;
+    let mut paths = vec![node_dir.to_path_buf()];
+    if let Some(inherited) = std::env::var_os("PATH") { paths.extend(std::env::split_paths(&inherited)); }
+    command.env("PATH", std::env::join_paths(paths).context("无法构造 Codex ACP 的 Node.js 查找路径")?);
     Ok(command)
 }
 
@@ -2319,10 +2327,99 @@ mod tests {
         let command = codex_npx_command(&npx, &node, &wrapper).unwrap();
         let args: Vec<_> = command.get_args().map(|value| value.to_string_lossy().into_owned()).collect();
         assert!(args.windows(3).any(|values| values == ["--yes", "--package", CODEX_ACP_ADAPTER_PACKAGE]));
-        assert_eq!(args.last().unwrap(), &wrapper.display().to_string());
-        assert_eq!(args[args.len()-2], node.display().to_string());
-        assert!(!args.contains(&"--eval".to_string()));
+        assert_eq!(args.last().unwrap(), CODEX_ACP_NPX_BOOTSTRAP);
+        assert_eq!(args[args.len()-2], "--call");
+        assert!(!args.iter().any(|arg| arg.contains(&wrapper.display().to_string())));
+        assert!(command.get_envs().any(|(key, value)| key == "CREWVELA_CODEX_ACP_WRAPPER" && value == Some(wrapper.as_os_str())));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn codex_npx_shell_bootstrap_preserves_spaces_and_metacharacters() {
+        let root = std::env::temp_dir().join(format!("crewvela npx {}", uuid::Uuid::new_v4()));
+        let runtime = root.join("Runtime with spaces");
+        let npm_dir = runtime.join("node_modules/npm/bin");
+        std::fs::create_dir_all(&npm_dir).unwrap();
+        let node = runtime.join("node.exe");
+        std::fs::copy(which::which("node").unwrap(), &node).unwrap();
+        // Reproduce npm exec's join-then-shell boundary without network/package
+        // installation. The separate opt-in smoke check covers the real npx.
+        std::fs::write(npm_dir.join("npx-cli.js"), r#"
+const {spawnSync}=require('node:child_process');
+const args=process.argv.slice(2), at=args.indexOf('--call');
+const text=at>=0 ? args[at+1] : args.slice(args.indexOf('--')+1).join(' ');
+const result=spawnSync(text,{shell:true,env:process.env,encoding:'utf8'});
+process.stdout.write(result.stdout||''); process.stderr.write(result.stderr||'');
+process.exit(result.status??1);
+"#).unwrap();
+        let directory = root.join("wrapper & %PATH% 中文");
+        std::fs::create_dir_all(&directory).unwrap();
+        let wrapper = directory.join("bridge.mjs");
+        std::fs::write(&wrapper, "process.stdout.write(JSON.stringify({path:process.env.CREWVELA_CODEX_ACP_WRAPPER}));").unwrap();
+        let mut command = codex_npx_command(&runtime.join("npx.cmd"), &node, &wrapper).unwrap();
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "npx bootstrap must not split the executable path or interpret wrapper metacharacters");
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["path"], wrapper.display().to_string());
+        assert_eq!(root.parent().unwrap(), std::env::temp_dir());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires installed Node/npm and cached/network Codex ACP; isolated CODEX_HOME, no credentials or model prompt"]
+    fn installed_codex_npx_initializes_without_credentials_or_model_call() {
+        let root = std::env::temp_dir().join(format!("crewvela real adapter {}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("codex")).unwrap();
+        let node = which::which("node").unwrap();
+        let npx = which::which(if cfg!(windows) { "npx.cmd" } else { "npx" }).unwrap();
+        let wrapper = materialize_codex_wrapper_at(&root.join("wrapper & spaces 中文")).unwrap();
+        let mut command = codex_npx_command(&npx, &node, &wrapper).unwrap();
+        command.current_dir(&root).env("CREWVELA_CODEX_ACP_BRIDGE", "1")
+            .env("CODEX_HOME", root.join("codex"))
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        if let Some(codex) = crate::multi_agent::resolve_runtime_executable(crate::multi_agent::AgentRuntimeKind::Codex) {
+            command.env("CODEX_PATH", codex);
+        }
+        let (mut child, identity) = spawn_owned_command(&mut command).unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let _stderr = capture_stderr(child.stderr.take().unwrap());
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if let Ok(value) = serde_json::from_str::<Value>(&line) { let _ = sender.send(value); }
+            }
+        });
+        let result = (|| -> Result<()> {
+            serde_json::to_writer(&mut stdin, &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"crewvela-isolated-smoke","version":"1"}}}))?;
+            stdin.write_all(b"\n")?; stdin.flush()?;
+            let deadline = Instant::now() + Duration::from_secs(40);
+            loop {
+                let reply = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                    .context("真实 npx ACP 初始化前退出或超时")?;
+                if reply.get("id") == Some(&json!(1)) {
+                    if reply.get("result").is_none() { return Err(anyhow!("真实 Codex ACP 返回初始化错误，未发送任何模型请求")); }
+                    return Ok(());
+                }
+            }
+        })();
+        drop(stdin);
+        stop_child_checked(&mut child).unwrap();
+        drop(identity);
+        assert_eq!(root.parent().unwrap(), std::env::temp_dir());
+        // Job termination is verified above; Windows may release SQLite mapped
+        // files just after the process exit notification. Retry only sharing
+        // violations in this isolated test directory, never skip cleanup.
+        let cleanup_deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match std::fs::remove_dir_all(&root) {
+                Ok(()) => break,
+                Err(error) if error.raw_os_error() == Some(32) && Instant::now() < cleanup_deadline => std::thread::sleep(Duration::from_millis(10)),
+                Err(error) => panic!("isolated ACP test cleanup failed: {error}"),
+            }
+        }
+        result.unwrap();
     }
 
     #[test]

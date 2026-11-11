@@ -8,8 +8,8 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import path from "node:path";
-import { readFileSync, statSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 export function parseBridgeArgs(argv) {
   const separator = argv.indexOf("--");
@@ -350,5 +350,15 @@ async function main() {
   }
 }
 
-const isEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isEntry) await main();
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    // Node resolves import.meta.url through symlinks/junctions, while argv[1]
+    // retains the migrated CrewVela alias. Compare the actual files on both sides.
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    // Importing this library from a virtual or unavailable entry is not a launch.
+    return false;
+  }
+}
+if (isEntryPoint()) await main();
