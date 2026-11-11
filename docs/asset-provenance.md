@@ -13,7 +13,8 @@
 | 欢迎页及 CLI 角色 | 恢复原版角色组件、图片与状态帧，保留暂停、减少动态效果和交互行为 |
 | `src/assets/model-zhipu.svg`、`model-deepseek.svg`、`model-minimax.svg` | 来自 Lobe Icons；保留 LobeHub 署名及 MIT 完整原文，见 `THIRD_PARTY_NOTICES/lobe-icons-LICENSE` |
 | `src/assets/neutral-agents/*.svg` | 保留的 Phosphor 通用辅助图形，由 `scripts/generate-neutral-agent-icons.mjs` 生成；许可见 `THIRD_PARTY_NOTICES/phosphor-icons-LICENSE` |
-| `docs/media/crewvela-collaboration-banner.png` | 此前生成并选用的宣传插画，保留 CrewVela 橙色形象与舞台布局；本次不重新生成海报 |
+| `docs/media/crewvela-collaboration-banner.png` | 中文 README 使用的原宣传插画，保留 CrewVela 橙色形象与舞台布局 |
+| `docs/media/crewvela-collaboration-banner.en.png` | 以上原图的英文文案本地化版本，用内置 Image Gen 编辑；用于英文 README，具体文案见 `docs/media/README.md` |
 | `crewvela-overview.svg` / `social-preview.jpg` | 工作方式示意及其分享图 |
 
 此前中性替换涉及的视觉部分，已按本次要求恢复。素材恢复不修改 Git 历史，也不会自动更新已发布安装包。

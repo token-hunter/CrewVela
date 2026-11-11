@@ -1,4 +1,4 @@
-![CrewVela multi-agent collaboration banner](docs/media/crewvela-collaboration-banner.png)
+![CrewVela multi-agent collaboration banner](docs/media/crewvela-collaboration-banner.en.png)
 
 <div align="center">
 
