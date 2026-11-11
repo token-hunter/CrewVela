@@ -110,7 +110,7 @@ Pi Chat 原生 RPC 会话与会话通信面板同屏展示：选择发送方和�
 | OpenCode | OpenCode | OpenCode Chat |
 | Pi | Pi Agent | Pi Chat |
 | ZCode | ZCode CLI | ZCode Desktop |
-| DeepSeek Harness | — | DeepSeek Harness |
+| DeepSeek Harness | 暂不支持 | DeepSeek Harness |
 
 CrewVela 不附送模型、订阅或 Agent 账号。共享记忆快速配置目前面向 Windows x64 的 Claude Code / Codex；其他接入方式与条件见[使用手册](docs/user-guide.md)。
 

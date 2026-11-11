@@ -110,7 +110,7 @@ These are the integration entry points implemented in the project. Availability 
 | OpenCode | OpenCode | OpenCode Chat |
 | Pi | Pi Agent | Pi Chat |
 | ZCode | ZCode CLI | ZCode Desktop |
-| DeepSeek Harness | — | DeepSeek Harness |
+| DeepSeek Harness | Not currently supported | DeepSeek Harness |
 
 CrewVela does not include model subscriptions or agent accounts. The shared-memory quick setup currently targets Claude Code and Codex on Windows x64. See the [user guide](docs/user-guide.md) for other integration paths and requirements.
 
