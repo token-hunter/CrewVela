@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="330" viewBox="0 0 1000 330" role="img" aria-labelledby="title desc">
+<title id="title">从需求到协作的工作流程</title>
+<desc id="desc">你: 目标与约束 → Claude Code: 实现 → Codex: 审查; Codex → Claude Code: 问题与建议; Claude Code → 其他 Agent: 接手继续.</desc>
+<rect width="1000" height="330" fill="#fff"/>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#706a7a"/></marker></defs>
+<g fill="none" stroke="#706a7a" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)">
+<path d="M220 146H320"/><path d="M560 146H780"/>
+<path d="M880 110V48H440V110"/><path d="M560 166H660V264H780"/>
+</g>
+<g fill="#f2eefd" stroke="#b5a6d7" stroke-width="1.5">
+<rect x="20" y="110" width="200" height="72" rx="4"/>
+<rect x="320" y="110" width="240" height="72" rx="4"/>
+<rect x="780" y="110" width="200" height="72" rx="4"/>
+<rect x="780" y="228" width="200" height="72" rx="4"/>
+</g>
+<g font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" text-anchor="middle" fill="#322d3d">
+<text x="120" y="139" font-size="24">你</text><text x="120" y="166" font-size="20">目标与约束</text>
+<text x="440" y="139" font-size="24">Claude Code</text><text x="440" y="166" font-size="20">实现</text>
+<text x="880" y="139" font-size="24">Codex</text><text x="880" y="166" font-size="20">审查</text>
+<text x="880" y="257" font-size="24">其他 Agent</text><text x="880" y="284" font-size="20">接手继续</text>
+<text x="660" y="34" font-size="20" fill="#706a7a">问题与建议</text>
+</g></svg>

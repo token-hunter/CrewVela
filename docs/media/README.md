@@ -20,3 +20,5 @@
   README 使用同一原片的 [GitHub 原生视频附件](https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c)，支持直接播放；未使用本地转码预览副本。
 
 - `desktop-collaboration-team.png`：2026-11-11 用户提供的协作中心团队页截图，1122×793；原样收录，用于中英文 README 的团队成员、角色筛选、Runtime 管理与工作交接入口展示。截图中未见密钥或私人文件路径。SHA-256：`be6c1ace48eb458a19f890d0505aa15b009da3f9284ce6328ceb101b1ee2d9c9`。
+
+- `collaboration-workflow.zh.svg` / `collaboration-workflow.en.svg`：将 README 原有 Mermaid 的四个节点及实现、审查、反馈、接手连线改为静态 SVG；用于去掉 GitHub 自动附带的图表缩放、移动、重置与复制工具，属于工作方式示意。

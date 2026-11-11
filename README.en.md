@@ -47,13 +47,7 @@ You may already use different agents for different jobs: building a feature, fin
 
 One possible division of work; you choose the roles:
 
-```mermaid
-flowchart LR
-    You["You: goal and constraints"] --> Build["Claude Code: implement"]
-    Build --> Review["Codex: review"]
-    Review -->|Findings| Build
-    Build --> Next["Another agent: continue"]
-```
+![From one request to a collaboration](docs/media/collaboration-workflow.en.svg)
 
 **Implement → review → send findings back → hand off.** Keep work in each agent's own session, use explicit recipients, and preview the handoff material before switching.
 

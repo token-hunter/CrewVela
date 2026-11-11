@@ -47,13 +47,7 @@ https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c
 
 下面是一种分工方式，具体角色由你决定：
 
-```mermaid
-flowchart LR
-    You["你：目标与约束"] --> Build["Claude Code：实现"]
-    Build --> Review["Codex：审查"]
-    Review -->|问题与建议| Build
-    Build --> Next["其他 Agent：接手继续"]
-```
+![从需求到协作的工作流程](docs/media/collaboration-workflow.zh.svg)
 
 **实现 → 审查 → 回传修复 → 交接继续。** 在各自会话中保留工作上下文，通过明确的目标传递消息；需要换人时，先看交接资料，再决定是否交接。
 
