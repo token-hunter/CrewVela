@@ -1088,6 +1088,15 @@
   transform: translateY(-1px);
 }
 
+.new-session-dialog .local-claude-choice {
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+}
+.new-session-dialog .local-claude-choice .provider-choice-copy :is(strong, small) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
 .provider-choice-icon {
   width: 34px;
   height: 34px;

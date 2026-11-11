@@ -6,6 +6,7 @@ import { DEFAULT_PET_SETTINGS } from "../../src/petSettings";
 import { DEFAULT_NOTIFICATION_SETTINGS } from "../../src/notificationSettings";
 import { DEFAULT_COMPANION_SETTINGS } from "../../src/companionSettings";
 import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
+import { BROWSER_CONTROL_PREVIEW } from "../../src/browserControlSettings";
 import { installSkillRuntimeFixture } from "./skill-runtime-first-mock";
 import type { AppAppearance, ProviderConfig, SessionRecord } from "../../src/types";
 import "../../src/styles.css";
@@ -14,6 +15,26 @@ const params = new URLSearchParams(location.search);
 const theme = params.get("theme") === "light" ? "light" : "dark";
 document.documentElement.dataset.theme = theme;
 if (params.get("mock") === "skills") installSkillRuntimeFixture(params);
+if (params.get("mock") === "browser") {
+  let browser = structuredClone(BROWSER_CONTROL_PREVIEW);
+  let failNext = params.get("fail") === "1";
+  let failRead = params.get("failRead") === "1";
+  (window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(command: string, args: any) {
+    if (command === "browser_control_get") {
+      if (failRead) { failRead = false; throw Error("回归测试：读取失败"); }
+      return structuredClone(browser);
+    }
+    if (command === "browser_control_save") {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      if (failNext) { failNext = false; throw Error("回归测试：写入失败"); }
+      browser = { ...browser, settings: args.settings, resolvedBrowser: args.settings.browser === "msedge" ? "Edge（/fixture/msedge）" : args.settings.browser === "custom" ? args.settings.customPath : "Chrome（/fixture/chrome）" };
+      return structuredClone(browser);
+    }
+    if (command === "plugin:event|listen") return 1;
+    if (command === "plugin:event|unlisten") return;
+    throw Error(`此隔离页面未模拟 ${command}`);
+  } };
+}
 // Explicit fixture-only IPC. Never contacts a real runtime or user profile.
 if (params.get("mock") === "general") {
   let general = structuredClone(GENERAL_SETTINGS_PREVIEW);

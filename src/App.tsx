@@ -1580,6 +1580,7 @@ export default function App() {
   const launchRuntimeSession = useCallback(async (
     runtimeKind: Extract<
       AgentRuntimeKind,
+      | "claude_code"
       | "codex"
       | "kimi_code"
       | "pi"
@@ -1593,6 +1594,7 @@ export default function App() {
       (session) => session.id === selectedSessionId,
     );
     const runtimeLabel = {
+      claude_code: "Claude Code",
       codex: "Codex CLI",
       kimi_code: "Kimi Code",
       pi: "Pi Agent",
@@ -2690,6 +2692,13 @@ export default function App() {
               onSelect={(providerId) => {
                 setNewSessionOpen(false);
                 handleLaunch(providerId);
+              }}
+              onLocalClaudeSelect={() => {
+                const project = launchProject ?? undefined;
+                if (!isRuntimeEnabled("claude_code")) return;
+                setNewSessionOpen(false);
+                setLaunchProject(null);
+                void launchRuntimeSession("claude_code", project);
               }}
               onOpenSettings={() => {
                 setNewSessionOpen(false);

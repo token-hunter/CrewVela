@@ -15,6 +15,7 @@ import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import { PencilSimpleIcon } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
+import { PushPinIcon } from "@phosphor-icons/react/dist/csr/PushPin";
 import { StarIcon } from "@phosphor-icons/react/dist/csr/Star";
 import { StopIcon } from "@phosphor-icons/react/dist/csr/Stop";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
@@ -29,6 +30,7 @@ import type {
 import { formatTokens } from "../format";
 import { AgentAvatar } from "./AgentAvatar";
 import { RUNTIME_LABELS } from "../runtimeLogos";
+import { loadSidebarPins, pinnedFirst, toggleSidebarPin, PINNED_PROJECTS_STORAGE_KEY, PINNED_SESSIONS_STORAGE_KEY } from "../sidebarPins";
 
 const FAVORITES_STORAGE_KEY = "crewvela-favorite-sessions";
 const COLLAPSED_PROJECTS_STORAGE_KEY = "crewvela-collapsed-projects";
@@ -99,6 +101,11 @@ function loadCollapsedProjects(): Set<string> {
   }
 }
 
+function loadPins(key: string): Set<string> {
+  try { return loadSidebarPins(key, window.localStorage); }
+  catch { return new Set(); }
+}
+
 export function SessionList({
   sessions,
   projects,
@@ -128,6 +135,9 @@ export function SessionList({
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<Set<string>>(loadFavorites);
+  const [pinnedSessions, setPinnedSessions] = useState(() => loadPins(PINNED_SESSIONS_STORAGE_KEY));
+  const [pinnedProjects, setPinnedProjects] = useState(() => loadPins(PINNED_PROJECTS_STORAGE_KEY));
+  const [pinSaveError, setPinSaveError] = useState("");
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(loadCollapsedProjects);
   const [actionMenuSessionId, setActionMenuSessionId] = useState<string | null>(null);
   const [actionMenuPosition, setActionMenuPosition] = useState({ left: 8, top: 8, maxHeight: 380 });
@@ -331,8 +341,22 @@ export function SessionList({
         sessionDisplayProvider(session).toLowerCase().includes(keyword),
       );
     }
-    return filtered;
-  }, [favorites, filter, query, sessions, typeFilter, logicalSessionId]);
+    return pinnedFirst(filtered, pinnedSessions, (session) => logicalSessionId(session.id));
+  }, [favorites, filter, query, sessions, typeFilter, logicalSessionId, pinnedSessions]);
+
+  const orderedProjects = useMemo(() => pinnedFirst(projects, pinnedProjects, (project) => project.id), [projects, pinnedProjects]);
+
+  const togglePin = (id: string, kind: "session" | "project") => {
+    const next = toggleSidebarPin(kind === "session" ? pinnedSessions : pinnedProjects, id);
+    if (kind === "session") setPinnedSessions(next);
+    else setPinnedProjects(next);
+    try {
+      window.localStorage.setItem(kind === "session" ? PINNED_SESSIONS_STORAGE_KEY : PINNED_PROJECTS_STORAGE_KEY, JSON.stringify([...next]));
+      setPinSaveError("");
+    } catch {
+      setPinSaveError("置顶状态未能保存，重启后可能丢失。请检查本地存储空间或权限。");
+    }
+  };
 
   // 仅 AI 会话视图按项目分组；终端视图没有项目归属，平铺即可。
   const groupByProject = projects.length > 0 && typeFilter !== "terminal";
@@ -412,6 +436,7 @@ export function SessionList({
 
   const renderSessionItem = (session: SessionRecord) => {
     const isFavorite = favorites.has(logicalSessionId(session.id));
+    const isPinned = pinnedSessions.has(logicalSessionId(session.id));
     const usage = usages[session.id];
     const usageTotal = usage
       ? usage.inputTokens + usage.outputTokens + usage.cacheCreationTokens + usage.cacheReadTokens
@@ -440,6 +465,7 @@ export function SessionList({
           <span className="session-title">
             {loadingId === session.id ? "正在恢复…" : sessionDisplayTitle(session)}
           </span>
+          {isPinned && <PushPinIcon className="session-pin-mark" size={12} weight="fill" aria-label="已置顶会话" />}
           {isFavorite && <StarIcon className="session-favorite-mark" size={12} weight="fill" />}
         </div>
         <div className="session-meta">
@@ -524,8 +550,18 @@ export function SessionList({
           <span className="session-project-name" title={project.path}>
             {project.name}
           </span>
+          {pinnedProjects.has(project.id) && <PushPinIcon className="session-pin-mark" size={12} weight="fill" aria-label="已置顶项目" />}
           <span className="section-count">{groupSessions.length}</span>
           <div className="session-project-actions">
+            <button
+              type="button"
+              title={pinnedProjects.has(project.id) ? "取消置顶项目" : "置顶项目"}
+              aria-label={`${pinnedProjects.has(project.id) ? "取消置顶项目" : "置顶项目"}「${project.name}」`}
+              aria-pressed={pinnedProjects.has(project.id)}
+              onClick={() => togglePin(project.id, "project")}
+            >
+              <PushPinIcon size={13} weight={pinnedProjects.has(project.id) ? "fill" : "regular"} />
+            </button>
             {onNewSessionInProject && (
               <button
                 type="button"
@@ -583,6 +619,12 @@ export function SessionList({
     dividerBefore?: boolean;
   }> = [];
   if (actionMenuSession) {
+    const menuSessionIsPinned = pinnedSessions.has(logicalSessionId(actionMenuSession.id));
+    actionMenuItems.push({
+      label: menuSessionIsPinned ? "取消置顶会话" : "置顶会话",
+      icon: <PushPinIcon size={15} weight={menuSessionIsPinned ? "fill" : "regular"} aria-hidden="true" />,
+      action: () => togglePin(logicalSessionId(actionMenuSession.id), "session"),
+    });
     const history = sourceHistory?.(actionMenuSession);
     if (onSwitchAgent && sessionSwitchReason(actionMenuSession) === null) {
       actionMenuItems.push({
@@ -792,6 +834,7 @@ export function SessionList({
       )}
 
       <div className="session-list">
+        {pinSaveError && <p className="session-pin-error" role="alert">{pinSaveError}</p>}
         {visibleSessions.length === 0 && projects.length === 0 && (
           <div className="session-empty">
             {filter === "favorites" ? "暂无收藏会话" : "暂无会话"}
@@ -802,7 +845,7 @@ export function SessionList({
         )}
         {groupByProject && projectGroups ? (
           <>
-            {projects.map((project) => {
+            {orderedProjects.map((project) => {
               const groupSessions = projectGroups.byProject.get(project.id) ?? [];
               // 搜索时隐藏空组，减少噪音。
               if (query.trim() && groupSessions.length === 0) return null;
