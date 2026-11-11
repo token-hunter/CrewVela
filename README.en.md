@@ -1,3 +1,11 @@
+## See CrewVela in one minute
+
+Play the film below to see multiple coding agents working in one workspace.
+
+https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c
+
+About one minute · Original video, with Chinese narration and captions.
+
 ![CrewVela multi-agent collaboration banner](docs/media/crewvela-collaboration-banner.png)
 
 <div align="center">
@@ -22,16 +30,6 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 CrewVela is a desktop workspace built with **Tauri 2, React, and Rust**. It brings separate agent sessions, messaging, project collaboration, and work handoffs into one window, while retaining each agent's local installation, accounts, and permission mechanisms.
 
 > **Current version: v0.1.0.** The Windows installer is available on [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0). [Download the macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg) (ARM64, ad-hoc signed, not notarized). See the [installation guide](docs/downloads.md) for setup and verification limits.
-
-## See CrewVela in one minute
-
-See split workspaces, agent messaging, work handoffs, and project collaboration in this one-minute product film (Chinese narration and captions).
-
-https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c
-
-[Download the 1080p original (about 31 MB)](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela-product-film.mp4)
-
-The film shows the interface available when it was made.
 
 ## Give your agents a shared workspace
 
