@@ -13,7 +13,7 @@
 
 - 产品宣传片：用户于 2026-11-11 更新，61.312 秒、1920×1080、30 fps，H.264/AAC，33,202,058 字节；按用户确认原样发布，保留制作时的画面与片尾文字。原片通过 GitHub 原生视频附件托管，不纳入源码历史；中英文 README 顶部直接展示播放器，不要求进入 Release 下载。SHA-256：`18bf84eb219ad41d32071f1392a689f5a3b0699886d95c2f0ce7a7812a5b163a`。
 
-  README 使用同一原片的 [GitHub 原生视频附件](https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c)，支持直接播放；未使用本地转码预览副本。
+  README 使用同一原片的 [GitHub 原生视频附件](https://github.com/user-attachments/assets/ef5f047b-ebc9-4de3-995d-9a49e5a694c1)，支持直接播放；未使用本地转码预览副本。
 
 - `collaboration-workflow.zh.svg` / `collaboration-workflow.en.svg`：将 README 原有 Mermaid 的四个节点及实现、审查、反馈、接手连线改为静态 SVG；用于去掉 GitHub 自动附带的图表缩放、移动、重置与复制工具，属于工作方式示意。
 
