@@ -4,7 +4,8 @@
 
 - `crewvela-collaboration-banner.png`：2026-11-09 用 Image Gen 重新生成的宣传图。保留 CrewVela 橙色球形形象与聚光灯舞台；其余为抽象通用角色，替换原先参考第三方 Agent 角色的部分。不是产品截图或消息收发证据。
   2026-11-11 用内置 ImageGen 编辑标题为 `CrewVela`，移除旧中文副标题，保留舞台、角色与其余文案。
-- `crewvela-collaboration-banner.en.png`：2026-11-11 用内置 Image Gen 对中文原海报进行英文文案本地化，供英文 README 使用。主标语为 `Bring your agents together`，副标语为 `Communicate · Collaborate · Hand off`；保留 CrewVela 标题、底部英文口号、角色与舞台构图。中文 README 继续引用原文件，中文海报未改动。
+  同日按用户要求，用内置 Image Gen 将底部英文口号改为 `多个 Agent，一个工作台。`，保留中文版其他文案与舞台构图。
+- `crewvela-collaboration-banner.en.png`：2026-11-11 用内置 Image Gen 对中文原海报进行英文文案本地化，供英文 README 使用。主标语为 `Bring your agents together`，副标语为 `Communicate · Collaborate · Hand off`；保留 CrewVela 标题、底部英文口号、角色与舞台构图。中文 README 独立引用中文版海报。
 - `crewvela-overview.svg`：项目文字和几何图形组成的工作方式示意，不是产品截图。
 - `social-preview.jpg`：上述 SVG 转出的分享图片；本文件存在不代表已设置 GitHub 社交预览。
 

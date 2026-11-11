@@ -13,7 +13,7 @@
 | 欢迎页及 CLI 角色 | 恢复原版角色组件、图片与状态帧，保留暂停、减少动态效果和交互行为 |
 | `src/assets/model-zhipu.svg`、`model-deepseek.svg`、`model-minimax.svg` | 来自 Lobe Icons；保留 LobeHub 署名及 MIT 完整原文，见 `THIRD_PARTY_NOTICES/lobe-icons-LICENSE` |
 | `src/assets/neutral-agents/*.svg` | 保留的 Phosphor 通用辅助图形，由 `scripts/generate-neutral-agent-icons.mjs` 生成；许可见 `THIRD_PARTY_NOTICES/phosphor-icons-LICENSE` |
-| `docs/media/crewvela-collaboration-banner.png` | 中文 README 使用的原宣传插画，保留 CrewVela 橙色形象与舞台布局 |
+| `docs/media/crewvela-collaboration-banner.png` | 中文 README 使用的宣传插画，保留 CrewVela 橙色形象与舞台布局；底部口号为“多个 Agent，一个工作台。” |
 | `docs/media/crewvela-collaboration-banner.en.png` | 以上原图的英文文案本地化版本，用内置 Image Gen 编辑；用于英文 README，具体文案见 `docs/media/README.md` |
 | `crewvela-overview.svg` / `social-preview.jpg` | 工作方式示意及其分享图 |
 
