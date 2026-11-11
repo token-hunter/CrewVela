@@ -27,7 +27,7 @@ CrewVela is a desktop workspace built with **Tauri 2, React, and Rust**. It brin
 
 Play the film below to see multiple coding agents working in one workspace.
 
-https://github.com/user-attachments/assets/ef5f047b-ebc9-4de3-995d-9a49e5a694c1
+https://github.com/user-attachments/assets/14b2afaf-b851-402e-bae4-d33cd1e159f7
 
 About one minute · Original video, with Chinese narration and captions.
 
