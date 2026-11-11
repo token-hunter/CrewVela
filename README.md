@@ -1,11 +1,3 @@
-## 一分钟看 CrewVela
-
-点击下方播放器，看看多个 Agent 如何在一个工作台里协作。
-
-https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c
-
-约 1 分钟 · 原片画面与文字保持不变。
-
 ![CrewVela 多 Agent 协作海报](docs/media/crewvela-collaboration-banner.png)
 
 <div align="center">
@@ -30,6 +22,14 @@ https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c
 CrewVela 是一个基于 **Tauri 2 + React + Rust** 的桌面多 Agent 工作台，把独立会话、会话通信、项目协作和工作交接放进同一个窗口。沿用各 Agent 的本机安装、账号与权限机制，让你围绕任务组织工具。
 
 > **当前版本 v0.1.0。** Windows 安装包见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)；[下载 macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg)（ARM64，ad-hoc 签名，未公证）。安装步骤与验证限制见[下载说明](docs/downloads.md)。
+
+## 一分钟看 CrewVela
+
+点击下方播放器，看看多个 Agent 如何在一个工作台里协作。
+
+https://github.com/user-attachments/assets/e0bcb281-1893-4359-b720-05e44055632c
+
+约 1 分钟 · 原片画面与文字保持不变。
 
 ## 让你的 Agent 成为一支队伍
 
