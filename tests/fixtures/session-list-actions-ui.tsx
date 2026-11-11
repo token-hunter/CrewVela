@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SessionList } from "../../src/components/SessionList";
-import type { SessionRecord } from "../../src/types";
+import type { SessionRecord, SessionTypeFilter } from "../../src/types";
 import "../../src/styles.css";
 
 function makeSession(id: string, title: string, kind: SessionRecord["kind"] = "claude", index = 1): SessionRecord {
@@ -35,9 +35,20 @@ const initialSessions = [
   makeSession("session-last", "列表底部会话", "claude", 5),
 ];
 
+const pinFixture = new URLSearchParams(location.search).has("pins");
+const pinSessions = initialSessions.map((session, index) => ({
+  ...session,
+  projectId: index === 1 ? null : index === 4 ? "project-b" : "project-a",
+}));
+const pinProjects = ["a", "b"].map((id) => ({
+  id: `project-${id}`, name: `项目 ${id.toUpperCase()}`, path: `/fixture/${id}`,
+  badgeColor: "blue", createdAt: 1, updatedAt: 1,
+}));
+
 function SessionListActionsFixture() {
   const [selectedId, setSelectedId] = useState<string | null>("session-shell");
   const [events, setEvents] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<SessionTypeFilter>("all");
   const record = (action: string) => (session: SessionRecord) => {
     setEvents(current => [...current, `${action}:${session.id}`]);
   };
@@ -45,13 +56,17 @@ function SessionListActionsFixture() {
   return <main className="fixture-shell">
     <aside className="fixture-sidebar" aria-label="窄侧栏会话列表">
       <SessionList
-        sessions={initialSessions}
-        projects={[]}
+        sessions={pinFixture ? pinSessions : initialSessions}
+        projects={pinFixture ? pinProjects : []}
         usages={{}}
         selectedId={selectedId}
         loadingId={null}
-        typeFilter="all"
-        onTypeFilter={() => {}}
+        typeFilter={typeFilter}
+        onTypeFilter={setTypeFilter}
+        onNewSessionInProject={pinFixture ? project => setEvents(current => [...current, `new:${project.id}`]) : undefined}
+        onRenameProject={pinFixture ? project => setEvents(current => [...current, `rename-project:${project.id}`]) : undefined}
+        onDeleteProject={pinFixture ? project => setEvents(current => [...current, `delete-project:${project.id}`]) : undefined}
+        onArchiveProjectSessions={pinFixture ? project => setEvents(current => [...current, `archive-project:${project.id}`]) : undefined}
         onSelect={setSelectedId}
         onRename={record("rename")}
         onStop={record("stop")}

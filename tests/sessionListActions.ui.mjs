@@ -33,6 +33,7 @@ try {
   await page.screenshot({ path: resolve("output/playwright/session-list-actions-closed.png"), fullPage: true });
 
   const expectedActions = [
+    "置顶会话",
     "将当前工作交接给其他 Agent",
     "回看接力历史",
     "接力详情与恢复原会话",
@@ -139,7 +140,7 @@ try {
   await shellMenu.click();
   await menu.waitFor({ state: "visible" });
   const shellLabels = await menuLabels();
-  assert.deepEqual(shellLabels, ["收藏", "重命名", "停止", "归档会话", "从列表删除"], "optional handoff and transcript items must keep their existing visibility conditions");
+  assert.deepEqual(shellLabels, ["置顶会话", "收藏", "重命名", "停止", "归档会话", "从列表删除"], "optional handoff and transcript items must keep their existing visibility conditions");
   await page.keyboard.press("Escape");
 
   const sessionList = page.locator(".session-list");

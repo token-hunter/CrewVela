@@ -373,7 +373,7 @@
   padding: 4px 6px 4px 4px;
   display: flex;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-4);
   color: var(--text-dim);
   font-size: var(--text-md);
   font-weight: 600;
@@ -424,7 +424,7 @@
 .session-project-actions {
   display: none;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
 }
 
 .session-project-head:hover .session-project-actions,
@@ -432,8 +432,16 @@
   display: flex;
 }
 
+/* 操作按钮出现时让出计数和重复的置顶标记，窄侧栏仍能看清项目名称。 */
+.session-project-head:hover > .section-count,
+.session-project-head:focus-within > .section-count,
+.session-project-head:hover > .session-pin-mark,
+.session-project-head:focus-within > .session-pin-mark {
+  display: none;
+}
+
 .session-project-actions button {
-  width: 22px;
+  width: 20px;
   height: 22px;
   display: grid;
   place-items: center;
@@ -447,6 +455,22 @@
 .session-project-actions button:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+.session-pin-mark {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.session-project-actions button[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.session-pin-error {
+  margin: 6px 4px;
+  color: var(--danger);
+  font-size: var(--text-xs);
+  line-height: 1.5;
 }
 
 .session-project-empty {
