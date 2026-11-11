@@ -41,6 +41,7 @@ interface Props {
   providers: ProviderConfig[];
   keyStates: Record<string, boolean>;
   onSelect: (providerId: string) => void;
+  onLocalClaudeSelect: () => void;
   onOpenSettings: () => void;
   onClose: () => void;
 }
@@ -51,6 +52,7 @@ export function NewSessionDialog({
   providers,
   keyStates,
   onSelect,
+  onLocalClaudeSelect,
   onOpenSettings,
   onClose,
 }: Props) {
@@ -117,7 +119,7 @@ export function NewSessionDialog({
           <div>
             <span className="eyebrow">NEW TASK</span>
             <h2 id="new-session-title">{chooseAgent ? "选择 Agent" : "选择 Provider"}</h2>
-            <p>{chooseAgent ? (project ? `在项目「${project.name}」中创建会话，使用项目工作目录。` : "选择本次会话使用的 Agent，下一步选择工作目录。") : "选择本次会话使用的模型服务，下一步设置数量和工作目录。"}</p>
+            <p>{chooseAgent ? (project ? `在项目「${project.name}」中创建会话，使用项目工作目录。` : "选择本次会话使用的 Agent，下一步选择工作目录。") : "选择模型服务或本地配置，继续创建 CLI 会话。"}</p>
           </div>
           <button className="dialog-close" aria-label="关闭" onClick={onClose}>
             ×
@@ -239,7 +241,20 @@ export function NewSessionDialog({
           })}
         </div> : <div className="provider-picker">
           {!ready && <p role="status">{error ? `Agent 配置加载失败：${error}` : "正在加载 Agent 配置…"}</p>}
-          {ready && (!isRuntimeEnabled("claude_code") || providers.length === 0) && <p role="status">没有可用的 Claude Code Provider，请检查 Agent 启用状态和模型设置。</p>}
+          {ready && !isRuntimeEnabled("claude_code") && <p role="status">Claude Code 未启用，请先在设置中启用。</p>}
+
+          {isRuntimeEnabled("claude_code") && <button
+            type="button"
+            className="provider-choice local-claude-choice"
+            onClick={onLocalClaudeSelect}
+          >
+            <span className="provider-choice-icon has-logo"><img src={RUNTIME_LOGOS.claude_code} alt="" aria-hidden="true" /></span>
+            <span className="provider-choice-copy">
+              <strong>使用本地 Claude Code 配置</strong>
+              <small>沿用本机账号、服务地址和默认模型</small>
+            </span>
+            <span className="provider-choice-arrow" aria-hidden="true">→</span>
+          </button>}
 
           {providers.filter(() => isRuntimeEnabled("claude_code")).map((provider) => {
             const hasKey = keyStates[provider.id] ?? false;

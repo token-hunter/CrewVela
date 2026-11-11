@@ -7457,6 +7457,13 @@ mod tests {
                 assert!(settings["hooks"]["SessionStart"].is_array());
                 assert!(settings["hooks"]["Stop"].is_array());
                 assert_eq!(settings["env"]["CREWVELA_SESSION_ID"], record.id);
+                // Local Claude launch must leave account, endpoint and model
+                // selection to the CLI's own settings/environment.
+                assert_eq!(record.provider_id, "local-runtime-claude_code");
+                assert!(!settings.as_object().unwrap().contains_key("model"));
+                assert!(settings["env"].as_object().unwrap().keys().all(|key| key.starts_with("CREWVELA_")));
+                assert!(!args.iter().any(|arg| arg == "--model" || arg == "--setting-sources"));
+                assert!(!command.get_envs().any(|(key, _)| key.to_string_lossy().starts_with("ANTHROPIC_")));
             }
         }
         assert!(sessions.create_runtime(sessions::NewRuntimeSession {
