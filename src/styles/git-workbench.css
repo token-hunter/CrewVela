@@ -1875,7 +1875,9 @@
 .right-sidebar-start-mark { color: var(--text-dim); opacity: .32; margin-top: auto; margin-bottom: 17px; }
 .right-sidebar-start h2 { font-size: 17px; font-weight: 500; margin: 0 0 8px; }
 .right-sidebar-start > p { font-size: 12px; margin: 0 0 30px; color: var(--text-dim); }
-.right-sidebar-start-tools { width: 100%; max-width: 390px; display: grid; gap: 12px; }
+/* The sidebar mounts at zero width during expansion. WebKit can retain Grid's
+   initial wrapped-text row heights; a flex column reflows as the width grows. */
+.right-sidebar-start-tools { width: 100%; max-width: 390px; display: flex; flex-direction: column; gap: 12px; }
 .right-sidebar-start-tools > button { min-height: 74px; display: flex; align-items: center; gap: 16px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 11px; background: transparent; color: var(--text); text-align: left; }
 .right-sidebar-start-tools > button:hover { background: var(--bg-hover); border-color: var(--border-strong); }
 .right-sidebar-start-tools > button > svg { flex-shrink: 0; color: var(--accent); }
