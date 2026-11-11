@@ -6,7 +6,7 @@ use windows_registry::CURRENT_USER;
 use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 
 const APP_ID: &str = crate::brand::APP_ID;
-const APP_NAME: &str = "CrewVela · 协帆";
+const APP_NAME: &str = "CrewVela";
 
 pub fn is_unpacked_build(exe: &Path) -> bool {
     let Some(parent) = exe.parent() else {

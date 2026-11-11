@@ -90,7 +90,7 @@ export function NotificationSettingsPanel({ settings, onChange }: Props) {
   const testNotice = async () => {
     setFeedback(null);
     try {
-      const shown = await deliverDesktopNotice({ title: "CrewVela · 协帆 · 测试通知", body: "这是一条测试通知，完整内容已保存在通知历史中。", force: true, category: "test" });
+      const shown = await deliverDesktopNotice({ title: "CrewVela · 测试通知", body: "这是一条测试通知，完整内容已保存在通知历史中。", force: true, category: "test" });
       setFeedback(shown ? { error: false, text: "测试通知已发送。" } : { error: true, text: "通知已记录，但系统未显示弹窗。请检查通知权限和系统设置。" });
     } catch (reason) { setFeedback({ error: true, text: `测试通知失败：${String(reason)}` }); }
   };

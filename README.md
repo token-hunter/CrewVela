@@ -2,7 +2,7 @@
 
 <div align="center">
 
-# CrewVela · 协帆
+# CrewVela
 
 ### 多个 Agent，一个工作台。
 

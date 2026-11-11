@@ -735,8 +735,8 @@ export default function App() {
           void deliverDesktopNotice({
             id: `intervention:${item.id}`,
             title: isFailure
-              ? `CrewVela · 协帆 · ${item.kind === "semantic_review" ? "审核需要处理" : "任务重试失败"}`
-              : "CrewVela · 协帆 · 等待人工处理",
+              ? `CrewVela · ${item.kind === "semantic_review" ? "审核需要处理" : "任务重试失败"}`
+              : "CrewVela · 等待人工处理",
             body: `${item.projectName}：${item.title}`,
             category: "intervention",
           });

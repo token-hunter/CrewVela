@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CrewVela · 协帆",
+  "productName": "CrewVela",
   "mainBinaryName": "CrewVela",
   "version": "0.1.0",
   "identifier": "com.crewvela.app",
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CrewVela · 协帆",
+        "title": "CrewVela",
         "width": 1440,
         "height": 900,
         "maximized": true,

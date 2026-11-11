@@ -108,4 +108,4 @@ rtk proxy npm run tauri -- build --no-bundle
 
 浏览器回归先启动独立 Vite 端口，再设置 `CREWVELA_UI_URL`，执行 `tests/collaborationAsync.ui.mjs`、`tests/collaborationMemberCounts.ui.mjs`、`tests/retainedControlAsync.ui.mjs`。
 
-最新 exe：`src-tauri/target/release/CrewVela.exe`，2026-11-06 19:07:51 +08:00，42,929,664 字节，版本输出 `CrewVela · 协帆 0.1.0`。SHA-256：`4180C97961354A15520A09810941F4EF26CD62311663570C1E51FA920E446D55`。构建和回归元数据见 `output/communication-acceptance/build-continuation.json`。版本探测使用隐藏的 `--version`，没有启动 GUI；未关闭用户原运行实例，前一轮构建前的文件仍保留为同目录 `CrewVela.before-communication-20261106-142505.exe`。
+最新 exe：`src-tauri/target/release/CrewVela.exe`，2026-11-06 19:07:51 +08:00，42,929,664 字节，该次构建版本号为 `0.1.0`（显示名称为历史版本，不代表当前构建）。SHA-256：`4180C97961354A15520A09810941F4EF26CD62311663570C1E51FA920E446D55`。构建和回归元数据见 `output/communication-acceptance/build-continuation.json`。版本探测使用隐藏的 `--version`，没有启动 GUI；未关闭用户原运行实例，前一轮构建前的文件仍保留为同目录 `CrewVela.before-communication-20261106-142505.exe`。

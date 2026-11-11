@@ -97,7 +97,7 @@ powershell -NoProfile -File .\scripts\start-isolated-test.ps1
 macOS 14+ 在 Mac 执行 `npm run build:macos` 后，双击根目录的 `start-first-run-test.command`，也可在终端运行 `bash ./start-first-run-test.command`。启动器会定位副本构建的 `.app`，直接传入隔离参数；不通过 `open -a` 复用已打开的正常实例。自定义应用或测试目录示例：
 
 ```sh
-bash ./start-first-run-test.command --app "/path/to/CrewVela · 协帆.app" --data-dir "$PWD/.test-data/mac-first-run-2"
+bash ./start-first-run-test.command --app "/path/to/CrewVela.app" --data-dir "$PWD/.test-data/mac-first-run-2"
 ```
 
 测试配置和会话保存在副本根目录的 `.test-data/config/`，被 Git 忽略。Windows 的 WebView 缓存在 `.test-data/webview/`；macOS 使用测试目录派生的专属 WKWebView 存储身份，网页缓存由系统管理，不保证位于该文件夹。相同测试目录重开沿用同一存储身份，更换全新的目录则使用新身份。macOS 14 以下或无法确认系统版本时拒绝进入隔离模式，不回退正式存储；该限制仅针对隔离测试模式。

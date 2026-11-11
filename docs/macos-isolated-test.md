@@ -30,11 +30,11 @@ APPLE_SIGNING_IDENTITY=- npm run build:macos
 bash ./start-first-run-test.command
 ```
 
-默认按顺序寻找副本 ARM64 构建目录、通用 release 构建目录、启动器同目录里的 `CrewVela · 协帆.app`。不会自动搜索或启动 `/Applications` 的正式安装，也不会通过 `open -a` 转交给已在运行的正常实例。找不到程序时明确报错，不创建测试数据；可以显式指定应用：
+默认按顺序寻找副本 ARM64 构建目录、通用 release 构建目录、启动器同目录里的 `CrewVela.app`。不会自动搜索或启动 `/Applications` 的正式安装，也不会通过 `open -a` 转交给已在运行的正常实例。找不到程序时明确报错，不创建测试数据；可以显式指定应用：
 
 ```sh
 bash ./start-first-run-test.command \
-  --app "$PWD/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela · 协帆.app" \
+  --app "$PWD/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela.app" \
   --data-dir "$PWD/.test-data/mac-first-run-1"
 ```
 

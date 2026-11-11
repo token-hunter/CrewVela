@@ -11,7 +11,7 @@ npm run tauri -- build --no-bundle
 ```
 
 - 默认产物：`REPO_ROOT\src-tauri\target\release\CrewVela.exe`。
-- ProductName / FileDescription：`CrewVela · 协帆`；CompanyName：`CrewVela`。
+- 当时的 ProductName / FileDescription 含旧中文副标题；CompanyName：`CrewVela`。当前名称以打包配置为准。
 - 文件大小：43,573,248 字节。
 - SHA256：`AFFE3910F4AC6E9E21D7D5E00A6BB6F42C07BC337A5E91D631279C42C7B70B22`。
 - 已实际启动此文件验证，生产资源内嵌，不依赖 Vite。程序返回原有工作区，未停止用户会话。

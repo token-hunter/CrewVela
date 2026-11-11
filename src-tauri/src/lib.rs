@@ -296,7 +296,7 @@ async fn open_control_window(app: AppHandle) -> Result<(), String> {
         CONTROL_WINDOW_LABEL,
         WebviewUrl::App("index.html?view=control".into()),
     )
-    .title("CrewVela · 协帆 · 总控会话")
+    .title("CrewVela · 总控会话")
     .inner_size(440.0, 720.0)
     .min_inner_size(360.0, 520.0)
     .resizable(true)
@@ -6560,11 +6560,11 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
     use tauri::menu::Menu;
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-    let show = tauri::menu::MenuItem::with_id(app, "show", "显示 CrewVela · 协帆", true, None::<&str>)?;
+    let show = tauri::menu::MenuItem::with_id(app, "show", "显示 CrewVela", true, None::<&str>)?;
     let quit = tauri::menu::MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let mut builder = TrayIconBuilder::with_id("crewvela-tray")
-        .tooltip("CrewVela · 协帆")
+        .tooltip("CrewVela")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {

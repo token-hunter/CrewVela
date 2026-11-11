@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { normalizeNotificationTitle } from "../src/brand.ts";
+import { PRODUCT_FULL_NAME, normalizeNotificationTitle } from "../src/brand.ts";
 
 const center = readFileSync(new URL("../src/notificationCenter.ts", import.meta.url), "utf8");
 const historyPanel = readFileSync(new URL("../src/components/NotificationSettingsPanel.tsx", import.meta.url), "utf8");
@@ -17,9 +17,12 @@ test("Windows 使用自定义通知窗，不再显示系统应用标题栏", () 
 });
 
 test("通知标题清除重复的 CrewVela 品牌前缀并保留用户标题", () => {
+  assert.equal(PRODUCT_FULL_NAME, "CrewVela");
+  assert.equal(normalizeNotificationTitle("CrewVela · 测试通知"), "测试通知");
+  assert.equal(normalizeNotificationTitle("CrewVela"), "通知");
   assert.match(center, /normalizeNotificationTitle/);
-  assert.equal(normalizeNotificationTitle("CrewVela · 协帆 · CrewVela 任务完成"), "任务完成");
-  assert.equal(normalizeNotificationTitle("CrewVela · 协帆"), "通知");
+  assert.equal(normalizeNotificationTitle("CrewVela · \u534f\u5e06 · CrewVela 任务完成"), "任务完成");
+  assert.equal(normalizeNotificationTitle("CrewVela · \u534f\u5e06"), "通知");
   assert.equal(normalizeNotificationTitle("通知来自 CrewVela 社区"), "通知来自 CrewVela 社区");
   assert.equal(normalizeNotificationTitle("CrewVelaX 任务"), "CrewVelaX 任务");
   assert.match(center, /title: displayTitle/);

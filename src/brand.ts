@@ -1,7 +1,7 @@
-export const PRODUCT_FULL_NAME = "CrewVela · 协帆";
+export const PRODUCT_FULL_NAME = "CrewVela";
 export const PRODUCT_SUBTITLE = "多Agent协作工作台";
 
-const NOTIFICATION_BRAND_PREFIX = /^CrewVela(?:\s*·\s*协帆)?(?:\s*·\s*|\s+|$)/i;
+const NOTIFICATION_BRAND_PREFIX = /^CrewVela(?:\s*·\s*\u534f\u5e06)?(?:\s*·\s*|\s+|$)/i;
 
 export function normalizeNotificationTitle(title: string): string {
   let normalized = title.trim();

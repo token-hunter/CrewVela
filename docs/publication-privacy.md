@@ -37,7 +37,7 @@ npm ci
 npm test
 APPLE_SIGNING_IDENTITY=- npm run build:macos
 node scripts/check-release-privacy.mjs \
-  "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela · 协帆.app/Contents/MacOS/CrewVela" \
+  "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela.app/Contents/MacOS/CrewVela" \
   --forbid-path "$PWD" --forbid-path "$HOME"
 ```
 

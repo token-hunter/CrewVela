@@ -32,9 +32,9 @@ done
 case "$data_dir" in /*) ;; *) data_dir="$PWD/$data_dir" ;; esac
 if [ -z "$app_path" ]; then
   for candidate in \
-    "$project_root/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela · 协帆.app" \
-    "$project_root/src-tauri/target/release/bundle/macos/CrewVela · 协帆.app" \
-    "$project_root/CrewVela · 协帆.app"; do
+    "$project_root/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela.app" \
+    "$project_root/src-tauri/target/release/bundle/macos/CrewVela.app" \
+    "$project_root/CrewVela.app"; do
     if [ -d "$candidate" ]; then app_path="$candidate"; break; fi
   done
 fi

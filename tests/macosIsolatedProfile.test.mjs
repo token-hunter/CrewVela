@@ -48,7 +48,7 @@ test('Finder launcher has valid Bash syntax, LF endings and executable Git metad
   assert.match(mode,/^100755 /);
 });
 test('Finder launcher discovers bundled app and always passes the isolated root including spaces and Chinese',()=>fixture(({makeApp,launch,received,physical})=>{
-  makeApp('src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela · 协帆.app');
+  makeApp('src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela.app');
   const result=launch();
   assert.equal(result.status,23,result.stderr);
   assert.deepEqual(received(),['--test-data-dir',`${physical}/.test-data`]);

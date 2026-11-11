@@ -1,7 +1,7 @@
 // Prevents an additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-const CLI_USAGE: &str = "CrewVela · 协帆 — 多Agent协作工作台\n会话通信\n用法：CrewVela sessions\n      CrewVela send --to <会话ID> --body <消息>\n新用户隔离测试：CrewVela --test-data-dir <独立测试目录绝对路径>\n无参数仅用于从桌面启动应用。";
+const CLI_USAGE: &str = "CrewVela — 多Agent协作工作台\n会话通信\n用法：CrewVela sessions\n      CrewVela send --to <会话ID> --body <消息>\n新用户隔离测试：CrewVela --test-data-dir <独立测试目录绝对路径>\n无参数仅用于从桌面启动应用。";
 
 fn may_start_gui(first: Option<&str>, agent_identity: bool) -> bool {
     first.is_none() && !agent_identity
@@ -34,7 +34,7 @@ fn main() {
             return;
         }
         Some("--version" | "-V") => {
-            println!("CrewVela · 协帆 {}", env!("CARGO_PKG_VERSION"));
+            println!("CrewVela {}", env!("CARGO_PKG_VERSION"));
             return;
         }
         Some("--session-hook") => {

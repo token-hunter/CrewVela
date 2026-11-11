@@ -3,6 +3,7 @@
 - `author-drumstick.gif`：按用户要求收录此前生成的「给作者加个鸡腿」搞怪表情包，原样复制；314×314，16 帧，约 2.67 秒无限循环。用于 README 趣味互动区，不是收款码或产品演示。
 
 - `crewvela-collaboration-banner.png`：2026-11-09 用 Image Gen 重新生成的宣传图。保留 CrewVela 橙色球形形象与聚光灯舞台；其余为抽象通用角色，替换原先参考第三方 Agent 角色的部分。不是产品截图或消息收发证据。
+  2026-11-11 用内置 ImageGen 编辑标题为 `CrewVela`，移除旧中文副标题，保留舞台、角色与其余文案。
 - `desktop-multi-agent-workspace-redacted.png`：用户提供的 Windows 多 Agent CLI 分屏实拍，2545×1370；按用户选择，用本机脚本定点遮挡本机路径、用户名和历史任务文字，遮挡区域以外像素保持不变，输出不携带图片元数据。
 - `desktop-native-chat-redacted.png`：用户提供的 Windows 原生聊天与 Agent 标签实拍，2558×1369；采用相同的定点遮挡方式，保留其余真实像素。两张图均保留拍摄时的图标和状态，外观可能与当前版本不同。
 - `crewvela-overview.svg`：项目文字和几何图形组成的工作方式示意，不是产品截图。

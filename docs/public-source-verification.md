@@ -23,7 +23,7 @@
 - 在副本运行 `npm test`：420 通过、1 项既有跳过、0 失败。
 - 在副本运行 `npm run build`：TypeScript 检查及 Vite 生产构建通过，保留已有的大 chunk 提示。
 - 首次源码验收临时复用本机依赖，验收后将依赖链接和生成文件移出了公开目录。后续打包验证已在本副本独立执行 `npm ci`，安装 203 个包，没有借用原项目的依赖链接或构建目录；仍未在全新机器验收系统工具链安装。
-- Windows 打包命令 `npm run tauri -- build --no-bundle` 已执行通过，输出默认的 `src-tauri/target/release/CrewVela.exe`；程序 `--version` 返回 `CrewVela · 协帆 0.1.0`。
+- Windows 打包命令 `npm run tauri -- build --no-bundle` 已执行通过，输出默认的 `src-tauri/target/release/CrewVela.exe`；该次程序版本检查确认版本号为 `0.1.0`（显示名称为历史版本，不代表当前构建）。
 - 已有的发布资源集成检查 `packaged_desktop_embeds_entry_and_referenced_assets` 通过（1/1），确认内嵌入口及引用的 JS/CSS，且入口不含 localhost 开发服务器引用。
 - 独立安装依赖后再跑 `npm test`，仍为 420 通过、1 项既有跳过。使用 Node 24.12.0 / Cargo 1.96.0 / Windows MSVC 工具链。
 - 构建保留现有 48 条 Rust warning、Vite 大 chunk 提示及 Tauri macOS identifier 提示。`npm ci` 和 `npm audit` 报告 16 项依赖漏洞：6 中危、9 高危、1 严重；严重项是间接依赖 `proxy-addr`。本次没有自动升级依赖或修改锁文件，发布前需另行评估和处理。

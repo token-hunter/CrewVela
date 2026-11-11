@@ -6,7 +6,7 @@
 
 ## Mac DMG
 
-用户提供的 `CrewVela · 协帆_0.1.0_aarch64.dmg` 复制为 `output/releases/v0.1.0/CrewVela-0.1.0-macos-arm64.dmg`。只改变外部文件名，未改镜像或 app 内容。
+用户提供的旧显示名称 ARM64 DMG 复制为 `output/releases/v0.1.0/CrewVela-0.1.0-macos-arm64.dmg`。只改变外部文件名，未改镜像或 app 内容。
 
 原包与复制件 SHA-256 均为 `63c15b24f6e9c4964d67f836583a9d190d236d3e63f76d9a1e2700f740c931da`，与此前 v2 Mac 报告一致。Windows 已检查 UDIF 的 koly 尾部标记及头长度；这不等于 hdiutil 完整映像检查或签名、公证验收。此前报告为 ad-hoc 签名、未公证；安装副本正常退出与真实 Agent 等边界继续保留。
 
@@ -28,7 +28,7 @@ npm run bundle:windows
 - Node 全量：425 通过、1 项既有跳过，0 失败。
 - 发布资源检查：1/1，通过，保留生产协议、内嵌入口和 JS/CSS 的有效断言。
 - `npm run tauri -- build --no-bundle` 成功，包含 TypeScript/Vite 构建；保留 48 条既有普通库 Rust 警告和前端大 chunk 提示。
-- `npm run bundle:windows` 成功，调用 makensis 生成 NSIS 安装向导。原始输出为 `src-tauri/target/release/bundle/nsis/CrewVela · 协帆_0.1.0_x64-setup.exe`，复制为 `output/releases/v0.1.0/CrewVela-0.1.0-windows-x64-setup.exe`；复制前后散列相同。
+- `npm run bundle:windows` 成功，调用 makensis 生成 NSIS 安装向导。当时输出为旧显示名称的 NSIS 安装包，复制为 `output/releases/v0.1.0/CrewVela-0.1.0-windows-x64-setup.exe`；复制前后散列相同。
 - 安装包为有效 PE，含 NullsoftInst 标记；生成的 NSIS 脚本为 x64 目标、当前用户模式，明确只打包主 EXE 和 5 个许可文件，并生成标准卸载程序。没有把本地历史、账号、node_modules 或测试数据目录作为资源。
 - 实际运行：语言选择默认简体中文，进入中文欢迎页和 MIT 许可页，未点击接受条款或安装，按取消退出；没有执行安装/卸载或启动真实 Agent。坐标交互有一次未推进，改用向导原生快捷键后成功核对许可内容；未把工具交互问题记为功能通过。
 - Windows Authenticode 状态为 `NotSigned`；没有跳过或关闭系统安全保护。未验证从网络下载后的 SmartScreen 行为。

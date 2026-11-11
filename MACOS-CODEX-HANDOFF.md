@@ -96,7 +96,7 @@ APPLE_SIGNING_IDENTITY=- npm run build:macos
 ARM64 预期产物：
 
 ```text
-src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela · 协帆.app
+src-tauri/target/aarch64-apple-darwin/release/bundle/macos/CrewVela.app
 src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
 ```
 
@@ -122,7 +122,7 @@ Intel 需要显式指定刚构建的应用：
 
 ```sh
 bash ./start-first-run-test.command \
-  --app "$PWD/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/CrewVela · 协帆.app" \
+  --app "$PWD/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/CrewVela.app" \
   --data-dir "$PWD/.test-data/mac-first-run-1"
 ```
 
