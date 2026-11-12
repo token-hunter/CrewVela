@@ -11,6 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
 const PRESETS_VERSION: u32 = 1;
+static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,7 +61,8 @@ fn load_from(path: &std::path::Path) -> Result<PresetsFile> {
 
 fn save_to(path: &std::path::Path, file: &PresetsFile) -> Result<()> {
     let json = serde_json::to_string_pretty(file)?;
-    fs::write(path, json).with_context(|| format!("写入预设配置失败: {}", path.display()))
+    crate::providers::write_atomic(path, json.as_bytes())
+        .with_context(|| format!("写入预设配置失败: {}", path.display()))
 }
 
 pub fn list() -> Result<Vec<LaunchPreset>> {
@@ -105,6 +107,7 @@ fn create_at(path: &std::path::Path, input: NewPreset) -> Result<LaunchPreset> {
         .map(|prompt| prompt.trim().to_string())
         .filter(|prompt| !prompt.is_empty());
 
+    let _guard = STORE_LOCK.lock().map_err(|_| anyhow!("预设配置锁不可用"))?;
     let mut file = load_from(path)?;
     if file.presets.iter().any(|preset| preset.name == name) {
         return Err(anyhow!("已存在同名预设: {name}"));
@@ -132,6 +135,7 @@ pub fn create(input: NewPreset) -> Result<LaunchPreset> {
 }
 
 fn delete_at(path: &std::path::Path, id: &str) -> Result<()> {
+    let _guard = STORE_LOCK.lock().map_err(|_| anyhow!("预设配置锁不可用"))?;
     let mut file = load_from(path)?;
     let before = file.presets.len();
     file.presets.retain(|preset| preset.id != id);
@@ -155,6 +159,24 @@ fn now_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audit_concurrent_preset_creates_preserve_every_successful_write() {
+        let (root, store) = test_store("concurrent");
+        let barrier = std::sync::Barrier::new(16);
+        let results = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..16).map(|i| {
+                let barrier = &barrier;
+                let store = &store;
+                scope.spawn(move || { barrier.wait(); create_at(store, new_preset(&format!("preset-{i}"))) })
+            }).collect();
+            handles.into_iter().map(|handle| handle.join().unwrap()).collect::<Vec<_>>()
+        });
+        let stored = load_from(&store);
+        fs::remove_dir_all(root).unwrap();
+        assert!(results.iter().all(Result::is_ok), "concurrent saves failed: {results:?}");
+        assert_eq!(stored.unwrap().presets.len(), 16, "successful saves must not overwrite other presets");
+    }
 
     fn test_store(name: &str) -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!(

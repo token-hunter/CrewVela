@@ -3,7 +3,7 @@
 //! 巨大，只留头部）；thinking/system/progress 等非对话内容跳过。
 
 use std::collections::VecDeque;
-use std::io::BufRead;
+use std::io::{Read, Seek, SeekFrom};
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Serialize, Deserialize};
@@ -127,50 +127,126 @@ pub fn read_transcript(
         .ok_or_else(|| anyhow!("该会话没有 claude transcript（终端会话不支持回看）"))?;
     let file = std::fs::File::open(&path)
         .with_context(|| format!("找不到会话记录文件: {}", path.display()))?;
-    let reader = std::io::BufReader::new(file);
+    read_tail(file, max_messages)
+}
 
+fn read_tail(mut reader: impl Read + Seek, max_messages: usize) -> Result<Vec<TranscriptMessage>> {
     let mut messages: VecDeque<TranscriptMessage> = VecDeque::new();
-    for line in reader.lines() {
-        let Ok(line) = line else { continue };
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
-            continue;
-        };
-        let is_user = match value.get("type").and_then(|kind| kind.as_str()) {
-            Some("user") => true,
-            Some("assistant") => false,
-            _ => continue,
-        };
-        let at = value
-            .get("timestamp")
-            .and_then(|stamp| stamp.as_str())
-            .map(str::to_string);
-        let Some(content) = value
-            .get("message")
-            .and_then(|message| message.get("content"))
-        else {
-            continue;
-        };
-        for (role, text) in parse_content(content, is_user) {
-            messages.push_back(TranscriptMessage {
-                role,
-                text,
-                at: at.clone(),
-            });
-            if messages.len() > max_messages {
-                messages.pop_front();
+    if max_messages == 0 { return Ok(Vec::new()); }
+    // Read backwards in fixed blocks until enough *rendered messages* are found.
+    // Bytes are assembled before JSON decoding, preserving multi-byte UTF-8 and
+    // arbitrarily long user prompts across block boundaries.
+    let mut position = reader.seek(SeekFrom::End(0))?;
+    let mut block = [0u8; 64 * 1024];
+    let mut reversed_line = Vec::new();
+    while position > 0 {
+        let length = position.min(block.len() as u64) as usize;
+        position -= length as u64;
+        reader.seek(SeekFrom::Start(position))?;
+        reader.read_exact(&mut block[..length])?;
+        for byte in block[..length].iter().rev() {
+            if *byte == b'\n' {
+                prepend_line(&mut reversed_line, &mut messages, max_messages);
+                if messages.len() == max_messages {
+                    return Ok(messages.into_iter().collect());
+                }
+            } else {
+                reversed_line.push(*byte);
             }
         }
     }
+    prepend_line(&mut reversed_line, &mut messages, max_messages);
     Ok(messages.into_iter().collect())
+}
+
+fn prepend_line(reversed: &mut Vec<u8>, messages: &mut VecDeque<TranscriptMessage>, limit: usize) {
+    reversed.reverse();
+    let parsed = serde_json::from_slice::<serde_json::Value>(reversed);
+    reversed.clear();
+    let Ok(value) = parsed else { return };
+    let is_user = match value.get("type").and_then(|kind| kind.as_str()) {
+        Some("user") => true,
+        Some("assistant") => false,
+        _ => return,
+    };
+    let at = value.get("timestamp").and_then(|stamp| stamp.as_str()).map(str::to_string);
+    let Some(content) = value.pointer("/message/content") else { return };
+    for (role, text) in parse_content(content, is_user).into_iter().rev() {
+        if messages.len() == limit { break; }
+        messages.push_front(TranscriptMessage { role, text, at: at.clone() });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audit_tail_preserves_unicode_multiblock_prompts_and_block_order() {
+        let long = "跨块🙂原文".repeat(20_000);
+        let rows = [
+            serde_json::json!({"type":"user", "timestamp":"before", "message":{"content":long}}),
+            serde_json::json!({"type":"assistant", "timestamp":"after", "message":{"content":[
+                {"type":"text", "text":"第一段"},
+                {"type":"tool_use", "name":"Read", "input":{"file_path":"a"}},
+                {"type":"text", "text":"最后一段"}
+            ]}}),
+        ];
+        let data = rows.iter().map(|row| row.to_string()).collect::<Vec<_>>().join("\r\n");
+        for suffix in ["", "\r\n", "\nnot-json\n{\"unfinished\":"] {
+            let bytes = format!("{data}{suffix}").into_bytes();
+            let messages = read_tail(std::io::Cursor::new(&bytes), 10).unwrap();
+            assert_eq!(messages.len(), 4);
+            assert_eq!(messages[0].text, long);
+            assert_eq!(messages[0].at.as_deref(), Some("before"));
+            assert_eq!(messages[1].text, "第一段");
+            assert_eq!(messages[2].role, "tool");
+            assert_eq!(messages[3].text, "最后一段");
+            let last = read_tail(std::io::Cursor::new(&bytes), 2).unwrap();
+            assert_eq!(last[0].text, messages[2].text);
+            assert_eq!(last[1].text, messages[3].text);
+            assert!(read_tail(std::io::Cursor::new(&bytes), 0).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn audit_tail_skips_corrupt_lines_but_reports_io_errors() {
+        let mut bytes = b"\xff\xfe\n".to_vec();
+        bytes.extend_from_slice(b"{\"type\":\"user\",\"message\":{\"content\":\"valid\"}}\n");
+        let messages = read_tail(std::io::Cursor::new(bytes), 10).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].text, "valid");
+        struct Broken;
+        impl Read for Broken { fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> { Err(std::io::ErrorKind::PermissionDenied.into()) } }
+        impl Seek for Broken { fn seek(&mut self, _: SeekFrom) -> std::io::Result<u64> { Ok(10) } }
+        assert!(read_tail(Broken, 1).is_err());
+    }
+
+    #[test]
+    fn audit_transcript_tail_does_not_read_old_history() {
+        struct CountingReader { inner: std::io::Cursor<Vec<u8>>, bytes: std::rc::Rc<std::cell::Cell<usize>> }
+        impl std::io::Read for CountingReader {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = std::io::Read::read(&mut self.inner, buf)?;
+                self.bytes.set(self.bytes.get() + n);
+                Ok(n)
+            }
+        }
+        impl std::io::Seek for CountingReader {
+            fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> { std::io::Seek::seek(&mut self.inner, pos) }
+        }
+        let line = "{\"type\":\"user\",\"message\":{\"content\":\"历史消息\"}}\n";
+        let mut history = line.repeat(100_000);
+        history.push_str("{\"type\":\"assistant\",\"message\":{\"content\":\"最后一条\"}}\n");
+        let bytes = std::rc::Rc::new(std::cell::Cell::new(0));
+        let started = std::time::Instant::now();
+        let messages = read_tail(CountingReader { inner: std::io::Cursor::new(history.into_bytes()), bytes: bytes.clone() }, 2).unwrap();
+        eprintln!("transcript tail: bytes={} elapsed={:?}", bytes.get(), started.elapsed());
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].text, "历史消息");
+        assert_eq!(messages[1].text, "最后一条");
+        assert!(bytes.get() <= 128 * 1024, "tail reads must not scale with the entire transcript: {} bytes", bytes.get());
+    }
 
     #[test]
     fn parses_user_string_and_assistant_blocks() {

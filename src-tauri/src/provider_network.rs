@@ -11,6 +11,7 @@ const MIN_TIMEOUT_SECS: u64 = 2;
 const MAX_TIMEOUT_SECS: u64 = 30;
 const MODEL_FETCH_TIMEOUT_SECS: u64 = 15;
 const ERROR_BODY_LIMIT: usize = 512;
+const MAX_CONCURRENT_PROBES: usize = 4;
 const COMPAT_SUFFIXES: &[&str] = &[
     "/api/claudecode",
     "/api/anthropic",
@@ -58,6 +59,10 @@ pub async fn test_endpoints(
 ) -> Result<Vec<EndpointProbe>, String> {
     let timeout = Duration::from_secs(sanitize_timeout(timeout_secs));
     let client = client(timeout, provider)?;
+    test_endpoints_with_client(provider, client).await
+}
+
+async fn test_endpoints_with_client(provider: &ProviderConfig, client: reqwest::Client) -> Result<Vec<EndpointProbe>, String> {
     let mut urls = vec![provider.base_url.clone()];
     urls.extend(provider.meta.endpoint_candidates.clone());
     let mut seen = HashSet::new();
@@ -67,43 +72,57 @@ pub async fn test_endpoints(
     });
 
     let mut probes = Vec::with_capacity(urls.len());
-    for url in urls {
-        let url = url.trim().to_string();
-        if reqwest::Url::parse(&url).is_err() {
-            probes.push(EndpointProbe {
-                url,
-                latency_ms: None,
-                status: None,
-                reachable: false,
-                error: Some("URL 无效".into()),
-            });
-            continue;
-        }
-        let started = Instant::now();
-        match client.get(&url).send().await {
-            Ok(response) => probes.push(EndpointProbe {
-                url,
-                latency_ms: Some(started.elapsed().as_millis()),
-                status: Some(response.status().as_u16()),
-                reachable: true,
-                error: None,
-            }),
-            Err(error) => probes.push(EndpointProbe {
-                url,
-                latency_ms: None,
-                status: error.status().map(|status| status.as_u16()),
-                reachable: false,
-                error: Some(if error.is_timeout() {
-                    "请求超时".into()
-                } else if error.is_connect() {
-                    "连接失败".into()
-                } else {
-                    error.to_string()
-                }),
-            }),
+    let mut pending = urls.into_iter().enumerate();
+    let mut tasks = tokio::task::JoinSet::new();
+    for (index, url) in pending.by_ref().take(MAX_CONCURRENT_PROBES) {
+        let client = client.clone();
+        tasks.spawn(async move { (index, probe_endpoint(&client, url).await) });
+    }
+    while let Some(result) = tasks.join_next().await {
+        probes.push(result.map_err(|error| format!("端点检测任务失败：{error}"))?);
+        if let Some((index, url)) = pending.next() {
+            let client = client.clone();
+            tasks.spawn(async move { (index, probe_endpoint(&client, url).await) });
         }
     }
-    Ok(probes)
+    probes.sort_by_key(|(index, _)| *index);
+    Ok(probes.into_iter().map(|(_, probe)| probe).collect())
+}
+
+async fn probe_endpoint(client: &reqwest::Client, url: String) -> EndpointProbe {
+    let url = url.trim().to_string();
+    if reqwest::Url::parse(&url).is_err() {
+        return EndpointProbe {
+            url,
+            latency_ms: None,
+            status: None,
+            reachable: false,
+            error: Some("URL 无效".into()),
+        };
+    }
+    let started = Instant::now();
+    match client.get(&url).send().await {
+        Ok(response) => EndpointProbe {
+            url,
+            latency_ms: Some(started.elapsed().as_millis()),
+            status: Some(response.status().as_u16()),
+            reachable: true,
+            error: None,
+        },
+        Err(error) => EndpointProbe {
+            url,
+            latency_ms: None,
+            status: error.status().map(|status| status.as_u16()),
+            reachable: false,
+            error: Some(if error.is_timeout() {
+                "请求超时".into()
+            } else if error.is_connect() {
+                "连接失败".into()
+            } else {
+                error.to_string()
+            }),
+        },
+    }
 }
 
 pub async fn fetch_models(
@@ -248,6 +267,48 @@ mod tests {
     use super::*;
     use crate::providers::ProviderMeta;
     use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn audit_endpoint_probes_overlap_and_keep_input_order() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let mut requests = Vec::new();
+            while requests.len() < 4 && Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream.set_nonblocking(false).unwrap();
+                        stream.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+                        let mut buffer = [0; 2048];
+                        assert!(stream.read(&mut buffer).unwrap() > 0, "client closed before sending a request");
+                        requests.push(stream);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(2)),
+                    Err(e) => panic!("{e}"),
+                }
+            }
+            let count = requests.len();
+            for mut stream in requests { let _ = stream.write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"); }
+            count
+        });
+        let mut config = provider(&format!("{base}/0"));
+        config.meta.endpoint_candidates = (1..4).map(|i| format!("{base}/{i}")).collect();
+        config.meta.endpoint_candidates.push(format!("{base}/0/"));
+        config.meta.endpoint_candidates.push("invalid-url".into());
+        let client = reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(3)).build().unwrap();
+        let probes = test_endpoints_with_client(&config, client).await.unwrap();
+        assert_eq!(server.join().unwrap(), 4, "independent endpoints must start before waiting for each other's response");
+        assert_eq!(probes.len(), 5);
+        for (i, probe) in probes[..4].iter().enumerate() {
+            assert_eq!(probe.url, format!("{base}/{i}"));
+            assert!(probe.reachable);
+            assert_eq!(probe.status, Some(204));
+        }
+        assert!(!probes[4].reachable);
+    }
 
     fn provider(base_url: &str) -> ProviderConfig {
         ProviderConfig {

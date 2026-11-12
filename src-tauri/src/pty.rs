@@ -1504,9 +1504,22 @@ mod tests {
         while ptys.is_running(id) && std::time::Instant::now() < deadline {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        let output = String::from_utf8_lossy(&ptys.transcript_tail(id, 4096).unwrap()).into_owned();
-        ptys.kill(id).unwrap();
-        std::fs::remove_dir(&root).unwrap();
+        assert!(!ptys.is_running(id), "fixture command did not exit before its deadline");
+        // Process exit can precede ConPTY's last output and handle release.
+        // Exercise the same drain path as natural session exit before asserting.
+        let stopped = ptys.stop_for_exit(id).unwrap();
+        assert!(stopped.warning.is_none(), "{:?}", stopped.warning);
+        let output = stopped.data;
+        let cleanup_deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            match std::fs::remove_dir(&root) {
+                Ok(()) => break,
+                Err(error) if error.raw_os_error() == Some(32) && std::time::Instant::now() < cleanup_deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => panic!("fixture directory was not released: {error}"),
+            }
+        }
         assert!(output.contains(&format!("CREWVELA_CWD={}", root.display())), "CLI changed project directory: {output}");
     }
 
