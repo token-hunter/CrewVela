@@ -2,7 +2,7 @@
 
 当前版本为 **v0.1.0**，安装包与校验文件见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。
 
-**附件发布在 `v0.1.0` Release 下，后续 `main` 更新不会自动更新附件。** 不同平台附件的源码提交以 Release 说明为准；本次 macOS DMG 对应 [`783bf9e`](https://github.com/token-hunter/CrewVela/commit/783bf9edd1c084419111acd96a03a8c1fd0c768a)。 新仓库使用清理后的源码与 Windows 安装包，旧历史及旧包保留在独立的私有备份中。隐私脱敏、依赖、素材与安装验收记录见[发布检查清单](release-checklist.md)。
+**附件发布在 `v0.1.0` Release 下，后续 `main` 更新不会自动更新附件。** 不同平台附件的源码提交以 Release 说明为准；本次 macOS DMG 对应 [`3ddf245`](https://github.com/token-hunter/CrewVela/commit/3ddf2459fef861a4c7aedeef7a7083134a334212)。 新仓库使用清理后的源码与 Windows 安装包，旧历史及旧包保留在独立的私有备份中。隐私脱敏、依赖、素材与安装验收记录见[发布检查清单](release-checklist.md)。
 
 | 资产 | 用途与当前状态 |
 | --- | --- |
@@ -44,7 +44,7 @@ shasum -a 256 -c CrewVela_0.1.0_macos_aarch64.dmg.sha256
 
 校验通过后打开 DMG，将应用拖入 Applications；替换旧版本前先完整退出应用。使用下载版无需安装 Rust 或克隆源码，但 Node/npm、所用 Agent CLI 与账号仍需本机准备。
 
-该包对应已合入 main 的 `783bf9e`，修复 macOS 首次展开右侧“开始”页时入口卡片高度异常。包内应用为 `CrewVela.app`；保留安装版 Chat 启动修复及现有工作区、协作、设置和 Skill 功能。原生 WKWebView 和 Chromium 的首次打开、连续 10 轮收起展开通过；Chromium 的 Windows 平台分支、入口回调、键盘、长文本及小窗口回归通过，未做 Windows 实机验证。本轮 Node 440 通过、0 失败、5 项原有跳过；生产资源和包校验通过，未重跑 Rust 全库测试。具体范围见 [Release 说明](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。自行构建见 [Mac 指南](../MACOS-CODEX-HANDOFF.md)。
+该包基于 main 提交 `3ddf245`，包含快捷指令、Agent 自动化、共享记忆更新等源码整合，并保留右侧“开始”页卡片高度等已有修复。包内应用为 `CrewVela.app`。本轮 Node 462 通过、0 失败、5 项原有跳过；构建、生产资源和包校验通过。**Rust 库全量为 1052 通过、1 失败、40 忽略**：ZCode 多轮会话恢复用例完成事件计数不符，单项复跑通过，但不代表问题已修复。新增功能的完整原生交互、系统权限、真实模型及 Windows 实机尚未验收。完整结果见 [Release 说明](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。自行构建见 [Mac 指南](../MACOS-CODEX-HANDOFF.md)。
 
 本地 ad-hoc 构建不等于 Developer ID 签名或公证；不提供批量删除隔离属性或关闭 Gatekeeper 的安装步骤。签名凭据不得写入源码或报告。
 
