@@ -196,6 +196,8 @@ export function AppSidebar(props: Props) {
               if (toolsMenuOpen) {
                 closeToolsMenus();
               } else {
+                // 新建入口只保留下方的「新建会话」按钮；打开本菜单时先收起它的列表。
+                setNewMenuOpen(false);
                 setToolsMenuOpen(true);
               }
             }}
@@ -239,19 +241,6 @@ export function AppSidebar(props: Props) {
           <>
             <div className="menu-backdrop" onClick={closeToolsMenus} />
             <div className="unified-tools-menu" role="menu" aria-label="更多工具">
-              <button
-                type="button"
-                role="menuitem"
-                className={newMenuOpen ? "active" : ""}
-                aria-haspopup="menu"
-                aria-expanded={newMenuOpen}
-                onMouseEnter={() => setNewMenuOpen(true)}
-                onClick={() => setNewMenuOpen((current) => !current)}
-              >
-                <PlusIcon size={18} />
-                <span>新建会话</span>
-              </button>
-              <div className="unified-tools-menu-divider" role="separator" />
               <button
                 type="button"
                 role="menuitem"

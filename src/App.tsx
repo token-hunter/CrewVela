@@ -4,6 +4,9 @@ import { sidebarTabKind } from "./components/RightSidebarActivityBar";
 import "./components/native-chat-tab-sort.css";
 import { useRuntimeAvailability } from "./runtimeAvailability";
 import { isRetiredRuntime } from "./runtimeTaxonomy";
+import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
+import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
+import orangeMascot from "./assets/notification-orange-mascot.png";
 import {
   useCallback,
   useEffect,
@@ -2532,16 +2535,36 @@ export default function App() {
                 ) : !multiAgentWorkspaceProjectId && !selectedSession &&
                   !tabSessions.some(item => !sidebarTerminalIds.includes(item.id) && isPtySession(item)) ? (
                   <div className="empty-state">
-                    <span className="empty-state-kicker">CREWVELA</span>
-                    <h1>这个工作区还没有会话</h1>
-                    <p>新建一个 Agent 会话，或从左侧列表选择已有会话；多个 Agent 可以并排运行、互发消息。</p>
+                    <h1>
+                      <img className="empty-state-mascot" src={orangeMascot} alt="" aria-hidden="true" />
+                      这个工作区还没有会话
+                    </h1>
+                    <p>
+                      <span>新建一个 Agent 会话，或从左侧列表选择已有会话；</span>
+                      <span>多个 Agent 可以并排运行、互发消息。</span>
+                    </p>
+                    {/* 参照 Cowork 新任务页的输入框卡片：整张卡片就是入口按钮，名称取右下角的「新建会话」。 */}
                     <button
-                      className="btn primary"
+                      type="button"
+                      className="empty-state-start"
+                      aria-labelledby="empty-state-start-label"
+                      aria-describedby="empty-state-start-prompt"
                       onClick={openNewSessionDialog}
                     >
-                      ＋ 新建会话
+                      <span id="empty-state-start-prompt" className="empty-state-start-prompt">
+                        选择 Agent 与工作目录，开始一段新会话
+                      </span>
+                      <span className="empty-state-start-bar">
+                        <span id="empty-state-start-label" className="empty-state-start-chip">
+                          <PlusIcon size={14} weight="bold" aria-hidden="true" />
+                          新建会话
+                        </span>
+                      </span>
                     </button>
-                    <small className="empty-state-hint">想固定在某个目录？点左侧「项目」旁的 + 直接在项目下新建。</small>
+                    <small className="empty-state-hint">
+                      <FolderSimpleIcon size={14} aria-hidden="true" />
+                      想固定在某个目录？点左侧「项目」旁的 + 直接在项目下新建。
+                    </small>
                   </div>
                 ) : null}
               </div>
