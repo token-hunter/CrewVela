@@ -7,15 +7,16 @@ window.__quickCalls = []; window.__quickJob = null; window.__quickHealthy = fals
 window.__quickInfo = { supported: true, version: '3.4.5', installedVersion:null, managed:false, recoveryPending:false, package: {platform:'Windows x64',asset:'ai-memory-windows-x86_64.zip',extensions:['zip']}, agents: [{id:'claude-code',installed:true},{id:'codex',installed:true}] };
 window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
   window.__quickCalls.push({command,args});
-  if (command === 'ai_memory_status') return { installed:true,executable:'C:/mock/ai-memory.exe',dataDir:'C:/mock/data',serverUrl:'http://127.0.0.1:49374',serverRunning:window.__quickHealthy,managedByCrewVela:true,version:'2.6.0' };
-  if (command === 'ai_memory_quick_info') return window.__quickInfo;
-  if (command === 'ai_memory_quick_status') { if(window.__quickPollError) throw Error('模拟进度读取失败'); return window.__quickJob; }
+  if (command === 'ai_memory_status') return { installed:true,executable:'C:/mock/ai-memory.exe',dataDir:'C:/mock/data',serverUrl:'http://127.0.0.1:49374',serverRunning:window.__quickHealthy,managedByCrewVela:true,version:window.__quickInfo.installedVersion || '2.6.0' };
+  if (command === 'ai_memory_quick_info') return structuredClone(window.__quickInfo);
+  if (command === 'ai_memory_quick_status') { if(window.__quickPollError) throw Error('模拟进度读取失败'); return structuredClone(window.__quickJob); }
   if (command === 'ai_memory_recover_update') { window.__quickInfo.recoveryPending=false; return; }
   if (command === 'plugin:dialog|open') return args.options.directory ? (window.__quickInfo.package?.platform.startsWith('macOS') ? '/tmp/记忆测试 项目' : 'C:/projects/demo') : '/tmp/downloads/' + window.__quickInfo.package.asset;
   if (command === 'ai_memory_quick_start') {
     if(window.__quickHold) await new Promise(resolve=>window.__quickRelease=resolve);
-    const steps = [['precheck','检查环境与现有配置'],['install','安装兼容版本并校验'],['service','初始化并启动本地服务'],['project','准备所选项目'],...args.request.agents.map(id=>[id,'接入 '+(id==='codex'?'Codex':'Claude Code')]),['check','检查配置与记忆工具']];
-    return window.__quickJob = {id:'fixture-'+window.__quickCalls.filter(x=>x.command===command).length,projectDir:args.request.projectDir,agents:args.request.agents,state:'running',steps:steps.map(([id,label],index)=>({id,label,state:index?'pending':'running',detail:index?'':'正在检查环境'}))};
+    const steps = args.request.update ? [['precheck','检查托管服务与目标版本'],['install','下载并校验新版服务'],['backup','备份原安装与完整记忆数据'],['service','更新并启动记忆服务'],['check','检查记忆工具']] : [['precheck','检查环境与现有配置'],['install','安装兼容版本并校验'],['service','初始化并启动本地服务'],['project','准备所选项目'],...args.request.agents.map(id=>[id,'接入 '+(id==='codex'?'Codex':'Claude Code')]),['check','检查配置与记忆工具']];
+    window.__quickJob = {id:'fixture-'+window.__quickCalls.filter(x=>x.command===command).length,projectDir:args.request.projectDir || '',agents:args.request.agents || [],update:args.request.update,state:'running',steps:steps.map(([id,label],index)=>({id,label,state:index?'pending':'running',detail:index?'':'正在检查环境'}))};
+    return structuredClone(window.__quickJob);
   }
   if (command === 'ai_memory_project_access') return false;
   throw Error('Unexpected fixture command '+command);

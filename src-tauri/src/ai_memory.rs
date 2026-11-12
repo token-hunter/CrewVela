@@ -1,6 +1,7 @@
 //! ai-memory 共享记忆服务管理：检测 / 安装 / 启停 / 项目交接棒查询。
 //! 服务是独立基础设施进程：CrewVela 只负责安装与托管启动，不随本应用
-//! 退出而停止。仅本次应用启动且仍持有句柄的服务可显式停止；重启后视为外部服务。
+//! 退出而停止。普通停止仅使用本次持有的句柄；Windows 显式更新可在核验
+//! 监听进程、用户、程序与完整启动参数后取得旧实例服务的句柄。
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -25,6 +26,9 @@ mod releases;
 mod auth;
 #[path = "ai_memory_update.rs"]
 mod updates;
+#[cfg(windows)]
+#[path = "ai_memory_process.rs"]
+mod service_process;
 #[tauri::command]
 pub async fn ai_memory_recover_update(confirmed: bool) -> Result<(), String> { updates::recover_update(confirmed).await }
 #[path = "ai_memory_onboarding.rs"]

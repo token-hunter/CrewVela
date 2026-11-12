@@ -7,7 +7,9 @@ use std::sync::Mutex;
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Request {
+    #[serde(default)]
     pub(super) project_dir: String,
+    #[serde(default)]
     pub(super) agents: Vec<String>,
     pub(super) local_archive: Option<String>,
     #[serde(default)]
@@ -33,6 +35,8 @@ pub struct Job {
     id: String,
     project_dir: String,
     agents: Vec<String>,
+    #[serde(default)]
+    update: bool,
     state: String,
     steps: Vec<Step>,
 }
@@ -183,16 +187,20 @@ pub(super) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 fn new_job(request: &Request) -> Job {
-    let mut steps = vec![
+    let mut steps = if request.update {
+        vec![
+            ("precheck", "检查托管服务与目标版本"),
+            ("install", "下载并校验新版服务"),
+            ("backup", "备份原安装与完整记忆数据"),
+            ("service", "更新并启动记忆服务"),
+        ]
+    } else { vec![
         ("precheck", "检查环境与现有配置"),
         ("install", "安装兼容版本并校验"),
         ("service", "初始化并启动本地服务"),
         ("project", "准备所选项目"),
-    ];
-    if request.update {
-        steps.insert(1, ("backup", "备份安装、记忆和接入配置"));
-    }
-    for agent in &request.agents {
+    ] };
+    for agent in request.agents.iter().filter(|_| !request.update) {
         steps.push((
             agent.as_str(),
             if agent == "codex" {
@@ -205,8 +213,9 @@ fn new_job(request: &Request) -> Job {
     steps.push(("check", "检查配置与记忆工具"));
     Job {
         id: uuid::Uuid::new_v4().to_string(),
-        project_dir: request.project_dir.clone(),
-        agents: request.agents.clone(),
+        project_dir: if request.update { String::new() } else { request.project_dir.clone() },
+        agents: if request.update { vec![] } else { request.agents.clone() },
+        update: request.update,
         state: "running".into(),
         steps: steps
             .into_iter()
@@ -217,6 +226,16 @@ fn new_job(request: &Request) -> Job {
                 detail: String::new(),
             })
             .collect(),
+    }
+}
+
+fn fail_step(job: &mut Job, detail: String) {
+    let failed = job.steps.iter().position(|s| s.state == "running")
+        .or_else(|| job.steps.iter().position(|s| s.state == "pending"))
+        .or_else(|| job.steps.len().checked_sub(1));
+    if let Some(step) = failed.and_then(|index| job.steps.get_mut(index)) {
+        step.state = "failed".into();
+        step.detail = detail;
     }
 }
 
@@ -260,21 +279,13 @@ pub fn ai_memory_quick_start(request: Request) -> Result<Job, String> {
         if let Ok(mut state) = JOB.lock() {
             if let Some(job) = state.as_mut() {
                 job.state = if result.is_ok() {
-                    "awaiting-session"
+                    if request.update { "updated" } else { "awaiting-session" }
                 } else {
                     "failed"
                 }
                 .into();
                 if let Err(error) = result {
-                    let failed = job
-                        .steps
-                        .iter()
-                        .position(|s| s.state == "running")
-                        .unwrap_or(job.steps.len() - 1);
-                    if let Some(step) = job.steps.get_mut(failed) {
-                        step.state = "failed".into();
-                        step.detail = format!("{error:#}");
-                    }
+                    fail_step(job, format!("{error:#}"));
                 }
                 if let Err(error) = persist(&env, job) {
                     job.state = "failed".into();
@@ -289,12 +300,17 @@ pub fn ai_memory_quick_start(request: Request) -> Result<Job, String> {
     Ok(job)
 }
 
-fn validate_request(request: &Request) -> Result<PathBuf> {
+fn validate_request(request: &Request) -> Result<Option<PathBuf>> {
     if request.update && request.target_version.is_none() {
         bail!("请先检查更新并选择目标版本");
     }
     if let Some(version) = &request.target_version {
         releases::compatible(version)?;
+    }
+    // Service-only upgrades never select, validate or modify project/Agent targets,
+    // including targets supplied by an older frontend.
+    if request.update {
+        return Ok(None);
     }
     let path = Path::new(&request.project_dir);
     if !path.is_absolute() || !path.is_dir() {
@@ -315,7 +331,7 @@ fn validate_request(request: &Request) -> Result<PathBuf> {
     {
         bail!("请选择 Claude Code 或 Codex，不能重复选择");
     }
-    Ok(path.canonicalize()?)
+    Ok(Some(path.canonicalize()?))
 }
 
 fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
@@ -624,18 +640,20 @@ pub(super) async fn execute(
     if updates::pending(&env.root) {
         bail!("上次更新未完成，请先恢复升级前快照");
     }
-    update("precheck", "running", "核对项目、版本和配置范围")?;
+    update("precheck", "running", "核对操作范围与版本")?;
     let project = validate_request(request)?;
+    if request.update {
+        let release = releases::resolve(request.target_version.as_deref()).await?;
+        update("precheck", "done", "仅更新托管服务；沿用已有项目与 Agent 接入配置")?;
+        return updates::execute(env, request, &release, update).await;
+    }
+    let project = project.context("配置接入需要项目目录")?;
     precheck(env, request, &project)?;
     update(
         "precheck",
         "done",
         "仅接入所选 Agent；现有项目路由和其他配置将保留",
     )?;
-    if request.update {
-        let release = releases::resolve(request.target_version.as_deref()).await?;
-        return updates::execute(env, request, &release, update).await;
-    }
     update("install", "running", "准备所选官方稳定版，校验后才发布")?;
     let executable = if let Some(path) = &env.existing {
         let path = path.clone();
@@ -645,10 +663,11 @@ pub(super) async fn execute(
     } else {
         let _guard = service_lifecycle_lock(Duration::from_secs(20)).await?;
         let release = releases::resolve(request.target_version.as_deref()).await?;
-        installation::install_release(
+        installation::install_release_with_progress(
             &env.root.join("ai-memory"),
             request.local_archive.as_deref().map(Path::new),
             &release,
+            &|detail| update("install", "running", detail),
         )
         .await?
     };
@@ -771,6 +790,53 @@ mod tests {
         request.agents = vec!["codex".into()];
         assert_eq!(new_job(&request).steps.len(), 6);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn service_updates_need_no_project_or_agents_and_never_schedule_setup_steps() {
+        let mut request: Request = serde_json::from_value(json!({
+            "update": true, "targetVersion": "3.4.5", "confirmMajor": true
+        })).unwrap();
+        assert!(validate_request(&request).unwrap().is_none());
+        // Older clients may still send targets. Service updates must ignore them.
+        request.project_dir = "missing-relative-project".into();
+        request.agents = vec!["codex".into(), "claude-code".into()];
+        assert!(validate_request(&request).unwrap().is_none());
+        let job = new_job(&request);
+        assert!(job.update);
+        assert!(job.project_dir.is_empty());
+        assert!(job.agents.is_empty());
+        assert_eq!(job.steps.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            vec!["precheck", "install", "backup", "service", "check"]);
+        request.update = false;
+        assert!(validate_request(&request).is_err(), "project setup must retain its validation");
+        request.update = true;
+        request.target_version = None;
+        assert!(validate_request(&request).is_err(), "updates still need an explicit target version");
+        request.target_version = Some("4.0.0".into());
+        assert!(validate_request(&request).is_err(), "unsupported releases must still be rejected");
+    }
+
+    #[test]
+    fn previous_setup_job_without_operation_flag_still_loads() {
+        let job: Job = serde_json::from_value(json!({
+            "id":"previous", "projectDir":"fixture-project", "agents":["codex"],
+            "state":"awaiting-session", "steps":[]
+        })).unwrap();
+        assert!(!job.update);
+        assert_eq!(job.project_dir, "fixture-project");
+    }
+
+    #[test]
+    fn failure_between_steps_is_attached_to_next_stage_not_final_check() {
+        let request: Request = serde_json::from_value(json!({"update":true,"targetVersion":"3.4.5"})).unwrap();
+        let mut job = new_job(&request);
+        job.steps[0].state = "done".into();
+        job.steps[1].state = "done".into();
+        fail_step(&mut job, "服务接管失败".into());
+        assert_eq!(job.steps[2].id, "backup");
+        assert_eq!(job.steps[2].state, "failed");
+        assert_eq!(job.steps.last().unwrap().state, "pending");
     }
 
     #[test]
@@ -984,6 +1050,8 @@ mod tests {
         let new_archive =
             std::env::var("CREWVELA_AI_MEMORY_TEST_RELEASE_ARCHIVE").expect("set v3.4.5 archive");
         let (root, mut env, mut request) = fixture();
+        #[cfg(windows)]
+        let mut previous_instance_child: Option<std::process::Child> = None;
         request.target_version = Some("2.6.0".into());
         request.local_archive = Some(old_archive);
         let _foreign_listener = std::net::TcpListener::bind("127.0.0.1:49374").ok();
@@ -1002,27 +1070,47 @@ mod tests {
                 let (mcp,hooks)=env.config_paths(agent,Path::new(&request.project_dir)); [mcp,hooks]
             }).collect::<Vec<_>>();
             let before = paths.iter().map(|p|std::fs::read(p)).collect::<std::io::Result<Vec<_>>>()?;
+            let marker = root.join("project/.ai-memory.toml");
+            let marker_before = std::fs::read(&marker)?;
+            let capture_before = std::fs::read(data.join("capture-mode"))?;
             request.update = true;
+            request.project_dir.clear();
+            request.agents.clear();
             request.target_version = Some("3.4.5".into());
             request.local_archive = Some(new_archive);
             let release = releases::resolve(Some("3.4.5")).await?;
             assert!(updates::execute(&env,&request,&release,&update).await.unwrap_err().to_string().contains("跨大版本"));
             request.confirm_major = true;
-            // All real migration, config and tool checks finish before an injected
-            // final failure. This exercises rollback of already migrated data.
-            let fail = |id: &str, state: &str, _: &str| {
-                if id == "check" && state == "done" {
+            #[cfg(windows)]
+            {
+                // Simulate a launcher restart: the service survives but this
+                // instance has no Child. A stale PID file grants no authority.
+                std::fs::write(data.join("server.pid"), "999999999")?;
+                previous_instance_child = managed_service()?.child.take();
+                assert!(previous_instance_child.is_some());
+            }
+            // Exercise both a real policy-preservation failure and a final fault
+            // after successful migration/tool checks. Neither may touch Agent files.
+            for change_policy in [false, true] {
+              let fail = |id: &str, state: &str, _: &str| {
+                if change_policy && id == "service" && state == "done" {
+                    std::fs::write(data.join("capture-mode"), "all")?;
+                    std::fs::write(data.join("candidate-only-data"), "retain failed candidate writes")?;
+                } else if !change_policy && id == "check" && state == "done" {
                     std::fs::write(data.join("candidate-only-data"), "retain failed candidate writes")?;
                     bail!("fixture injected final validation failure");
                 }
                 Ok(())
-            };
-            let error = updates::execute(&env,&request,&release,&fail).await.unwrap_err();
-            assert!(format!("{error:#}").contains("已恢复旧安装"),"{error:#}");
-            assert_eq!(installation::version(&executable)?,"2.6.0");
-            assert!(!updates::pending(&env.root));
-            for (path,bytes) in paths.iter().zip(&before) { assert_eq!(&std::fs::read(path)?,bytes); }
-            assert!(!data.join("candidate-only-data").exists());
+              };
+              let error = updates::execute(&env,&request,&release,&fail).await.unwrap_err();
+              if !format!("{error:#}").contains("已恢复旧安装") { bail!("跨实例更新未进入安全备份及回退：{error:#}"); }
+              if change_policy { assert!(format!("{error:#}").contains("捕获策略")); }
+              assert_eq!(installation::version(&executable)?,"2.6.0");
+              assert!(!updates::pending(&env.root));
+              for (path,bytes) in paths.iter().zip(&before) { assert_eq!(&std::fs::read(path)?,bytes); }
+              assert_eq!(std::fs::read(data.join("capture-mode"))?, capture_before);
+              assert!(!data.join("candidate-only-data").exists());
+            }
             let backups=std::fs::read_dir(env.root.join("ai-memory-upgrade-backups"))?.collect::<std::io::Result<Vec<_>>>()?;
             assert!(backups.iter().any(|entry|std::fs::read_dir(entry.path()).unwrap().any(|p|p.unwrap().path().join("candidate-only-data").is_file())));
             let base=managed_base(&data)?;
@@ -1031,6 +1119,9 @@ mod tests {
             assert_eq!(installation::version(&executable)?,"3.4.5");
             assert_eq!(managed_status_for_data(&service_client(&base)?,&base,&data).await?["version"],"3.4.5");
             assert_eq!(std::fs::read_to_string(data.join("keep-user-memory"))?,"preserve");
+            for (path,bytes) in paths.iter().zip(&before) { assert_eq!(&std::fs::read(path)?,bytes, "service updates must preserve Agent configs"); }
+            assert_eq!(std::fs::read(&marker)?, marker_before);
+            assert_eq!(std::fs::read(data.join("capture-mode"))?, capture_before);
             {
                 let db=rusqlite::Connection::open(data.join("db/memory.sqlite"))?;
                 let value:String=db.query_row("SELECT value FROM crewvela_upgrade_fixture",[],|r|r.get(0))?;
@@ -1048,6 +1139,11 @@ mod tests {
             if service.is_running().unwrap() {
                 service.stop().unwrap();
             }
+        }
+        #[cfg(windows)]
+        if let Some(mut child) = previous_instance_child {
+            if child.try_wait().unwrap().is_none() { child.kill().unwrap(); }
+            child.wait().unwrap();
         }
         result.unwrap();
         std::fs::remove_dir_all(root).unwrap();

@@ -188,6 +188,29 @@ fn data_config_base(data: &Path) -> Result<String> {
     managed_url_from_config(&std::fs::read_to_string(data.join("config.toml"))?)
 }
 
+#[cfg(windows)]
+type PriorService = service_process::VerifiedService;
+#[cfg(not(windows))]
+struct PriorService;
+#[cfg(not(windows))]
+impl PriorService {
+    fn stop(self) -> Result<()> { bail!("当前平台无法接管旧实例服务，请手动停止后重试") }
+}
+
+async fn prior_service(executable: &Path, data: &Path, base: &str) -> Result<Option<PriorService>> {
+    if managed_service()?.is_running()? || managed_listener_is_unbound(base)? { return Ok(None); }
+    #[cfg(windows)]
+    {
+        let prior = service_process::VerifiedService::reconnect(executable, data, base)?;
+        // Validate the expected local authenticated service as well as OS identity.
+        let health = managed_status_for_data(&service_client(base)?, base, data).await?;
+        if health["version"] != installation::version(executable)? { bail!("监听服务版本与托管安装不一致，未接管"); }
+        Ok(Some(prior))
+    }
+    #[cfg(not(windows))]
+    { let _ = (executable, data); bail!("当前平台尚不能核验旧实例服务，请先手动停止后更新；未终止外部进程") }
+}
+
 pub(super) async fn recover_update(confirmed: bool) -> Result<(), String> {
     onboarding::require_idle()?;
     if !confirmed {
@@ -237,6 +260,14 @@ pub(super) async fn execute(
     if new.0 != old.0 && !request.confirm_major {
         bail!("跨大版本更新需确认数据迁移与备份，不能仅替换旧程序回退");
     }
+    update("precheck", "running", "核验本机托管服务、数据目录与停止权限")?;
+    {
+        let _guard = service_lifecycle_lock(Duration::from_secs(20)).await?;
+        let data = env.data();
+        let base = data_config_base(&data)?;
+        let _prior = prior_service(&executable, &data, &base).await?;
+    }
+    update("precheck", "done", "托管服务身份已核验；下载完成后将再次复核再停止")?;
     update(
         "install",
         "running",
@@ -245,10 +276,11 @@ pub(super) async fn execute(
     let candidate = env
         .root
         .join(format!(".ai-memory-candidate-{}", uuid::Uuid::new_v4()));
-    installation::install_release(
+    installation::install_release_with_progress(
         &candidate,
         request.local_archive.as_deref().map(Path::new),
         release,
+        &|detail| update("install", "running", detail),
     )
     .await?;
     update(
@@ -259,18 +291,20 @@ pub(super) async fn execute(
     let _guard = service_lifecycle_lock(Duration::from_secs(20)).await?;
     let data = env.data();
     let base = data_config_base(&data)?;
-    let was_running = managed_service()?.is_running()?;
-    if !was_running && !managed_listener_is_unbound(&base)? {
-        bail!("当前服务由外部进程或上次应用持有，请先手动停止后更新；未终止该进程");
-    }
+    let capture_policy = digest(&data.join("capture-mode"))?;
     update(
         "backup",
         "running",
-        "暂停记忆服务并备份完整数据与所选 Agent 配置；请保持依赖会话暂停",
+        "暂停记忆服务并备份完整数据与服务配置；已有 Agent 接入配置不改写",
     )?;
-    if was_running {
+    let prior = prior_service(&executable, &data, &base).await?;
+    let was_running = managed_service()?.is_running()? || prior.is_some();
+    if let Some(prior) = prior {
+        prior.stop()?;
+    } else if was_running {
         managed_service()?.stop()?;
     }
+    if !managed_listener_is_unbound(&base)? { bail!("旧服务退出后监听端口仍被占用，未开始备份或替换"); }
     let backup = env
         .root
         .join("ai-memory-upgrade-backups")
@@ -283,33 +317,18 @@ pub(super) async fn execute(
             std::fs::set_permissions(&backup, std::fs::Permissions::from_mode(0o700))?;
         }
         copy_tree(&data, &backup.join("data"))?;
-        let project = Path::new(&request.project_dir);
-        let mut configs = Vec::new();
-        for agent in &request.agents {
-            let paths = env.config_paths(agent, project);
-            for path in [paths.0, paths.1] {
-                let before = digest(&path)?;
-                if before.is_some() {
-                    copy_tree(&path, &backup.join(format!("agent-{}", configs.len())))?;
-                }
-                configs.push(ConfigCopy {
-                    path,
-                    existed: before.is_some(),
-                    after: before.clone(),
-                    before,
-                });
-            }
-        }
         let journal = Journal {
             backup: backup.clone(),
             old_version,
             was_running,
-            configs,
+            // No MCP, Hooks or project marker is rewritten by service updates.
+            // Keep the journal field for recovery of older, combined upgrades.
+            configs: Vec::new(),
         };
         save(&env.root, &journal)?;
         Ok(journal)
     })();
-    let mut journal = match snapshot {
+    let journal = match snapshot {
         Ok(journal) => journal,
         Err(error) => {
             if was_running {
@@ -338,35 +357,15 @@ pub(super) async fn execute(
             bail!("运行中的服务版本与目标版本不一致");
         }
         update("service", "done", "新版服务健康、认证已接入")?;
-        for (index, agent) in request.agents.iter().enumerate() {
-            update(agent, "running", "备份后更新 MCP 与钩子，保留其他服务")?;
-            onboarding::setup_agent(
-                env,
-                &executable,
-                Path::new(&request.project_dir),
-                &base,
-                agent,
-            )?;
-            for i in index * 2..index * 2 + 2 {
-                journal.configs[i].after = digest(&journal.configs[i].path)?;
-            }
-            save(&env.root, &journal)?;
-            update(agent, "done", "新版接入配置已完成；现有会话需重新加载")?;
-        }
-        update(
-            "project",
-            "done",
-            "沿用原项目标记和 allowlist，不导入其他项目历史",
-        )?;
-        update("check", "running", "验证记忆工具和项目作用域")?;
+        update("check", "running", "验证新版记忆服务工具；不改写项目与 Agent 配置")?;
         onboarding::verify_tools(&base, &data).await?;
-        if inspect_scope_at(&executable, &data, &request.project_dir, &base).is_none() {
-            bail!("升级后项目作用域检查未通过");
+        if digest(&data.join("capture-mode"))? != capture_policy {
+            bail!("升级改变了原有记忆捕获策略，未接受该变化");
         }
         update(
             "check",
             "done",
-            "更新已完成，请加载新会话验证真实捕获；旧快照已保留",
+            "服务更新已完成，沿用已有接入配置；升级前完整快照已保留。请复核原会话接入，必要时单独配置项目",
         )?;
         std::fs::remove_file(env.root.join(JOURNAL))?;
         Ok::<_, anyhow::Error>(())
