@@ -13,6 +13,8 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 [![React and TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT license](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
 
+[![Download Beta](https://img.shields.io/badge/download-Beta-2563EB?style=for-the-badge&logo=github&logoColor=white)](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)
+
 [Watch the film](#see-crewvela-in-one-minute) · [Get started](#get-started) · [Workflow guide](docs/workflows.md) · [User guide](docs/user-guide.md) · [简体中文](README.md)
 
 **Want your coding agents to work together? Star the project and come back to see what they can do next.**

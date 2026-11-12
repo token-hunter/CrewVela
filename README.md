@@ -13,6 +13,8 @@
 [![React 与 TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT 许可](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
 
+[![下载 Beta 版本](https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-Beta_%E7%89%88%E6%9C%AC-2563EB?style=for-the-badge&logo=github&logoColor=white)](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)
+
 [宣传片](#一分钟看-crewvela) · [开始使用](#开始使用) · [协作玩法](docs/workflows.md) · [使用手册](docs/user-guide.md) · [English](README.en.md)
 
 **如果你也想让多个编程 Agent 配合干活，点个 Star，方便回来看看它们又学会了什么。**
