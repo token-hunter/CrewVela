@@ -16,6 +16,9 @@ const CONTROL_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_FRAME: usize = 16 * 1024 * 1024;
 #[path = "zcode_account.rs"]
 mod account_host;
+#[cfg(target_os = "macos")]
+#[path = "zcode_macos.rs"]
+mod macos;
 
 fn public_workflow_policy(command: &Command) -> Result<Value> {
     let fallback =
@@ -196,6 +199,12 @@ fn model_choices(settings: &Value) -> Vec<ModelChoice> {
     choices
 }
 
+#[cfg(target_os = "macos")]
+pub(crate) fn executable() -> Result<PathBuf> {
+    macos::executable()
+}
+
+#[cfg(not(target_os = "macos"))]
 pub(crate) fn executable() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("CREWVELA_ZCODE_EXECUTABLE") {
         let path = PathBuf::from(path);
@@ -520,21 +529,30 @@ fn installed_desktop_agent() -> Option<PathBuf> {
 }
 
 pub(crate) fn launch(path: &Path) -> Result<Command> {
+    #[cfg(target_os = "macos")]
+    let mac_bundle = macos::bundle_root(path)
+        .filter(|root| path == *root || path == root.join("Contents/Resources/glm/zcode.cjs"))
+        .map(macos::bundle).transpose()?;
+    #[cfg(target_os = "macos")]
+    let path = mac_bundle.as_ref().map_or(path, |app| app.agent.as_path());
     let desktop_root = path
         .parent()
         .and_then(Path::parent)
         .and_then(Path::parent)
         .filter(|root| root.join("ZCode.exe").is_file());
+    let desktop_program = desktop_root.map(|root| root.join("ZCode.exe"));
+    #[cfg(target_os = "macos")]
+    let desktop_program = mac_bundle.as_ref().map(|app| app.program.clone()).or(desktop_program);
     let mut command = if path
         .extension()
         .is_some_and(|ext| ext == "cjs" || ext == "js")
     {
-        let mut command = Command::new(if let Some(root) = desktop_root {
-            root.join("ZCode.exe")
+        let mut command = Command::new(if let Some(program) = desktop_program.as_ref() {
+            program.clone()
         } else {
             which::which("node").context("启动 ZCode Desktop cjs Agent 需要 Node.js")?
         });
-        if desktop_root.is_some() {
+        if desktop_program.is_some() {
             command
                 .env("ELECTRON_RUN_AS_NODE", "1")
                 .env_remove("NODE_OPTIONS");
@@ -550,8 +568,10 @@ pub(crate) fn launch(path: &Path) -> Result<Command> {
         command.creation_flags(0x0800_0000);
     }
     if std::env::var_os("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE").is_none() {
-        let config = desktop_root
-            .map(|root| root.join("resources/config/provider/zcode-builtin.json"))
+        let desktop_config = desktop_root.map(|root| root.join("resources/config/provider/zcode-builtin.json"));
+        #[cfg(target_os = "macos")]
+        let desktop_config = mac_bundle.as_ref().map(|app| app.builtin.clone()).or(desktop_config);
+        let config = desktop_config
             .or_else(|| {
                 std::env::var_os("CREWVELA_ZCODE_ROOT")
                     .map(|root| PathBuf::from(root).join("config/provider/zcode-builtin.json"))
@@ -579,7 +599,10 @@ pub(crate) fn launch(path: &Path) -> Result<Command> {
         );
     }
     if std::env::var_os("CREWVELA_ZCODE_APP_VERSION").is_none() {
-        if let Some(version) = cli_entry_version(path) {
+        let version = cli_entry_version(path);
+        #[cfg(target_os = "macos")]
+        let version = mac_bundle.as_ref().and_then(|app| app.version.clone()).or(version);
+        if let Some(version) = version {
             command.env("CREWVELA_ZCODE_APP_VERSION", version);
         }
     }
