@@ -114,6 +114,15 @@ pub(super) async fn install_release(
     archive: Option<&Path>,
     release: &releases::Release,
 ) -> Result<PathBuf> {
+    install_release_with_progress(target, archive, release, &|_| Ok(())).await
+}
+
+pub(super) async fn install_release_with_progress(
+    target: &Path,
+    archive: Option<&Path>,
+    release: &releases::Release,
+    progress: &(impl Fn(&str) -> Result<()> + Sync),
+) -> Result<PathBuf> {
     releases::compatible(&release.version)?;
     let package = current_package().context(
         "快速安装支持 Windows x64 和 macOS（Apple Silicon / Intel）；当前平台请使用高级手动接入",
@@ -140,34 +149,127 @@ pub(super) async fn install_release(
         }
         std::fs::read(archive).context("无法读取本地安装包")?
     } else {
-        let mut response = reqwest::Client::new()
-            .get(&release.url)
-            // GitHub redirects to an expiring asset URL. Request a fresh
-            // redirect instead of reusing a stale intermediary cache entry.
-            .query(&[("crewvela_download", uuid::Uuid::new_v4().to_string())])
-            .header(reqwest::header::CACHE_CONTROL, "no-cache")
-            .header(reqwest::header::USER_AGENT, "CrewVela shared-memory setup")
-            .timeout(Duration::from_secs(120))
-            .send()
-            .await
-            .context("下载失败，可重试或选择本地官方安装包")?
-            .error_for_status()
-            .context("官方安装包下载返回错误")?;
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.context("下载中断，请重试")? {
-            if bytes.len() + chunk.len() > MAX_ARCHIVE {
-                bail!("安装包超过允许大小，未安装");
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        bytes
+        download_archive(release, progress).await?
     };
+    progress("安装包下载完成，正在校验官方 SHA256 与完整大小")?;
     verify_archive(&bytes, release)?;
     let target = target.to_path_buf();
     let release = release.clone();
     tokio::task::spawn_blocking(move || publish(&target, &bytes, package, &release.version))
         .await
         .context("安装任务中断")?
+}
+
+#[derive(Clone, Copy)]
+struct DownloadPolicy {
+    total: Duration,
+    connect: Duration,
+    idle: Duration,
+    retry_delay: Duration,
+    attempts: usize,
+}
+
+impl Default for DownloadPolicy {
+    fn default() -> Self {
+        Self {
+            total: Duration::from_secs(15 * 60),
+            connect: Duration::from_secs(20),
+            idle: Duration::from_secs(45),
+            retry_delay: Duration::from_secs(1),
+            attempts: 3,
+        }
+    }
+}
+
+enum DownloadFailure {
+    Retry(anyhow::Error),
+    Stop(anyhow::Error),
+}
+
+async fn download_archive(
+    release: &releases::Release,
+    progress: &(impl Fn(&str) -> Result<()> + Sync),
+) -> Result<Vec<u8>> {
+    download_with_policy(release, DownloadPolicy::default(), progress).await
+}
+
+async fn download_with_policy(
+    release: &releases::Release,
+    policy: DownloadPolicy,
+    progress: &(impl Fn(&str) -> Result<()> + Sync),
+) -> Result<Vec<u8>> {
+    if release.size == 0 || release.size > MAX_ARCHIVE as u64 {
+        bail!("官方安装包大小超出允许范围，未开始下载");
+    }
+    let client = reqwest::Client::builder()
+        .connect_timeout(policy.connect)
+        .read_timeout(policy.idle)
+        // Binary archive bytes must match the official digest exactly.
+        .no_gzip().no_brotli().no_zstd().no_deflate()
+        .build()?;
+    let deadline = tokio::time::Instant::now() + policy.total;
+    let mut last_error = anyhow::anyhow!("下载总时限已到");
+    for attempt in 1..=policy.attempts {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() { break; }
+        progress(&format!("{} · 第 {attempt}/{} 次下载 · 0%（旧服务与数据尚未改变）", release.asset, policy.attempts))?;
+        match download_once(&client, release, remaining, progress).await {
+            Ok(bytes) => return Ok(bytes),
+            Err(DownloadFailure::Stop(error)) => return Err(error),
+            Err(DownloadFailure::Retry(error)) => last_error = error,
+        }
+        if attempt < policy.attempts {
+            let delay = policy.retry_delay.saturating_mul(attempt as u32);
+            if deadline.saturating_duration_since(tokio::time::Instant::now()) <= delay { break; }
+            progress(&format!("网络中断或停滞，正在重试（{attempt}/{}）；将重新获取官方地址并从头下载", policy.attempts))?;
+            tokio::time::sleep(delay).await;
+        }
+    }
+    Err(last_error).context("官方安装包下载未完成：已达到重试次数或总时限；旧服务与数据未改变。可稍后重试，或在上方“下载较慢？使用本地官方安装包”中导入对应版本完整包")
+}
+
+async fn download_once(
+    client: &reqwest::Client,
+    release: &releases::Release,
+    remaining: Duration,
+    progress: &(impl Fn(&str) -> Result<()> + Sync),
+) -> std::result::Result<Vec<u8>, DownloadFailure> {
+    // Renew the expiring signed asset redirect on every attempt. Never expose its URL.
+    let mut response = client.get(&release.url)
+        .query(&[("crewvela_download", uuid::Uuid::new_v4().to_string())])
+        .header(reqwest::header::CACHE_CONTROL, "no-cache")
+        .header(reqwest::header::ACCEPT_ENCODING, "identity")
+        .header(reqwest::header::USER_AGENT, "CrewVela shared-memory setup")
+        .timeout(remaining).send().await
+        .map_err(|e| DownloadFailure::Retry(e.without_url().into()))?;
+    let status = response.status();
+    if !status.is_success() {
+        let error = anyhow::anyhow!("官方安装包下载返回 HTTP {status}");
+        return Err(if status.is_server_error() || matches!(status.as_u16(), 403 | 408 | 429) {
+            DownloadFailure::Retry(error)
+        } else { DownloadFailure::Stop(error) });
+    }
+    let mut bytes = Vec::new();
+    let mut last_progress = tokio::time::Instant::now();
+    while let Some(chunk) = response.chunk().await
+        .map_err(|e| DownloadFailure::Retry(e.without_url().into()))? {
+        if bytes.len() + chunk.len() > MAX_ARCHIVE || (bytes.len() + chunk.len()) as u64 > release.size {
+            return Err(DownloadFailure::Stop(anyhow::anyhow!("安装包超过官方声明大小，未安装")));
+        }
+        bytes.extend_from_slice(&chunk);
+        if last_progress.elapsed() >= Duration::from_secs(1) || bytes.len() as u64 == release.size {
+            progress(&format!("已下载 {:.1} / {:.1} MiB（{}%）", bytes.len() as f64 / 1048576.0,
+                release.size as f64 / 1048576.0, bytes.len() as u64 * 100 / release.size))
+                .map_err(DownloadFailure::Stop)?;
+            last_progress = tokio::time::Instant::now();
+        }
+    }
+    if bytes.len() as u64 != release.size {
+        return Err(DownloadFailure::Retry(anyhow::anyhow!("安装包未完整传输")));
+    }
+    // A digest mismatch is not a transient network error; never weaken or retry it.
+    verify_archive(&bytes, release).map_err(DownloadFailure::Stop)?;
+    Ok(bytes)
 }
 
 fn extract(bytes: &[u8], stage: &Path) -> Result<()> {
@@ -348,6 +450,148 @@ fn publish(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn interrupted_download_retries_with_fresh_redirect_and_reports_progress() {
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopped = stop.clone();
+        let server = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let mut requests = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !stopped.load(Ordering::Relaxed) && std::time::Instant::now() < deadline {
+                let Ok((mut stream, _)) = listener.accept() else { std::thread::sleep(Duration::from_millis(2)); continue; };
+                stream.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+                let mut request = Vec::new();
+                let mut byte = [0u8];
+                while !request.ends_with(b"\r\n\r\n") && request.len() < 8192 {
+                    if stream.read(&mut byte).unwrap_or(0) == 0 { break; }
+                    request.push(byte[0]);
+                }
+                requests.push(String::from_utf8_lossy(&request).into_owned());
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\n").unwrap();
+                // The first connection drops in the middle of the body.
+                stream.write_all(if requests.len() == 1 { b"abc" } else { b"abcdefgh" }).unwrap();
+            }
+            requests
+        });
+        let package = current_package().unwrap();
+        let mut release = legacy_release(package);
+        release.url = format!("http://{address}/fixture.zip");
+        release.size = 8;
+        release.sha256 = format!("{:x}", Sha256::digest(b"abcdefgh"));
+        let messages = std::sync::Mutex::new(Vec::new());
+        let result = download_archive(&release, &|message| { messages.lock().unwrap().push(message.to_owned()); Ok(()) }).await;
+        stop.store(true, Ordering::Relaxed);
+        let requests = server.join().unwrap();
+        assert_eq!(result.unwrap(), b"abcdefgh");
+        assert_eq!(requests.len(), 2);
+        assert_ne!(requests[0].lines().next(), requests[1].lines().next(), "retry must renew the expiring GitHub redirect");
+        let messages = messages.lock().unwrap();
+        assert!(messages.iter().any(|m| m.contains("重试")));
+        assert!(messages.iter().any(|m| m.contains("100%")));
+    }
+
+    fn download_server(
+        handler: impl Fn(usize, std::net::TcpStream) + Send + Sync + 'static,
+    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicBool>, std::thread::JoinHandle<Vec<String>>) {
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        use std::io::Read;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/fixture.zip", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopped = stop.clone();
+        let handler = Arc::new(handler);
+        let thread = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let mut requests = Vec::new();
+            let mut workers = Vec::new();
+            while !stopped.load(Ordering::Relaxed) && std::time::Instant::now() < deadline {
+                let Ok((mut stream, _)) = listener.accept() else { std::thread::sleep(Duration::from_millis(2)); continue; };
+                stream.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+                let mut request = Vec::new();
+                let mut byte = [0u8];
+                while !request.ends_with(b"\r\n\r\n") && request.len() < 8192 {
+                    if stream.read(&mut byte).unwrap_or(0) == 0 { break; }
+                    request.push(byte[0]);
+                }
+                requests.push(String::from_utf8_lossy(&request).into_owned());
+                let handler = handler.clone();
+                let attempt = requests.len();
+                workers.push(std::thread::spawn(move || handler(attempt, stream)));
+            }
+            for worker in workers { worker.join().unwrap(); }
+            requests
+        });
+        (url, stop, thread)
+    }
+
+    fn download_fixture(url: String) -> releases::Release {
+        let mut release = legacy_release(current_package().unwrap());
+        release.url = url;
+        release.size = 8;
+        release.sha256 = format!("{:x}", Sha256::digest(b"abcdefgh"));
+        release
+    }
+
+    #[tokio::test]
+    async fn slow_continuous_download_resets_idle_timeout_and_still_checks_digest() {
+        use std::io::Write;
+        let (url, stop, server) = download_server(|_, mut stream| {
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\n").unwrap();
+            for byte in b"abcdefgh" {
+                std::thread::sleep(Duration::from_millis(70));
+                stream.write_all(&[*byte]).unwrap();
+            }
+        });
+        let release = download_fixture(url);
+        let policy = DownloadPolicy { total: Duration::from_secs(3), connect: Duration::from_secs(1), idle: Duration::from_millis(300), retry_delay: Duration::ZERO, attempts: 1 };
+        let result = download_with_policy(&release, policy, &|_| Ok(())).await;
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(server.join().unwrap().len(), 1);
+        let bytes = result.unwrap();
+        verify_archive(&bytes, &release).unwrap();
+        assert_eq!(bytes, b"abcdefgh");
+    }
+
+    #[tokio::test]
+    async fn stalled_download_has_bounded_retries_and_actionable_error() {
+        use std::io::Write;
+        let (url, stop, server) = download_server(|_, mut stream| {
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\n");
+            std::thread::sleep(Duration::from_millis(250));
+        });
+        let policy = DownloadPolicy { total: Duration::from_secs(2), connect: Duration::from_secs(1), idle: Duration::from_millis(50), retry_delay: Duration::from_millis(5), attempts: 3 };
+        let result = download_with_policy(&download_fixture(url), policy, &|_| Ok(())).await;
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(server.join().unwrap().len(), 3);
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains("本地官方安装包"));
+        assert!(error.contains("旧服务与数据未改变"));
+        assert!(!error.contains("http://"), "transport errors must not expose signed asset URLs");
+    }
+
+    #[tokio::test]
+    async fn invalid_download_digest_and_oversized_body_never_retry_or_publish() {
+        use std::io::Write;
+        for oversized in [false, true] {
+            let (url, stop, server) = download_server(move |_, mut stream| {
+                let body: &[u8] = if oversized { b"abcdefghi" } else { b"xxxxxxxx" };
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                let _ = stream.write_all(body);
+            });
+            let release = download_fixture(url);
+            let result = download_archive(&release, &|_| Ok(())).await;
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            assert_eq!(server.join().unwrap().len(), 1);
+            let error = result.unwrap_err().to_string();
+            assert!(error.contains(if oversized { "超过官方声明大小" } else { "SHA256" }), "{error}");
+        }
+    }
     const VERSION: &str = "2.6.0"; // Historical package fixtures, never an install default.
     fn legacy_release(package: Package) -> releases::Release {
         let (sha, size) = match package.asset {

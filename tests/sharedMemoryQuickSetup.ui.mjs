@@ -110,7 +110,6 @@ try {
   await page.reload();
   await page.evaluate(() => { Object.assign(window.__quickInfo,{installedVersion:"2.6.0",managed:true}); });
   await page.getByRole("button",{name:"检查更新",exact:true}).click();
-  await page.getByRole("button",{name:"选择启用项目"}).click();
   assert(await page.getByRole("button",{name:"安装更新",exact:true}).isDisabled());
   await page.getByRole("checkbox",{name:/确认跨大版本迁移/}).check();
   await page.screenshot({path:`${output}/update-major.png`,fullPage:true});
@@ -124,7 +123,7 @@ try {
   await page.clock.runFor(1200);
   await page.getByRole("button",{name:"恢复升级前快照",exact:true}).waitFor();
   assert(await page.getByRole("button",{name:"恢复升级前快照",exact:true}).isDisabled());
-  assert(await page.getByRole("button",{name:"重试启用",exact:true}).isDisabled());
+  assert(await page.getByRole("button",{name:"配置项目接入",exact:true}).isDisabled());
   await page.getByRole("checkbox",{name:/确认恢复旧快照/}).check();
   await page.getByRole("button",{name:"恢复升级前快照",exact:true}).click();
   await page.waitForFunction(()=>window.__quickCalls.some(x=>x.command==="ai_memory_recover_update"));
@@ -138,8 +137,8 @@ try {
   await page.evaluate(()=>Object.assign(window.__quickInfo,{installedVersion:"3.4.0",managed:true,version:null,updateError:"模拟 GitHub 离线"}));
   await page.getByRole("button",{name:"开始配置",exact:true}).click();
   await page.getByRole("button",{name:"选择启用项目"}).click();
-  assert(await page.getByRole("button",{name:"安装并启用",exact:true}).isEnabled());
-  await page.getByRole("button",{name:"安装并启用",exact:true}).click();
+  assert(await page.getByRole("button",{name:"配置项目接入",exact:true}).isEnabled());
+  await page.getByRole("button",{name:"配置项目接入",exact:true}).click();
   await page.waitForFunction(()=>window.__quickJob);
   assert.equal(await page.evaluate(()=>window.__quickCalls.find(x=>x.command==="ai_memory_quick_start").args.request.targetVersion),null);
   await page.reload();
