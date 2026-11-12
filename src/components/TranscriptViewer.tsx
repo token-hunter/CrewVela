@@ -60,6 +60,7 @@ export function TranscriptViewer({ session, onClose, preview = false, relayHisto
           {sessionDisplayTitle(session)}
           <small className="transcript-subtitle">历史记录（每段最多 200 条）</small>
         </h2>
+        {session.status === "error" && <p className="session-error" role="alert">{session.lastError || "本次执行失败，未记录具体错误。查看记录不会自动重试任务。"}</p>}
         <div className="transcript-messages">
           {error && <div className="transcript-empty">{error}</div>}
           {!error && messages === null && (

@@ -1,0 +1,32 @@
+.unified-sidebar-footer .sidebar-attention-trigger {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--warn);
+  justify-content: flex-start;
+}
+.sidebar-attention-trigger svg { flex: none; }
+.sidebar-attention-trigger span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dialog-overlay.sidebar-attention-overlay { align-items: flex-end; justify-content: flex-start; padding: 12px; }
+.sidebar-attention-dialog {
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(640px, calc(100dvh - 24px));
+  display: flex; flex-direction: column;
+  background: var(--bg-elev, var(--bg)); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 12px 40px #0003; overflow: hidden;
+}
+.sidebar-attention-dialog header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px; }
+.sidebar-attention-dialog h2 { margin: 0; font-size: 18px; }
+.sidebar-attention-dialog header p { margin: 6px 0 0; color: var(--text-dim); font-size: 12px; }
+.sidebar-attention-close { display: grid; place-items: center; padding: 6px; color: var(--text-dim); border-radius: 6px; }
+.sidebar-attention-list { overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+.sidebar-attention-list article { padding: 16px 18px; border-top: 1px solid var(--border); }
+.sidebar-attention-list strong, .sidebar-attention-list small { display: block; overflow-wrap: anywhere; }
+.sidebar-attention-list strong { margin: 8px 0 4px; font-size: 14px; }
+.sidebar-attention-list small, .sidebar-attention-list p { color: var(--text-dim); font-size: 12px; }
+.sidebar-attention-list p { line-height: 1.6; margin: 10px 0; }
+.sidebar-attention-kind { font-size: 12px; color: var(--warn); }
+.sidebar-attention-kind.error { color: var(--danger); }
+.sidebar-attention-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sidebar-attention-dialog footer, .sidebar-attention-notice { padding: 12px 18px; margin: 0; font-size: 12px; line-height: 1.6; color: var(--text-dim); border-top: 1px solid var(--border); }
+.sidebar-attention-notice { color: var(--danger); }

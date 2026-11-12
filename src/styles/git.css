@@ -783,67 +783,6 @@
   flex: 0 0 auto;
 }
 
-.unified-sidebar-footer .codex-quota-summary {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 3px 7px;
-  justify-content: flex-start;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-}
-
-.codex-quota-summary svg {
-  flex: none;
-  color: var(--accent);
-}
-
-.codex-quota-copy {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.codex-quota-window {
-  min-width: 0;
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-4);
-}
-
-.codex-quota-copy > i {
-  width: 1px;
-  height: 13px;
-  flex: none;
-  background: var(--border);
-}
-
-.codex-quota-copy strong,
-.codex-quota-copy small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.codex-quota-copy strong {
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: 650;
-}
-
-.codex-quota-copy small {
-  color: var(--text-muted);
-  font-size: var(--text-2xs);
-}
-
-.codex-quota-summary.low svg,
-.codex-quota-summary.low .codex-quota-copy strong,
-.codex-quota-summary.unavailable svg,
-.codex-quota-summary.unavailable .codex-quota-copy strong {
-  color: var(--danger);
-}
-
 @media (max-width: 860px) {
   .app,
   .app.control-docked,

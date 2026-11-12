@@ -1,3 +1,4 @@
+import { attentionOpenMode, type AttentionKind } from "./sidebarAttention";
 import { isTerminalShell, shellLabel } from "./platform";
 import { sidebarTabKind } from "./components/RightSidebarActivityBar";
 import "./components/native-chat-tab-sort.css";
@@ -59,7 +60,7 @@ import { RUNTIME_LABELS } from "./runtimeLogos";
 import { MultiAgentWorkspace } from "./components/MultiAgentWorkspace";
 import { ProviderEditor } from "./components/ProviderEditor";
 import { CountPrompt } from "./components/CountPrompt";
-import { Modal, hasOpenModal } from "./components/ui/Modal";
+import { hasOpenModal } from "./components/ui/Modal";
 import { MultiDirPrompt } from "./components/MultiDirPrompt";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { AddProjectDialog } from "./components/AddProjectDialog";
@@ -71,7 +72,6 @@ import {
   SettingsDialog,
   type SettingsSection,
 } from "./components/SettingsDialog";
-import { CodexAccountsPanel } from "./components/CodexAccountsPanel";
 import { ControlSidebar } from "./components/ControlSidebar";
 import { GitSourceControlPanel } from "./components/GitSettingsPanel";
 import { FileExplorerPanel } from "./components/FileExplorerPanel";
@@ -494,7 +494,6 @@ export default function App() {
   const [collaborationDiagnosticGlobal, setCollaborationDiagnosticGlobal] = useState(false);
   const [collaborationInitialProjectId, setCollaborationInitialProjectId] = useState<string | undefined>();
   const [settingsTarget, setSettingsTarget] = useState<SettingsSection>("providers");
-  const [codexAccountsOpen, setCodexAccountsOpen] = useState(false);
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>(
     UI_PREVIEW ? PREVIEW_PROJECTS : [],
@@ -2267,7 +2266,13 @@ export default function App() {
     () => openSettingsSection("providers"),
     [openSettingsSection],
   );
-  const openCodexAccountSettings = useCallback(() => setCodexAccountsOpen(true), []);
+  const openAttentionSession = useCallback((session: SessionRecord, kind: AttentionKind) => {
+    const current = sessions.find(item => item.id === session.id);
+    if (!current || current.archivedAt != null) return;
+    // Viewing a failure must not restart an Agent or resubmit a prompt.
+    if (attentionOpenMode(current, kind) === "history") { setTranscriptFor(current); return; }
+    void selectSession(current.id);
+  }, [sessions, selectSession]);
   const openNewSessionDialog = useCallback(
     () => { setLaunchProject(null); setNewSessionOpen(true); },
     [],
@@ -2400,7 +2405,7 @@ export default function App() {
         onDeleteAll={deleteAllTabSessions}
         onOpenSection={openSettingsSection}
         onOpenSettings={openProviderSettings}
-        onOpenCodexAccounts={openCodexAccountSettings}
+        onOpenAttentionSession={openAttentionSession}
       />
       <div className="communication-sidebar-hint"><CommunicationDiscoveryHint suppressed={Boolean(guideRequest) || settingsOpen} projectId={multiAgentWorkspaceProjectId ?? undefined} /></div>
       {!sidebarCollapsed && (
@@ -2725,12 +2730,6 @@ export default function App() {
               preview={UI_PREVIEW && switchRecords.some((item) => item.source.id === transcriptFor.id)}
               onClose={() => setTranscriptFor(null)}
             />
-          )}
-          {codexAccountsOpen && (
-            <Modal className="codex-account-dialog" ariaLabel="Codex 账户" onClose={() => setCodexAccountsOpen(false)}>
-              <button className="btn ghost" onClick={() => setCodexAccountsOpen(false)}>关闭</button>
-              <CodexAccountsPanel />
-            </Modal>
           )}
           {settingsOpen && (
             <SettingsDialog

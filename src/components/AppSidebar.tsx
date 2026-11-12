@@ -42,7 +42,8 @@ import { RUNTIME_LOGOS } from "../runtimeLogos";
 import { SessionList } from "./SessionList";
 import { CommunicationGuideButton } from "./CommunicationGuide";
 import { AutomationIcon } from "./AutomationIcon";
-import { CodexQuotaSummary } from "./CodexQuotaSummary";
+import { SidebarAttention } from "./SidebarAttention";
+import type { AttentionKind } from "../sidebarAttention";
 import type { SettingsSection } from "./SettingsDialog";
 import {
   DEFAULT_SIDEBAR_SHORTCUTS,
@@ -125,7 +126,7 @@ interface Props {
   onDeleteAll: () => void;
   onOpenSection: (section: SettingsSection) => void;
   onOpenSettings: () => void;
-  onOpenCodexAccounts: () => void;
+  onOpenAttentionSession: (session: SessionRecord, kind: AttentionKind) => void;
 }
 
 export function AppSidebar(props: Props) {
@@ -506,7 +507,7 @@ export function AppSidebar(props: Props) {
           <GearSixIcon size={17} />
           <span>设置</span>
         </button>
-        <CodexQuotaSummary onOpen={props.onOpenCodexAccounts} />
+        <SidebarAttention sessions={props.sessions} onOpenSession={props.onOpenAttentionSession} />
       </footer>
 
       {deleteConfirmOpen && (
