@@ -1,8 +1,8 @@
 # 下载与安装
 
-当前版本为 **v0.1.0**，安装包与校验文件见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。
+当前版本为 **v0.1.0 Beta（测试版）**，欢迎试用并反馈问题。安装包与校验文件见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。
 
-**附件发布在 `v0.1.0` Release 下，后续 `main` 更新不会自动更新附件。** 不同平台附件的源码提交以 Release 说明为准；本次 macOS DMG 对应 [`3ddf245`](https://github.com/token-hunter/CrewVela/commit/3ddf2459fef861a4c7aedeef7a7083134a334212)。 新仓库使用清理后的源码与 Windows 安装包，旧历史及旧包保留在独立的私有备份中。隐私脱敏、依赖、素材与安装验收记录见[发布检查清单](release-checklist.md)。
+**Beta 表示当前发布阶段；现有 Git 标签和安装包内部版本仍保留 `v0.1.0` / `0.1.0`，附件名称与下载链接保持不变。** 后续 `main` 更新不会自动更新附件。不同平台附件的源码提交以 Release 说明为准；本次 macOS DMG 对应 [`3ddf245`](https://github.com/token-hunter/CrewVela/commit/3ddf2459fef861a4c7aedeef7a7083134a334212)。 新仓库使用清理后的源码与 Windows 安装包，旧历史及旧包保留在独立的私有备份中。隐私脱敏、依赖、素材与安装验收记录见[发布检查清单](release-checklist.md)。
 
 | 资产 | 用途与当前状态 |
 | --- | --- |

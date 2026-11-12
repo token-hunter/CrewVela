@@ -8,7 +8,7 @@
 
 让 Claude Code 写代码，让 Codex 做审查，让其他 Agent 接着干。
 
-[![版本 0.1.0](https://img.shields.io/badge/version-0.1.0-8B6CEF?style=flat-square)](CHANGELOG.md)
+[![版本 0.1.0 Beta](https://img.shields.io/badge/version-0.1.0--beta-8B6CEF?style=flat-square)](CHANGELOG.md)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square)](src-tauri/Cargo.toml)
 [![React 与 TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT 许可](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
@@ -21,7 +21,7 @@
 
 CrewVela 是一个基于 **Tauri 2 + React + Rust** 的桌面多 Agent 工作台，把独立会话、会话通信、项目协作和工作交接放进同一个窗口。沿用各 Agent 的本机安装、账号与权限机制，让你围绕任务组织工具。
 
-> **当前版本 v0.1.0。** Windows 安装包见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)；[下载 macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg)（ARM64，ad-hoc 签名，未公证）。安装步骤与验证限制见[下载说明](docs/downloads.md)。
+> **当前版本 v0.1.0 Beta（测试版）。欢迎试用并反馈问题。** Windows 安装包见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)；[下载 macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg)（ARM64，ad-hoc 签名，未公证）。安装步骤与验证限制见[下载说明](docs/downloads.md)。
 
 ## 一分钟看 CrewVela
 
