@@ -12,7 +12,7 @@ import {
 } from "../runtimePreferences";
 import { Modal } from "./ui/Modal";
 
-const NEW_SESSION_AGENTS = [
+export const NEW_SESSION_AGENTS = [
   "claude_code",
   "codex",
   "kimi_code",
@@ -27,16 +27,18 @@ const NEW_SESSION_AGENTS = [
   "zcode",
   "zcode_cli",
 ] as const satisfies readonly AgentRuntimeKind[];
-type NewSessionAgent = (typeof NEW_SESSION_AGENTS)[number];
-const TERMINAL_AGENTS = NEW_SESSION_AGENTS.filter(
+export type NewSessionAgent = (typeof NEW_SESSION_AGENTS)[number];
+export const TERMINAL_AGENTS = NEW_SESSION_AGENTS.filter(
   (runtime) => runtimeCategory(runtime) === "terminal",
 );
-const CHAT_AGENTS = NEW_SESSION_AGENTS.filter(
+export const CHAT_AGENTS = NEW_SESSION_AGENTS.filter(
   (runtime) => runtimeCategory(runtime) === "chat",
 );
 
 interface Props {
   project?: Project | null;
+  /** 从空工作区选了 Claude Code 时直接进入 Provider 步骤。 */
+  initialStep?: "agent" | "provider";
   onRuntimeSelect?: (runtime: Exclude<AgentRuntimeKind, "claude_code" | "oh_my_pi" | "minimax_code" | "unsupported">) => void;
   providers: ProviderConfig[];
   keyStates: Record<string, boolean>;
@@ -48,6 +50,7 @@ interface Props {
 
 export function NewSessionDialog({
   project,
+  initialStep = "agent",
   onRuntimeSelect,
   providers,
   keyStates,
@@ -57,7 +60,7 @@ export function NewSessionDialog({
   onClose,
 }: Props) {
   const { isRuntimeEnabled, ready, error } = useRuntimeAvailability();
-  const [chooseAgent, setChooseAgent] = useState(true);
+  const [chooseAgent, setChooseAgent] = useState(initialStep !== "provider");
   const [draggedRuntime, setDraggedRuntime] = useState<NewSessionAgent | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     category: "terminal" | "chat";
