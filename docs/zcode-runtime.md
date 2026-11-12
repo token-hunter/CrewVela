@@ -4,12 +4,12 @@ CrewVela 调用 ZCode Desktop 现有 Agent，通过原生 `app-server --stdio` v
 
 ## 启动入口
 
-无需另装 ZCode Desktop CLI。Windows 下会自动读取 ZCode Desktop 安装信息，支持自定义安装目录，不需要设置环境变量。也可用以下环境变量显式指定入口：
+无需另装 ZCode CLI。Windows 下会自动读取 ZCode Desktop 安装信息；macOS 下会检查系统 `/Applications`、当前用户 `~/Applications`，并通过 Spotlight 按应用包标识 `dev.zcode.app` 查找其他已索引位置。也可用以下环境变量显式指定入口：
 
-- `CREWVELA_ZCODE_ROOT`：ZCode Desktop 安装根目录；或已经构建的 ZCode Desktop 源码根目录。
+- `CREWVELA_ZCODE_ROOT`：ZCode Desktop 安装根目录（macOS 为 `.app` 应用包）；或已经构建的 ZCode Desktop 源码根目录。
 - `CREWVELA_ZCODE_EXECUTABLE`：现有 Agent 可执行文件或预构建 `zcode.cjs` 的绝对路径，优先于 ROOT。
 
-未配置时先查找 PATH 中的 `zcode`，再读取当前用户和系统的 Windows 卸载注册表；仅使用同时包含 `ZCode.exe` 和 `resources/glm/zcode.cjs` 的有效安装目录。显式配置仍优先，配置无效时明确报错。手动指定示例：
+显式 EXECUTABLE 优先于 ROOT，配置无效时明确报错，不跳过错误配置。Windows 默认先读取当前用户和系统的卸载注册表，再查找 PATH；仅使用同时包含 `ZCode.exe` 和 `resources/glm/zcode.cjs` 的有效安装目录。macOS 默认只发现 Desktop 应用包，不把 PATH 中的 `zcode` CLI 当作 Desktop。Spotlight 未索引的自定义位置可用 ROOT 指定。手动指定示例：
 
 ```powershell
 $env:CREWVELA_ZCODE_ROOT = 'D:\zcode'
@@ -17,6 +17,14 @@ $env:CREWVELA_ZCODE_ROOT = 'D:\zcode'
 ```
 
 桌面入口解析为 `resources/glm/zcode.cjs`，通过安装目录中的 `ZCode.exe` 以 Electron Node 模式启动，自动提供随安装包附带的内置 provider 配置。启动时明确 Personal 与 Built-in 配置路径，避免安装版 CLI 自动切换版本缓存目录、造成账号权益 overlay 的 Built-in revision 不匹配。源码入口为 `apps/zcode-cli/packages/cli/dist/zcode.cjs`，需要已有构建产物和可用 Node.js。接入不会自动安装依赖或构建 ZCode Desktop，也不会自动升级桌面程序。
+
+### macOS 应用包
+
+本机核验的 ZCode 3.17.2 布局为 `ZCode.app/Contents/Resources/glm/zcode.cjs`，内置配置为 `Contents/Resources/config/provider/zcode-builtin.json`。解析器核对 `Info.plist` 的应用标识，并从 `CFBundleExecutable` 解析 `Contents/MacOS` 下的程序，不依赖应用包文件名或个人目录。通过自带后台 Electron Helper 设置 `ELECTRON_RUN_AS_NODE=1` 启动 `zcode.cjs app-server --stdio`，清除 `NODE_OPTIONS`；无需 PATH 中存在 `zcode` 或系统 Node。Helper 从主程序名对应的 `Contents/Frameworks/<主程序名> Helper.app` 定位，再读取其 `Info.plist` 解析实际可执行文件；核验匹配的 Helper Bundle ID、`LSUIElement`/`LSBackgroundOnly` 布尔后台标记及可执行权限。缺少有效 Helper 时明确报错，不回退到 GUI 主程序。
+
+账号/工作流 Host 复用同一个后台 Electron Node 运行时。ZCode 通过 `process.execPath` 启动的工具进程也沿用后台 Helper，避免主程序在设置进程标题后被 macOS 注册成前台应用、在 Dock 出现多个通用 `exec` 图标。不修改原生 ZCode 安装包，不隐藏 CrewVela 或正常 ZCode 窗口。账号桥接的原生 issuer 和版本探测均相对于内置 Provider 配置定位 `Resources/app.asar`，该相对结构在已核验 Mac 安装包中适用。账号凭据仍由后端私有桥接使用，不进入前端、日志或会话定位。
+
+未发现应用、已发现应用但缺少 Agent/内置配置或主程序、进程启动/协议失败、账号权益或模型失败分别保留对应原因。发现失败时可指定 `CREWVELA_ZCODE_ROOT=/path/to/ZCode.app`；缺少资源时应重新安装完整桌面包。`CREWVELA_ZCODE_CLI_EXECUTABLE` 与 PATH `zcode` 仍只供独立 ZCode CLI Runtime 使用。
 
 ## 模型与团队配置
 
