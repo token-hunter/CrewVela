@@ -11,7 +11,7 @@ const UI_PREVIEW = new URLSearchParams(window.location.search).get("ui-preview")
 type Adapter = { runtime: string; installed: boolean };
 function Icon({ name }: { name: string }) {
   const Component = name.includes("design") ? CodeIcon : name.includes("testing") ? TestTubeIcon : name.includes("xlsx") ? TableIcon : FileTextIcon;
-  return <span className={"pm-icon pm-icon-" + (name.includes("design") ? "purple" : name.includes("testing") ? "green" : "blue")}><Component size={29} weight="duotone" /></span>;
+  return <span className={"pm-icon pm-icon-" + (name.includes("design") ? "purple" : name.includes("testing") ? "green" : "blue")}><Component size={29} /></span>;
 }
 const statusLabel = (target: PluginTarget) => target.status === "installed" ? target.native ? "原生插件已安装" : "Skill 已部署" : target.status === "failed" ? "安装失败" : "需要检查";
 

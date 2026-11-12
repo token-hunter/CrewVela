@@ -634,35 +634,10 @@
   background: var(--bg);
 }
 
-.empty-state-kicker,
 .eyebrow {
   color: var(--accent);
   font: 700 10px/1 var(--mono-font);
   letter-spacing: 0.18em;
-}
-
-.empty-state h1 {
-  margin: var(--space-10) 0 var(--space-8);
-  color: var(--text);
-  font: 600 28px/1.1 var(--display-font);
-  letter-spacing: 0.01em;
-}
-
-.empty-state p {
-  max-width: 440px;
-  margin-bottom: 22px;
-  padding-inline: var(--space-8);
-  font-size: var(--text-lg);
-  line-height: 1.7;
-}
-
-.empty-state-hint {
-  max-width: 360px;
-  margin-top: var(--space-10);
-  padding-inline: var(--space-8);
-  color: var(--text-faint);
-  font-size: var(--text-sm);
-  line-height: 1.6;
 }
 
 .session-error {
@@ -759,13 +734,14 @@
   background: var(--bg-hover);
 }
 .btn.primary {
-  background: var(--accent);
-  color: var(--on-accent);
-  border-color: var(--accent);
+  background: var(--accent-fill);
+  color: var(--on-accent-fill);
+  border-color: var(--accent-fill);
   font-weight: 600;
 }
-.btn.primary:hover {
-  filter: brightness(1.1);
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
+  border-color: var(--accent-fill-hover);
 }
 .btn.primary:disabled {
   opacity: 0.4;

@@ -2433,7 +2433,7 @@ export function MultiAgentControl({
               }}
             >
               <i className="clear-confirm-icon" aria-hidden="true">
-                <TrashIcon size={14} weight="duotone" />
+                <TrashIcon size={14} />
               </i>
               <p className="clear-confirm-text">清空对话？</p>
               <div className="clear-confirm-actions">

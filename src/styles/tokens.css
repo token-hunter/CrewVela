@@ -1,40 +1,53 @@
 :root {
   color-scheme: dark;
-  /* VSCode Default Dark — 中性灰无蓝调；信息密度优先 */
-  --bg: #1e1e1e;
-  --bg-elev: #252526;
-  --bg-sunken: #181818;
-  --bg-hover: #2a2d2e;
-  --border: #3c3c3c;
-  --border-strong: #6e6e6e;
-  --text: #d4d4d4;
-  --text-dim: #858585;
-  --text-faint: #6e6e6e;
-  /* Accent 绿（GitHub green ≈ oklch(58% 0.16 145)） */
-  --accent: #3fb950;
-  --accent-rgb: 63, 185, 80;
+  /* Cowork 深色：取自 Claude 桌面版 v2 配色（中性近黑页面 + 微暖抬升面） */
+  --bg: #151515;
+  --bg-elev: #1f1f1e;
+  --bg-sunken: #111111;
+  --bg-hover: #252524;
+  --border: #2c2c2b;
+  --border-strong: #454544;
+  --text: #f2f1ee;
+  --text-dim: #a3a19a;
+  --text-faint: #7d7b75;
+  /* 默认强调色：陶土（clay）。其余强调色由 data-appearance-accent 覆盖。 */
+  --accent: #d97757;
+  --accent-rgb: 217, 119, 87;
   --accent-soft: rgba(var(--accent-rgb), 0.14);
-  --accent-strong: #46c960;
-  --on-accent: #0d1117;
+  --accent-strong: #e08a6d;
+  --on-accent: #1f1209;
   /* 状态语义色（克制，不作并列装饰） */
-  --accent-2: #3fb950;
-  --success: #89d185;
-  --warn: #cca700;
-  --warn-rgb: 204, 167, 0;
-  --danger: #f48771;
-  --danger-rgb: 244, 135, 113;
-  --signal: #cca700;
+  --accent-2: #d97757;
+  --success: #5fbf77;
+  --warn: #d9a13b;
+  --warn-rgb: 217, 161, 59;
+  --danger: #e66767;
+  --danger-rgb: 230, 103, 103;
+  --signal: #d9a13b;
   --signal-soft: rgba(var(--warn-rgb), 0.14);
   /* 终端面 */
-  --terminal-bg: #000000;
-  --terminal-shell: #181818;
-  /* 高程：tech-utility 扁平，hairline 优先 */
+  --terminal-bg: #161615;
+  --terminal-shell: #111111;
+  /* 高程：hairline 环 + 柔和扩散阴影（Claude 桌面版 df-shadow-*） */
   --shadow-sm: 0 0 0 1px var(--border);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.6);
-  --overlay: rgba(0, 0, 0, 0.6);
-  /* 字体：spec stack（系统 sans + 等宽 fallback）*/
-  --display-font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
-  --mono-font: "JetBrains Mono", "IBM Plex Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  --shadow-md: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5);
+  --shadow-card: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 24px rgba(0, 0, 0, 0.16);
+  --overlay: rgba(0, 0, 0, 0.55);
+  /* 派生表面：随主题自动换算，深浅主题与其他配色主题共用。 */
+  --bg-sidebar: var(--bg-sunken);
+  --bg-active: color-mix(in srgb, var(--text) 9%, var(--bg));
+  --bg-popover: color-mix(in srgb, var(--text) 6%, var(--bg-elev));
+  /* 主按钮填充与品牌填充：默认跟随强调色；陶土强调色改用 Claude 的中性主按钮 + 陶土品牌色。 */
+  --accent-fill: var(--accent);
+  --on-accent-fill: var(--on-accent);
+  --accent-fill-hover: var(--accent-strong);
+  --brand-fill: var(--accent-fill);
+  --on-brand-fill: var(--on-accent-fill);
+  --brand-fill-hover: var(--accent-fill-hover);
+  /* 字体：系统 sans（含中文）+ 衬线标题（Claude 风格展示字）+ 等宽 */
+  --display-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --serif-font: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Songti SC", "Noto Serif SC", "Source Han Serif SC", "Microsoft YaHei UI", "Microsoft YaHei", serif;
+  --mono-font: "JetBrains Mono", "IBM Plex Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, ui-monospace, monospace;
   /* 圆角：tech-utility 小圆角 */
   --radius-sm: 4px;
   --radius: 6px;
@@ -90,40 +103,44 @@
   --z-modal-3: 340;
   --z-dialog: 1300;
   --z-dialog-raised: 1305;
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--display-font);
   font-variant-numeric: tabular-nums;
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  /* GitHub Primer light */
-  --bg: #ffffff;
-  --bg-elev: #f6f8fa;
-  --bg-sunken: #eaeef2;
-  --bg-hover: #eef1f4;
-  --border: #d0d7de;
-  --border-strong: #afb8c1;
-  --text: #1f2328;
-  --text-dim: #636c76;
-  --text-faint: #818b98;
-  --accent: #1a7f37;
-  --accent-rgb: 26, 127, 55;
+  /* Cowork 浅色：取自 Claude 桌面版 v2（微暖近白页面 + 纯白卡片 + 近黑文字） */
+  --bg: #f9f9f7;
+  --bg-elev: #ffffff;
+  --bg-sunken: #f3f3f0;
+  --bg-hover: #f0efec;
+  --border: #e5e4e0;
+  --border-strong: #cdccc7;
+  --text: #141413;
+  --text-dim: #5e5d59;
+  --text-faint: #8a8882;
+  --accent: #ad5231;
+  --accent-rgb: 173, 82, 49;
   --accent-soft: rgba(var(--accent-rgb), 0.1);
-  --accent-strong: #1a7f37;
+  --accent-strong: #9a4729;
   --on-accent: #ffffff;
-  --accent-2: #1a7f37;
+  --accent-2: #ad5231;
   --success: #1a7f37;
   --warn: #9a6700;
   --warn-rgb: 154, 103, 0;
-  --danger: #cf222e;
-  --danger-rgb: 207, 34, 46;
+  --danger: #c83a3a;
+  --danger-rgb: 200, 58, 58;
   --signal: #9a6700;
   --signal-soft: rgba(var(--warn-rgb), 0.12);
   --terminal-bg: #ffffff;
-  --terminal-shell: #eaeef2;
+  --terminal-shell: #f3f3f0;
   --shadow-sm: 0 0 0 1px var(--border);
-  --shadow-md: 0 8px 24px rgba(171, 180, 192, 0.3);
-  --overlay: rgba(175, 184, 193, 0.5);
+  --shadow-md: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.06), 0 16px 40px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 0 0 1px rgba(20, 20, 19, 0.06), 0 4px 24px rgba(20, 20, 19, 0.04);
+  --overlay: rgba(20, 20, 19, 0.28);
+  --bg-sidebar: color-mix(in srgb, var(--bg-elev) 55%, var(--bg));
+  --bg-active: color-mix(in srgb, var(--text) 8%, var(--bg));
+  --bg-popover: var(--bg-elev);
 }
 
 /* 可编辑实战模型测评 */
@@ -268,6 +285,21 @@
   --terminal-shell: #0e1d1b;
 }
 
+/* 陶土：Claude 品牌色。主按钮沿用 Claude 的中性实心按钮，陶土用于发送、焦点与强调。 */
+:root[data-appearance-accent="clay"] {
+  --accent: #d97757;
+  --accent-rgb: 217, 119, 87;
+  --accent-strong: #e08a6d;
+  --accent-2: #d97757;
+  --on-accent: #1f1209;
+  --accent-fill: #ecece9;
+  --on-accent-fill: #141413;
+  --accent-fill-hover: #ffffff;
+  --brand-fill: #c6613f;
+  --on-brand-fill: #ffffff;
+  --brand-fill-hover: #d97757;
+}
+
 :root[data-appearance-accent="blue"] {
   --accent: #58a6ff;
   --accent-rgb: 88, 166, 255;
@@ -338,6 +370,16 @@
 
 /* Light surfaces need deeper accent colors for both white button labels and
    accent text. Keep the existing hue choices and the dark-theme palette. */
+:root[data-theme="light"][data-appearance-accent="clay"] {
+  --accent: #ad5231;
+  --accent-rgb: 173, 82, 49;
+  --accent-strong: #9a4729;
+  --accent-2: #ad5231;
+  --accent-fill: #141413;
+  --on-accent-fill: #ffffff;
+  --accent-fill-hover: #2e2d2b;
+}
+
 :root[data-theme="light"][data-appearance-accent="blue"] {
   --accent: #0969da;
   --accent-rgb: 9, 105, 218;

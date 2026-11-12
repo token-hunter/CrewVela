@@ -4,6 +4,7 @@ import { sidebarTabKind } from "./components/RightSidebarActivityBar";
 import "./components/native-chat-tab-sort.css";
 import { useRuntimeAvailability } from "./runtimeAvailability";
 import { isRetiredRuntime } from "./runtimeTaxonomy";
+import { EmptyWorkspaceLauncher } from "./components/EmptyWorkspaceLauncher";
 import {
   useCallback,
   useEffect,
@@ -63,7 +64,7 @@ import { ProviderEditor } from "./components/ProviderEditor";
 import { CountPrompt } from "./components/CountPrompt";
 import { hasOpenModal } from "./components/ui/Modal";
 import { MultiDirPrompt } from "./components/MultiDirPrompt";
-import { NewSessionDialog } from "./components/NewSessionDialog";
+import { NewSessionDialog, type NewSessionAgent } from "./components/NewSessionDialog";
 import { AddProjectDialog } from "./components/AddProjectDialog";
 import { TranscriptViewer } from "./components/TranscriptViewer";
 import { SessionSwitchDialog } from "./components/SessionSwitchDialog";
@@ -488,6 +489,11 @@ export default function App() {
   const [sessionTypeFilter, setSessionTypeFilter] =
     useState<SessionTypeFilter>("all");
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  // 空工作区选了 Claude Code 时，弹窗直接从 Provider 步骤开始；弹窗关闭即复位。
+  const [newSessionAtProvider, setNewSessionAtProvider] = useState(false);
+  useEffect(() => {
+    if (!newSessionOpen) setNewSessionAtProvider(false);
+  }, [newSessionOpen]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [guideRequest, setGuideRequest] = useState<(CommunicationGuideRequest & { scope: CommunicationScope; nonce: number }) | null>(null);
   const guideNonce = useRef(0);
@@ -1852,6 +1858,22 @@ export default function App() {
   // zcode CLI 是终端交互式 TUI：走通用 Runtime PTY 会话链路，与 ZCode Desktop 原生聊天分离。
   const openZCodeCli = useCallback(async (project?: Project) => launchRuntimeSession("zcode_cli", project), [launchRuntimeSession]);
 
+  // 按 Agent 新建会话：带项目则用项目目录，不带则走各 Agent 自己的选目录步骤。
+  // 「选择 Agent」弹窗与空工作区共用；Claude Code 要先选 Provider，不走这里。
+  const startAgentSession = useCallback(
+    (runtime: Exclude<NewSessionAgent, "claude_code">, project?: Project) => {
+      if (runtime === "deepseek_harness") void openDeepSeekHarness(project);
+      else if (runtime === "claude_chat") void openClaudeChat(project);
+      else if (runtime === "codex_chat") void openCodexChat(project);
+      else if (runtime === "kimi_chat") void openKimiChat(project);
+      else if (runtime === "opencode_chat") void openOpenCodeChat(project);
+      else if (runtime === "pi_chat") void openPiChat(project);
+      else if (runtime === "zcode") void openZCode(project);
+      else void launchRuntimeSession(runtime, project);
+    },
+    [launchRuntimeSession, openClaudeChat, openCodexChat, openDeepSeekHarness, openKimiChat, openOpenCodeChat, openPiChat, openZCode],
+  );
+
   const switchNativeAgent = useCallback(async (source: SessionRecord, kind: NativeAgentKind) => {
     if (nativeAgentNavigationPending.current) return;
     if (!isRuntimeEnabled(kind)) { showError("目标 Agent 未启用或配置尚未加载"); return; }
@@ -2531,18 +2553,21 @@ export default function App() {
                   </div>
                 ) : !multiAgentWorkspaceProjectId && !selectedSession &&
                   !tabSessions.some(item => !sidebarTerminalIds.includes(item.id) && isPtySession(item)) ? (
-                  <div className="empty-state">
-                    <span className="empty-state-kicker">CREWVELA</span>
-                    <h1>这个工作区还没有会话</h1>
-                    <p>新建一个 Agent 会话，或从左侧列表选择已有会话；多个 Agent 可以并排运行、互发消息。</p>
-                    <button
-                      className="btn primary"
-                      onClick={openNewSessionDialog}
-                    >
-                      ＋ 新建会话
-                    </button>
-                    <small className="empty-state-hint">想固定在某个目录？点左侧「项目」旁的 + 直接在项目下新建。</small>
-                  </div>
+                  <EmptyWorkspaceLauncher
+                    projects={projects}
+                    onLaunch={(runtime, project) => {
+                      if (!isRuntimeEnabled(runtime)) return;
+                      if (runtime === "claude_code") {
+                        // Claude Code 还要选 Provider：直接进弹窗的 Provider 步骤，并带上勾选的项目目录。
+                        setLaunchProject(project);
+                        setNewSessionAtProvider(true);
+                        setNewSessionOpen(true);
+                        return;
+                      }
+                      startAgentSession(runtime, project ?? undefined);
+                    }}
+                    onManageAgents={() => openSettingsSection("providers")}
+                  />
                 ) : null}
               </div>
               {guideRequest && <CommunicationGuide key={guideRequest.nonce} initialScope={guideRequest.scope} initialProjectId={guideRequest.projectId}
@@ -2687,19 +2712,13 @@ export default function App() {
           {newSessionOpen && (
             <NewSessionDialog
               project={launchProject}
+              initialStep={newSessionAtProvider ? "provider" : "agent"}
               onRuntimeSelect={(runtime) => {
                 const project = launchProject ?? undefined;
                 if (!isRuntimeEnabled(runtime)) return;
                 setNewSessionOpen(false);
                 setLaunchProject(null);
-                if (runtime === "deepseek_harness") void openDeepSeekHarness(project);
-                else if (runtime === "claude_chat") void openClaudeChat(project);
-                else if (runtime === "codex_chat") void openCodexChat(project);
-                else if (runtime === "kimi_chat") void openKimiChat(project);
-                else if (runtime === "opencode_chat") void openOpenCodeChat(project);
-                else if (runtime === "pi_chat") void openPiChat(project);
-                else if (runtime === "zcode") void openZCode(project);
-                else void launchRuntimeSession(runtime, project);
+                startAgentSession(runtime, project);
               }}
               providers={selectableProviders}
               keyStates={keyStates}

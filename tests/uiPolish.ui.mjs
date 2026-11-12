@@ -59,12 +59,28 @@ try {
     await page.locator(".menu-backdrop").click({ position: { x: size.width - 5, y: size.height - 5 } });
     assert.equal(await menu.count(), 0);
 
-    // Original nested entry still exposes exactly the same enabled runtimes.
-    await page.getByRole("button", { name: "更多工具", exact: true }).click();
-    await page.getByRole("menuitem", { name: "新建会话", exact: true }).hover();
-    await menu.waitFor();
-    assert.deepEqual(await menu.getByRole("menuitem").allTextContents(), directItems);
+    // 更多工具 no longer duplicates the sidebar's 新建会话 entry: only the bulk
+    // actions remain, and nothing in it opens the runtime list.
+    const moreTools = page.getByRole("button", { name: "更多工具", exact: true });
+    const toolsMenu = page.getByRole("menu", { name: "更多工具", exact: true });
+    await moreTools.click();
+    await toolsMenu.waitFor();
+    assert.deepEqual(await toolsMenu.getByRole("menuitem").allTextContents(), ["停止全部", "删除全部"]);
+    await toolsMenu.getByRole("menuitem").first().hover();
+    assert.equal(await menu.count(), 0);
     await page.locator(".menu-backdrop").click({ position: { x: size.width - 5, y: size.height - 5 } });
+    assert.equal(await toolsMenu.count(), 0);
+
+    // Opening 更多工具 from the keyboard while the runtime list is open must not
+    // bring the list back as a nested submenu.
+    await direct.click();
+    await menu.waitFor();
+    await moreTools.focus();
+    await page.keyboard.press("Enter");
+    await toolsMenu.waitFor();
+    assert.equal(await menu.count(), 0);
+    await page.locator(".menu-backdrop").click({ position: { x: size.width - 5, y: size.height - 5 } });
+    assert.equal(await toolsMenu.count(), 0);
 
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await page.getByRole("heading", { name: "模型设置", exact: true }).waitFor();
@@ -83,7 +99,7 @@ try {
     await page.locator(".harness-chat").waitFor();
     await page.screenshot({ animations: "disabled", path: `${output}/${size.name}-chat.png` });
     assert.equal(await menu.count(), 0);
-    console.log(`PASS ${size.name}: readability, menu parity/Escape/outside click, removed-feature navigation, retained pet settings, native-chat preview entry`);
+    console.log(`PASS ${size.name}: readability, more-tools de-dup, menu Escape/outside click, removed-feature navigation, retained pet settings, native-chat preview entry`);
     await context.close();
   }
 } finally { await browser.close(); }

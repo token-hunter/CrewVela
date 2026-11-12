@@ -134,7 +134,7 @@ export function KnowledgeBaseDialog({ onClose, embedded = false, projectId: proj
       >
         <header className="knowledge-dialog-heading">
           <div>
-            <BookBookmarkIcon size={22} weight="duotone" aria-hidden="true" />
+            <BookBookmarkIcon size={22} aria-hidden="true" />
             <span>
               <h2 id="knowledge-dialog-title">项目档案</h2>
               <p>搜索多智能体项目中的任务、对话、交付和审核记录。</p>

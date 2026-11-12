@@ -1,0 +1,260 @@
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import { CaretDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
+import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
+import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
+import { FolderSimplePlusIcon } from "@phosphor-icons/react/dist/csr/FolderSimplePlus";
+import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
+import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
+import orangeCoder from "../assets/pets/orange-coder.png";
+import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
+import { useRuntimeAvailability } from "../runtimeAvailability";
+import {
+  NEW_SESSION_CHAT_ORDER_STORAGE_KEY,
+  NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY,
+  useRuntimeOrder,
+} from "../runtimePreferences";
+import type { Project } from "../types";
+import { CHAT_AGENTS, TERMINAL_AGENTS, type NewSessionAgent } from "./NewSessionDialog";
+
+interface Props {
+  projects: Project[];
+  /** project 为 null 表示「选择其他目录」：沿用各 Agent 现有的选目录步骤。 */
+  onLaunch: (runtime: NewSessionAgent, project: Project | null) => void;
+  onManageAgents: () => void;
+}
+
+/**
+ * 空工作区：参照 Claude Code 桌面版新会话页——像素吉祥物站在目录卡片上，
+ * 先勾选工作目录，再从「选择 Agent」下拉里选一个，选完即在该目录开始会话。
+ */
+export function EmptyWorkspaceLauncher({ projects, onLaunch, onManageAgents }: Props) {
+  const { isRuntimeEnabled, ready, error } = useRuntimeAvailability();
+  // 与「选择 Agent」弹窗共用排序（拖动卡片调整过的顺序在这里同样生效）。
+  const terminalOrder = useRuntimeOrder(TERMINAL_AGENTS, NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY).order;
+  const chatOrder = useRuntimeOrder(CHAT_AGENTS, NEW_SESSION_CHAT_ORDER_STORAGE_KEY).order;
+
+  // undefined = 还没手动选过，默认勾第一个项目（项目可能在挂载后才加载完）；null = 其他目录。
+  const [choice, setChoice] = useState<string | null | undefined>(undefined);
+  const chosenId =
+    choice === undefined || (choice !== null && !projects.some((project) => project.id === choice))
+      ? projects[0]?.id ?? null
+      : choice;
+  const chosenProject = projects.find((project) => project.id === chosenId) ?? null;
+
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [listMaxHeight, setListMaxHeight] = useState<number | null>(null);
+  const cardRef = useRef<HTMLElement>(null);
+  const pillRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const keyword = query.trim().toLowerCase();
+  const groups = [
+    { title: "CLI 终端", items: terminalOrder },
+    { title: "原生聊天", items: chatOrder },
+  ]
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (runtime) => isRuntimeEnabled(runtime) && RUNTIME_LABELS[runtime].toLowerCase().includes(keyword),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+  const firstMatch = groups[0]?.items[0];
+
+  const close = (restoreFocus: boolean) => {
+    setOpen(false);
+    setQuery("");
+    if (restoreFocus) pillRef.current?.focus();
+  };
+
+  const launch = (runtime: NewSessionAgent) => {
+    close(false);
+    onLaunch(runtime, chosenProject);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    searchRef.current?.focus();
+    const onPointerDown = (event: PointerEvent) => {
+      if (!cardRef.current?.contains(event.target as Node)) close(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      close(true);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  // 下拉往下展开：列表高度跟随空状态区域里剩下的空间。放不下时在列表里滚动，
+  // 并截在某一行的中间，让「下面还有」一眼可见（macOS 的滚动条默认隐藏）。
+  const optionCount = groups.reduce((sum, group) => sum + group.items.length, 0);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const fit = () => {
+      const popover = popoverRef.current;
+      const list = listRef.current;
+      if (!popover || !list) return;
+      const host = popover.closest(".empty-state")?.getBoundingClientRect();
+      const bottom = host ? host.bottom : window.innerHeight;
+      const chrome = popover.offsetHeight - list.offsetHeight;
+      const room = Math.floor(bottom - popover.getBoundingClientRect().top - chrome - 12);
+      if (list.scrollHeight <= room) {
+        setListMaxHeight(null);
+        return;
+      }
+      // 至少留约 3 行的高度；截断点始终落在某一行的中间。
+      const limit = Math.max(room, 96);
+      let cut = limit;
+      for (const option of list.querySelectorAll<HTMLElement>("[data-agent-option]")) {
+        const middle = option.offsetTop + option.offsetHeight / 2;
+        if (middle > limit) break;
+        cut = middle;
+      }
+      setListMaxHeight(Math.floor(cut));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [open, keyword, optionCount]);
+
+  const onPopoverKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const options = [...(popoverRef.current?.querySelectorAll<HTMLButtonElement>("[data-agent-option]") ?? [])];
+    if (!options.length) return;
+    event.preventDefault();
+    const current = options.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === "ArrowDown"
+        ? (current + 1) % options.length
+        : current <= 0
+          ? options.length - 1
+          : current - 1;
+    options[next].focus();
+  };
+
+  const emptyMessage = !ready
+    ? error
+      ? `Agent 配置加载失败：${error}`
+      : "正在加载 Agent 配置…"
+    : keyword
+      ? "没有匹配的 Agent"
+      : "没有已启用的 Agent，请先在设置中启用。";
+
+  return (
+    <div className="empty-state">
+      <section ref={cardRef} className="ews-card" aria-label="新建会话">
+        <img className="ews-mascot" src={orangeCoder} alt="" aria-hidden="true" />
+        <div className="ews-projects" role="radiogroup" aria-label="工作目录">
+          {projects.map((project) => (
+            <label key={project.id} className="ews-row" title={project.path}>
+              <input
+                type="radio"
+                name="ews-project"
+                checked={project.id === chosenId}
+                onChange={() => setChoice(project.id)}
+              />
+              <FolderSimpleIcon size={16} aria-hidden="true" />
+              <span className="ews-row-label">{project.name}</span>
+              {project.id === chosenId && <CheckIcon className="ews-check" size={15} weight="bold" aria-hidden="true" />}
+            </label>
+          ))}
+          <label className="ews-row is-other">
+            <input type="radio" name="ews-project" checked={chosenId === null} onChange={() => setChoice(null)} />
+            <FolderSimplePlusIcon size={16} aria-hidden="true" />
+            <span className="ews-row-label">选择其他目录…</span>
+            {chosenId === null && <CheckIcon className="ews-check" size={15} weight="bold" aria-hidden="true" />}
+          </label>
+        </div>
+        <div className="ews-divider" />
+        <button
+          ref={pillRef}
+          type="button"
+          className="ews-pill"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-controls={open ? "ews-agent-popover" : undefined}
+          onClick={() => (open ? close(false) : setOpen(true))}
+        >
+          <span>选择 Agent</span>
+          <CaretDownIcon size={12} weight="bold" aria-hidden="true" />
+        </button>
+        {open && (
+          <div
+            ref={popoverRef}
+            id="ews-agent-popover"
+            className="ews-popover"
+            role="dialog"
+            aria-label="选择 Agent"
+            onKeyDown={onPopoverKeyDown}
+          >
+            <label className="ews-search">
+              <MagnifyingGlassIcon size={14} aria-hidden="true" />
+              <input
+                ref={searchRef}
+                aria-label="搜索 Agent"
+                placeholder="搜索 Agent"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || !firstMatch) return;
+                  event.preventDefault();
+                  launch(firstMatch);
+                }}
+              />
+            </label>
+            <div ref={listRef} className="ews-popover-list" style={{ maxHeight: listMaxHeight ?? undefined }}>
+              {groups.length > 0 ? (
+                groups.map((group) => (
+                  <div key={group.title} className="ews-group" role="group" aria-label={group.title}>
+                    <div className="ews-group-label" aria-hidden="true">{group.title}</div>
+                    {group.items.map((runtime) => (
+                      <button
+                        key={runtime}
+                        type="button"
+                        className="ews-option"
+                        data-agent-option
+                        onClick={() => launch(runtime)}
+                      >
+                        <img className="ews-logo" src={RUNTIME_LOGOS[runtime]} data-runtime={runtime} alt="" aria-hidden="true" />
+                        <span className="ews-row-label">{RUNTIME_LABELS[runtime]}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))
+              ) : (
+                <div className="ews-popover-empty" role="status">{emptyMessage}</div>
+              )}
+            </div>
+            <div className="ews-divider" />
+            <button
+              type="button"
+              className="ews-option is-footer"
+              onClick={() => {
+                close(false);
+                onManageAgents();
+              }}
+            >
+              <GearSixIcon size={15} aria-hidden="true" />
+              <span className="ews-row-label">管理 Agent</span>
+            </button>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

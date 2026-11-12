@@ -35,6 +35,7 @@ const BACKGROUND_OPTIONS: Array<{
 ];
 
 const ACCENT_OPTIONS: Array<{ id: AppearanceAccent; label: string }> = [
+  { id: "clay", label: "陶土" },
   { id: "blue", label: "蓝色" },
   { id: "purple", label: "紫色" },
   { id: "cyan", label: "青色" },

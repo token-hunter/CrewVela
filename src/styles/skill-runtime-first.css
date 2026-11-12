@@ -18,7 +18,7 @@
 .skill-runtime-first .skill-distribution-body { flex: 1; min-height: 0; overflow: auto; padding: 24px 6px 24px 0; scrollbar-width: thin; overscroll-behavior: contain; }
 .skill-runtime-first .skill-runtime-tabs { display: flex; gap: 10px; padding: 0 0 22px; overflow-x: auto; scrollbar-width: thin; }
 .skill-runtime-first .skill-runtime-tabs button { flex: 1 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--text); font-size: 15px; cursor: pointer; }
-.skill-runtime-first .skill-runtime-tabs button.active { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.skill-runtime-first .skill-runtime-tabs button.active { border-color: var(--accent-fill); background: var(--accent-fill); color: var(--on-accent-fill); }
 .skill-runtime-first .skill-runtime-tabs :is(img, svg) { width: 20px; height: 20px; object-fit: contain; flex: none; }
 :root:not([data-theme="light"]) .skill-runtime-tabs [data-runtime="pi"] img,
 :root:not([data-theme="light"]) .skill-runtime-tabs [data-runtime="opencode"] img,
@@ -71,7 +71,7 @@
 .skill-runtime-modal label { display: grid; gap: 6px; }
 .skill-runtime-modal input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--bg); }
 .skill-runtime-modal [role="alert"] { color: var(--danger); overflow-wrap: anywhere; }
-.skill-runtime-modal .btn.primary { background: var(--accent); color: var(--on-accent); }
+.skill-runtime-modal .btn.primary { background: var(--accent-fill); color: var(--on-accent-fill); }
 @container (max-width: 720px) {
   .skill-runtime-first .skill-center-toolbar { flex-wrap: wrap; gap: 6px; }
   .skill-runtime-first .skill-center-tabs { flex-basis: 100%; }

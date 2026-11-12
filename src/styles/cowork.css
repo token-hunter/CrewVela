@@ -1,0 +1,998 @@
+/* =====================================================================
+   Cowork 风格层
+   参照本机 Claude 桌面版（v2 配色 + dframe 桌面框架）：
+   - 侧栏是悬浮圆角卡片（8px 外边距、hairline 环 + 柔和阴影）；
+   - 页面是安静的中性底，卡片/输入框/菜单抬升一层；
+   - 选中与悬停用中性填充，不用强调色描边；陶土色只用于品牌与发送；
+   - 大标题用衬线展示字，正文用系统字体，字重克制（500/600）。
+   只改外观：颜色、圆角、阴影、字重与少量内边距；不改 DOM 结构与几何约束。
+   由 main.tsx 紧跟 styles.css 导入：晚于全部全局样式，组件按需样式靠更高优先级避免冲突。
+   ===================================================================== */
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(var(--accent-rgb), 0.24);
+}
+
+:is(button, [role="button"], input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+/* ---------- 应用外壳：页面底 + 悬浮侧栏卡片 ---------- */
+.app-shell,
+.workspace-shell,
+.workspace-shell > .app,
+.main {
+  background: var(--bg);
+}
+
+.app-shell > .sidebar.unified-sidebar {
+  height: auto;
+  margin: 8px 0 8px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-sidebar);
+  box-shadow: var(--shadow-card);
+}
+
+.left-sidebar-resizer::after {
+  opacity: 0;
+}
+
+.left-sidebar-resizer:hover::after,
+.left-sidebar-resizer:focus-visible::after {
+  opacity: 1;
+}
+
+/* 侧栏头部与分隔：去掉硬分隔线，靠留白分组 */
+.unified-sidebar-header {
+  height: 40px;
+  min-height: 40px;
+  padding: 6px 8px 0;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.unified-sidebar-header-actions > button,
+.unified-sidebar-view-switch > button {
+  border-radius: 7px;
+  color: var(--text-dim);
+}
+
+.unified-sidebar-view-switch > button.active {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+/* 「新建会话」：Claude 的 New task 行，陶土圆点 + 文字 */
+.sidebar-new-session-row {
+  padding: 4px 8px 2px;
+}
+
+.sidebar-new-session-button {
+  min-height: 36px;
+  padding: 6px 8px;
+  gap: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: 500 14px/1.4 var(--display-font);
+}
+
+.sidebar-new-session-button:hover,
+.sidebar-new-session-button[aria-expanded="true"] {
+  border-color: transparent;
+  background: var(--bg-hover);
+}
+
+.sidebar-new-session-icon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--brand-fill);
+  color: var(--on-brand-fill);
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.sidebar-new-session-button:hover .sidebar-new-session-icon {
+  background: var(--brand-fill-hover);
+  transform: rotate(90deg);
+}
+
+/* 快捷入口导航 */
+.unified-sidebar-nav {
+  padding: 6px 8px 8px;
+  gap: 1px;
+  border-bottom: 0;
+}
+
+.unified-sidebar-nav-head {
+  padding: 4px 8px 4px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.unified-sidebar .unified-sidebar-nav > button {
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--text);
+  font-weight: 400;
+}
+
+.unified-sidebar .unified-sidebar-nav > button > svg {
+  color: var(--text-dim);
+}
+
+.unified-sidebar .unified-sidebar-nav > button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.unified-sidebar .unified-sidebar-nav > button.active {
+  background: var(--bg-active);
+}
+
+.unified-sidebar .unified-sidebar-nav > button.active::before {
+  display: none;
+}
+
+/* 搜索、类型与状态筛选：低对比度的安静控件 */
+.unified-sidebar .session-search {
+  min-height: 34px;
+  margin: 4px 8px 6px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: var(--bg-active);
+  color: var(--text-dim);
+}
+
+.unified-sidebar .session-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+}
+
+.unified-sidebar .session-type-filters {
+  margin: 0 8px 4px;
+  padding: 3px;
+  gap: 2px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--bg-active);
+}
+
+.unified-sidebar .session-type-filters button {
+  min-height: 28px;
+  border-radius: 7px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.unified-sidebar .session-type-filters button:hover {
+  background: transparent;
+  color: var(--text);
+}
+
+.unified-sidebar .session-type-filters button.active {
+  background: var(--bg-elev);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+
+.unified-sidebar .session-filter-trigger {
+  min-height: 34px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.unified-sidebar .session-filter-trigger:hover,
+.unified-sidebar .session-filter-select.open .session-filter-trigger {
+  border-color: transparent;
+  background: var(--bg-hover);
+}
+
+.session-filter-menu {
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--bg-popover);
+  box-shadow: var(--shadow-md);
+}
+
+/* 分组标题与计数 */
+.session-projects-toolbar {
+  padding: 8px 9px 4px 14px;
+  color: var(--text-faint);
+  font: 500 12px/1 var(--display-font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.unified-sidebar .session-project-head {
+  border-radius: 8px;
+}
+
+.unified-sidebar .session-project-head:hover {
+  background: var(--bg-hover);
+}
+
+.section-count,
+.unified-sidebar-nav small {
+  background: transparent;
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+/* 会话行：中性悬停/选中填充，无描边，无强调色竖条 */
+.unified-sidebar .session-item {
+  border: 0;
+  border-radius: 8px;
+}
+
+.unified-sidebar .session-item:hover {
+  background: var(--bg-hover);
+}
+
+.unified-sidebar .session-item.active {
+  border-color: transparent;
+  background: var(--bg-active);
+  box-shadow: none;
+}
+
+.unified-sidebar .session-title {
+  font-weight: 500;
+}
+
+.session-actions button:hover,
+.session-actions button[aria-expanded="true"] {
+  border-color: transparent;
+  background: var(--bg-active);
+}
+
+.status-dot.running {
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 18%, transparent);
+}
+
+.status-dot.completed {
+  background: var(--text-faint);
+}
+
+/* 侧栏底部 */
+.unified-sidebar-footer {
+  min-height: 44px;
+  padding: 4px 8px 6px;
+  border-top: 0;
+  background: transparent;
+}
+
+.unified-sidebar-footer button {
+  min-height: 32px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* ---------- 顶部页签栏：融入页面，药丸页签 ---------- */
+.workspace-tabs {
+  height: 44px;
+  min-height: 44px;
+  padding: 8px 10px 0 10px;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.workspace-tab {
+  border: 0;
+  border-radius: 8px;
+}
+
+.workspace-tab:hover {
+  background: var(--bg-hover);
+}
+
+.workspace-tab.active {
+  border-color: transparent;
+  background: var(--bg-active);
+}
+
+.workspace-tab.active::after {
+  display: none;
+}
+
+.workspace-tab-title {
+  padding: 7px 4px 7px 12px;
+  font: 500 12.5px/1 var(--display-font);
+}
+
+.workspace-tab-add,
+.workspace-right-sidebar-toggle,
+.workspace-communication-button,
+.window-control {
+  margin-bottom: 0;
+  border-radius: 8px;
+}
+
+.workspace-right-sidebar-toggle.active {
+  box-shadow: none;
+  background: var(--bg-active);
+}
+
+/* ---------- 终端网格：页面上的圆角卡片 ---------- */
+.terminal-wrap {
+  padding: 4px 9px 9px;
+}
+
+.grid {
+  background: transparent;
+}
+
+.pane {
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--terminal-bg);
+  box-shadow: var(--shadow-card);
+}
+
+.pane-vacant {
+  box-shadow: none;
+}
+
+.pane-head {
+  min-height: 40px;
+  background: var(--bg-elev);
+  border-bottom-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.pane-maximized {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), var(--shadow-card);
+}
+
+.pane-maximize,
+.pane-close,
+.pane-handoff-icon {
+  border-radius: 7px;
+}
+
+.pane-close {
+  color: var(--text-dim);
+}
+
+.pane-close:hover {
+  background: var(--bg-hover);
+  color: var(--danger);
+}
+
+/* ---------- 空工作区：参照 Claude Code 桌面版新会话页（像素吉祥物 + 目录卡片 + 「选择 Agent」下拉） ---------- */
+.empty-state {
+  --ews-line: color-mix(in srgb, var(--text) 11%, transparent);
+  justify-content: flex-start;
+  overflow-y: auto;
+  /* 卡片在中线偏上，下拉往下展开时留得出空间；最小值给吉祥物留出头顶位置 */
+  padding: clamp(64px, 26vh, 240px) 24px 24px;
+  background: transparent;
+  text-align: start;
+}
+
+.ews-card {
+  position: relative;
+  flex: none;
+  width: min(340px, 100%);
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-popover);
+  box-shadow: var(--shadow-md);
+}
+
+/* 像素吉祥物「站」在卡片右上角的边上 */
+.ews-mascot {
+  position: absolute;
+  top: -52px;
+  right: 22px;
+  width: 64px;
+  height: 64px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 项目多时在卡片内滚动，约 6 行 */
+.ews-projects {
+  display: grid;
+  gap: 1px;
+  max-height: 216px;
+  overflow-y: auto;
+}
+
+.ews-row,
+.ews-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.ews-row:hover,
+.ews-option:hover {
+  background: var(--bg-hover);
+}
+
+.ews-option:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+}
+
+.ews-row input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ews-row:has(input:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: -2px;
+}
+
+.ews-row > svg,
+.ews-option > svg,
+.ews-pill > svg {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.ews-row > svg.ews-check {
+  color: var(--text);
+}
+
+.ews-row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ews-row.is-other,
+.ews-option.is-footer {
+  color: var(--text-dim);
+}
+
+.ews-divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--ews-line);
+}
+
+/* 底部灰色整行按钮，对应参考图的「选择环境 ▾」 */
+.ews-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ews-pill:hover,
+.ews-pill[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--text) 12%, var(--bg-popover));
+}
+
+.ews-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  z-index: 2;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-popover);
+  box-shadow: var(--shadow-md);
+}
+
+.ews-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  margin: -2px 0 4px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--ews-line);
+  color: var(--text-faint);
+}
+
+.ews-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.ews-search input::placeholder {
+  color: var(--text-faint);
+}
+
+/* 搜索框是下拉的入口：焦点不画内嵌的框，改为整行下边线加深加粗（键盘焦点仍然可见）。
+   打开下拉就会聚焦这里，所以用中性色，强调色只留给品牌和发送。 */
+.ews-search input:focus-visible {
+  outline: none;
+}
+
+.ews-search:has(input:focus-visible) {
+  --ews-search-focus: color-mix(in srgb, var(--text) 35%, transparent);
+  border-bottom-color: var(--ews-search-focus);
+  box-shadow: inset 0 -1px 0 var(--ews-search-focus);
+}
+
+/* position: relative 让选项的 offsetTop 以列表为基准，用来计算截断位置 */
+.ews-popover-list {
+  position: relative;
+  overflow-y: auto;
+}
+
+.ews-group + .ews-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ews-line);
+}
+
+.ews-group-label {
+  margin: 6px 10px 4px;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ews-popover-empty {
+  padding: 12px 10px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+.ews-logo {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+:root:not([data-theme="light"]) .ews-logo:is(
+  [data-runtime="pi"],
+  [data-runtime="opencode"],
+  [data-runtime="pi_chat"],
+  [data-runtime="opencode_chat"]
+) {
+  filter: invert(1);
+}
+
+/* 深度皮肤与全局透明：卡片和原生输入框一样处理；下拉保持不透明，保证可读 */
+:root[data-deep-skin] .ews-card {
+  border-color: var(--deep-skin-line);
+  background: var(--deep-skin-panel-head);
+}
+
+:root[data-global-transparent="true"] .ews-card {
+  border-color: color-mix(in srgb, var(--border-strong) 78%, transparent) !important;
+  background: color-mix(in srgb, var(--bg) var(--terminal-pane-opacity, 65%), transparent) !important;
+  box-shadow: none !important;
+}
+
+/* ---------- 原生会话（Harness/Claude/Codex/Kimi/OpenCode/Pi/ZCode） ---------- */
+.native-chat-navigation {
+  padding: 6px 16px;
+  border-bottom-color: transparent;
+}
+
+.native-chat-tab {
+  border-radius: 10px;
+}
+
+.native-chat-tab.selected {
+  border-color: var(--border);
+  background: var(--bg-elev);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.native-chat-navigation button:focus-visible {
+  outline-color: var(--accent);
+}
+
+.native-chat-create > button.btn,
+.native-chat-handoff {
+  border-radius: 10px;
+  background: transparent;
+}
+
+.native-chat-create > button.btn:hover,
+.native-chat-handoff:hover {
+  background: var(--bg-hover);
+}
+
+.native-chat-create-menu {
+  border-radius: 12px;
+  background: var(--bg-popover);
+  box-shadow: var(--shadow-md);
+}
+
+.native-chat-create-menu button {
+  border-radius: 8px;
+}
+
+.harness-chat {
+  font-family: var(--display-font);
+}
+
+.native-agent-chat .native-agent-welcome h1,
+.harness-welcome h1,
+.harness-welcome-copy h2 {
+  font-family: var(--serif-font);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.native-agent-welcome p {
+  font-size: 15px;
+}
+
+.native-agent-chat .native-agent-skills {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* 输入框：白色抬升卡片 + 柔和阴影，Claude 式发送按钮 */
+.harness-chat .harness-chat-composer,
+.native-agent-chat .harness-chat-composer {
+  padding: 12px 14px 10px;
+  border-color: var(--border);
+  border-radius: 20px;
+  background: var(--bg-elev);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 24px rgba(0, 0, 0, 0.06);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.harness-chat .harness-chat-composer:focus-within {
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 28px rgba(0, 0, 0, 0.08);
+}
+
+.harness-chat-composer textarea {
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.harness-chat-composer textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.harness-chat .harness-icon-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.harness-picker {
+  border-color: transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.harness-picker:hover {
+  background: var(--bg-hover);
+}
+
+.harness-chat .harness-picker select {
+  padding: 7px 2px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.harness-chat .harness-send-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--brand-fill);
+  color: var(--on-brand-fill);
+}
+
+.harness-chat .harness-send-button:hover:not(:disabled) {
+  background: var(--brand-fill-hover);
+}
+
+.harness-chat .harness-send-button:disabled {
+  opacity: 0.35;
+}
+
+.harness-chat .harness-composer-hint {
+  color: var(--text-faint);
+}
+
+/* 消息：用户气泡为中性浅填充；助手正文用衬线阅读字 */
+.harness-message.user {
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 5%, var(--bg));
+}
+
+.harness-message > strong {
+  font-weight: 500;
+}
+
+.harness-message.assistant > p {
+  font-family: var(--serif-font);
+  font-size: 15.5px;
+  line-height: 1.75;
+}
+
+.harness-tool,
+.harness-permission,
+.harness-goal,
+.harness-command-result {
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--bg-elev);
+}
+
+.harness-command-menu {
+  border-color: var(--border);
+  border-radius: 14px;
+  background: var(--bg-popover);
+  box-shadow: var(--shadow-md);
+}
+
+/* ---------- 右侧工作面板 ---------- */
+.unified-right-sidebar {
+  background: var(--bg-sidebar);
+  border-left-color: var(--border);
+}
+
+.right-sidebar-activity-bar {
+  border-bottom-color: transparent;
+  background: transparent;
+}
+
+.right-sidebar-activity-bar .right-sidebar-resource-tab [role="tab"] {
+  border-radius: 8px;
+}
+
+.right-sidebar-activity-bar [role="tab"][aria-selected="true"] {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.right-sidebar-new-menu {
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--bg-popover);
+  box-shadow: var(--shadow-md);
+}
+
+.right-sidebar-new-menu > button {
+  border-radius: 8px;
+}
+
+.right-sidebar-start h2 {
+  font: 400 24px/1.3 var(--serif-font);
+  letter-spacing: -0.01em;
+}
+
+.right-sidebar-start-mark {
+  opacity: 0.5;
+}
+
+.right-sidebar-start-tools {
+  gap: 8px;
+}
+
+.right-sidebar-start-tools > button {
+  min-height: 74px;
+  gap: 14px;
+  padding: 14px 16px;
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.right-sidebar-start-tools > button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-elev);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 0 8px 20px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+/* 图标放进柔和的圆角方块，统一中性色 */
+.right-sidebar-start-tools > button > svg,
+.right-sidebar-start-tools > button:first-child > svg {
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--bg-active);
+  color: var(--text-dim);
+}
+
+.right-sidebar-start-tools strong {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+/* ---------- 菜单与弹层：统一圆角、底色与阴影 ---------- */
+.unified-tools-menu,
+.rail-new-menu,
+.rail-new-menu.unified-new-menu {
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--bg-popover);
+  box-shadow: var(--shadow-md);
+}
+
+.unified-tools-menu > button,
+.rail-new-menu > button {
+  border-radius: 8px;
+}
+
+.unified-tools-menu > button:hover,
+.rail-new-menu > button:hover {
+  background: var(--bg-hover);
+}
+
+/* ---------- 对话框与设置 ---------- */
+.dialog-overlay,
+.settings-native-overlay {
+  background: var(--overlay);
+}
+
+.confirm-dialog {
+  border-color: var(--border);
+  border-radius: 16px;
+  background: var(--bg-popover);
+  box-shadow: var(--shadow-md);
+}
+
+.dialog-close {
+  border-color: transparent;
+  border-radius: 8px;
+}
+
+.dialog-heading h2 {
+  font: 400 24px/1.25 var(--serif-font);
+}
+
+.settings-native-overlay > .settings-dialog.settings-native {
+  border-color: var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+}
+
+.settings-dialog .settings-heading h2 {
+  font-family: var(--serif-font);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.settings-dialog.settings-native .settings-nav-group .settings-nav-item {
+  border-radius: 8px;
+}
+
+.settings-dialog.settings-native .settings-nav-item.active {
+  font-weight: 500;
+}
+
+/* ---------- 通用控件 ---------- */
+.btn {
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.btn.primary {
+  font-weight: 500;
+}
+
+.btn-icon {
+  border-color: transparent;
+  border-radius: 8px;
+}
+
+.toast {
+  border-radius: 12px;
+  background: var(--bg-popover);
+}
+
+/* ---------- 状态与标签：中性优先，语义色只表达状态 ---------- */
+.pane-status.running {
+  color: var(--text-dim);
+}
+
+.session-filter-trigger .filter-count.running,
+.session-filter-option.active .filter-count.running,
+.filter-count.running {
+  color: var(--text-dim);
+}
+
+.settings-dialog .status-chip.ok {
+  border-color: transparent;
+  background: var(--bg-active);
+  color: var(--text-dim);
+}
+
+.settings-native-overlay > .settings-dialog.settings-native .settings-content .settings-heading h2 {
+  font-family: var(--serif-font);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* 文件树：线性图标，文件夹用中性色 */
+.file-tree-row:has(svg:nth-child(2)) > svg:nth-child(2),
+.file-explorer-header > div:first-child svg {
+  color: var(--text-dim);
+}
+
+/* ---------- 多智能体总控：按钮回归中性次级样式 ---------- */
+.multi-agent-control button {
+  border-color: var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.multi-agent-control button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.team-message-tabs {
+  border-bottom-color: transparent;
+}
+
+.multi-agent-control .team-message-tabs button {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.multi-agent-control .team-message-tabs button[aria-pressed="true"] {
+  background: var(--bg-active);
+  color: var(--text);
+}

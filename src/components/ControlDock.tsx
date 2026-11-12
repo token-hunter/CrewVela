@@ -50,7 +50,7 @@ export function ControlDock({
         aria-expanded={expanded}
         onClick={detached ? onShowDetached : onToggle}
       >
-        <CommandIcon size={19} weight="duotone" />
+        <CommandIcon size={19} />
         <span>总控</span>
         {detached && <small>独立窗口</small>}
       </button>
@@ -73,7 +73,7 @@ export function ControlDock({
             aria-expanded={expanded}
             onClick={onToggle}
           >
-            <CaretUpIcon size={17} weight="bold" />
+            <CaretUpIcon size={17} />
           </button>
         )}
         <button

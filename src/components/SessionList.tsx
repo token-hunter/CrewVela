@@ -458,7 +458,7 @@ export function SessionList({
             </span>
           ) : session.kind === "terminal" && (
             <span className="session-kind-icon terminal" aria-hidden="true">
-              <TerminalWindowIcon size={15} weight="duotone" />
+              <TerminalWindowIcon size={15} />
             </span>
           )}
           <span className={`status-dot ${session.status}`} />
@@ -537,13 +537,13 @@ export function SessionList({
               <FolderIcon
                 className="session-project-folder"
                 size={15}
-                weight="duotone"
+               
               />
             ) : (
               <FolderOpenIcon
                 className="session-project-folder"
                 size={15}
-                weight="duotone"
+               
               />
             )}
           </button>

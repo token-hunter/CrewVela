@@ -165,7 +165,7 @@
   font-weight: 500;
   line-height: 1.4;
 }
-.settings-dialog.settings-native .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.settings-dialog.settings-native .btn.primary { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent-fill); }
 .settings-native :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) { border-radius: 6px; }
 .settings-dialog.settings-native :is(button, input, select, textarea, a, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -266,7 +266,7 @@
 .settings-native .collab-tabs button.active { color: var(--accent); border-color: var(--accent); }
 .settings-native .collab-tabs b { background: var(--bg-hover); color: var(--text-dim); }
 .settings-native .collab-overview-page :is(.btn, .collab-primary) { border-color: var(--border-strong); background: var(--settings-canvas); color: var(--text); }
-.settings-native .collab-overview-page .collab-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.settings-native .collab-overview-page .collab-primary { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent-fill); }
 .settings-native :is(.collab-team-filter-pill, .collab-team-search input, .collab-runtime-popover, .collab-task-menu > div, .collab-upgrade-menu > button) { background: var(--settings-canvas); color: var(--text); border-color: var(--border); }
 .settings-native :is(.collab-team-filter-pill.active, .collab-task-filters button.active, .collab-task-row.selected) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .settings-native :is(.collab-task-columns, .collab-task-panel > header, .collab-side-panels header, .collab-stage-title) { background: transparent; border-color: var(--border); color: var(--text-dim); }

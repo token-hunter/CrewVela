@@ -114,6 +114,7 @@ export type AppearanceTheme =
   | "aurora";
 export type AppearanceBackground = "solid" | "soft" | "texture";
 export type AppearanceAccent =
+  | "clay"
   | "blue"
   | "purple"
   | "cyan"

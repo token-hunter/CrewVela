@@ -114,7 +114,7 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
             <p>四款橙子与四种水果，可随时切换。</p>
           </div>
           <button className="btn secondary pet-import" disabled={importing} onClick={() => inputRef.current?.click()}>
-            <PlusIcon size={15} weight="bold" />
+            <PlusIcon size={15} />
             {importing ? "正在导入…" : "导入自定义"}
           </button>
           <input
