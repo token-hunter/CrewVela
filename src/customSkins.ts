@@ -27,7 +27,7 @@ export const CUSTOM_SKINS_STORAGE_KEY = "crewvela-custom-skins-v1";
 
 const THEMES: AppearanceTheme[] = ["dark", "light", "ocean", "purple", "sand", "aurora"];
 const BACKGROUNDS: AppearanceBackground[] = ["solid", "soft", "texture"];
-const ACCENTS: AppearanceAccent[] = ["blue", "purple", "cyan", "green", "orange", "pink", "coral", "gray"];
+const ACCENTS: AppearanceAccent[] = ["clay", "blue", "purple", "cyan", "green", "orange", "pink", "coral", "gray"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

@@ -89,7 +89,7 @@ export function ArchivedSessionsPanel({
 
       {groups.length === 0 ? (
         <div className="archived-settings-empty">
-          <ArchiveIcon size={28} weight="duotone" aria-hidden="true" />
+          <ArchiveIcon size={28} aria-hidden="true" />
           <strong>{sessions.length === 0 ? "还没有归档会话" : "没有匹配的归档会话"}</strong>
           <span>归档后的会话会保留在这里，可随时恢复。</span>
         </div>

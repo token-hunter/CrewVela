@@ -759,13 +759,14 @@
   background: var(--bg-hover);
 }
 .btn.primary {
-  background: var(--accent);
-  color: var(--on-accent);
-  border-color: var(--accent);
+  background: var(--accent-fill);
+  color: var(--on-accent-fill);
+  border-color: var(--accent-fill);
   font-weight: 600;
 }
-.btn.primary:hover {
-  filter: brightness(1.1);
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
+  border-color: var(--accent-fill-hover);
 }
 .btn.primary:disabled {
   opacity: 0.4;

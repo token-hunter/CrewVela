@@ -7,7 +7,7 @@
 .quick-center button:hover:not(:disabled) { background: var(--bg-hover); }
 .quick-center button:disabled { opacity: .45; cursor: default; }
 .quick-center :is(button,input,textarea,select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.quick-center button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.quick-center button.primary { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent-fill); }
 .quick-center button.danger, .quick-center-remove { color: var(--danger, #dd775d); }
 .quick-center-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .quick-center-header h2 { margin: 0; font-size: 22px; }

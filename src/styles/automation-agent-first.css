@@ -47,8 +47,8 @@
 @media (max-width: 1200px) { .automation-dialog .automation-section:first-child > label { grid-template-columns: 100px minmax(0,1fr); } }
 @media (max-width: 760px) { .automation-dialog .automation-section:first-child > label { grid-template-columns: 1fr; gap: 7px; } }
 
-.settings-native .automation-primary { background: var(--accent) !important; border-color: var(--accent) !important; color: var(--on-accent) !important; }
-.settings-native .automation-primary:hover:not(:disabled) { background: var(--accent-strong) !important; border-color: var(--accent-strong) !important; }
+.settings-native .automation-primary { background: var(--accent-fill) !important; border-color: var(--accent-fill) !important; color: var(--on-accent-fill) !important; }
+.settings-native .automation-primary:hover:not(:disabled) { background: var(--accent-fill-hover) !important; border-color: var(--accent-fill-hover) !important; }
 .automation-dialog .automation-form-actions.has-error { flex-wrap: wrap; }
 .automation-dialog .automation-form-actions > .automation-error { flex-basis: 100%; margin: 0; }
 

@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 const output = "output/playwright/theme-contrast";
 mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
-const accents = ["blue", "purple", "cyan", "green", "orange", "pink", "coral", "gray"];
+const accents = ["clay", "blue", "purple", "cyan", "green", "orange", "pink", "coral", "gray"];
 const luminance = (color) => {
   const components = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(value => {
     const channel = value / 255;

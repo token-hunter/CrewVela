@@ -61,7 +61,7 @@ const SIDEBAR_SHORTCUT_ICONS: Record<string, () => ReactNode> = {
   companionship: () => <HeartIcon size={17} />,
   providers: () => <CubeIcon size={17} />,
   collaboration: () => <UsersIcon size={17} />,
-  sharedMemory: () => <BrainIcon size={17} weight="duotone" />,
+  sharedMemory: () => <BrainIcon size={17} />,
   automation: () => <AutomationIcon size={17} />,
   browserControl: () => <GlobeIcon size={17} />,
   computerControl: () => <MonitorIcon size={17} />,
@@ -220,7 +220,7 @@ export function AppSidebar(props: Props) {
               aria-pressed={props.viewFocused}
               onClick={props.onFocusView}
             >
-              <CornersOutIcon size={17} weight="duotone" />
+              <CornersOutIcon size={17} />
             </button>
             <button
               className={props.viewFocused ? "" : "active"}
@@ -230,7 +230,7 @@ export function AppSidebar(props: Props) {
               aria-pressed={!props.viewFocused}
               onClick={props.onOverviewView}
             >
-              <SquaresFourIcon size={17} weight="duotone" />
+              <SquaresFourIcon size={17} />
             </button>
           </span>
         </div>
@@ -248,7 +248,7 @@ export function AppSidebar(props: Props) {
                 onMouseEnter={() => setNewMenuOpen(true)}
                 onClick={() => setNewMenuOpen((current) => !current)}
               >
-                <PlusIcon size={18} weight="bold" />
+                <PlusIcon size={18} />
                 <span>新建会话</span>
               </button>
               <div className="unified-tools-menu-divider" role="separator" />
@@ -275,7 +275,7 @@ export function AppSidebar(props: Props) {
                   setDeleteConfirmOpen(true);
                 }}
               >
-                <TrashIcon size={17} weight="fill" />
+                <TrashIcon size={17} />
                 <span>删除全部</span>
               </button>
             </div>
@@ -295,7 +295,7 @@ export function AppSidebar(props: Props) {
             setNewMenuOpen(!newMenuOpen || toolsMenuOpen);
           }}
         >
-          <PlusIcon size={17} aria-hidden="true" />
+          <span className="sidebar-new-session-icon" aria-hidden="true"><PlusIcon size={12} weight="bold" /></span>
           <span>新建会话</span>
         </button>
       </div>
@@ -454,11 +454,11 @@ export function AppSidebar(props: Props) {
                 {isRuntimeEnabled("zcode") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenZCode)}><img src={RUNTIME_LOGOS.zcode} data-runtime="zcode" alt="" aria-hidden="true" />ZCode Desktop</button>}
                 {isRuntimeEnabled("zcode_cli") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenZCodeCli)}><img src={RUNTIME_LOGOS.zcode_cli} data-runtime="zcode_cli" alt="" aria-hidden="true" />ZCode CLI</button>}
                 {terminalShells().map(shell => <button key={shell} type="button" role="menuitem" onClick={() => runNewAction(() => props.onNewTerminal(shell))}>
-                  <TerminalWindowIcon size={20} weight="duotone" />
+                  <TerminalWindowIcon size={20} />
                   <span><strong>{shellLabel(shell)}</strong><small>{shell === "cmd" ? "Windows 命令提示符" : "本地命令行"}</small></span>
                 </button>)}
                 <button type="button" role="menuitem" onClick={() => runNewAction(props.onAddProject)}>
-                  <FolderPlusIcon size={20} weight="duotone" />
+                  <FolderPlusIcon size={20} />
                   <span><strong>项目</strong><small>添加目录并分组会话</small></span>
                 </button>
                 {props.presets.length > 0 && (
@@ -474,7 +474,7 @@ export function AppSidebar(props: Props) {
                             title={`${preset.cwds.length} 个会话 · ${providerName}`}
                             onClick={() => runNewAction(() => props.onLaunchPreset(preset))}
                           >
-                            <LightningIcon size={18} weight="duotone" />
+                            <LightningIcon size={18} />
                             <span>
                               <strong>{preset.name}</strong>
                               <small>
@@ -513,7 +513,7 @@ export function AppSidebar(props: Props) {
       {deleteConfirmOpen && (
         <div className="editor-overlay" onClick={() => setDeleteConfirmOpen(false)}>
           <div className="confirm-dialog" onClick={(event) => event.stopPropagation()}>
-            <div className="confirm-dialog-icon"><TrashIcon size={26} weight="fill" /></div>
+            <div className="confirm-dialog-icon"><TrashIcon size={26} /></div>
             <h2>删除全部会话</h2>
             <p>将删除当前页签的全部会话，此操作不可撤销。</p>
             <div className="actions">

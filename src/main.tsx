@@ -1,6 +1,8 @@
 import { initializeStorage } from "./initializeStorage";
 import ReactDOM from "react-dom/client";
 import "./styles.css";
+// Cowork 风格层：紧跟全局样式导入，所有窗口共用；与组件样式冲突时靠更高优先级取胜。
+import "./styles/cowork.css";
 
 // 不使用 StrictMode：dev 下它会双重 mount/unmount useEffect，
 // 导致 Tauri event 的 listen 注册/注销时序错乱，丢事件。

@@ -617,13 +617,13 @@
   place-items: center;
   border: 0;
   border-radius: 50%;
-  background: var(--text);
-  color: var(--bg);
+  background: var(--brand-fill);
+  color: var(--on-brand-fill);
 }
 
 .control-send:hover:not(:disabled) {
-  background: #ffffff;
-  color: #1e1e1e;
+  background: var(--brand-fill-hover);
+  color: var(--on-brand-fill);
 }
 
 .control-send:disabled {

@@ -12,7 +12,7 @@ export const LEGACY_THEME_STORAGE_KEY = "crewvela-theme";
 export const DEFAULT_APPEARANCE: AppAppearance = {
   theme: "dark",
   background: "solid",
-  accent: "blue",
+  accent: "clay",
   followSystem: false,
   terminalTransparent: false,
   terminalOpacity: 0.65,
@@ -32,6 +32,7 @@ const APPEARANCE_BACKGROUNDS: AppearanceBackground[] = [
   "texture",
 ];
 const APPEARANCE_ACCENTS: AppearanceAccent[] = [
+  "clay",
   "blue",
   "purple",
   "cyan",

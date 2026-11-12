@@ -14,5 +14,5 @@
 .codex-goal-dialog textarea { width: 100%; box-sizing: border-box; min-height: 130px; }
 .codex-goal-dialog footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .codex-goal-dialog footer span { margin-right: auto; color: var(--text-dim); font-size: 11px; }
-.harness-chat .codex-goal-confirm { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.harness-chat .codex-goal-confirm { background: var(--accent-fill); color: var(--on-accent-fill); border-color: var(--accent-fill); }
 @media (max-width: 640px) { .codex-goal-bar { flex-wrap: wrap; } .codex-goal-bar > div { flex-basis: calc(100% - 32px); } }

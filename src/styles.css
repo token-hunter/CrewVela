@@ -102,7 +102,7 @@
 .harness-stream-status { color: var(--text-dim); }
 
 /* Harness welcome and composer; all selectors stay inside this conversation. */
-.harness-chat { --harness-blue: #3155ff; --harness-link: #8ea2ff; --harness-border: var(--border); --harness-control-bg: var(--bg-elev); position: relative; }
+.harness-chat { --harness-blue: var(--brand-fill); --harness-link: var(--accent); --harness-border: var(--border); --harness-control-bg: var(--bg-elev); position: relative; }
 .harness-chat-header { min-height: 54px; padding: 10px 24px; border-bottom: 0; flex-shrink: 0; }
 .harness-chat-controls { gap: 18px; justify-content: flex-end; }
 .harness-workspace { display: inline-flex; align-items: center; gap: 8px; max-width: 330px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -119,7 +119,7 @@
 .harness-welcome-copy h2 { margin: 0 0 16px; font-size: clamp(26px, 2.5vw, 42px); letter-spacing: -1px; font-weight: 650; white-space: nowrap; }
 .harness-welcome-copy p { margin: 0; font-size: clamp(15px, 1.4vw, 23px); color: var(--text-dim); white-space: nowrap; }
 .harness-chat .harness-welcome-skills { display: flex; align-items: center; justify-content: flex-start; gap: 16px; width: 100%; border: 0; border-top: 1px solid var(--harness-border); border-radius: 0; margin-top: 34px; padding: 22px 0 0; font-size: 18px; background: transparent; color: var(--harness-link); cursor: pointer; }
-.harness-chat .harness-welcome-skills:hover { color: #6580ff; }
+.harness-chat .harness-welcome-skills:hover { color: var(--accent-strong); }
 .harness-chat-composer { width: min(1100px, calc(100% - 64px)); margin: 0 auto 32px; padding: 14px 16px 12px; border: 1px solid var(--harness-border); border-radius: 22px; background: var(--bg-elev); box-shadow: 0 8px 30px #00000012; }
 .harness-chat-composer textarea { min-height: 74px; padding: 6px 2px 12px; border: 0; border-radius: 0; background: transparent; outline: none; font-size: 17px; resize: vertical; }
 .harness-chat .harness-chat-composer textarea:focus { outline: none; box-shadow: none; border: 0; border-radius: 0; }
@@ -141,7 +141,7 @@
 .harness-reasoning-tooltip { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev); color: var(--text); font-size: 12px; line-height: 1.4; white-space: nowrap; box-shadow: 0 3px 12px #00000020; pointer-events: none; visibility: hidden; z-index: 20; }
 .harness-reasoning-picker:hover .harness-reasoning-tooltip,
 .harness-reasoning-picker:focus-within .harness-reasoning-tooltip { visibility: visible; }
-.harness-chat .harness-send-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--harness-blue); color: #fff; cursor: pointer; }
+.harness-chat .harness-send-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--harness-blue); color: var(--on-brand-fill, #fff); cursor: pointer; }
 .harness-chat .harness-send-button:disabled { opacity: .45; }
 .harness-chat .harness-composer-hint { justify-content: center; position: absolute; top: calc(100% + 8px); left: 0; right: 0; margin: 0; font-size: 10px; color: var(--text-dim); }
 .harness-command-menu { left: 0; right: 0; margin-bottom: 10px; box-shadow: 0 10px 34px #00000020; }
@@ -163,8 +163,8 @@
 .zcode-composer.zcode-drop-active { outline: 2px dashed var(--harness-link); outline-offset: -8px; border-radius: 12px; background: var(--bg-hover); }
 .zcode-composer.zcode-drop-active textarea { border-color: var(--harness-link); }
 .harness-chat .harness-goal-dialog { max-height: 65vh; overflow-y: auto; }
-:root[data-theme="light"] .harness-chat { --harness-link: #3155ff; --harness-border: #e1e6ef; --harness-control-bg: #f7f9fc; background: #fff; }
-:root[data-theme="light"] .harness-chat-composer { background: #fff; }
+:root[data-theme="light"] .harness-chat { --harness-link: var(--accent); --harness-border: var(--border); --harness-control-bg: var(--bg-elev); background: var(--bg); }
+:root[data-theme="light"] .harness-chat-composer { background: var(--bg-elev); }
 @media (max-width: 1000px) {
   .harness-chat .harness-composer-toolbar { align-items: flex-start; flex-wrap: wrap; }
   .harness-composer-right { margin-left: auto; }

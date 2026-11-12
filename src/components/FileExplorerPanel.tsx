@@ -326,7 +326,7 @@ export function FileExplorerPanel({ root, active }: Props) {
           title={entry.relativePath}
         >
           {entry.directory ? <CaretRightIcon className={expanded.has(entry.relativePath) ? "expanded" : ""} size={12} /> : <span className="file-tree-spacer" />}
-          {entry.directory ? <FolderIcon size={15} weight="fill" /> : <FileIcon size={15} />}
+          {entry.directory ? <FolderIcon size={15} /> : <FileIcon size={15} />}
           <span>{entry.name}</span>
         </button>
         {entry.directory && expanded.has(entry.relativePath) && (
@@ -600,7 +600,7 @@ export function FileExplorerPanel({ root, active }: Props) {
       />
       <aside className="file-explorer-browser" aria-label="项目文件树">
         <header className="file-explorer-header">
-          <div><FolderIcon size={17} weight="fill" /><strong>项目文件</strong></div>
+          <div><FolderIcon size={17} /><strong>项目文件</strong></div>
           <div>
             <button type="button" aria-label="刷新文件树" title="刷新文件树" onClick={() => void loadDirectory("", true)} disabled={!root}><ArrowClockwiseIcon size={15} /></button>
             <button type="button" aria-label="文件预览设置" title="文件预览设置" onClick={() => setSettingsOpen((value) => !value)}><GearIcon size={15} /></button>
@@ -619,7 +619,7 @@ export function FileExplorerPanel({ root, active }: Props) {
         </label>
         <div className="file-explorer-tree">
           {(treeError || settingsError) && <div role="alert" style={{ padding: 8, color: "var(--danger)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{[treeError, settingsError].filter(Boolean).join("\n")}</div>}
-          {!root ? <p className="file-explorer-empty">当前工作区没有可浏览的目录</p> : query.trim().length >= 2 ? searchResults.map((entry) => <button type="button" className="file-tree-row file-search-result" key={entry.relativePath} onClick={() => entry.directory ? toggleDirectory(entry) : selectFile(entry)}><span className="file-tree-spacer" />{entry.directory ? <FolderIcon size={15} weight="fill" /> : <FileIcon size={15} />}<span>{entry.relativePath}</span></button>) : loading.has("") && !children[""] ? <p className="file-explorer-empty">正在读取文件…</p> : children[""]?.length === 0 ? <p className="file-explorer-empty">目录为空</p> : renderEntries("")}
+          {!root ? <p className="file-explorer-empty">当前工作区没有可浏览的目录</p> : query.trim().length >= 2 ? searchResults.map((entry) => <button type="button" className="file-tree-row file-search-result" key={entry.relativePath} onClick={() => entry.directory ? toggleDirectory(entry) : selectFile(entry)}><span className="file-tree-spacer" />{entry.directory ? <FolderIcon size={15} /> : <FileIcon size={15} />}<span>{entry.relativePath}</span></button>) : loading.has("") && !children[""] ? <p className="file-explorer-empty">正在读取文件…</p> : children[""]?.length === 0 ? <p className="file-explorer-empty">目录为空</p> : renderEntries("")}
         </div>
       </aside>
     </section>

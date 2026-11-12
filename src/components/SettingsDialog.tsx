@@ -213,7 +213,7 @@ export function SettingsDialog({
           id: "sharedMemory" as const,
           label: "共享记忆",
           keywords: "共享 记忆 ai-memory handoff 交接 跨智能体",
-          icon: <BrainIcon size={16} weight="duotone" />,
+          icon: <BrainIcon size={16} />,
         },
         {
           id: "automation" as const,
@@ -492,7 +492,7 @@ export function SettingsDialog({
               <div className="settings-heading-actions">
                 {activeSection === "providers" && (
                   <button className="btn primary" onClick={onNew}>
-                    <PlusIcon size={16} weight="bold" aria-hidden="true" />
+                    <PlusIcon size={16} aria-hidden="true" />
                     <span>新建模型服务</span>
                   </button>
                 )}

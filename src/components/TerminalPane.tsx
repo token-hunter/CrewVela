@@ -165,11 +165,11 @@ function safeFit(fit: FitAddon | null) {
 
 const TERMINAL_THEMES = {
   dark: {
-    background: "#000000",
-    foreground: "#d5deea",
-    cursor: "#e8edf5",
-    selectionBackground: "#174c72",
-    black: "#071019",
+    background: "#161615",
+    foreground: "#e8e6df",
+    cursor: "#d97757",
+    selectionBackground: "#5a3a2e",
+    black: "#1f1f1e",
     red: "#f06b75",
     green: "#62cf8b",
     yellow: "#d7ab5e",
@@ -184,14 +184,14 @@ const TERMINAL_THEMES = {
     brightBlue: "#73c0f7",
     brightMagenta: "#cca8f1",
     brightCyan: "#74d9ec",
-    brightWhite: "#f2f5f9",
+    brightWhite: "#faf9f5",
   },
   light: {
     background: "#ffffff",
-    foreground: "#273043",
-    cursor: "#315fa8",
-    selectionBackground: "#c9dcff",
-    black: "#1f2937",
+    foreground: "#2b2a27",
+    cursor: "#c6613f",
+    selectionBackground: "#f2dccf",
+    black: "#2b2a27",
     red: "#c43d56",
     green: "#4f7d37",
     yellow: "#9a651f",
@@ -467,7 +467,7 @@ export function TerminalPane({
       >
         {header.showShellIcon && (
           <span className={`pane-shell-icon ${shell ?? "terminal"}`} aria-hidden="true">
-            <TerminalWindowIcon size={19} weight="duotone" />
+            <TerminalWindowIcon size={19} />
           </span>
         )}
         {header.runtimeKind && (

@@ -193,7 +193,7 @@ export function McpSettingsPanel() {
             setFormError(null);
           }}
         >
-          <PlusIcon size={15} weight="bold" /> 新增服务器
+          <PlusIcon size={15} /> 新增服务器
         </button>
         <button
           type="button"
@@ -201,7 +201,7 @@ export function McpSettingsPanel() {
           disabled={busy}
           onClick={() => void refresh()}
         >
-          <ArrowsClockwiseIcon size={15} weight="bold" />
+          <ArrowsClockwiseIcon size={15} />
           {probing ? "检测中…" : "检测连接"}
         </button>
         <span className="mcp-summary">
@@ -214,7 +214,7 @@ export function McpSettingsPanel() {
       {draft && (
         <fieldset className="mcp-server-form" disabled={busy} style={{ minWidth: 0 }}>
           <header>
-            <PlugsIcon size={17} weight="duotone" />
+            <PlugsIcon size={17} />
             <strong>{draft.id ? "编辑服务器" : "新增服务器"}</strong>
             <button
               type="button"
@@ -333,7 +333,7 @@ export function McpSettingsPanel() {
       {servers.length === 0 && !draft && !loading && (
         <EmptyState
           className="mcp-empty"
-          icon={<PlugsIcon size={28} weight="duotone" />}
+          icon={<PlugsIcon size={28} />}
           title="还没有配置 MCP 服务器"
           titleAs="p"
           description="添加后，启用的服务器会自动注入新启动的 Claude 会话与多 Agent 任务。"

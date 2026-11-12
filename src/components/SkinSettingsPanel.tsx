@@ -23,8 +23,8 @@ interface Props {
 
 function customPreview(appearance: AppAppearance) {
   const backgrounds: Record<AppAppearance["theme"], string> = {
-    dark: "linear-gradient(145deg,#282828,#141414)",
-    light: "linear-gradient(145deg,#fff,#e7e9ed)",
+    dark: "linear-gradient(145deg,#1f1f1e,#111111)",
+    light: "linear-gradient(145deg,#fff,#f0efec)",
     ocean: "linear-gradient(145deg,#173345,#0d161d)",
     purple: "linear-gradient(145deg,#332845,#17131e)",
     sand: "linear-gradient(145deg,#fffaf2,#eadcc7)",
