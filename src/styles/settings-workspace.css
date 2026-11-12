@@ -176,6 +176,13 @@
 .settings-workspace .runtime-details p,
 .settings-workspace .runtime-warning { overflow-wrap: anywhere; }
 .settings-workspace .runtime-warning { margin: 0; font-size: 13px; }
+/* 控制方式开关下方的补充说明：弱化为辅助文字，并与开关行拉开间距。 */
+.runtime-settings.settings-workspace .runtime-note {
+  margin: 12px 0 0;
+  color: var(--workspace-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
 .settings-workspace .workspace-status > .runtime-warning { margin-top: 12px; }
 /* Browser settings: the switch introduces the form; peers share a row, and
    environment details sit below instead of leaving an empty side column. */

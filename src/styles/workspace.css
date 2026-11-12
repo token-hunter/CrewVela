@@ -1110,6 +1110,11 @@
   text-overflow: ellipsis;
 }
 
+/* 空间不足时先缩短副标题（Provider/目录），再缩短会话标题。 */
+.pane-id span:not(.agent-runtime-badge) {
+  flex-shrink: 100;
+}
+
 .pane-status {
   display: inline-flex;
   align-items: center;

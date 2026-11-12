@@ -136,7 +136,7 @@ export function ComputerControlSettingsPanel() {
             {methods.map(method => <SettingSwitch key={method.title} title={method.title} hint={method.hint}
               disabled={IS_MAC && !method.enabled && !("macos" in (method.status ?? {}) && (method.status as OpenComputerUseStatus | KimiComputerUseStatus)?.macos?.supported && (method.status as OpenComputerUseStatus | KimiComputerUseStatus)?.macos?.installed)}
               icon={<method.icon size={24} aria-hidden="true" />} checked={method.enabled} onChange={enabled => method.change({ enabled })} />)}
-            {IS_MAC && <p>macOS 仅接入以上两种外部方式。内置电脑控制暂未适配。启用后需重开 Agent 会话加载工具。</p>}
+            {IS_MAC && <p className="runtime-note">macOS 仅接入以上两种外部方式。内置电脑控制暂未适配。启用后需重开 Agent 会话加载工具。</p>}
           </SettingsGroup>
         </fieldset>
         <aside className="workspace-section workspace-status" aria-label="电脑控制运行状态">
@@ -169,7 +169,7 @@ export function ComputerControlSettingsPanel() {
               }}>重新连接 {title}</button>
             </div>
           </section>)}
-          {IS_MAC && <><p>首次使用：先安装官方运行时，再重新检测。授权须由你在系统设置中完成；不会自动授予权限。</p><button type="button" className="btn secondary" disabled={busy || loading} onClick={() => setReload(n => n + 1)}>重新检测本机运行时</button></>}
+          {IS_MAC && <><p className="runtime-note">首次使用：先安装官方运行时，再重新检测。授权须由你在系统设置中完成；不会自动授予权限。</p><button type="button" className="btn secondary" disabled={busy || loading} onClick={() => setReload(n => n + 1)}>重新检测本机运行时</button></>}
           {methods.map(method => method.status?.warning && <p key={method.title} className="runtime-warning" role="alert">{method.title}：{method.status.warning}</p>)}
           <details className="runtime-details"><summary>运行时详情与安全说明</summary>
             {methods.map(method => <section key={method.title}><h4>{method.title}</h4><p>{method.status?.runtime}</p><p>{method.coverage}</p><p>{method.safety}</p></section>)}

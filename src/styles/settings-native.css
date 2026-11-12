@@ -8,11 +8,8 @@
 }
 
 .settings-native-overlay > .settings-dialog.settings-native {
-  --accent: #1479ed;
-  --accent-rgb: 20, 121, 237;
-  --accent-strong: #0868d6;
-  --accent-soft: rgb(20 121 237 / 10%);
-  --on-accent: #fff;
+  /* 强调色沿用 tokens.css 中随主题/强调色变化的令牌。此前这里写死 #1479ed + 白字：
+     既无视「外观」里选择的强调色，白字对比度也只有 4.21（低于 4.5:1）。 */
   --settings-blue: var(--accent);
   --settings-blue-rgb: var(--accent-rgb);
   --text-xs: 11px;
@@ -168,7 +165,7 @@
   font-weight: 500;
   line-height: 1.4;
 }
-.settings-dialog.settings-native .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.settings-dialog.settings-native .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .settings-native :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) { border-radius: 6px; }
 .settings-dialog.settings-native :is(button, input, select, textarea, a, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -269,7 +266,7 @@
 .settings-native .collab-tabs button.active { color: var(--accent); border-color: var(--accent); }
 .settings-native .collab-tabs b { background: var(--bg-hover); color: var(--text-dim); }
 .settings-native .collab-overview-page :is(.btn, .collab-primary) { border-color: var(--border-strong); background: var(--settings-canvas); color: var(--text); }
-.settings-native .collab-overview-page .collab-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.settings-native .collab-overview-page .collab-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .settings-native :is(.collab-team-filter-pill, .collab-team-search input, .collab-runtime-popover, .collab-task-menu > div, .collab-upgrade-menu > button) { background: var(--settings-canvas); color: var(--text); border-color: var(--border); }
 .settings-native :is(.collab-team-filter-pill.active, .collab-task-filters button.active, .collab-task-row.selected) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .settings-native :is(.collab-task-columns, .collab-task-panel > header, .collab-side-panels header, .collab-stage-title) { background: transparent; border-color: var(--border); color: var(--text-dim); }

@@ -6,6 +6,7 @@ const browser = await chromium.launch({ channel: "chrome", headless: true });
 try {
   for (const failingMethod of ["getItem", "setItem", "removeItem"]) {
     const page = await browser.newPage();
+    await page.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "Win32" })); // 该用例断言 Windows 形态（PowerShell/CMD、Windows 路径、重启 Codex），macOS 形态由 macosCore.ui.mjs 覆盖
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
     await page.addInitScript(method => {

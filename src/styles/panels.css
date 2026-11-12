@@ -1456,6 +1456,30 @@ body {
   user-select: none;
 }
 
+/* 窄窗格：先让出桌宠，再把状态文字收成色点，保证会话标题始终可读。
+   CLI 桌宠在 cli-session-pet.css 里用同一阈值处理。 */
+.pane-has-session-pet {
+  container-type: inline-size;
+}
+
+@container (max-width: 340px) {
+  .pane-has-session-pet .session-pet {
+    display: none;
+  }
+}
+
+@container (max-width: 300px) {
+  .pane-has-session-pet .pane-status-label,
+  .pane-has-cli-pet .pane-status-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 .session-pet-stage {
   position: relative;
   display: block;

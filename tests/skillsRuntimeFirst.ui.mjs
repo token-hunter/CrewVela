@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 const base = process.env.CREWVELA_UI_URL || "http://127.0.0.1:1432";
-const browser = await chromium.launch();
+const browser = await chromium.launch({ channel: process.env.CREWVELA_BROWSER_CHANNEL || "chrome" });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
   const errors = [];
@@ -65,7 +65,8 @@ try {
     await page.setViewportSize(size); await page.goto(url(`theme=${theme}&skills=long`));
     await page.locator("tbody tr").first().waitFor();
     await page.locator(".skill-target-details > summary").click();
-    await page.locator(".skill-target-details > summary").press("Control+End");
+    await page.locator(".skill-target-details > summary").press(process.platform === "darwin" ? "End" : "Control+End"); // 滚到末尾的快捷键因平台而异：macOS 的 Control+End 不滚动
+    await page.waitForFunction(() => document.querySelector(".skill-distribution-body").scrollTop > 0); // 键盘滚动是平滑动画，等待其生效再测量
     const box = await page.evaluate(() => { const f=document.querySelector(".settings-native").getBoundingClientRect(), a=document.querySelector(".skill-center-footer").getBoundingClientRect(),b=document.querySelector(".skill-distribution-body"); return { visible:a.bottom<=f.bottom, overflow:b.scrollWidth>b.clientWidth, scroll:b.scrollTop>0, outer:document.querySelector(".settings-content").scrollTop }; });
     assert.equal(box.visible, true); assert.equal(box.overflow, false); assert.equal(box.scroll, true); assert.equal(box.outer, 0);
   }

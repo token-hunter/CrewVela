@@ -5,6 +5,7 @@ import { chromium } from "playwright";
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await page.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "Win32" })); // 该用例断言 Windows 形态（PowerShell/CMD、Windows 路径、重启 Codex），macOS 形态由 macosCore.ui.mjs 覆盖
   page.setDefaultTimeout(10000);
   const url = `${process.env.CREWVELA_UI_URL || "http://127.0.0.1:1420"}/?ui-preview=1`;
   await page.goto(url);
@@ -70,6 +71,7 @@ try {
   await equalWidth(initial, "start after reset");
   await page.screenshot({ path: "output/playwright/right-sidebar-shared-width.png" });
   const legacyPage = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await legacyPage.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "Win32" })); // 该用例断言 Windows 形态（PowerShell/CMD、Windows 路径、重启 Codex），macOS 形态由 macosCore.ui.mjs 覆盖
   await legacyPage.addInitScript(() => {
     if (localStorage.getItem("width-test-seeded")) return;
     localStorage.setItem("width-test-seeded", "1");

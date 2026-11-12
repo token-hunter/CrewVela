@@ -17,8 +17,12 @@ const calls: string[] = [];
 const callbacks = new Map<number, (event: unknown) => void>();
 const listeners = new Map<string, number>();
 let providers = [{ id: "fixture-provider", name: "Fixture provider", baseUrl: "https://example.com", authTokenRef: "fixture", env: {}, builtin: false, timeoutMs: null, disableNonessentialTraffic: false }];
+// 轮询命令的返回内容由测试控制；每次都是新对象，键顺序也随机（Rust HashMap 的序列化顺序就是如此）。
+const shuffledKeys = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).sort(() => Math.random() - 0.5));
 const api = {
   calls, pending, rejectProviderDelete: true,
+  usages: {} as Record<string, unknown>,
+  switchRecords: [] as unknown[],
   registerCallback(fn: (event: unknown) => void) { const id = callbacks.size + 1; callbacks.set(id, fn); return id; },
   emit(event: string, payload: unknown) { callbacks.get(listeners.get(event)!)?.({ event, payload }); },
   release(id: string, failure?: string) {
@@ -42,7 +46,8 @@ const api = {
     if (["list_sessions", "session_snapshot"].includes(command)) return sessions;
     if (command === "pty_poll_all") return { sessions, chunks: [] };
     if (command === "get_runtime_preferences") return { disabledRuntimes: [] };
-    if (command === "session_usages") return {};
+    if (command === "session_usages") return shuffledKeys(structuredClone(api.usages));
+    if (command === "session_switch_list") return structuredClone(api.switchRecords);
     if (command === "plugin:event|listen") {
       if (new URLSearchParams(location.search).has("event-error") && ["multi-agent-workspace-open", "browser-control-panel-needed"].includes(String(args?.event))) {
         throw Error(`fixture listener rejected: ${args?.event}`);

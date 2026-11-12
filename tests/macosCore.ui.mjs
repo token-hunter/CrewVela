@@ -19,7 +19,7 @@ try {
   const panel=page.locator("label").filter({hasText:"优先内置浏览器面板"}).locator("input");
   assert.equal(await keepAwake.isDisabled(),platform === "MacIntel");
   assert.equal(await panel.isDisabled(),platform === "MacIntel");
-  if(platform === "MacIntel") await page.getByRole("status").filter({hasText:"macOS 暂不支持电脑控制"}).waitFor();
+  if(platform === "MacIntel") await page.getByText("内置电脑控制暂未适配",{exact:false}).waitFor();
   else await page.getByRole("switch", {name: /^内置电脑控制/}).waitFor();
   assert.deepEqual(errors,[]);
   await page.screenshot({path:`.scratch/macos-apple-silicon-core/ui-${platform}.png`,fullPage:true});

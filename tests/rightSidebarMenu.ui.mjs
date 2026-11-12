@@ -23,6 +23,7 @@ try {
     viewport: { width: 1440, height: 1000 },
   });
   const page = await context.newPage();
+  await page.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "Win32" })); // 该用例断言 Windows 形态（PowerShell/CMD、Windows 路径、重启 Codex），macOS 形态由 macosCore.ui.mjs 覆盖
   page.setDefaultTimeout(10000);
   await page.goto(appUrl.href);
 

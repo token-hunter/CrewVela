@@ -42,7 +42,8 @@
 .communication-hint-close { position: absolute; top: 9px; right: 8px; }
 .communication-hint small { display: block; margin-top: 9px; font-size: 11px; color: var(--text-dim); }
 .communication-notice { color: var(--text-dim); font-size: 12px; }
-.communication-sidebar-hint { position: absolute; top: 104px; left: calc(var(--left-sidebar-width, 292px) + 10px); width: 320px; z-index: 40; }
+/* 首次使用的引导卡只是提示：必须低于弹窗遮罩（--z-drawer）与弹出菜单，否则会盖住并截走弹窗里的点击。 */
+.communication-sidebar-hint { position: absolute; top: 104px; left: calc(var(--left-sidebar-width, 292px) + 10px); width: 320px; z-index: var(--z-dock-overlay); }
 .app-shell.sidebar-collapsed .communication-sidebar-hint { left: 12px; }
 .unified-sidebar-nav .communication-sidebar-entry { color: var(--text); }
 .communication-guide-open > .unified-right-sidebar, .communication-guide-open > .right-sidebar-resizer { display: none; }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { BellRingingIcon, CheckIcon, TrashIcon } from "@phosphor-icons/react";
 import { deliverDesktopNotice, normalizeNotificationTitle } from "../notificationCenter";
+import { IS_MAC } from "../platform";
 import { Switch } from "./ui/Switch";
 import { EmptyState } from "./ui/EmptyState";
 import {
@@ -124,7 +125,7 @@ export function NotificationSettingsPanel({ settings, onChange }: Props) {
         />
       ) : <>
         <section className="notification-card">
-          <ToggleRow title="启用通知" description="为后台任务和需要人工处理的事件发送 Windows 通知。" checked={settings.enabled} onChange={(enabled) => update({ enabled })} />
+          <ToggleRow title="启用通知" description={`为后台任务和需要人工处理的事件发送${IS_MAC ? "系统" : " Windows "}通知。`} checked={settings.enabled} onChange={(enabled) => update({ enabled })} />
           <div className="notification-divider" />
           <ToggleRow title="Agent 任务完成" description="会话执行结束时提醒。" checked={settings.taskComplete} disabled={!settings.enabled} onChange={(taskComplete) => update({ taskComplete })} />
           <ToggleRow title="执行失败与审核失败" description="任务失败或审核未通过时提醒。" checked={settings.taskFailed} disabled={!settings.enabled} onChange={(taskFailed) => update({ taskFailed })} />

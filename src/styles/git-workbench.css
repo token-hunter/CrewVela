@@ -31,7 +31,9 @@
 
 .left-sidebar-resizer {
   position: absolute;
-  z-index: var(--z-overlay);
+  /* 必须低于弹窗遮罩（--z-drawer）和弹出菜单：之前用 --z-overlay 会盖住设置弹窗，
+     截走弹窗里与拖拽条重叠的那一列点击；仍高于右侧栏（--z-dock），保证最大化时可拖。 */
+  z-index: var(--z-dock-max);
   top: 0;
   bottom: 0;
   left: calc(var(--left-sidebar-width, 292px) - 4px);

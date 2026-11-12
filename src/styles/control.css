@@ -651,8 +651,18 @@
 .empty-state p {
   max-width: 440px;
   margin-bottom: 22px;
+  padding-inline: var(--space-8);
   font-size: var(--text-lg);
   line-height: 1.7;
+}
+
+.empty-state-hint {
+  max-width: 360px;
+  margin-top: var(--space-10);
+  padding-inline: var(--space-8);
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  line-height: 1.6;
 }
 
 .session-error {

@@ -383,6 +383,7 @@ export function TerminalPane({
       className={
         "pane" +
         (kind === "terminal" && header.runtimeKind && isCliPetRuntimeKind(header.runtimeKind) ? " pane-has-cli-pet" : "") +
+        (header.runtimeKind === "claude_code" ? " pane-has-session-pet" : "") +
         (hidden ? " pane-hidden" : "") +
         (maximized ? " pane-maximized" : "") +
         (terminalTransparent ? " pane-transparent" : "") +
@@ -477,9 +478,9 @@ export function TerminalPane({
           {header.subtitle && <span>· {header.subtitle}</span>}
           {header.agentBadge && <span className="agent-runtime-badge">{header.agentBadge === "relay" ? "接力 Agent" : "协作 Agent"}</span>}
         </span>
-        <span className={`pane-status ${status}`}>
+        <span className={`pane-status ${status}`} title={STATUS_LABELS[status]}>
           <span className={`status-dot ${status}`} />
-          {STATUS_LABELS[status]}
+          <span className="pane-status-label">{STATUS_LABELS[status]}</span>
         </span>
         <div className="pane-head-actions">
           {header.runtimeKind === "claude_code" && <SessionPet status={status} />}

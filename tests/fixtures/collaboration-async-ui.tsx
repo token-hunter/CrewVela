@@ -31,6 +31,7 @@ const fixture = { calls, pending, holdReads: false,
     if (command === "get_runtime_preferences") return Promise.resolve({ disabledRuntimes: [] });
     if (command === "plugin:event|listen") return Promise.resolve(1);
     if (command === "ma_list_projects") return Promise.resolve([{ id: "project-A", name: "project-A" }, { id: "project-B", name: "project-B" }]);
+    if (command === "ma_probe_runtimes") return Promise.resolve([{ kind: "codex", installed: true, executable: "/fixture/codex", version: "fixture", protocol: "cli", capabilities: [], error: null }]);
     if (["browser_control_get", "browser_control_save", "computer_control_get", "computer_control_save", "kimi_computer_use_get", "kimi_computer_use_save", "open_computer_use_get", "open_computer_use_save", "general_settings_get", "general_settings_save", "fixture_save_agent", "ma_takeover_agent", "ma_return_agent_control", "send_session_message", "respond_session_approval", "create_automation"].includes(command) || (mode === "automation" && command === "ma_snapshot") || (fixture.holdReads && ["list_approval_cards", "ma_list_interventions"].includes(command))) {
       return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
     }
@@ -41,7 +42,7 @@ const fixture = { calls, pending, holdReads: false,
   releaseProject(projectId: string) {
     const index = pending.findIndex(item => item.command === "ma_snapshot" && item.args.projectId === projectId);
     if (index < 0) throw Error("No snapshot for " + projectId);
-    pending.splice(index, 1)[0].resolve({ agents: [{ id: projectId + "-agent", name: projectId + "-agent", enabled: true, runtimeKind: "codex" }] });
+    pending.splice(index, 1)[0].resolve({ agents: [{ id: projectId + "-agent", name: projectId + "-agent", projectId, enabled: true, runtimeKind: "codex" }] });
   },
   release(command: string, error?: string) {
     const index = pending.findIndex(item => item.command === command);

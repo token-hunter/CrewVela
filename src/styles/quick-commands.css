@@ -14,7 +14,11 @@
 .quick-center-header p { margin: 0; color: var(--text-dim); }
 .quick-center-header-actions { display: flex; flex-shrink: 0; gap: 8px; margin-left: auto; }
 .quick-center-search { display: flex; align-items: center; gap: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; color: var(--text-dim); }
-.quick-center .quick-center-search input { width: 100%; background: transparent; border: none; padding: 0; box-shadow: none; min-width: 0; }
+/* 特异性需高于下方通用的 .quick-center :is(input…) 规则，否则搜索框会变成「外框套内框」。 */
+.quick-center .quick-center-search > input:not([type="checkbox"]) { width: 100%; background: transparent; border: none; padding: 0; box-shadow: none; min-width: 0; }
+.quick-center-toolbar { display: flex; align-items: stretch; gap: 10px; }
+.quick-center-toolbar .quick-center-search { flex: 1; min-width: 0; }
+.quick-center-toolbar > button { flex-shrink: 0; white-space: nowrap; }
 .quick-center-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border); margin: 12px 0 0; }
 .quick-center-tabs button { border: 0; border-radius: 0; padding: 10px 3px; border-bottom: 2px solid transparent; }
 .quick-center-tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
@@ -32,7 +36,9 @@
 .quick-center-detail { padding: 20px 0 20px 24px; min-width: 0; }
 .quick-center-body { max-height: min(460px, calc(100dvh - 300px)); min-height: 240px; }
 .quick-center-detail { overflow: auto; }
-.quick-center-embedded .quick-center-body { max-height: min(440px, calc(100dvh - 390px)); }
+/* 设置页内嵌：由设置内容区统一滚动，避免在小窗口里把列表/详情压成一条缝。 */
+.quick-center-embedded .quick-center-body { max-height: none; min-height: 0; }
+.quick-center-embedded .quick-center-detail { overflow: visible; }
 .quick-center-detail-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .quick-center-detail h3, .quick-center-receipts h3 { margin: 0; font-size: 15px; }
 .quick-center-detail-heading button { font-size: 11px; flex-shrink: 0; padding: 5px 8px; }
@@ -50,7 +56,7 @@
 .quick-center-targets p, .quick-center-empty { color: var(--text-dim); padding: 8px 12px; }
 .quick-center-help, .quick-center-default small { font-size: 11px; color: var(--text-dim); margin: 12px 0; }
 .quick-center-editor-actions { display: flex; gap: 10px; }
-.quick-center-error, .quick-center-notice { font-size: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; overflow-wrap: anywhere; }
+.quick-center-error, .quick-center-notice { margin: 8px 0 0; font-size: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; overflow-wrap: anywhere; }
 .quick-center-error { color: var(--danger, #dd775d); }
 .quick-center-notice { color: var(--text-dim); }
 .quick-center-confirm { border: 1px solid var(--danger, #dd775d); padding: 16px; border-radius: 8px; margin: 12px 0; }

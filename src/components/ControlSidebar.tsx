@@ -21,6 +21,7 @@ import {
   type ControlSurface,
 } from "../controlSurface";
 import type { ControlCommandResult } from "../controlCommandResult";
+import { nextTrustPollDelay, sameTrustStatus } from "../controlTrustPolling";
 import type {
   BroadcastReceipt,
   ControlHistoryMessage,
@@ -307,21 +308,32 @@ export function ControlSidebar({
   useEffect(() => {
     if (!isActive || !TAURI_RUNTIME_AVAILABLE) return;
     let stopped = false;
+    let timer: number | undefined;
+    // 串行自调度：上一次读取未返回不会再发起；窗口隐藏时不读取；
+    // 有会话启动/等待信任确认时 250ms，其余时间 1s；内容未变不触发整个侧栏重渲染。
     const refresh = async () => {
-      try {
-        const status = await invoke<ControlWorkspaceTrustStatus>(
-          "control_workspace_trust_status",
-        );
-        if (!stopped) setTrustStatus(status);
-      } catch (error) {
-        console.error("读取总控工作区信任状态失败:", error);
+      let status: ControlWorkspaceTrustStatus | null = null;
+      if (!document.hidden) {
+        try {
+          status = await invoke<ControlWorkspaceTrustStatus>(
+            "control_workspace_trust_status",
+          );
+          const latest = status;
+          if (!stopped) {
+            setTrustStatus((current) =>
+              sameTrustStatus(current, latest) ? current : latest,
+            );
+          }
+        } catch (error) {
+          console.error("读取总控工作区信任状态失败:", error);
+        }
       }
+      if (!stopped) timer = window.setTimeout(refresh, nextTrustPollDelay(status));
     };
-    refresh();
-    const timer = window.setInterval(refresh, 250);
+    void refresh();
     return () => {
       stopped = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
   }, [isActive]);
 

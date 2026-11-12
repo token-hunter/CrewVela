@@ -150,16 +150,21 @@ export function QuickCommandCenter({ sessions, providers, context = {}, manage =
     if (draft.action === "stop" || draft.action === "delete") setConfirmation(plan);
     else void run(plan);
   };
+  const refreshButton = <button type="button" disabled={busy || loading} onClick={() => setRefresh(n => n + 1)}>重新检测</button>;
+  const configButton = onOpenSettings ? <button type="button" disabled={busy} onClick={onOpenSettings}><GearSixIcon size={18} />配置</button> : null;
+  const searchField = <label className="quick-center-search"><MagnifyingGlassIcon size={19} /><input ref={searchRef} aria-label="搜索快捷指令" placeholder="搜索指令、Agent 或已保存的操作" value={query} onChange={e => setQuery(e.target.value)} /></label>;
   const content = <>
-    <header className="quick-center-header">
-      {!manage && <h2 id={`${id}-title`}>快捷指令</h2>}
-      {manage && <p>管理本机常用操作；执行前核对范围与具体会话。</p>}
-      <div className="quick-center-header-actions"><button type="button" disabled={busy || loading} onClick={() => setRefresh(n => n + 1)}>重新检测</button>
-        {onOpenSettings && <button type="button" disabled={busy} onClick={onOpenSettings}><GearSixIcon size={18} />配置</button>}
-        {!manage && <button type="button" aria-label="关闭快捷指令" disabled={busy} onClick={onClose}><XIcon size={19} /></button>}
+    {/* 设置页内嵌时，页面标题已说明用途：不再重复一段说明，并把「重新检测」并入搜索行节省纵向空间。 */}
+    {!manage && <header className="quick-center-header">
+      <h2 id={`${id}-title`}>快捷指令</h2>
+      <div className="quick-center-header-actions">{refreshButton}
+        {configButton}
+        <button type="button" aria-label="关闭快捷指令" disabled={busy} onClick={onClose}><XIcon size={19} /></button>
       </div>
-    </header>
-    <label className="quick-center-search"><MagnifyingGlassIcon size={19} /><input ref={searchRef} aria-label="搜索快捷指令" placeholder="搜索指令、Agent 或已保存的操作" value={query} onChange={e => setQuery(e.target.value)} /></label>
+    </header>}
+    {manage
+      ? <div className="quick-center-toolbar">{searchField}{refreshButton}{configButton}</div>
+      : searchField}
     {storageError && <p role="alert" className="quick-center-error">{storageError}</p>}
     {(error || availabilityError) && <p role="alert" className="quick-center-error">{error || availabilityError}</p>}
     {notice && <p role="status" className="quick-center-notice">{notice}</p>}

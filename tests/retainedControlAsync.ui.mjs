@@ -32,7 +32,7 @@ try {
   await page.getByRole("button", { name: "采纳", exact: true }).click();
   assert.equal(await editor.inputValue(), "current suggestion");
   await page.getByRole("button", { name: "快捷指挥发送目标", exact: true }).click();
-  await page.getByRole("menuitemradio").filter({ hasText: "全部会话" }).click();
+  await page.getByRole("menuitemradio").filter({ hasText: "选择会话" }).click();
   await page.locator("form.multi-agent-composer").evaluate(form => { form.requestSubmit(); form.requestSubmit(); });
   await pending("fixture_broadcast"); assert.equal(await count("fixture_broadcast"), 1);
   await release("fixture_broadcast", { ok: true, reply: "fixture broadcast queued" });

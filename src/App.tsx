@@ -43,6 +43,7 @@ import { CommunicationDiscoveryHint, CommunicationGuide } from "./components/Com
 import { COMMUNICATION_GUIDE_EVENT, communicationSessions, markCommunicationGuideSeen, resolveCommunicationGuideRequest, type CommunicationGuideRequest, type CommunicationScope } from "./communicationGuide";
 import { TerminalPane } from "./components/TerminalPane";
 import { usePtyPolling } from "./ptyPolling";
+import { keepIfUnchanged } from "./stablePollState";
 import { MultiTerminal } from "./components/MultiTerminal";
 import { ZCodeChat } from "./components/ZCodeChat";
 import { ClaudeChat } from "./components/ClaudeChat";
@@ -435,7 +436,7 @@ export default function App() {
       pending = true;
       try {
         const items = await invoke<SessionSwitchRecord[]>("session_switch_list");
-        if (!disposed) { setSwitchRecords(items); setSwitchRecordsReady(true); }
+        if (!disposed) { setSwitchRecords((current) => keepIfUnchanged(current, items)); setSwitchRecordsReady(true); }
       } catch (error) {
         console.error("加载 Agent 接力记录失败:", error);
       } finally { pending = false; }
@@ -806,8 +807,10 @@ export default function App() {
         invoke<Record<string, SessionUsage>>("session_usages"),
       ]);
       if (!disposed) {
-        if (sessionResult.status === "fulfilled")
-          setUsages(sessionResult.value);
+        if (sessionResult.status === "fulfilled") {
+          const next = sessionResult.value;
+          setUsages((current) => keepIfUnchanged(current, next));
+        }
       }
     };
     void tick();
@@ -2529,12 +2532,16 @@ export default function App() {
                 ) : !multiAgentWorkspaceProjectId && !selectedSession &&
                   !tabSessions.some(item => !sidebarTerminalIds.includes(item.id) && isPtySession(item)) ? (
                   <div className="empty-state">
+                    <span className="empty-state-kicker">CREWVELA</span>
+                    <h1>这个工作区还没有会话</h1>
+                    <p>新建一个 Agent 会话，或从左侧列表选择已有会话；多个 Agent 可以并排运行、互发消息。</p>
                     <button
                       className="btn primary"
                       onClick={openNewSessionDialog}
                     >
                       ＋ 新建会话
                     </button>
+                    <small className="empty-state-hint">想固定在某个目录？点左侧「项目」旁的 + 直接在项目下新建。</small>
                   </div>
                 ) : null}
               </div>

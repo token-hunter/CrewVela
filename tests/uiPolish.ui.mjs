@@ -75,7 +75,7 @@ try {
     await page.locator(".pet-settings-panel").waitFor();
     assert.equal(await page.getByText("赛博女友", { exact: true }).count(), 0);
     await page.screenshot({ animations: "disabled", path: `${output}/${size.name}-pets.png` });
-    await page.getByRole("button", { name: "返回应用", exact: true }).click();
+    await page.getByRole("button", { name: "关闭设置", exact: true }).click();
 
     // Direct launch reuses the existing preview runtime path.
     await direct.click();

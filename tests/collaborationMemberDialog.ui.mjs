@@ -5,7 +5,7 @@ import { mkdirSync } from "node:fs";
 import { chromium, webkit } from "playwright";
 
 const engine = process.env.CREWVELA_BROWSER === "webkit" ? webkit : chromium;
-const browser = await engine.launch(process.env.CREWVELA_BROWSER === "webkit" ? {} : { channel: process.env.CREWVELA_BROWSER_CHANNEL });
+const browser = await engine.launch(process.env.CREWVELA_BROWSER === "webkit" ? {} : { channel: process.env.CREWVELA_BROWSER_CHANNEL || "chrome" });
 const fixtureUrl = `${process.env.CREWVELA_UI_URL || "http://127.0.0.1:1420"}/tests/fixtures/collaboration-member-dialog-ui.html`;
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
