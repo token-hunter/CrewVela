@@ -44,7 +44,7 @@ shasum -a 256 -c CrewVela_0.1.0_macos_aarch64.dmg.sha256
 
 校验通过后打开 DMG，将应用拖入 Applications；替换旧版本前先完整退出应用。使用下载版无需安装 Rust 或克隆源码，但 Node/npm、所用 Agent CLI 与账号仍需本机准备。
 
-该包基于 main 提交 `3ddf245`，包含快捷指令、Agent 自动化、共享记忆更新等源码整合，并保留右侧“开始”页卡片高度等已有修复。包内应用为 `CrewVela.app`。本轮 Node 462 通过、0 失败、5 项原有跳过；构建、生产资源和包校验通过。**Rust 库全量为 1052 通过、1 失败、40 忽略**：ZCode 多轮会话恢复用例完成事件计数不符，单项复跑通过，但不代表问题已修复。新增功能的完整原生交互、系统权限、真实模型及 Windows 实机尚未验收。完整结果见 [Release 说明](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。自行构建见 [Mac 指南](../MACOS-CODEX-HANDOFF.md)。
+该包的应用代码与 main 提交 `fc67a5b` 一致，在 `3ddf245` 版本之上包含全项目审计优化（弹窗层级、主题强调色，模型设置、窄窗格、快捷指令设置页与空工作区的布局，通知文案按平台显示，减少空闲重渲染），并保留右侧“开始”页卡片高度等已有修复。包内应用为 `CrewVela.app`。本轮 Node 473 项（468 通过、0 失败、5 项原有跳过）、浏览器界面套件 59/59；构建、生产资源和包校验通过；Rust 代码未改动，本轮未重跑。DMG 生成时跳过了 Finder 排版脚本，安装窗口没有预设图标位置，将应用拖入 Applications 即可。新增功能的完整原生交互、系统权限、真实模型及 Windows 实机尚未验收。完整结果见 [Release 说明](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。自行构建见 [Mac 指南](../MACOS-CODEX-HANDOFF.md)。
 
 本地 ad-hoc 构建不等于 Developer ID 签名或公证；不提供批量删除隔离属性或关闭 Gatekeeper 的安装步骤。签名凭据不得写入源码或报告。
 
