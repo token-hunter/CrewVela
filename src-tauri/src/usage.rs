@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Seek, SeekFrom};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
@@ -33,15 +33,17 @@ impl SessionUsage {
     }
 }
 
+#[derive(Default)]
 struct TrackedFile {
+    path: Option<PathBuf>,
     offset: u64,
     seen_message_ids: HashSet<String>,
     usage: SessionUsage,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct UsageTracker {
-    files: Mutex<HashMap<String, TrackedFile>>,
+    files: Arc<Mutex<HashMap<String, Arc<Mutex<TrackedFile>>>>>,
 }
 
 /// claude 的项目目录 slug：把 cwd 里非字母数字字符全部转成 '-'
@@ -93,6 +95,9 @@ fn parse_usage_line(line: &str) -> Option<(Option<String>, SessionUsage)> {
 /// 从 tracked.offset 续读文件，累计新出现的 usage。最后一行没写完（进程正在写）
 /// 时不消费，留到下轮；文件被截断/重建（长度 < offset）时重置从头扫。
 fn consume_increment(path: &std::path::Path, tracked: &mut TrackedFile) {
+    if tracked.path.as_deref() != Some(path) {
+        *tracked = TrackedFile { path: Some(path.to_path_buf()), ..TrackedFile::default() };
+    }
     let Ok(file) = std::fs::File::open(path) else {
         return;
     };
@@ -137,17 +142,16 @@ fn consume_increment(path: &std::path::Path, tracked: &mut TrackedFile) {
 impl UsageTracker {
     /// 读取某个会话 transcript 的增量并返回累计用量；文件不存在/读失败返回当前累计。
     pub fn usage_for(&self, session: &SessionRecord) -> SessionUsage {
-        let mut files = self.files.lock().unwrap();
-        let tracked = files
-            .entry(session.id.clone())
-            .or_insert_with(|| TrackedFile {
-                offset: 0,
-                seen_message_ids: HashSet::new(),
-                usage: SessionUsage::default(),
-            });
-        if let Some(path) = transcript_path(session) {
-            consume_increment(&path, tracked);
-        }
+        let Some(path) = transcript_path(session) else {
+            self.drop_session(&session.id);
+            return SessionUsage::default();
+        };
+        // Disk I/O for one transcript must not hold the registry lock and stall
+        // unrelated sessions, including deletion and telemetry refreshes.
+        let tracked = self.files.lock().unwrap().entry(session.id.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(TrackedFile::default()))).clone();
+        let mut tracked = tracked.lock().unwrap();
+        consume_increment(&path, &mut tracked);
         tracked.usage.clone()
     }
 
@@ -172,6 +176,22 @@ impl UsageTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audit_usage_switching_transcript_resets_cursor_and_totals() {
+        let root = std::env::temp_dir().join(format!("crewvela-usage-switch-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let first = root.join("first.jsonl");
+        let second = root.join("second.jsonl");
+        std::fs::write(&first, "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":10}}}\n").unwrap();
+        std::fs::write(&second, "{\"type\":\"assistant\",\"message\":{\"id\":\"m2\",\"usage\":{\"input_tokens\":90}}}\n").unwrap();
+        let mut tracked = TrackedFile::default();
+        consume_increment(&first, &mut tracked);
+        assert_eq!(tracked.usage.input_tokens, 10);
+        consume_increment(&second, &mut tracked);
+        std::fs::remove_dir_all(root).unwrap();
+        assert_eq!(tracked.usage.input_tokens, 90, "a runtime/session switch must not reuse another transcript's cursor");
+    }
 
     #[test]
     fn slug_matches_claude_projects_dir_shape() {
@@ -211,6 +231,7 @@ mod tests {
         .unwrap();
 
         let mut tracked = TrackedFile {
+            path: None,
             offset: 0,
             seen_message_ids: HashSet::new(),
             usage: SessionUsage::default(),
@@ -273,6 +294,7 @@ mod tests {
         .unwrap();
 
         let mut tracked = TrackedFile {
+            path: None,
             offset: 0,
             seen_message_ids: HashSet::new(),
             usage: SessionUsage::default(),

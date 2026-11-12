@@ -202,7 +202,7 @@ fn save_at(path: &Path, file: &ProvidersFile) -> Result<()> {
     write_atomic(&path, json.as_bytes())
 }
 
-fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
+pub(crate) fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
     write_atomic_with(path, contents, |source, destination| fs::rename(source, destination))
 }
 

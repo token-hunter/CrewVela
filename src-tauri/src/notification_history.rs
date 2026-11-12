@@ -93,15 +93,25 @@ impl NotificationHistoryStore {
     }
 
     pub fn append(&self, record: &NotificationHistoryRecord) -> Result<()> {
-        self.prune()?;
-        if record.created_at < Self::cutoff(Utc::now().timestamp_millis()) {
-            return Ok(());
-        }
-        self.connect()?.execute(
+        self.import(std::slice::from_ref(record))
+    }
+
+    pub fn import(&self, records: &[NotificationHistoryRecord]) -> Result<()> {
+        let mut connection = self.connect()?;
+        let transaction = connection.transaction()?;
+        let cutoff = Self::cutoff(Utc::now().timestamp_millis());
+        transaction.execute(
+            "DELETE FROM notification_history WHERE created_at < ?1 OR category = 'terminal'",
+            params![cutoff],
+        )?;
+        let mut insert = transaction.prepare(
             "INSERT INTO notification_history(id,title,body,category,created_at,is_read,url)
              VALUES (?1,?2,?3,?4,?5,?6,?7)
              ON CONFLICT(id) DO NOTHING",
-            params![
+        )?;
+        for record in records {
+            if record.created_at < cutoff || record.category == "terminal" { continue; }
+            insert.execute(params![
                 record.id,
                 record.title,
                 record.body,
@@ -109,15 +119,10 @@ impl NotificationHistoryStore {
                 record.created_at,
                 i64::from(record.read),
                 record.url,
-            ],
-        )?;
-        Ok(())
-    }
-
-    pub fn import(&self, records: &[NotificationHistoryRecord]) -> Result<()> {
-        for record in records {
-            self.append(record)?;
+            ])?;
         }
+        drop(insert);
+        transaction.commit()?;
         Ok(())
     }
 
@@ -139,6 +144,37 @@ impl NotificationHistoryStore {
 mod tests {
     use super::*;
     use uuid::Uuid;
+
+    #[test]
+    fn audit_import_is_atomic_when_a_later_insert_fails() {
+        let path = std::env::temp_dir().join(format!("crewvela-notification-import-{}.db", Uuid::new_v4()));
+        let store = NotificationHistoryStore::open_at(path.clone()).unwrap();
+        store.connect().unwrap().execute_batch("CREATE TRIGGER reject_bad BEFORE INSERT ON notification_history WHEN NEW.id = 'bad' BEGIN SELECT RAISE(ABORT, 'fixture failure'); END;").unwrap();
+        let now = Utc::now().timestamp_millis();
+        let result = store.import(&[record("first", now), record("bad", now)]);
+        let remaining = store.list().unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert!(result.is_err());
+        assert!(remaining.is_empty(), "failed imports must roll back instead of silently keeping a partial batch");
+    }
+
+    #[test]
+    fn audit_import_batch_preserves_deduplication_retention_and_read_state() {
+        let path = std::env::temp_dir().join(format!("crewvela-notification-batch-{}.db", Uuid::new_v4()));
+        let store = NotificationHistoryStore::open_at(path.clone()).unwrap();
+        let now = Utc::now().timestamp_millis();
+        let mut records: Vec<_> = (0..500).map(|i| record(&format!("row-{i}"), now)).collect();
+        records[0].read = true;
+        records.push(record("row-0", now));
+        records.push(record("expired", now - 31 * MILLIS_PER_DAY));
+        let started = std::time::Instant::now();
+        store.import(&records).unwrap();
+        eprintln!("notification import 500 rows: {:?}", started.elapsed());
+        let remaining = store.list().unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(remaining.len(), 500);
+        assert!(remaining.iter().find(|row| row.id == "row-0").unwrap().read);
+    }
 
     fn record(id: &str, created_at: i64) -> NotificationHistoryRecord {
         NotificationHistoryRecord {

@@ -167,6 +167,14 @@ fn to_err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// Slow filesystem, database and CLI work must leave both the window thread
+/// and Tokio's event-loop workers available for input, cancellation and IPC.
+async fn blocking_command<T: Send + 'static>(
+    operation: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(operation).await.map_err(to_err)?
+}
+
 #[tauri::command]
 fn get_runtime_preferences() -> Result<runtime_preferences::RuntimePreferences, String> {
     runtime_preferences::get().map_err(to_err)
@@ -576,41 +584,56 @@ fn read_skin_config_file(source_path: String) -> Result<String, String> {
 // ---- 通知历史 ----
 
 #[tauri::command]
-fn notification_history_list(
+async fn notification_history_list(
     state: State<'_, NotificationHistoryStore>,
 ) -> Result<Vec<NotificationHistoryRecord>, String> {
-    state.list().map_err(to_err)
+    let state = state.inner().clone();
+    blocking_command(move || {
+        state.list().map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn notification_history_append(
+async fn notification_history_append(
     record: NotificationHistoryRecord,
     state: State<'_, NotificationHistoryStore>,
 ) -> Result<Vec<NotificationHistoryRecord>, String> {
-    state.append(&record).map_err(to_err)?;
-    state.list().map_err(to_err)
+    let state = state.inner().clone();
+    blocking_command(move || {
+        state.append(&record).map_err(to_err)?;
+        state.list().map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn notification_history_import(
+async fn notification_history_import(
     records: Vec<NotificationHistoryRecord>,
     state: State<'_, NotificationHistoryStore>,
 ) -> Result<Vec<NotificationHistoryRecord>, String> {
-    state.import(&records).map_err(to_err)?;
-    state.list().map_err(to_err)
+    let state = state.inner().clone();
+    blocking_command(move || {
+        state.import(&records).map_err(to_err)?;
+        state.list().map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn notification_history_mark_all_read(
+async fn notification_history_mark_all_read(
     state: State<'_, NotificationHistoryStore>,
 ) -> Result<Vec<NotificationHistoryRecord>, String> {
-    state.mark_all_read().map_err(to_err)?;
-    state.list().map_err(to_err)
+    let state = state.inner().clone();
+    blocking_command(move || {
+        state.mark_all_read().map_err(to_err)?;
+        state.list().map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn notification_history_clear(state: State<'_, NotificationHistoryStore>) -> Result<(), String> {
-    state.clear().map_err(to_err)
+async fn notification_history_clear(state: State<'_, NotificationHistoryStore>) -> Result<(), String> {
+    let state = state.inner().clone();
+    blocking_command(move || {
+        state.clear().map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -1182,16 +1205,20 @@ fn ma_send_message(
 }
 
 #[tauri::command]
-fn workspace_list_directory(
+async fn workspace_list_directory(
     root: String,
     relative_path: String,
 ) -> Result<Vec<workspace_files::WorkspaceFileEntry>, String> {
-    workspace_files::list_directory(&root, &relative_path).map_err(to_err)
+    blocking_command(move || {
+        workspace_files::list_directory(&root, &relative_path).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn workspace_read_text(root: String, relative_path: String) -> Result<String, String> {
-    workspace_files::read_text(&root, &relative_path).map_err(to_err)
+async fn workspace_read_text(root: String, relative_path: String) -> Result<String, String> {
+    blocking_command(move || {
+        workspace_files::read_text(&root, &relative_path).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -1228,13 +1255,15 @@ fn workspace_open_path(root: String, relative_path: String) -> Result<(), String
 }
 
 #[tauri::command]
-fn workspace_write_text(
+async fn workspace_write_text(
     root: String,
     relative_path: String,
     contents: String,
     expected_contents: String,
 ) -> Result<u64, String> {
-    workspace_files::write_text(&root, &relative_path, &contents, &expected_contents).map_err(to_err)
+    blocking_command(move || {
+        workspace_files::write_text(&root, &relative_path, &contents, &expected_contents).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -2722,8 +2751,11 @@ fn open_terminal_session(
 }
 
 #[tauri::command]
-fn skill_center_snapshot(state: State<'_, SkillCenter>) -> Result<SkillCenterSnapshot, String> {
-    state.snapshot().map_err(to_err)
+async fn skill_center_snapshot(app: AppHandle) -> Result<SkillCenterSnapshot, String> {
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.snapshot().map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -2811,9 +2843,12 @@ async fn skill_center_sync_update(
 #[tauri::command]
 async fn skill_center_import(
     input: ImportSkillInput,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<Vec<SkillAsset>, String> {
-    state.import(input).map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.import(input).map_err(to_err)
+    }).await
 }
 #[tauri::command]
 fn skill_center_market_repositories(
@@ -2840,9 +2875,12 @@ fn skill_center_market_repository_delete(
 
 #[tauri::command]
 async fn skill_center_market_browse(
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<SkillMarketBrowseResult, String> {
-    state.browse_market().map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.browse_market().map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -2861,9 +2899,12 @@ async fn skill_center_skills_sh_search(
 #[tauri::command]
 async fn skill_center_market_install(
     input: InstallSkillMarketInput,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<SkillAsset, String> {
-    state.install_market(input).map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.install_market(input).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -2876,60 +2917,78 @@ fn skill_center_set_trust(
 }
 
 #[tauri::command]
-fn skill_center_delete_asset(
+async fn skill_center_delete_asset(
     skill_id: String,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<(), String> {
-    state.delete_asset(&skill_id).map_err(to_err)
+    blocking_command(move || app.state::<SkillCenter>().delete_asset(&skill_id).map_err(to_err)).await
 }
 
 #[tauri::command]
-fn skill_center_preview(
+async fn skill_center_preview(
     skill_id: String,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<SkillPreview, String> {
-    state.preview(&skill_id).map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.preview(&skill_id).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn skill_center_read_file(
+async fn skill_center_read_file(
     skill_id: String,
     relative_path: String,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<String, String> {
-    state.read_file(&skill_id, &relative_path).map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.read_file(&skill_id, &relative_path).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn skill_center_discover(
+async fn skill_center_discover(
     project_paths: Vec<String>,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<Vec<DiscoveredSkill>, String> {
-    state.discover(&project_paths).map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.discover(&project_paths).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn skill_center_deploy_batch(
+async fn skill_center_deploy_batch(
     inputs: Vec<DeploySkillInput>,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<Vec<SkillDeployment>, String> {
-    state.deploy_batch(inputs).map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.deploy_batch(inputs).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn skill_center_undeploy(
+async fn skill_center_undeploy(
     deployment_id: String,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<(), String> {
-    state.undeploy(&deployment_id).map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.undeploy(&deployment_id).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
-fn skill_center_undeploy_batch(
+async fn skill_center_undeploy_batch(
     deployment_ids: Vec<String>,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<(), String> {
-    state.undeploy_batch(deployment_ids).map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.undeploy_batch(deployment_ids).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -2946,12 +3005,15 @@ fn skill_center_delete_set(id: String, state: State<'_, SkillCenter>) -> Result<
 }
 
 #[tauri::command]
-fn skill_center_apply_set(
+async fn skill_center_apply_set(
     id: String,
     trust_confirmed: bool,
-    state: State<'_, SkillCenter>,
+    app: AppHandle,
 ) -> Result<Vec<SkillDeployment>, String> {
-    state.apply_skill_set(&id, trust_confirmed).map_err(to_err)
+    blocking_command(move || {
+        let state = app.state::<SkillCenter>();
+        state.apply_skill_set(&id, trust_confirmed).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -4364,23 +4426,29 @@ fn cancel_pi_chat_turn(
 }
 
 #[tauri::command]
-fn list_sessions(
+async fn list_sessions(
     app: AppHandle,
     state: State<'_, SessionManager>,
 ) -> Result<Vec<SessionRecord>, String> {
-    state.ingest_events().map_err(to_err)?;
-    flush_title_summaries(&app, &state);
-    Ok(state.list())
+    let state = state.inner().clone();
+    blocking_command(move || {
+        state.ingest_events().map_err(to_err)?;
+        flush_title_summaries(&app, &state);
+        Ok(state.list())
+    }).await
 }
 
 #[tauri::command]
-fn list_archived_sessions(
+async fn list_archived_sessions(
     app: AppHandle,
     state: State<'_, SessionManager>,
 ) -> Result<Vec<SessionRecord>, String> {
-    state.ingest_events().map_err(to_err)?;
-    flush_title_summaries(&app, &state);
-    Ok(state.list_archived())
+    let state = state.inner().clone();
+    blocking_command(move || {
+        state.ingest_events().map_err(to_err)?;
+        flush_title_summaries(&app, &state);
+        Ok(state.list_archived())
+    }).await
 }
 
 #[tauri::command]
@@ -4391,48 +4459,55 @@ fn session_snapshot(app: AppHandle, state: State<'_, SessionManager>) -> Vec<Ses
 
 /// 全部会话的累计 token 用量（增量解析 transcript；前端低频轮询）。
 #[tauri::command]
-fn session_usages(
+async fn session_usages(
     session_state: State<'_, SessionManager>,
     usage_state: State<'_, UsageTracker>,
-) -> HashMap<String, SessionUsage> {
-    usage_state.usage_batch(&session_state.list())
+) -> Result<HashMap<String, SessionUsage>, String> {
+    let session_state = session_state.inner().clone();
+    let usage_state = usage_state.inner().clone();
+    blocking_command(move || Ok(usage_state.usage_batch(&session_state.list()))).await
 }
 
 #[tauri::command]
-fn session_telemetry(
+async fn session_telemetry(
     session_ids: Option<Vec<String>>,
     session_state: State<'_, SessionManager>,
     pty_state: State<'_, PtyManager>,
     usage_state: State<'_, UsageTracker>,
 ) -> Result<Vec<RuntimeTelemetrySnapshot>, String> {
-    session_state.ingest_events().map_err(to_err)?;
-    let requested = session_ids.map(|ids| ids.into_iter().collect::<HashSet<_>>());
-    let sessions = session_state
-        .list()
-        .into_iter()
-        .filter(|session| {
-            requested
-                .as_ref()
-                .map_or(true, |ids| ids.contains(&session.id))
-        })
-        .collect::<Vec<_>>();
-    Ok(telemetry::snapshot_batch(
-        &sessions,
-        pty_state.inner(),
-        usage_state.inner(),
-    ))
+    let session_state = session_state.inner().clone();
+    let pty_state = pty_state.inner().clone();
+    let usage_state = usage_state.inner().clone();
+    blocking_command(move || {
+        session_state.ingest_events().map_err(to_err)?;
+        let requested = session_ids.map(|ids| ids.into_iter().collect::<HashSet<_>>());
+        let sessions = session_state
+            .list()
+            .into_iter()
+            .filter(|session| {
+                requested
+                    .as_ref()
+                    .map_or(true, |ids| ids.contains(&session.id))
+            })
+            .collect::<Vec<_>>();
+        Ok(telemetry::snapshot_batch(
+            &sessions,
+            &pty_state,
+            &usage_state,
+        ))
+    }).await
 }
 
 /// 历史会话内容回看：transcript 尾部 200 条消息（user/assistant/tool 摘要）。
 #[tauri::command]
-fn session_transcript(
+async fn session_transcript(
     session_id: String,
     session_state: State<'_, SessionManager>,
 ) -> Result<Vec<TranscriptMessage>, String> {
     let record = session_state
         .get(&session_id)
         .ok_or_else(|| format!("未找到会话: {session_id}"))?;
-    transcript::read_transcript(&record, 200).map_err(to_err)
+    blocking_command(move || transcript::read_transcript(&record, 200).map_err(to_err)).await
 }
 
 #[tauri::command]
@@ -6743,6 +6818,36 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test(flavor = "current_thread")]
+    async fn audit_blocking_commands_leave_the_event_loop_responsive_and_preserve_errors() {
+        let (release, wait) = std::sync::mpsc::channel();
+        let task = super::blocking_command(move || {
+            wait.recv_timeout(std::time::Duration::from_secs(2)).map_err(super::to_err)?;
+            Ok(42)
+        });
+        tokio::pin!(task);
+        let still_running = tokio::time::timeout(std::time::Duration::from_millis(50), &mut task).await;
+        release.send(()).unwrap();
+        assert!(still_running.is_err(), "the event-loop timer must fire while the worker waits");
+        assert_eq!(task.await.unwrap(), 42);
+        assert_eq!(super::blocking_command(|| Err::<(), _>("fixture failure".to_string())).await.unwrap_err(), "fixture failure");
+    }
+
+    #[tokio::test]
+    async fn audit_workspace_command_roundtrip_preserves_conflicts_and_path_boundaries() {
+        let root = std::env::temp_dir().join(format!("crewvela-command-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("test.txt"), "before").unwrap();
+        let dir = root.to_string_lossy().into_owned();
+        assert_eq!(super::workspace_list_directory(dir.clone(), "".into()).await.unwrap().len(), 1);
+        assert_eq!(super::workspace_read_text(dir.clone(), "test.txt".into()).await.unwrap(), "before");
+        super::workspace_write_text(dir.clone(), "test.txt".into(), "after".into(), "before".into()).await.unwrap();
+        let conflict = super::workspace_write_text(dir.clone(), "test.txt".into(), "stale".into(), "before".into()).await;
+        assert!(conflict.unwrap_err().contains("其他程序修改"));
+        assert!(super::workspace_read_text(dir.clone(), "../outside.txt".into()).await.is_err());
+        assert_eq!(std::fs::read_to_string(root.join("test.txt")).unwrap(), "after");
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use super::*;
 
     #[cfg(windows)]

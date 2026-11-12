@@ -6,6 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
 const PROJECTS_VERSION: u32 = 1;
+static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 项目徽标配色板：按创建顺序循环取用，用户无需关心配色。
 pub const BADGE_PALETTE: [&str; 8] = [
@@ -57,7 +58,8 @@ fn load_from(path: &std::path::Path) -> Result<ProjectsFile> {
 
 fn save_to(path: &std::path::Path, file: &ProjectsFile) -> Result<()> {
     let json = serde_json::to_string_pretty(file)?;
-    fs::write(path, json).with_context(|| format!("写入项目配置失败: {}", path.display()))
+    crate::providers::write_atomic(path, json.as_bytes())
+        .with_context(|| format!("写入项目配置失败: {}", path.display()))
 }
 
 pub fn list() -> Result<Vec<Project>> {
@@ -80,6 +82,7 @@ fn default_name(path: &str) -> String {
 }
 
 fn create_at(path: &std::path::Path, name: Option<&str>, dir: &str) -> Result<Project> {
+    let _guard = STORE_LOCK.lock().map_err(|_| anyhow!("项目配置锁不可用"))?;
     let dir = dir.trim();
     if dir.is_empty() {
         return Err(anyhow!("项目目录不能为空"));
@@ -122,6 +125,7 @@ fn update_at(
     name: Option<&str>,
     badge_color: Option<&str>,
 ) -> Result<Project> {
+    let _guard = STORE_LOCK.lock().map_err(|_| anyhow!("项目配置锁不可用"))?;
     let mut file = load_from(path)?;
     let project = file
         .projects
@@ -145,6 +149,7 @@ pub fn update(id: &str, name: Option<&str>, badge_color: Option<&str>) -> Result
 }
 
 fn delete_at(path: &std::path::Path, id: &str) -> Result<()> {
+    let _guard = STORE_LOCK.lock().map_err(|_| anyhow!("项目配置锁不可用"))?;
     let mut file = load_from(path)?;
     let before = file.projects.len();
     file.projects.retain(|project| project.id != id);
@@ -170,6 +175,30 @@ fn now_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audit_concurrent_project_creates_preserve_every_successful_write() {
+        let root = test_dir("concurrent");
+        let store = root.join("projects.json");
+        let barrier = std::sync::Barrier::new(16);
+        let dirs: Vec<_> = (0..16).map(|i| {
+            let dir = root.join(format!("project-{i}"));
+            fs::create_dir(&dir).unwrap();
+            dir
+        }).collect();
+        let results = std::thread::scope(|scope| {
+            let handles: Vec<_> = dirs.iter().map(|dir| {
+                let barrier = &barrier;
+                let store = &store;
+                scope.spawn(move || { barrier.wait(); create_at(store, None, dir.to_str().unwrap()) })
+            }).collect();
+            handles.into_iter().map(|handle| handle.join().unwrap()).collect::<Vec<_>>()
+        });
+        let stored = load_from(&store);
+        fs::remove_dir_all(root).unwrap();
+        assert!(results.iter().all(Result::is_ok), "concurrent saves failed: {results:?}");
+        assert_eq!(stored.unwrap().projects.len(), 16, "successful saves must not overwrite other projects");
+    }
 
     fn test_dir(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
