@@ -191,20 +191,28 @@ export type AutomationTrigger =
   | { kind: "daily"; hour: number; minute: number }
   | { kind: "weekly"; weekdays: number[]; hour: number; minute: number }
   | { kind: "cron"; expr: string }
-  | { kind: "on_session_event"; event: "completed" | "failed" };
+  | { kind: "on_session_event"; event: "completed" | "failed" }
+  | { kind: "on_session_event_filtered"; event: "completed" | "failed"; runtimeKind: AgentRuntimeKind | null; projectId: string | null; sessionId: string | null };
+// Legacy actions remain readable; new forms persist Agent identity explicitly.
 
 export type AutomationAction =
+  | { kind: "run_agent"; runtimeKind: AgentRuntimeKind; providerId: string | null; model: string | null; cwd: string; prompt: string }
+  | { kind: "send_agent"; runtimeKind: AgentRuntimeKind; sessionId: string; body: string; projectId: string | null; agentId: string | null }
+  | { kind: "broadcast_agent"; runtimeKind: AgentRuntimeKind; body: string }
   | { kind: "launch"; providerId: string; cwd: string | null; prompt: string; projectId?: string | null; agentId?: string | null }
   | { kind: "message"; sessionId: string; body: string; projectId?: string | null; agentId?: string | null }
   | { kind: "broadcast"; body: string };
 
 export interface AutomationRun {
+  stage?: "queued" | "failed" | "skipped" | null;
   at: number;
   ok: boolean;
   detail: string;
 }
 
 export interface Automation {
+  overlapPolicy?: "skip" | "allow";
+  activeSessionIds?: string[];
   id: string;
   name: string;
   enabled: boolean;
@@ -221,6 +229,7 @@ export interface Automation {
 }
 
 export interface NewAutomation {
+  overlapPolicy?: "skip" | "allow";
   name: string;
   trigger: AutomationTrigger;
   action: AutomationAction;
@@ -229,6 +238,8 @@ export interface NewAutomation {
 }
 
 export interface SessionRecord {
+  /** Session-scoped model override; omitted for legacy/local-default sessions. */
+  launchModel?: string | null;
   /** 一次性执行日志宿主不能接收普通聊天或 Agent 接力。 */
   runtimeCommandHost?: boolean;
   id: string;

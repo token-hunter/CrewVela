@@ -300,8 +300,7 @@ async fn check(agent: SetupAgent, project_dir: String) -> Result<CheckReport> {
         args: vec![],
         env: Default::default(),
         url: Some(format!("{}/mcp", url.trim_end_matches('/'))),
-        headers: std::env::var("AI_MEMORY_AUTH_TOKEN").ok().filter(|token| !token.is_empty())
-            .map(|token| ("Authorization".into(), format!("Bearer {token}"))).into_iter().collect(),
+        headers: auth::headers(&data_dir()?, &url)?,
         enabled: true,
         source_plugin: None,
         created_at: 0,

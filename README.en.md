@@ -81,7 +81,7 @@ These are the integration entry points implemented in the project. Availability 
 | ZCode | ZCode CLI | ZCode Desktop |
 | DeepSeek Harness | Not currently supported | DeepSeek Harness |
 
-CrewVela does not include model subscriptions or agent accounts. The shared-memory quick setup currently targets Claude Code and Codex on Windows x64. See the [user guide](docs/user-guide.md) for other integration paths and requirements.
+CrewVela does not include model subscriptions or agent accounts. Shared-memory quick setup in source supports Claude Code and Codex on Windows x64 and macOS Apple Silicon / Intel, discovers official stable releases, and explicitly updates managed installs after backing up data and integration configs. Native Mac first-use and upgrade acceptance are pending; existing Release assets are not updated automatically. See the [user guide](docs/user-guide.md) for other integration paths and requirements.
 
 ## Get started
 

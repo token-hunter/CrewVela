@@ -348,6 +348,8 @@ pub enum ApprovalPolicy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRecord {
+    #[serde(default)]
+    pub launch_model: Option<String>,
     pub id: String,
     pub claude_session_id: String,
     #[serde(default)]
@@ -687,6 +689,7 @@ impl SessionManager {
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_millis();
         let record = SessionRecord {
+            launch_model: None,
             id: id.clone(),
             claude_session_id: id,
             kind: SessionKind::Claude,
@@ -731,6 +734,7 @@ impl SessionManager {
         let now = now_millis();
         let shell_name = input.shell.display_name();
         let record = SessionRecord {
+            launch_model: None,
             id: id.clone(),
             claude_session_id: String::new(),
             kind: SessionKind::Terminal,
@@ -818,6 +822,7 @@ impl SessionManager {
         };
         let now = now_millis();
         let record = SessionRecord {
+            launch_model: None,
             id,
             claude_session_id: String::new(),
             kind: SessionKind::Terminal,
@@ -898,6 +903,7 @@ impl SessionManager {
             _ => input.runtime_kind.clone(),
         };
         let record = SessionRecord {
+            launch_model: None,
             id,
             claude_session_id: String::new(),
             kind: SessionKind::Terminal,
@@ -1049,6 +1055,16 @@ impl SessionManager {
             self.events_dir.display().to_string(),
             app_session_id.to_string(),
         ])
+    }
+
+    pub fn set_launch_model(&self, id: &str, model: Option<String>) -> Result<SessionRecord> {
+        let mut data = self.data.lock().unwrap();
+        let mut candidate = data.clone();
+        let record = candidate.sessions.iter_mut().find(|s| s.id == id).ok_or_else(|| anyhow!("未找到会话: {id}"))?;
+        record.launch_model = model;
+        let updated = record.clone();
+        self.persist_candidate(&mut data, candidate)?;
+        Ok(updated)
     }
 
     pub fn get(&self, id: &str) -> Option<SessionRecord> {

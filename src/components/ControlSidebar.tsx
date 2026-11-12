@@ -11,6 +11,8 @@ import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { WarningCircleIcon } from "@phosphor-icons/react/dist/csr/WarningCircle";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { InterventionCenter } from "./InterventionCenter";
+import { QuickCommandCenter } from "./QuickCommandCenter";
+import type { QuickCommand, QuickContext } from "../quickCommands";
 import { MultiAgentControl } from "./MultiAgentControl";
 import {
   CONTROL_SURFACE_STORAGE_KEY,
@@ -33,6 +35,8 @@ import type {
 } from "../types";
 
 interface Props {
+  quickContext?: QuickContext;
+  onOpenQuickSettings?: () => void;
   open: boolean;
   active?: boolean;
   variant?: "docked" | "detached";
@@ -55,7 +59,7 @@ interface ChatMessage extends ControlHistoryMessage {
 }
 
 const SUGGESTIONS = [
-  "打开1个deepseek、1个glm、1个kimi、1个minimax",
+  "打开1个deepseek、1个glm、1个kimi",
   "打开1个glm、1个kimi",
   "把“检查当前项目并给出下一步建议”发送给所有会话",
 ];
@@ -128,6 +132,8 @@ function loadDraft(): string {
 }
 
 export function ControlSidebar({
+  quickContext,
+  onOpenQuickSettings,
   open,
   active,
   variant = "docked",
@@ -144,6 +150,7 @@ export function ControlSidebar({
   onOpenMultiAgentWorkspace,
 }: Props) {
   const isActive = active ?? open;
+  const [quickCommand, setQuickCommand] = useState<Partial<QuickCommand> | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
   const [draft, setDraft] = useState(loadDraft);
   const [busy, setBusy] = useState(false);
@@ -408,26 +415,13 @@ export function ControlSidebar({
     }
 
     if (plan.intent === "broadcast" && plan.prompt) {
-      const receipt = await invoke<BroadcastReceipt>("broadcast_prompt", {
-        prompt: plan.prompt,
-      });
-      return `已加入 ${receipt.targetCount} 个运行会话的发送队列；会话保持运行时，忙碌会话会在空闲后自动接收。`;
+      setQuickCommand({ action: "send", body: plan.prompt, scope: "all" });
+      return "请在快捷指令中选择具体会话，核对后确认发送；尚未排队。";
     }
-
-    if (plan.intent === "stop_all") {
-      const targetCount = sessions.filter((session) => session.ptyId !== null).length;
-      if (targetCount === 0) return "当前没有运行会话。";
-      await invoke("pty_kill_all");
-      await refreshSessions();
-      return `已关闭 ${targetCount} 个运行会话。`;
-    }
-
-    if (plan.intent === "delete_all") {
-      if (sessions.length === 0) return "当前没有可删除的会话。";
-      const deletedCount = await invoke<number>("delete_all_sessions");
-      await refreshSessions();
-      setTrustStatus(EMPTY_TRUST_STATUS);
-      return `已删除 ${deletedCount} 个会话。`;
+    if (plan.intent === "stop_all" || plan.intent === "delete_all") {
+      const action = plan.intent === "stop_all" ? "stop" : "delete";
+      setQuickCommand({ id: `builtin:${action}`, title: action === "stop" ? "批量停止会话" : "批量从列表删除会话", action, scope: "all", body: "" });
+      return "请在快捷指令中核对目标并二次确认；尚未执行批量操作。";
     }
 
     return "";
@@ -552,53 +546,13 @@ export function ControlSidebar({
   };
 
   const broadcast = async (content: string) => {
-    if (liveCount === 0) return;
-    await runUserAction(
-      content,
-      async (prompt) => {
-        const receipt = await invoke<BroadcastReceipt>("broadcast_prompt", {
-          prompt,
-        });
-        return {
-          content: `已发送至全部 ${receipt.targetCount} 个运行会话；忙碌会话会在空闲后自动接收。`,
-          tone: "result",
-        };
-      },
-      "发送至全部失败",
-    );
+    if (content.trim()) setQuickCommand({ action: "send", body: content.trim(), scope: "all" });
   };
 
-  const executeQuickBroadcast = async (
-    content: string,
-  ): Promise<ControlCommandResult> => {
-    const message = content.trim();
-    if (!message || busy || commandInFlight.current) {
-      return { ok: false, reply: "快捷指挥正在忙，请稍后再试。" };
-    }
-    if (liveCount === 0) {
-      return { ok: false, reply: "当前没有运行会话。" };
-    }
-    commandInFlight.current = true;
-    setMessages((items) => [
-      ...items,
-      { id: messageId(), role: "user", content: message },
-    ]);
-    setBusy(true);
-    try {
-      const receipt = await invoke<BroadcastReceipt>("broadcast_prompt", {
-        prompt: message,
-      });
-      const reply = `已发送至全部 ${receipt.targetCount} 个运行会话；忙碌会话会在空闲后自动接收。`;
-      appendAssistant(reply, "result");
-      return { ok: true, reply };
-    } catch (reason) {
-      const reply = `发送至全部失败：${String(reason)}`;
-      appendAssistant(reply, "error");
-      return { ok: false, reply };
-    } finally {
-      commandInFlight.current = false;
-      setBusy(false);
-    }
+  const executeQuickBroadcast = async (content: string): Promise<ControlCommandResult> => {
+    if (!content.trim()) return { ok: false, reply: "请填写消息内容。" };
+    setQuickCommand({ action: "send", body: content.trim(), scope: "all" });
+    return { ok: true, reply: "请在快捷指令中核对目标后确认发送；尚未排队。" };
   };
 
   const changePermissionMode = async (
@@ -813,6 +767,7 @@ export function ControlSidebar({
             onOpenWorkspace={onOpenMultiAgentWorkspace}
             focusedProjectId={focusedCollaborationProject?.id}
             focusedProjectRequest={focusedCollaborationProject?.request}
+            onOpenQuickCommands={() => setQuickCommand({})}
             onQuickCommand={executeQuickCommand}
             onQuickBroadcast={executeQuickBroadcast}
             onQuickPermissionModeChange={changePermissionMode}
@@ -832,6 +787,7 @@ export function ControlSidebar({
           />
         </div>
       </aside>
+      {quickCommand !== null && <QuickCommandCenter sessions={sessions} providers={providers} context={quickContext} initialCommand={quickCommand} onClose={() => setQuickCommand(null)} onSessionsChange={onSessionsChange} onOpenSettings={onOpenQuickSettings ? () => { setQuickCommand(null); onOpenQuickSettings(); } : undefined} />}
     </div>
   );
 }

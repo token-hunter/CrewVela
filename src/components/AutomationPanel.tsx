@@ -1,3 +1,8 @@
+import { buildAutomationAction, eventAutomationTrigger, automationSessions, automationProjectRuntime, AUTOMATION_LABELS, type AutomationFormAction } from "../automationForm";
+import { TERMINAL_RUNTIMES } from "../runtimeTaxonomy";
+import { open as openDirectory } from "@tauri-apps/plugin-dialog";
+import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
+import { StackIcon } from "@phosphor-icons/react/dist/csr/Stack";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -18,6 +23,8 @@ import type {
   ProviderConfig,
   SessionRecord,
   AgentProfile,
+  AgentRuntimeKind,
+  RuntimeProbe,
   MultiAgentProject,
 } from "../types";
 
@@ -26,6 +33,7 @@ interface Props {
   providers: ProviderConfig[];
   onClose?: () => void;
   embedded?: boolean;
+  onFormOpenChange?: (open: boolean) => void;
 }
 
 const pad = (value: number) => String(value).padStart(2, "0");
@@ -51,11 +59,15 @@ function truncate(value: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-export function AutomationPanel({ sessions, providers, onClose, embedded = false }: Props) {
+export function AutomationPanel({ sessions, providers, onClose, embedded = false, onFormOpenChange }: Props) {
   const { ready: availabilityReady, error: availabilityError, prefs: runtimePreferences, isRuntimeEnabled } = useRuntimeAvailability();
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  useEffect(() => {
+    onFormOpenChange?.(formOpen);
+    return () => onFormOpenChange?.(false);
+  }, [formOpen, onFormOpenChange]);
   const [busy, setBusy] = useState(false);
   const mutationInFlight = useRef(false);
   const listSequence = useRef(0);
@@ -65,7 +77,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
   // "on_completed"/"on_failed" 是表单层合成值，buildTrigger 转成 on_session_event。
   const [triggerKind, setTriggerKind] = useState<
     AutomationTrigger["kind"] | "on_completed" | "on_failed"
-  >("interval");
+  >("daily");
   const [onceAt, setOnceAt] = useState("");
   const [intervalMinutes, setIntervalMinutes] = useState("30");
   const [dailyTime, setDailyTime] = useState("09:00");
@@ -75,54 +87,43 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
   const [cronPreview, setCronPreview] = useState<
     { state: "idle" } | { state: "ok"; runs: number[] } | { state: "error"; message: string }
   >({ state: "idle" });
-  const [actionKind, setActionKind] = useState<AutomationAction["kind"]>("message");
-  const [launchProviderId, setLaunchProviderId] = useState("");
-  const [launchCwd, setLaunchCwd] = useState("");
-  const [launchPrompt, setLaunchPrompt] = useState("");
-  const [launchTargetMode, setLaunchTargetMode] = useState<"provider" | "agent">("provider");
-  const [messageSessionId, setMessageSessionId] = useState("");
-  const [messageTargetMode, setMessageTargetMode] = useState<"session" | "agent">("session");
-  const [messageBody, setMessageBody] = useState("");
-  const [broadcastBody, setBroadcastBody] = useState("");
+  const [form, setForm] = useState<AutomationFormAction>({ runtime: "", mode: "new", source: "local", providerId: "", model: "", cwd: "", prompt: "", sessionId: "", projectId: "", agentId: "" });
+  const patchForm = (patch: Partial<AutomationFormAction>) => setForm(current => ({ ...current, ...patch }));
   const [maxRuns, setMaxRuns] = useState("");
+  const [maxFailures, setMaxFailures] = useState("3");
+  const [overlap, setOverlap] = useState<"skip" | "allow">("skip");
+  const [eventSource, setEventSource] = useState<"session" | "runtime" | "project">("session");
+  const [eventSourceId, setEventSourceId] = useState("");
+  const [eventRuntime, setEventRuntime] = useState<AgentRuntimeKind | "">("");
   const [targetProjects, setTargetProjects] = useState<MultiAgentProject[]>([]);
-  const [targetProjectId, setTargetProjectId] = useState("");
   const [targetAgents, setTargetAgents] = useState<AgentProfile[]>([]);
-  const [targetAgentId, setTargetAgentId] = useState("");
-
-  const claudeSessions = sessions.filter((session) => session.kind === "claude" && isRuntimeEnabled(session.agentRuntimeKind ?? "claude_code"));
-
+  const [probes, setProbes] = useState<RuntimeProbe[]>([]);
+  const [probeError, setProbeError] = useState<string | null>(null);
+  const [probeLoading, setProbeLoading] = useState(false);
+  const [probeRevision, setProbeRevision] = useState(0);
+  const nativeBase: Partial<Record<AgentRuntimeKind, AgentRuntimeKind>> = { claude_chat: "claude_code", codex_chat: "codex", kimi_chat: "kimi_code", pi_chat: "pi", opencode_chat: "opencode" };
+  const runtimeOptions = Object.entries(AUTOMATION_LABELS).filter(([kind]) => isRuntimeEnabled(kind as AgentRuntimeKind) && probes.some(p => p.kind === (nativeBase[kind as AgentRuntimeKind] ?? kind) && p.installed && !p.error));
+  const availableSessions = form.runtime ? automationSessions(sessions, form.runtime) : [];
+  const availableAgents = targetAgents.filter(a => a.enabled && a.runtimeKind === form.runtime && isRuntimeEnabled(a.runtimeKind));
   useEffect(() => {
     if (!formOpen) return;
-    let disposed = false;
-    void invoke<MultiAgentProject[]>("ma_list_projects")
-      .then((projects) => {
-        if (disposed) return;
-        setTargetProjects(projects);
-        setTargetProjectId((current) => current && projects.some((project) => project.id === current) ? current : projects[0]?.id ?? "");
-      })
-      .catch((reason) => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [formOpen]);
-
+    let alive = true;
+    setProbeLoading(true); setProbeError(null);
+    void invoke<RuntimeProbe[]>("ma_probe_runtimes").then(value => {
+      if (!alive) return;
+      setProbes(value);
+      setForm(current => current.runtime ? current : { ...current, runtime: value.find(p => TERMINAL_RUNTIMES.includes(p.kind) && p.installed && !p.error && isRuntimeEnabled(p.kind))?.kind ?? "" });
+    }).catch(reason => { if (alive) { setProbes([]); setProbeError(String(reason)); } }).finally(() => { if (alive) setProbeLoading(false); });
+    void invoke<MultiAgentProject[]>("ma_list_projects").then(value => { if (alive) setTargetProjects(value); }).catch(reason => { if (alive) setError(`读取项目失败：${String(reason)}`); });
+    return () => { alive = false; };
+  }, [formOpen, probeRevision, availabilityReady, runtimePreferences, isRuntimeEnabled]);
   useEffect(() => {
-    let disposed = false;
+    let alive = true;
     setTargetAgents([]);
-    if (!targetProjectId) {
-      setTargetAgents([]);
-      setTargetAgentId("");
-      return;
-    }
-    void invoke<{ agents: AgentProfile[] }>("ma_snapshot", { projectId: targetProjectId })
-      .then((snapshot) => {
-        if (disposed) return;
-        const enabled = snapshot.agents.filter((agent) => agent.enabled && isRuntimeEnabled(agent.runtimeKind));
-        setTargetAgents(enabled);
-        setTargetAgentId((current) => current && enabled.some((agent) => agent.id === current) ? current : enabled[0]?.id ?? "");
-      })
-      .catch((reason) => { if (!disposed) setError(String(reason)); });
-    return () => { disposed = true; };
-  }, [targetProjectId, availabilityReady, runtimePreferences, isRuntimeEnabled]);
+    if (!form.projectId) return;
+    void invoke<{ agents: AgentProfile[] }>("ma_snapshot", { projectId: form.projectId }).then(value => { if (alive) setTargetAgents(value.agents); }).catch(reason => { if (alive) setError(`读取成员失败：${String(reason)}`); });
+    return () => { alive = false; };
+  }, [form.projectId, probeRevision]);
 
   const refresh = useCallback(async () => {
     const sequence = ++listSequence.current;
@@ -169,10 +170,8 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
       return { kind: "once", at };
     }
     if (triggerKind === "on_completed" || triggerKind === "on_failed") {
-      return {
-        kind: "on_session_event",
-        event: triggerKind === "on_completed" ? "completed" : "failed",
-      };
+      try { return eventAutomationTrigger(triggerKind === "on_completed" ? "completed" : "failed", eventSource, eventSourceId, eventRuntime); }
+      catch (reason) { return String(reason); }
     }
     if (triggerKind === "daily") {
       const [hour, minute] = dailyTime.split(":").map(Number);
@@ -200,48 +199,13 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
 
   const buildAction = (): AutomationAction | string => {
     if (!availabilityReady) return availabilityError ?? "Runtime 启用配置尚未加载";
-    const usesAgent = actionKind === "launch" ? launchTargetMode === "agent" : actionKind === "message" && messageTargetMode === "agent";
-    if (usesAgent && !targetAgents.some((agent) => agent.id === targetAgentId && isRuntimeEnabled(agent.runtimeKind))) return "请选择已启用的 Agent";
-    if (actionKind === "launch" && !usesAgent && !isRuntimeEnabled("claude_code")) return "Claude Code 未启用";
-    if (actionKind === "message" && !usesAgent && messageSessionId && !claudeSessions.some((session) => session.id === messageSessionId)) return "目标会话 Runtime 未启用";
-    if (actionKind === "launch") {
-      if (launchTargetMode === "agent") {
-        if (!targetProjectId || !targetAgentId) return "请选择目标项目和 Agent";
-        if (!launchPrompt.trim()) return "请填写启动 Prompt";
-        return {
-          kind: "launch",
-          providerId: "",
-          cwd: null,
-          prompt: launchPrompt,
-          projectId: targetProjectId,
-          agentId: targetAgentId,
-        };
-      }
-      const providerId = launchProviderId || providers[0]?.id || "";
-      if (!providerId) return "没有可用的 Provider";
-      if (!launchPrompt.trim()) return "请填写启动 Prompt";
-      return {
-        kind: "launch",
-        providerId,
-        cwd: launchCwd.trim() || null,
-        prompt: launchPrompt,
-        projectId: null,
-        agentId: null,
-      };
-    }
-    if (actionKind === "broadcast") {
-      if (!broadcastBody.trim()) return "请填写广播内容";
-      return { kind: "broadcast", body: broadcastBody };
-    }
-    if (messageTargetMode === "agent") {
-      if (!targetProjectId || !targetAgentId) return "请选择目标项目和 Agent";
-      if (!messageBody.trim()) return "请填写消息内容";
-      return { kind: "message", sessionId: "", body: messageBody, projectId: targetProjectId, agentId: targetAgentId };
-    }
-    const sessionId = messageSessionId || claudeSessions[0]?.id || "";
-    if (!sessionId) return "没有可发送的会话";
-    if (!messageBody.trim()) return "请填写消息内容";
-    return { kind: "message", sessionId, body: messageBody, projectId: null, agentId: null };
+    if (probeLoading || !runtimeOptions.some(([kind]) => kind === form.runtime)) return "请选择本机可用的 Agent，或重新检测安装状态";
+    try { return buildAutomationAction(form, isRuntimeEnabled, providers, sessions, targetAgents); }
+    catch (reason) { return String(reason); }
+  };
+  const selectDirectory = async () => {
+    try { const path = await openDirectory({ directory: true, multiple: false }); if (typeof path === "string") patchForm({ cwd: path }); }
+    catch (reason) { setError(`选择目录失败：${String(reason)}`); }
   };
 
   const create = async () => {
@@ -255,12 +219,15 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
     if (runs !== null && (!Number.isInteger(runs) || runs < 1)) {
       return setError("最大触发次数至少为 1");
     }
+    const failures = Number(maxFailures);
+    if (!Number.isInteger(failures) || failures < 1 || failures > 10) return setError("熔断阈值必须在 1–10 之间");
     const input: NewAutomation = {
       name: name.trim(),
       trigger,
       action,
       maxRuns: runs,
-      maxConsecutiveFailures: null,
+      maxConsecutiveFailures: failures,
+      overlapPolicy: overlap,
     };
     mutationInFlight.current = true;
     setBusy(true);
@@ -331,13 +298,17 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
       return `${label} ${pad(trigger.hour)}:${pad(trigger.minute)}`;
     }
     if (trigger.kind === "cron") return `cron · ${trigger.expr}`;
-    if (trigger.kind === "on_session_event") {
-      return trigger.event === "completed" ? "会话完成时" : "会话失败时";
+    if (trigger.kind === "on_session_event" || trigger.kind === "on_session_event_filtered") {
+      const scope = trigger.kind === "on_session_event_filtered" ? trigger.sessionId ? ` · 会话 ${trigger.sessionId.slice(0, 8)}` : trigger.projectId ? ` · 项目 ${trigger.projectId.slice(0, 8)}` : ` · ${AUTOMATION_LABELS[trigger.runtimeKind!] ?? "所选 Agent"}` : " · 旧任务：任意会话";
+      return (trigger.event === "completed" ? "会话完成时" : "会话失败时") + scope;
     }
     return `每 ${trigger.minutes} 分钟`;
   };
 
   const actionText = (action: AutomationAction): string => {
+    if (action.kind === "run_agent") return `${AUTOMATION_LABELS[action.runtimeKind]} · ${action.providerId ? providers.find(p => p.id === action.providerId)?.name ?? action.providerId : "本地配置"}${action.model ? ` · ${action.model}` : ""} · 新建会话 · ${action.cwd}`;
+    if (action.kind === "send_agent") return action.agentId ? `${AUTOMATION_LABELS[action.runtimeKind]} · 项目成员 ${action.agentId.slice(0, 8)}` : `${AUTOMATION_LABELS[action.runtimeKind]} · 复用「${sessions.find(s => s.id === action.sessionId)?.title ?? action.sessionId.slice(0, 8)}」`;
+    if (action.kind === "broadcast_agent") return `${AUTOMATION_LABELS[action.runtimeKind]} · 全部运行会话 · “${truncate(action.body, 24)}”`;
     if (action.kind === "launch") {
       if (action.agentId) {
         const project = targetProjects.find((item) => item.id === action.projectId);
@@ -362,8 +333,8 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
         : "已停用";
     }
     if (automation.nextRunAt) return formatDateTime(automation.nextRunAt);
-    if (automation.trigger.kind === "on_session_event") return "等待事件";
-    return "已完成";
+    if (automation.trigger.kind === "on_session_event" || automation.trigger.kind === "on_session_event_filtered") return "等待事件";
+    return "触发已结束";
   };
 
   const panel = (
@@ -379,22 +350,22 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
             <div className="automation-heading-copy">
               <div className="automation-title-row">
                 <GearSixIcon size={24} weight="regular" aria-hidden="true" />
-                <h2 id="automation-title">自动化</h2>
+                <h2 id="automation-title">{formOpen ? "创建自动化" : "自动化"}</h2>
               </div>
-              <p>定时给会话派任务：起新会话、发给现有会话或广播。全部执行记录可审计。</p>
+              <p>选择 Agent 与执行任务，按时间或指定事件派发；记录保存在本机。</p>
             </div>
             <div className="settings-heading-actions">
               <button className="btn-icon" aria-label="关闭" title="关闭" disabled={busy} onClick={onClose}>
                 <XIcon size={15} />
               </button>
               <button className="btn automation-primary" disabled={busy} onClick={() => setFormOpen((open) => !open)}>
-                <PlusIcon size={13} weight="bold" /> 新建自动化
+                <PlusIcon size={13} weight="bold" /> {formOpen ? "收起表单" : "新建自动化"}
               </button>
             </div>
           </div>
 
           <div className="automation-scroll-area">
-            {error && <p className="automation-error" role="alert">{error}</p>}
+            {error && !formOpen && <p className="automation-error" role="alert">{error}</p>}
 
             {formOpen && (
               <fieldset className="automation-form" disabled={busy} style={{ minWidth: 0, border: 0, margin: 0 }}>
@@ -411,8 +382,35 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
               </label>
                 </section>
 
+                <section className="automation-section automation-agent-section">
+                  <h3><StackIcon size={18} aria-hidden="true" />执行 Agent</h3>
+                  {probeError && <p role="alert" className="automation-error">检测 Agent 失败：{probeError}</p>}
+                  <label className="automation-setting-row"><span>执行 Agent</span><select aria-label="执行 Agent" value={form.runtime} disabled={!availabilityReady || probeLoading} onChange={e => {
+                    const runtime = e.target.value as AgentRuntimeKind;
+                    patchForm({ runtime, source: "local", providerId: "", model: "", sessionId: "", agentId: "", mode: (!TERMINAL_RUNTIMES.includes(runtime) && form.mode === "new") || (!automationProjectRuntime(runtime) && form.mode === "member") ? "session" : form.mode });
+                  }}><option value="">{probeLoading ? "正在检测本机 Agent…" : "请选择 Agent"}</option>{form.runtime && !runtimeOptions.some(([kind]) => kind === form.runtime) && <option value={form.runtime} disabled>当前选择不可用</option>}{runtimeOptions.map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select><small>仅列出本机已安装、已启用的 Agent。<button type="button" className="automation-inline" disabled={probeLoading} onClick={() => setProbeRevision(n => n + 1)}>重新检测</button></small></label>
+                  <label className="automation-setting-row"><span>配置来源</span><select aria-label="配置来源" value={form.mode === "new" ? form.source : "local"} disabled={form.mode !== "new" || form.runtime !== "claude_code"} onChange={e => patchForm({ source: e.target.value as "local" | "provider", providerId: "" })}><option value="local">{form.mode === "member" ? "沿用项目成员配置" : form.mode === "new" ? "使用本地配置" : "沿用目标会话配置"}</option>{form.runtime === "claude_code" && form.mode === "new" && <option value="provider">指定 CrewVela Provider</option>}</select><small>{form.mode === "new" ? "默认沿用本机账号与默认模型" : "不覆盖现有账号、模型和权限"}</small></label>
+                  {form.mode === "new" && <details className="automation-options"><summary>模型与 Provider（可选）</summary>
+                    {form.source === "provider" && <label className="automation-setting-row"><span>Provider</span><select aria-label="Provider" value={form.providerId} onChange={e => patchForm({ providerId: e.target.value })}><option value="">请选择模型服务（执行时校验凭据）</option>{providers.filter(p => !p.hidden).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
+                    {["claude_code", "codex"].includes(form.runtime) ? <label className="automation-setting-row"><span>模型标识</span><input aria-label="模型标识" maxLength={200} placeholder="留空沿用默认模型" value={form.model} onChange={e => patchForm({ model: e.target.value })} /><small>仅应用于本次新会话，不改写 CLI 全局设置。</small></label> : <p>此 Agent 使用本地默认模型；当前自动化不覆盖其模型配置。</p>}
+                  </details>}
+                </section>
                 <section className="automation-section">
-                  <h3><ClockIcon size={18} aria-hidden="true" />触发条件</h3>
+                  <h3><LightningIcon size={18} aria-hidden="true" />执行任务</h3>
+                  <label className="automation-setting-row"><span>运行方式</span><select aria-label="运行方式" value={form.mode} onChange={e => patchForm({ mode: e.target.value as AutomationFormAction["mode"], sessionId: "", agentId: "" })}>
+                    <option value="new" disabled={!form.runtime || !TERMINAL_RUNTIMES.includes(form.runtime)}>每次新建会话</option><option value="session">复用指定会话</option><option value="member" disabled={!automationProjectRuntime(form.runtime)}>交给项目指定成员</option><option value="broadcast">发送到此 Agent 的全部运行会话</option>
+                  </select><small>启动和排队不代表任务完成。</small></label>
+                  {form.mode === "new" && <label className="automation-setting-row"><span>工作目录</span><div className="automation-directory"><input aria-label="工作目录" value={form.cwd} placeholder="选择项目目录的完整路径" onChange={e => patchForm({ cwd: e.target.value })} /><button type="button" aria-label="选择工作目录" onClick={() => void selectDirectory()}><FolderOpenIcon size={18} /></button></div></label>}
+                  {form.mode === "session" && <label className="automation-setting-row"><span>目标会话</span><select aria-label="目标会话" value={form.sessionId} onChange={e => patchForm({ sessionId: e.target.value })}><option value="">请选择具体会话</option>{availableSessions.map(s => <option key={s.id} value={s.id}>{s.title} · {s.cwd} · {s.status}</option>)}</select><small>已停止的会话需先恢复；执行时会再次核对身份。</small></label>}
+                  {form.mode === "member" && <>
+                    <label className="automation-setting-row"><span>目标项目</span><select aria-label="目标项目" value={form.projectId} onChange={e => patchForm({ projectId: e.target.value, agentId: "" })}><option value="">请选择项目</option>{targetProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+                    <label className="automation-setting-row"><span>目标成员</span><select aria-label="目标成员" value={form.agentId} onChange={e => patchForm({ agentId: e.target.value })}><option value="">请选择匹配该 Agent 的成员</option>{availableAgents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><small>沿用成员目录；未运行成员交项目调度器执行，已有交互会话保留当前配置。</small></label>
+                  </>}
+                  {form.mode === "broadcast" && <p className="automation-scope-note">仅发送到所选 Agent 类型的未归档运行会话；执行时解析目标，包含其他工作区。不会广播给普通 Shell。</p>}
+                  <label className="automation-setting-row automation-prompt-row"><span>Prompt</span><textarea aria-label="执行任务" rows={3} value={form.prompt} placeholder="检查当前项目的代码改动、测试与依赖，汇总问题和下一步建议。" onChange={e => patchForm({ prompt: e.target.value })} /></label>
+                </section>
+                <section className="automation-section">
+                  <h3><ClockIcon size={18} aria-hidden="true" />触发与运行</h3>
               <div className="automation-form-row">
                 <label>
                   触发
@@ -431,7 +429,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                 </label>
                 {(triggerKind === "on_completed" || triggerKind === "on_failed") && (
                   <p className="hint" style={{ margin: 0, alignSelf: "end" }}>
-                    任一会话{triggerKind === "on_completed" ? "执行完成" : "失败"}时触发；一批事件合并为一次
+                    所选来源的会话{triggerKind === "on_completed" ? "执行完成" : "失败"}时触发；一批事件合并为一次
                   </p>
                 )}
                 {triggerKind === "once" && (
@@ -516,143 +514,20 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                     : cronPreview.message}
                 </p>
               )}
+                  {(triggerKind === "on_completed" || triggerKind === "on_failed") && <div className="automation-event-source">
+                    <label>事件来源<select aria-label="事件来源" value={eventSource} onChange={e => { setEventSource(e.target.value as typeof eventSource); setEventSourceId(""); }}><option value="session">指定会话</option><option value="runtime">指定 Agent 类型</option><option value="project">指定项目</option></select></label>
+                    {eventSource === "runtime" && <label>来源 Agent<select aria-label="来源 Agent" value={eventRuntime} onChange={e => setEventRuntime(e.target.value as AgentRuntimeKind)}><option value="">请选择来源 Agent</option>{runtimeOptions.map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select></label>}
+                    {eventSource !== "runtime" && <label>来源目标<select aria-label="来源目标" value={eventSourceId} onChange={e => setEventSourceId(e.target.value)}><option value="">请选择具体来源</option>{eventSource === "session" ? sessions.filter(s => !s.retiredAgentRuntime && !s.archivedAt && (s.agentRuntimeKind || s.kind === "claude")).map(s => <option key={s.id} value={s.id}>{s.title}</option>) : targetProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
+                    <p>只响应所选来源的状态事件；请避免任务自身的完成事件不断触发下一轮，可在高级设置中限制次数。</p>
+                  </div>}
+                  <label className="automation-setting-row"><span>上一轮未结束</span><select aria-label="上一轮未结束" value={overlap} onChange={e => setOverlap(e.target.value as "skip" | "allow")}><option value="skip">跳过本轮</option><option value="allow">允许继续派发</option></select><small>{overlap === "skip" ? "任务或发送队列仍未结束时不重复启动。" : "可能并行新建会话；复用目标仍按其原生队列执行。"}</small></label>
+                  <details className="automation-options"><summary>高级设置（最大次数、连续失败熔断）</summary><div className="automation-form-row"><label>最大触发次数（留空不限）<input aria-label="最大触发次数" type="number" min={1} value={maxRuns} onChange={e => setMaxRuns(e.target.value)} /></label><label>连续失败熔断<input aria-label="连续失败熔断" type="number" min={1} max={10} value={maxFailures} onChange={e => setMaxFailures(e.target.value)} /></label></div></details>
                 </section>
 
-                <section className="automation-section">
-                  <h3><LightningIcon size={18} aria-hidden="true" />执行动作</h3>
-              <div className="automation-form-row">
-                <label>
-                  动作
-                  <select
-                    value={actionKind}
-                    onChange={(event) => setActionKind(event.target.value as AutomationAction["kind"])}
-                  >
-                    <option value="message">发给现有会话</option>
-                    <option value="launch">启动新会话</option>
-                    <option value="broadcast">广播全部会话</option>
-                  </select>
-                </label>
-                {actionKind === "launch" && (
-                  <>
-                    <label>
-                      运行目标
-                      <select value={launchTargetMode} onChange={(event) => setLaunchTargetMode(event.target.value as typeof launchTargetMode)}>
-                        <option value="provider">新建独立会话</option>
-                        <option value="agent">项目 Agent</option>
-                      </select>
-                    </label>
-                    {launchTargetMode === "provider" ? <>
-                      <label>
-                        Provider
-                        <select
-                          value={launchProviderId || providers[0]?.id || ""}
-                          onChange={(event) => setLaunchProviderId(event.target.value)}
-                        >
-                          {providers.map((provider) => (
-                            <option key={provider.id} value={provider.id}>{provider.name}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        工作目录（留空用主目录）
-                        <input
-                          value={launchCwd}
-                          placeholder="F:/project/xxx"
-                          onChange={(event) => setLaunchCwd(event.target.value)}
-                        />
-                      </label>
-                    </> : <>
-                      <label>
-                        目标项目
-                        <select value={targetProjectId} onChange={(event) => setTargetProjectId(event.target.value)}>
-                          {targetProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                        </select>
-                      </label>
-                      <label>
-                        目标 Agent
-                        <select value={targetAgentId} disabled={!targetAgents.length} onChange={(event) => setTargetAgentId(event.target.value)}>
-                          {targetAgents.filter((agent) => isRuntimeEnabled(agent.runtimeKind)).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}（{agent.runtimeKind}）</option>)}
-                        </select>
-                      </label>
-                    </>}
-                  </>
-                )}
-                {actionKind === "message" && (
-                  <>
-                    <label>
-                      目标类型
-                      <select value={messageTargetMode} onChange={(event) => setMessageTargetMode(event.target.value as typeof messageTargetMode)}>
-                        <option value="session">现有会话</option>
-                        <option value="agent">项目 Agent</option>
-                      </select>
-                    </label>
-                    {messageTargetMode === "session" ? <label>
-                      目标会话
-                      <select
-                        value={messageSessionId || claudeSessions[0]?.id || ""}
-                        onChange={(event) => setMessageSessionId(event.target.value)}
-                      >
-                        {claudeSessions.map((session) => <option key={session.id} value={session.id}>{session.title}（{session.providerName}）</option>)}
-                      </select>
-                    </label> : <>
-                      <label>
-                        目标项目
-                        <select value={targetProjectId} onChange={(event) => setTargetProjectId(event.target.value)}>
-                          {targetProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                        </select>
-                      </label>
-                      <label>
-                        目标 Agent
-                        <select value={targetAgentId} disabled={!targetAgents.length} onChange={(event) => setTargetAgentId(event.target.value)}>
-                          {targetAgents.filter((agent) => isRuntimeEnabled(agent.runtimeKind)).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}（{agent.runtimeKind}）</option>)}
-                        </select>
-                      </label>
-                    </>}
-                  </>
-                )}
-              </div>
-              {actionKind !== "message" && actionKind !== "broadcast" ? (
-                <label>
-                  启动 Prompt
-                  <textarea
-                    rows={3}
-                    value={launchPrompt}
-                    placeholder="新会话启动后要执行的任务……"
-                    onChange={(event) => setLaunchPrompt(event.target.value)}
-                  />
-                </label>
-              ) : (
-                <label>
-                  消息内容
-                  <textarea
-                    rows={3}
-                    value={actionKind === "broadcast" ? broadcastBody : messageBody}
-                    placeholder="到点注入会话终端的消息（自动提交）……"
-                    onChange={(event) =>
-                      actionKind === "broadcast"
-                        ? setBroadcastBody(event.target.value)
-                        : setMessageBody(event.target.value)
-                    }
-                  />
-                </label>
-              )}
-              <div className="automation-form-row">
-                <label>
-                  最大触发次数（留空不限）
-                  <input
-                    type="number"
-                    min={1}
-                    value={maxRuns}
-                    placeholder="不限"
-                    onChange={(event) => setMaxRuns(event.target.value)}
-                  />
-                </label>
-              </div>
-                </section>
               </fieldset>
             )}
 
-            <section className="automation-list-section">
+            {!formOpen && <section className="automation-list-section">
               <h3><ListBulletsIcon size={18} aria-hidden="true" />自动化任务</h3>
               <div className="automation-list">
                 {automations.length === 0 && (
@@ -696,7 +571,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                 <p className="automation-card-line">{triggerText(automation.trigger)}</p>
                 <p className="automation-card-line">{actionText(automation.action)}</p>
                 <p className="automation-card-meta">
-                  下次执行：{nextRunText(automation)} · 已运行 {automation.runCount}
+                  下次执行：{nextRunText(automation)} · 已触发 {automation.runCount}
                   {automation.maxRuns ? `/${automation.maxRuns}` : ""} 次
                   {automation.consecutiveFailures > 0 &&
                     ` · 连续失败 ${automation.consecutiveFailures}`}
@@ -707,7 +582,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                     <ul>
                       {[...automation.recentRuns].reverse().slice(0, 5).map((run, index) => (
                         <li key={index} className={run.ok ? "ok" : "fail"}>
-                          <span>{run.ok ? "✓" : "✗"}</span>
+                          <span>{run.stage === "skipped" ? "已跳过" : run.ok ? "已派发" : "失败"}</span>
                           <time>{formatDateTime(run.at)}</time>
                           <span>{run.detail}</span>
                         </li>
@@ -718,14 +593,14 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
               </article>
                 ))}
               </div>
-            </section>
+            </section>}
           </div>
 
           {formOpen && (
-            <div className="automation-form-actions">
+            <div className={`automation-form-actions${error ? " has-error" : ""}`}>{error && <p className="automation-error" role="alert">{error}</p>}<span className="automation-execution-summary">{AUTOMATION_LABELS[form.runtime as AgentRuntimeKind] ?? "未选择 Agent"} · {form.mode === "new" ? form.source === "provider" ? providers.find(p => p.id === form.providerId)?.name ?? "未选择 Provider" : "本地配置" : "沿用目标配置"} · {({ new: "新建会话", session: "指定会话", member: "项目成员", broadcast: "此 Agent 全部运行会话" })[form.mode]} · {triggerKind === "daily" ? `每天 ${dailyTime}` : triggerKind === "interval" ? `每 ${intervalMinutes} 分钟` : triggerKind === "weekly" ? `每周 ${weeklyTime}` : triggerKind === "cron" ? "cron 触发" : triggerKind === "once" ? "一次性触发" : "指定会话事件"} · {overlap === "skip" ? "未结束则跳过" : "允许继续派发"}</span>
               <button className="btn" disabled={busy} onClick={() => setFormOpen(false)}>取消</button>
               <button className="btn automation-primary" disabled={busy} onClick={() => void create()}>
-                创建
+                保存自动化
               </button>
             </div>
           )}

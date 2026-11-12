@@ -51,6 +51,31 @@ if (params.get("mock") === "general") {
     throw Error(`此隔离页面未模拟 ${command}`);
   } };
 }
+if (params.get("mock") === "automation") {
+  let entries: any[] = [];
+  let failed = params.get("fail") === "1";
+  (window as any).__automationCalls = [];
+  (window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(command: string, args: any) {
+    (window as any).__automationCalls.push({ command, args });
+    if (command === "list_automations") return structuredClone(entries);
+    if (command === "ma_probe_runtimes") return ["codex", "claude_code", "pi", "deepseek_harness"].map(kind => ({ kind, installed:true, error:null, executable:"/fixture/cli", version:"fixture" }));
+    if (command === "ma_list_projects") return [{id:"fixture-project",name:"示例项目",rootPath:"/fixture/project"}];
+    if (command === "ma_snapshot") return {agents:[{id:"fixture-member",projectId:"fixture-project",name:"审查成员",runtimeKind:"codex",enabled:true}]};
+    if (command === "plugin:dialog|open") return "/fixture/project";
+    if (command === "preview_cron_trigger") { if (args.expr === "invalid") throw Error("cron 表达式无效"); return [Date.now()+60000,Date.now()+120000]; }
+    if (command === "create_automation") {
+      await new Promise(resolve => setTimeout(resolve, 120));
+      if (failed) { failed=false; throw Error("测试：保存失败，原配置保留"); }
+      const item = {...args.input,id:`fixture-${entries.length}`,enabled:true,runCount:0,consecutiveFailures:0,maxConsecutiveFailures:args.input.maxConsecutiveFailures??3,nextRunAt:args.input.trigger.kind.startsWith("on_")?null:Date.now()+60000,recentRuns:[],createdAt:Date.now()};
+      entries.push(item); return structuredClone(item);
+    }
+    if (command === "set_automation_enabled") { entries=entries.map(item=>item.id===args.id?{...item,enabled:args.enabled}:item); return entries.find(item=>item.id===args.id); }
+    if (command === "delete_automation") { entries=entries.filter(item=>item.id!==args.id); return; }
+    if (command === "plugin:event|listen") return 1;
+    if (command === "plugin:event|unlisten") return;
+    throw Error(`此隔离页面未模拟 ${command}`);
+  }};
+}
 const archiveCount = params.get("archive") === "long" ? 100 : 0;
 const sampleProviders: ProviderConfig[] = params.get("providers") === "sample" ? [
   { id: "fixture-api", name: "示例模型服务", baseUrl: "https://example.invalid/v1", authTokenRef: "", env: { ANTHROPIC_MODEL: "example-model" }, timeoutMs: null, disableNonessentialTraffic: false, builtin: true },
@@ -70,7 +95,7 @@ function Fixture() {
   return <>
     <button type="button" onClick={() => setOpen(true)}>打开设置回归</button>
     {params.get("debug") === "1" && <pre id="fixture-skills-log" />}
-    {open && <SettingsDialog sessions={[]} archivedSessions={archive} projects={params.get("mock") === "skills" ? [{ id: "fixture-project", name: "示例项目", path: "/fixture/project", badgeColor: "blue", createdAt: 0, updatedAt: 0 }] : []} providers={sampleProviders}
+    {open && <SettingsDialog sessions={params.get("mock") === "automation" ? [{ id:"fixture-session",kind:"terminal",agentRuntimeKind:"codex",title:"示例 Codex 会话",cwd:"/fixture/project",status:"completed" } as SessionRecord] : []} archivedSessions={archive} projects={params.get("mock") === "skills" ? [{ id: "fixture-project", name: "示例项目", path: "/fixture/project", badgeColor: "blue", createdAt: 0, updatedAt: 0 }] : []} providers={sampleProviders}
       keyStates={{}} usageByProvider={{}} appearance={appearance} resolvedAppearanceTheme={theme}
       petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS}
       companionSettings={DEFAULT_COMPANION_SETTINGS} onAppearanceChange={setAppearance}
@@ -78,7 +103,7 @@ function Fixture() {
       onEdit={() => {}} onNew={() => {}} onDelete={() => {}} onSetHidden={() => {}}
       onRestoreDefault={() => {}} onReorder={async () => {}} onRestoreArchivedSession={() => {}}
       onDeleteArchivedSession={() => {}} onViewArchivedTranscript={() => {}} onClose={() => setOpen(false)}
-      initialSection={params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : params.get("section") === "skills" ? "skills" : "generalSettings"} />}
+      initialSection={params.get("section") === "automation" ? "automation" : params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : params.get("section") === "skills" ? "skills" : "generalSettings"} />}
   </>;
 }
 

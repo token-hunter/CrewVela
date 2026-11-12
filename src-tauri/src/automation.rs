@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 pub const MAX_RECENT_RUNS: usize = 20;
 pub const MAX_BODY_CHARS: usize = 32_000;
 const DEFAULT_MAX_CONSECUTIVE_FAILURES: u32 = 3;
-const AUTOMATION_FILE_VERSION: u32 = 2;
+const AUTOMATION_FILE_VERSION: u32 = 3;
 
 pub fn now_millis() -> u64 {
     SystemTime::now()
@@ -43,6 +43,10 @@ pub struct Automation {
     pub created_at: u64,
     #[serde(default)]
     pub recent_runs: Vec<AutomationRun>,
+    #[serde(default)]
+    pub overlap_policy: OverlapPolicy,
+    #[serde(default)]
+    pub active_session_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +68,8 @@ pub enum AutomationTrigger {
     Cron { expr: String },
     /// 会话状态事件：任一会话执行完成/失败时触发；一轮 poll 的一批事件合并触发一次。
     OnSessionEvent { event: SessionEventKind },
+    #[serde(rename_all = "camelCase")]
+    OnSessionEventFiltered { event: SessionEventKind, runtime_kind: Option<crate::multi_agent::AgentRuntimeKind>, project_id: Option<String>, session_id: Option<String> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +84,12 @@ pub enum SessionEventKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AutomationAction {
+    #[serde(rename_all = "camelCase")]
+    RunAgent { runtime_kind: crate::multi_agent::AgentRuntimeKind, provider_id: Option<String>, model: Option<String>, cwd: String, prompt: String },
+    #[serde(rename_all = "camelCase")]
+    SendAgent { runtime_kind: crate::multi_agent::AgentRuntimeKind, session_id: String, body: String, project_id: Option<String>, agent_id: Option<String> },
+    #[serde(rename_all = "camelCase")]
+    BroadcastAgent { runtime_kind: crate::multi_agent::AgentRuntimeKind, body: String },
     /// 用指定 provider 起一个新会话并投初始 prompt（默认模式，非 yolo/auto、无 worktree）。
     // 枚举级 rename_all 只作用于变体名；字段需按变体声明 camelCase 才与前端契约一致。
     #[serde(rename_all = "camelCase")]
@@ -110,10 +122,16 @@ pub enum AutomationAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationRun {
+    #[serde(default)]
+    pub stage: Option<String>,
     pub at: u64,
     pub ok: bool,
     pub detail: String,
 }
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverlapPolicy { Skip, #[default] Allow }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -123,6 +141,8 @@ pub struct NewAutomation {
     pub action: AutomationAction,
     pub max_runs: Option<u32>,
     pub max_consecutive_failures: Option<u32>,
+    #[serde(default)]
+    pub overlap_policy: OverlapPolicy,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -134,6 +154,7 @@ struct AutomationFile {
 pub struct AutomationManager {
     items: Mutex<Vec<Automation>>,
     path: Option<PathBuf>,
+    dispatching: Mutex<std::collections::HashSet<String>>,
 }
 
 /// 按本地日历寻找下一次触发；跳过 DST 不存在的时刻，重复时刻选严格晚于基准的最早一次。
@@ -330,7 +351,7 @@ fn schedule_initial(trigger: &AutomationTrigger, now: u64) -> Option<u64> {
             minute,
         } => next_weekly_after(weekdays, *hour, *minute, now),
         AutomationTrigger::Cron { expr } => next_cron_after(expr, now),
-        AutomationTrigger::OnSessionEvent { .. } => None,
+        AutomationTrigger::OnSessionEvent { .. } | AutomationTrigger::OnSessionEventFiltered { .. } => None,
     }
 }
 
@@ -345,7 +366,7 @@ fn advance_after_run(
         return None;
     }
     match trigger {
-        AutomationTrigger::Once { .. } | AutomationTrigger::OnSessionEvent { .. } => None,
+        AutomationTrigger::Once { .. } | AutomationTrigger::OnSessionEvent { .. } | AutomationTrigger::OnSessionEventFiltered { .. } => None,
         AutomationTrigger::Interval { minutes } => Some(now + u64::from(*minutes) * 60_000),
         AutomationTrigger::Daily { hour, minute } => next_daily_after(*hour, *minute, now),
         AutomationTrigger::Weekly {
@@ -374,12 +395,18 @@ fn migrate_legacy_cron_schedules(items: &mut [Automation], now: u64) {
     }
 }
 
+fn append_skipped(item: &mut Automation, now: u64) {
+    item.recent_runs.push(AutomationRun { at: now, ok: true, stage: Some("skipped".into()), detail: "上一轮尚未完成，本轮已跳过；未启动或排队新任务".into() });
+    if item.recent_runs.len() > MAX_RECENT_RUNS { item.recent_runs.remove(0); }
+}
+
 impl AutomationManager {
     #[cfg(test)]
     pub fn new() -> Self {
         Self {
             items: Mutex::new(Vec::new()),
             path: None,
+            dispatching: Mutex::new(std::collections::HashSet::new()),
         }
     }
 
@@ -399,7 +426,7 @@ impl AutomationManager {
                 if file.version > AUTOMATION_FILE_VERSION {
                     return Err(anyhow!("自动化配置版本 {} 高于当前支持的版本 {}，请升级应用；原文件未修改", file.version, AUTOMATION_FILE_VERSION));
                 }
-                (file.items, file.version < AUTOMATION_FILE_VERSION)
+                (file.items, file.version < 2)
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => (Vec::new(), false),
             Err(error) => {
@@ -410,6 +437,7 @@ impl AutomationManager {
         let manager = Self {
             items: Mutex::new(items),
             path: Some(path),
+            dispatching: Mutex::new(std::collections::HashSet::new()),
         };
         if migrate { manager.persist(&manager.items.lock().unwrap())?; }
         Ok(manager)
@@ -456,6 +484,13 @@ impl AutomationManager {
             Ok(())
         };
         match &input.trigger {
+            AutomationTrigger::OnSessionEventFiltered { runtime_kind, project_id, session_id, .. } => {
+                let count = usize::from(runtime_kind.is_some()) + usize::from(project_id.is_some()) + usize::from(session_id.is_some());
+                if count != 1 || project_id.as_ref().is_some_and(|id| id.trim().is_empty()) || session_id.as_ref().is_some_and(|id| id.trim().is_empty()) {
+                    return Err(anyhow!("请选择一个明确的事件来源"));
+                }
+                if runtime_kind.is_some_and(|kind| kind.is_retired()) { return Err(anyhow!("事件来源 Agent 不受支持")); }
+            }
             AutomationTrigger::Interval { minutes } if !(1..=1440).contains(minutes) => {
                 return Err(anyhow!("间隔分钟数必须在 1-1440 之间"));
             }
@@ -479,7 +514,20 @@ impl AutomationManager {
             }
             _ => {}
         }
+        match &input.action {
+            AutomationAction::RunAgent { runtime_kind, provider_id, model, cwd, .. } => {
+                crate::automation_runtime::validate_launch(*runtime_kind, provider_id.as_deref(), model.as_deref(), cwd)?;
+            }
+            AutomationAction::SendAgent { runtime_kind, session_id, project_id, agent_id, .. } => {
+                if runtime_kind.is_retired() { return Err(anyhow!("该 Agent 不受支持")); }
+                if project_id.is_some() != agent_id.is_some() || (agent_id.is_none() && session_id.trim().is_empty()) { return Err(anyhow!("请选择有效的会话或项目成员")); }
+            }
+            AutomationAction::BroadcastAgent { runtime_kind, .. } if runtime_kind.is_retired() => return Err(anyhow!("该 Agent 不受支持")),
+            _ => {}
+        }
         let body = match &input.action {
+            AutomationAction::RunAgent { prompt, .. } => prompt,
+            AutomationAction::SendAgent { body, .. } | AutomationAction::BroadcastAgent { body, .. } => body,
             AutomationAction::Launch { prompt, .. } => prompt,
             AutomationAction::Message { body, .. } => body,
             AutomationAction::Broadcast { body } => body,
@@ -520,6 +568,8 @@ impl AutomationManager {
             last_run_at: None,
             created_at: now,
             recent_runs: Vec::new(),
+            overlap_policy: input.overlap_policy,
+            active_session_ids: Vec::new(),
         };
         let mut items = self.items.lock().unwrap();
         let mut updated = items.clone();
@@ -574,9 +624,13 @@ impl AutomationManager {
 
     /// 到点任务出列：标记已触发并推进调度，返回待执行动作。错过的时间不补跑。
     pub fn collect_due(&self, now: u64) -> Result<Vec<(String, AutomationAction)>> {
+        self.collect_due_with_busy(now, &std::collections::HashSet::new())
+    }
+    pub fn collect_due_with_busy(&self, now: u64, busy: &std::collections::HashSet<String>) -> Result<Vec<(String, AutomationAction)>> {
         let mut due = Vec::new();
         let mut items = self.items.lock().unwrap();
         let mut snapshot = items.clone();
+        let mut changed = false;
         for item in snapshot.iter_mut() {
             if !item.enabled
                 || !item.next_run_at.is_some_and(|at| at <= now)
@@ -584,15 +638,22 @@ impl AutomationManager {
             {
                 continue;
             }
+            changed = true;
+            if item.overlap_policy == OverlapPolicy::Skip && (busy.contains(&item.id) || self.dispatching.lock().unwrap().contains(&item.id)) {
+                item.next_run_at = advance_after_run(&item.trigger, now, item.run_count, item.max_runs);
+                append_skipped(item, now);
+                continue;
+            }
             item.run_count += 1;
             item.last_run_at = Some(now);
             item.next_run_at = advance_after_run(&item.trigger, now, item.run_count, item.max_runs);
             due.push((item.id.clone(), item.action.clone()));
         }
-        if !due.is_empty() {
+        if changed {
             self.persist(&snapshot)?;
             *items = snapshot;
         }
+        self.dispatching.lock().unwrap().extend(due.iter().map(|(id, _)| id.clone()));
         Ok(due)
     }
 
@@ -603,36 +664,53 @@ impl AutomationManager {
         event: SessionEventKind,
         now: u64,
     ) -> Result<Vec<(String, AutomationAction)>> {
+        self.collect_event_filtered(event, now, &[], &std::collections::HashSet::new())
+    }
+    pub fn collect_event_filtered(&self, event: SessionEventKind, now: u64, sources: &[crate::sessions::SessionRecord], busy: &std::collections::HashSet<String>) -> Result<Vec<(String, AutomationAction)>> {
+        let mut changed = false;
         let mut fired = Vec::new();
         let mut items = self.items.lock().unwrap();
         let mut snapshot = items.clone();
         for item in snapshot.iter_mut() {
-            let matches = matches!(
-                &item.trigger,
-                AutomationTrigger::OnSessionEvent { event: kind } if *kind == event
-            );
+            let matches = match &item.trigger {
+                AutomationTrigger::OnSessionEvent { event: kind } => *kind == event,
+                AutomationTrigger::OnSessionEventFiltered { event: kind, runtime_kind, project_id, session_id } => *kind == event && sources.iter().any(|s| {
+                    runtime_kind.is_none_or(|kind| crate::automation_runtime::session_runtime(s) == Some(kind)) &&
+                    project_id.as_ref().is_none_or(|id| s.multi_agent_project_id.as_ref() == Some(id) || s.project_id.as_ref() == Some(id)) &&
+                    session_id.as_ref().is_none_or(|id| &s.id == id)
+                }),
+                _ => false,
+            };
             if !item.enabled || !matches || item.max_runs.is_some_and(|max| item.run_count >= max) {
                 continue;
             }
+            changed = true;
+            if item.overlap_policy == OverlapPolicy::Skip && (busy.contains(&item.id) || self.dispatching.lock().unwrap().contains(&item.id)) { append_skipped(item, now); continue; }
             item.run_count += 1;
             item.last_run_at = Some(now);
             fired.push((item.id.clone(), item.action.clone()));
         }
-        if !fired.is_empty() {
+        if changed {
             self.persist(&snapshot)?;
             *items = snapshot;
         }
+        self.dispatching.lock().unwrap().extend(fired.iter().map(|(id, _)| id.clone()));
         Ok(fired)
     }
 
     /// 执行完成后回报结果：写历史（封顶 20 条），连续失败达阈值自动熔断停用。
     pub fn report_result(&self, id: &str, ok: bool, detail: String, now: u64) -> Result<()> {
+        self.report_dispatch_result(id, ok, detail, now, Vec::new())
+    }
+    pub fn report_dispatch_result(&self, id: &str, ok: bool, detail: String, now: u64, targets: Vec<String>) -> Result<()> {
         let mut items = self.items.lock().unwrap();
         let mut snapshot = items.clone();
         let Some(item) = snapshot.iter_mut().find(|item| item.id == id) else {
             return Ok(());
         };
+        item.active_session_ids = targets;
         item.recent_runs.push(AutomationRun {
+            stage: Some(if ok { "queued" } else { "failed" }.into()),
             at: now,
             ok,
             detail,
@@ -652,6 +730,7 @@ impl AutomationManager {
         }
         self.persist(&snapshot)?;
         *items = snapshot;
+        self.dispatching.lock().unwrap().remove(id);
         Ok(())
     }
 
@@ -714,6 +793,7 @@ mod tests {
             action,
             max_runs: None,
             max_consecutive_failures: None,
+            overlap_policy: OverlapPolicy::Allow,
         }
     }
 
@@ -1386,7 +1466,7 @@ mod tests {
         let mut items = vec![legacy_cron_item("0 13 * * MON", due)];
         migrate_legacy_cron_schedules(&mut items, now);
         assert_eq!(items[0].next_run_at, Some(due));
-        let manager = AutomationManager { items: Mutex::new(items), path: None };
+        let manager = AutomationManager { items: Mutex::new(items), path: None, dispatching: Mutex::new(std::collections::HashSet::new()) };
         assert_eq!(manager.collect_due(now).unwrap().len(), 1);
         assert!(manager.collect_due(now).unwrap().is_empty());
         assert_eq!(manager.list()[0].next_run_at, Some(cron_migration_time(2026, 6, 29, 13)));
@@ -1403,7 +1483,7 @@ mod tests {
             let mut items = vec![legacy_cron_item("0 13 * * 1", old_sunday)];
             migrate_legacy_cron_schedules(&mut items, now);
             assert_eq!(items[0].next_run_at, Some(corrected_monday));
-            let manager = AutomationManager { items: Mutex::new(items), path: None };
+            let manager = AutomationManager { items: Mutex::new(items), path: None, dispatching: Mutex::new(std::collections::HashSet::new()) };
             assert_eq!(manager.collect_due(now).unwrap().len(), expected_due);
             assert!(manager.collect_due(now).unwrap().is_empty());
         }
@@ -1439,7 +1519,7 @@ mod tests {
         let now = cron_migration_time(2026, 6, 25, 12);
         migrate_legacy_cron_schedules(&mut items, now);
         assert_eq!(items[0].next_run_at, Some(cron_migration_time(2026, 6, 29, 13)));
-        let manager = AutomationManager { items: Mutex::new(items), path: None };
+        let manager = AutomationManager { items: Mutex::new(items), path: None, dispatching: Mutex::new(std::collections::HashSet::new()) };
         assert!(manager.collect_due(now).unwrap().is_empty());
         assert_eq!(manager.list()[0].run_count, 1);
     }
@@ -1525,4 +1605,72 @@ mod tests {
         assert!(manager.list().is_empty());
         std::fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn agent_automation_skip_is_durable_without_consuming_runs_or_resetting_failures() {
+        let root = std::env::temp_dir().join(format!("automation-agent-{}", uuid::Uuid::new_v4()));
+        let path = root.join("automation.json");
+        let manager = AutomationManager::open_at(path.clone()).unwrap();
+        let mut new = input(AutomationTrigger::Interval { minutes: 1 }, AutomationAction::BroadcastAgent { runtime_kind: crate::multi_agent::AgentRuntimeKind::Codex, body: "inspect".into() });
+        new.overlap_policy = OverlapPolicy::Skip;
+        let task = manager.create(new, 1_000).unwrap();
+        assert_eq!(manager.collect_due(61_000).unwrap().len(), 1);
+        assert!(manager.collect_due(121_000).unwrap().is_empty(), "dispatch still in flight");
+        manager.report_dispatch_result(&task.id, false, "queue failed".into(), 121_001, vec!["target".into()]).unwrap();
+        let busy = std::collections::HashSet::from([task.id.clone()]);
+        assert!(manager.collect_due_with_busy(181_000, &busy).unwrap().is_empty());
+        let stored = manager.list().remove(0);
+        assert_eq!(stored.run_count, 1);
+        assert_eq!(stored.consecutive_failures, 1);
+        assert_eq!(stored.next_run_at, Some(241_000));
+        assert_eq!(stored.recent_runs.last().unwrap().stage.as_deref(), Some("skipped"));
+        drop(manager);
+        let reopened = AutomationManager::open_at(path).unwrap();
+        assert_eq!(reopened.list()[0].active_session_ids, vec!["target"]);
+        assert_eq!(reopened.list()[0].overlap_policy, OverlapPolicy::Skip);
+        assert_eq!(reopened.collect_due(241_000).unwrap().len(), 1);
+        drop(reopened); std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn agent_automation_filtered_events_and_contracts() {
+        use crate::{multi_agent::AgentRuntimeKind as K, sessions::{SessionManager, NewRuntimeSession}};
+        let root = std::env::temp_dir().join(format!("automation-sources-{}", uuid::Uuid::new_v4()));
+        let sessions = SessionManager::open_at(root.join("sessions.json"), root.join("events")).unwrap();
+        let source = sessions.create_runtime(NewRuntimeSession { runtime_kind:"codex".into(), cwd:root.display().to_string(), project_id:Some("project-a".into()) }).unwrap();
+        let other = sessions.create_runtime(NewRuntimeSession { runtime_kind:"pi".into(), cwd:root.display().to_string(), project_id:Some("project-b".into()) }).unwrap();
+        let manager = AutomationManager::new();
+        for (runtime_kind, project_id, session_id) in [(Some(K::Codex),None,None), (None,Some("project-a".into()),None), (None,None,Some(source.id.clone()))] {
+            manager.create(input(AutomationTrigger::OnSessionEventFiltered { event:SessionEventKind::Completed,runtime_kind,project_id,session_id }, AutomationAction::SendAgent { runtime_kind:K::Pi, session_id:other.id.clone(),body:"hi".into(),project_id:None,agent_id:None }), 1).unwrap();
+        }
+        let busy = std::collections::HashSet::new();
+        assert!(manager.collect_event_filtered(SessionEventKind::Completed, 2, &[other], &busy).unwrap().is_empty());
+        assert!(manager.collect_event_filtered(SessionEventKind::Failed, 3, &[source.clone()], &busy).unwrap().is_empty());
+        assert_eq!(manager.collect_event_filtered(SessionEventKind::Completed, 4, &[source], &busy).unwrap().len(), 3);
+        let invalid = AutomationTrigger::OnSessionEventFiltered { event:SessionEventKind::Failed,runtime_kind:None,project_id:None,session_id:None };
+        assert!(manager.create(input(invalid, AutomationAction::Broadcast { body:"x".into() }), 1).is_err());
+        let action: AutomationAction = serde_json::from_value(serde_json::json!({"kind":"run_agent","runtimeKind":"codex","providerId":null,"model":null,"cwd":root.display().to_string(),"prompt":"literal"})).unwrap();
+        let json = serde_json::to_value(action).unwrap();
+        assert_eq!(json["runtimeKind"], "codex");
+        assert!(json["providerId"].is_null() && json["model"].is_null());
+        drop(sessions); std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn agent_automation_loads_v2_without_changing_legacy_schedules_or_overlap() {
+        let root = std::env::temp_dir().join(format!("automation-v2-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let manager = AutomationManager::new();
+        let task = manager.create(input(AutomationTrigger::Cron { expr:"0 9 * * 1".into() }, AutomationAction::Broadcast { body:"legacy".into() }), now_millis()).unwrap();
+        let mut old = serde_json::to_value(&task).unwrap();
+        old.as_object_mut().unwrap().remove("overlapPolicy");
+        old.as_object_mut().unwrap().remove("activeSessionIds");
+        let path = root.join("automation.json");
+        std::fs::write(&path, serde_json::to_vec(&serde_json::json!({"version":2,"items":[old]})).unwrap()).unwrap();
+        let reopened = AutomationManager::open_at_time(path, now_millis() + 60_000).unwrap();
+        assert_eq!(reopened.list()[0].next_run_at, task.next_run_at);
+        assert_eq!(reopened.list()[0].overlap_policy, OverlapPolicy::Allow);
+        assert!(reopened.list()[0].active_session_ids.is_empty());
+        drop(reopened); std::fs::remove_dir_all(root).unwrap();
+    }
+
 }

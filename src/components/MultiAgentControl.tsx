@@ -75,6 +75,7 @@ interface Props {
   onOpenWorkspace?: (projectId: string) => void;
   focusedProjectId?: string | null;
   focusedProjectRequest?: number;
+  onOpenQuickCommands?: () => void;
   onQuickCommand?: (
     command: string,
   ) => Promise<ControlCommandResult>;
@@ -103,11 +104,6 @@ const COORDINATOR_DRAFT_STORAGE_KEY = "crewvela-multi-agent-draft-v1";
 const AUTO_REPORT_STORAGE_KEY = "crewvela-multi-agent-auto-report-v1";
 const MAX_COORDINATOR_HISTORY = 200;
 const COORDINATOR_REPLY_STREAM_EVENT = "multi-agent-coordinator-reply-stream";
-const QUICK_COMMAND_SUGGESTIONS = [
-  "打开1个deepseek、1个glm、1个kimi、1个minimax",
-  "打开1个glm、1个kimi",
-  "把“检查当前项目并给出下一步建议”发送给所有会话",
-];
 const QUICK_PROMPT_COMPLETION = "打开 1 个 GLM 和 2 个 Kimi 会话";
 const QUICK_PERMISSION_MODES: Array<{ value: PermissionMode; label: string }> = [
   { value: "default", label: "Default" },
@@ -867,6 +863,7 @@ export function MultiAgentControl({
   onOpenWorkspace,
   focusedProjectId,
   focusedProjectRequest,
+  onOpenQuickCommands,
   onQuickCommand,
   onQuickBroadcast,
   onQuickPermissionModeChange,
@@ -1990,11 +1987,9 @@ export function MultiAgentControl({
 
   const sendQuickBroadcast = async () => {
     const message = stripUnifiedControlPrefix(coordinatorDraft.trim());
-    if (!message || busyRef.current || quickLiveSessionCount === 0) return;
+    if (!message || busyRef.current) return;
     setBusy(true);
     appendCoordinatorMessage("user", message, null, "quick");
-    setCoordinatorDraft("");
-    setMentionBindings([]);
     setError(null);
     try {
       const result = await onQuickBroadcast?.(message) ?? {
@@ -2790,7 +2785,7 @@ export function MultiAgentControl({
                     ) : (
                       <BroadcastIcon size={14} weight="regular" aria-hidden="true" />
                     )}
-                    <span>{quickSendTarget === "control" ? "总控" : "全部会话"}</span>
+                    <span>{quickSendTarget === "control" ? "总控" : "选择会话"}</span>
                     <CaretDownIcon size={11} aria-hidden="true" />
                   </button>
                   {quickTargetMenuOpen && (
@@ -2830,8 +2825,8 @@ export function MultiAgentControl({
                       >
                         <i><BroadcastIcon size={17} weight="regular" /></i>
                         <span>
-                          <strong>全部会话</strong>
-                          <small>广播到所有运行会话</small>
+                          <strong>选择会话</strong>
+                          <small>打开快捷指令，核对范围与目标</small>
                         </span>
                         {quickSendTarget === "all" && <CheckIcon size={14} weight="bold" />}
                       </button>
@@ -2857,24 +2852,9 @@ export function MultiAgentControl({
                   </header>
                   <div className="multi-agent-quick-command-section">
                     <span>快捷指令</span>
-                    {QUICK_COMMAND_SUGGESTIONS.map((suggestion) => (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        key={suggestion}
-                        onClick={() => {
-                          setCoordinatorDraft(suggestion);
-                          setMentionBindings([]);
-                          setMentionCursor(suggestion.length);
-                          setTargetMenuOpen(false);
-                          window.requestAnimationFrame(() =>
-                            coordinatorTextareaRef.current?.focus(),
-                          );
-                        }}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
+                    <button type="button" role="menuitem" disabled={!onOpenQuickCommands} onClick={() => { setTargetMenuOpen(false); onOpenQuickCommands?.(); }}>
+                      搜索与配置快捷指令
+                    </button>
                     <button
                       className="danger"
                       type="button"
@@ -3015,18 +2995,18 @@ export function MultiAgentControl({
                 pendingPlanTargetMismatch ||
                 (quickComposerActive &&
                   quickSendTarget === "all" &&
-                  quickLiveSessionCount === 0)
+                  !onQuickBroadcast)
               }
               aria-label={
                 quickComposerActive && quickSendTarget === "all"
-                  ? `发送至全部 ${quickLiveSessionCount} 个运行会话`
+                  ? "核对目标后发送消息"
                   : selectedMentionTargetCount > 0
                   ? `发送给 ${selectedMentionTargetCount} 个 Agent`
                   : "发送协作指令"
               }
               title={
                 quickComposerActive && quickSendTarget === "all"
-                  ? `发送至全部 ${quickLiveSessionCount} 个运行会话`
+                  ? "核对目标后发送消息"
                   : selectedMentionTargetCount > 0
                   ? `发送给 ${selectedMentionTargetCount} 个 Agent`
                   : "发送协作指令"

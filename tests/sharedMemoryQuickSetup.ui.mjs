@@ -27,6 +27,8 @@ try {
   const request = await page.evaluate(() => window.__quickCalls.find(x => x.command === "ai_memory_quick_start").args.request);
   assert.deepEqual(request.agents, ["claude-code", "codex"]);
   assert.match(request.localArchive, /\.zip$/);
+  assert.equal(request.targetVersion, "3.4.5");
+  assert.equal(request.update, false);
   assert.equal(await page.evaluate(() => window.__quickCalls.filter(x => x.command === "ai_memory_quick_start").length), 1);
   await page.getByRole("button", { name: "接入配置", exact: true }).click();
   assert(await page.getByRole("button", { name: "安装钩子", exact: true }).isDisabled());
@@ -75,6 +77,76 @@ try {
   await page.getByRole("button", { name: "开始配置", exact: true }).click();
   await page.getByText("当前平台暂不支持快速启用，请使用接入配置中的手动操作。", { exact: true }).waitFor();
   assert(await page.getByRole("button", { name: "安装并启用", exact: true }).isDisabled());
+  // Platform information comes from the native package selector, never user-agent guesses.
+  for (const [platform, arch] of [["macOS Apple Silicon", "aarch64"], ["macOS Intel", "x86_64"]]) {
+    await page.reload();
+    await page.evaluate(({platform,arch}) => {
+      window.__quickInfo.package = {platform,asset:`ai-memory-macos-${arch}.tar.gz`,extensions:["gz"]};
+    }, {platform,arch});
+    await page.getByRole("button", { name: "开始配置", exact: true }).click();
+    await page.getByText(new RegExp(platform)).waitFor();
+    assert.equal(await page.getByText(/Windows x64/).count(), 0);
+    await page.getByRole("button", { name: "选择启用项目" }).click();
+    await page.getByText("下载较慢？使用本地官方安装包", { exact: true }).click();
+    await page.getByRole("link", { name: `下载 v3.4.5 的 ai-memory-macos-${arch}.tar.gz`, exact: true }).waitFor();
+    await page.getByRole("button", { name: "选择本地 TAR.GZ", exact: true }).click();
+    const dialog = await page.evaluate(() => window.__quickCalls.filter(x => x.command === "plugin:dialog|open").at(-1).args.options);
+    assert.deepEqual(dialog.filters, [{name:"TAR.GZ",extensions:["gz"]}]);
+    await page.getByRole("button", { name: "安装并启用", exact: true }).click();
+    const request = await page.evaluate(() => window.__quickCalls.find(x => x.command === "ai_memory_quick_start").args.request);
+    assert.equal(request.projectDir, "/tmp/记忆测试 项目");
+    assert.equal(request.localArchive, `/tmp/downloads/ai-memory-macos-${arch}.tar.gz`);
+    assert.deepEqual(request.agents, ["claude-code", "codex"]);
+    await page.evaluate(() => {
+      window.__quickJob.state = "awaiting-session";
+      window.__quickJob.steps.forEach(step => {step.state="done";step.detail="配置检查通过";});
+    });
+    await page.clock.runFor(1200);
+    await page.getByText("配置完成，待新会话验证", {exact:true}).waitFor();
+    await page.setViewportSize({width:1280,height:1000});
+    await page.screenshot({path:`${output}/macos-${arch}.png`,fullPage:true});
+  }
+  // Dynamic update discovery never silently upgrades or overwrites external installs.
+  await page.reload();
+  await page.evaluate(() => { Object.assign(window.__quickInfo,{installedVersion:"2.6.0",managed:true}); });
+  await page.getByRole("button",{name:"检查更新",exact:true}).click();
+  await page.getByRole("button",{name:"选择启用项目"}).click();
+  assert(await page.getByRole("button",{name:"安装更新",exact:true}).isDisabled());
+  await page.getByRole("checkbox",{name:/确认跨大版本迁移/}).check();
+  await page.screenshot({path:`${output}/update-major.png`,fullPage:true});
+  await page.getByRole("button",{name:"安装更新",exact:true}).click();
+  await page.waitForFunction(()=>window.__quickJob);
+  const upgrade=await page.evaluate(()=>window.__quickCalls.find(x=>x.command==="ai_memory_quick_start").args.request);
+  assert.equal(upgrade.targetVersion,"3.4.5");
+  assert.equal(upgrade.update,true);
+  assert.equal(upgrade.confirmMajor,true);
+  await page.evaluate(()=>{window.__quickInfo.recoveryPending=true;window.__quickJob.state="failed";window.__quickJob.steps[0].state="failed";});
+  await page.clock.runFor(1200);
+  await page.getByRole("button",{name:"恢复升级前快照",exact:true}).waitFor();
+  assert(await page.getByRole("button",{name:"恢复升级前快照",exact:true}).isDisabled());
+  assert(await page.getByRole("button",{name:"重试启用",exact:true}).isDisabled());
+  await page.getByRole("checkbox",{name:/确认恢复旧快照/}).check();
+  await page.getByRole("button",{name:"恢复升级前快照",exact:true}).click();
+  await page.waitForFunction(()=>window.__quickCalls.some(x=>x.command==="ai_memory_recover_update"));
+  assert.deepEqual(await page.evaluate(()=>window.__quickCalls.find(x=>x.command==="ai_memory_recover_update").args),{confirmed:true});
+  await page.reload();
+  await page.evaluate(()=>Object.assign(window.__quickInfo,{installedVersion:"3.4.0",managed:false}));
+  await page.getByRole("button",{name:"开始配置",exact:true}).click();
+  assert.equal(await page.getByRole("button",{name:"安装更新",exact:true}).count(),0);
+  await page.getByText(/检测到外部安装/).waitFor();
+  await page.reload();
+  await page.evaluate(()=>Object.assign(window.__quickInfo,{installedVersion:"3.4.0",managed:true,version:null,updateError:"模拟 GitHub 离线"}));
+  await page.getByRole("button",{name:"开始配置",exact:true}).click();
+  await page.getByRole("button",{name:"选择启用项目"}).click();
+  assert(await page.getByRole("button",{name:"安装并启用",exact:true}).isEnabled());
+  await page.getByRole("button",{name:"安装并启用",exact:true}).click();
+  await page.waitForFunction(()=>window.__quickJob);
+  assert.equal(await page.evaluate(()=>window.__quickCalls.find(x=>x.command==="ai_memory_quick_start").args.request.targetVersion),null);
+  await page.reload();
+  await page.evaluate(()=>Object.assign(window.__quickInfo,{version:"4.0.0",updateError:"ai-memory 4.0.0 尚未适配"}));
+  await page.getByRole("button",{name:"开始配置",exact:true}).click();
+  await page.getByRole("button",{name:"选择启用项目"}).click();
+  assert(await page.getByRole("button",{name:"安装并启用",exact:true}).isDisabled());
   assert.deepEqual(errors, []);
-  console.log("PASS: lazy loading, selected agents/project/ZIP, busy guards, tab switching, failure/retry, polling recovery, pending capture, themes/600px, missing CLI, restore and unmount");
+  console.log("PASS: Windows ZIP and both Mac architectures/TAR.GZ, Unicode project path, lazy loading, busy guards, failure/retry, polling recovery, pending capture, themes/600px, missing CLI, restore and unmount");
 } finally { await browser.close(); }

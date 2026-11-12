@@ -36,7 +36,9 @@ test("统一总控恢复快捷指挥的六项高频操作入口", () => {
   );
   assert.match(multiAgentSource, /aria-label="统一权限模式"/);
   assert.match(multiAgentSource, /快捷指令/);
-  assert.match(multiAgentSource, /打开1个deepseek、1个glm、1个kimi、1个minimax/);
+  assert.match(multiAgentSource, /搜索与配置快捷指令/);
+  assert.match(sidebarSource, /<QuickCommandCenter/);
+  assert.doesNotMatch(multiAgentSource, /打开1个.*minimax/i);
   assert.match(multiAgentSource, /清除对话记录/);
   assert.match(multiAgentSource, /event\.ctrlKey[\s\S]*event\.shiftKey/);
   assert.match(multiAgentSource, /event\.key === "Tab"[\s\S]*applyQuickPromptCompletion/);

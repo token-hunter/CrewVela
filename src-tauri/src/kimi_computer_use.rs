@@ -37,6 +37,8 @@ pub struct KimiComputerUseStatus {
     /// KimiCU 可执行文件解析结果说明。
     pub runtime: String,
     pub warning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub macos: Option<crate::macos_computer_use::MacControlStatus>,
 }
 
 // ---- 设置持久化 ----
@@ -152,6 +154,8 @@ fn sync(settings: &KimiComputerUseSettings) -> Result<SyncOutcome> {
 
 /// 面板读取：设置 + 运行时状态；条目漂移时以 kimi-computer-use.json 为准自愈。
 fn status(app: &AppHandle) -> Result<KimiComputerUseStatus> {
+    #[cfg(target_os = "macos")]
+    { let _ = app; return mac_status(); }
     let _ = app;
     let config_dir = crate::providers::config_dir()?;
     status_at(&config_dir, &exe_path())
@@ -183,6 +187,7 @@ fn status_at(config_dir: &Path, exe: &Path) -> Result<KimiComputerUseStatus> {
         mcp_registered,
         runtime,
         warning: servers.err().map(|error| format!("读取 MCP 注册状态失败：{error}")),
+        macos: None,
     })
 }
 
@@ -193,10 +198,17 @@ fn status_from(settings: &KimiComputerUseSettings, outcome: &SyncOutcome, exe: &
         mcp_registered: Some(settings.enabled),
         runtime: outcome.runtime_label.clone(),
         warning: outcome.warnings.first().cloned(),
+        macos: None,
     }
 }
 
 fn save(settings: KimiComputerUseSettings) -> Result<KimiComputerUseStatus> {
+    #[cfg(target_os = "macos")]
+    {
+        let dir = crate::providers::config_dir()?;
+        crate::macos_computer_use::save(crate::macos_computer_use::MacControlTool::KimiCu, &dir, &settings_path_at(&dir), settings.enabled)?;
+        return mac_status();
+    }
     if !cfg!(target_os = "windows") {
         anyhow::bail!("kimi-computer-use 当前仅支持 Windows");
     }
@@ -209,18 +221,30 @@ fn save(settings: KimiComputerUseSettings) -> Result<KimiComputerUseStatus> {
     Ok(status_from(&settings, &outcome, &exe_path()))
 }
 
+
+#[cfg(target_os = "macos")]
+fn mac_status() -> Result<KimiComputerUseStatus> {
+    let dir = crate::providers::config_dir()?;
+    let settings = load_settings_at(&settings_path_at(&dir))?;
+    let macos = crate::macos_computer_use::inspect(crate::macos_computer_use::MacControlTool::KimiCu, &dir, settings.enabled);
+    Ok(KimiComputerUseStatus { installed: macos.installed, mcp_registered: macos.mcp_registered,
+        runtime: macos.executable.clone().map(|p| format!("本机执行入口：{p}（stdio MCP）")).unwrap_or_else(|| "未检测到可用运行时".into()),
+        warning: Some(macos.detail.clone()), settings, macos: Some(macos),
+    })
+}
+
 // ---- Tauri 命令 ----
 
 #[tauri::command]
-pub fn kimi_computer_use_get(app: AppHandle) -> Result<KimiComputerUseStatus, String> {
-    status(&app).map_err(|error| format!("{error:#}"))
+pub async fn kimi_computer_use_get(app: AppHandle) -> Result<KimiComputerUseStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || status(&app)).await.map_err(|e| e.to_string())?.map_err(|error| format!("{error:#}"))
 }
 
 #[tauri::command]
-pub fn kimi_computer_use_save(
+pub async fn kimi_computer_use_save(
     settings: KimiComputerUseSettings,
 ) -> Result<KimiComputerUseStatus, String> {
-    save(settings).map_err(|error| format!("{error:#}"))
+    tauri::async_runtime::spawn_blocking(move || save(settings)).await.map_err(|e| e.to_string())?.map_err(|error| format!("{error:#}"))
 }
 
 #[cfg(test)]

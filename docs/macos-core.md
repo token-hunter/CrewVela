@@ -33,7 +33,7 @@ npm run build:macos
 - POSIX 可视 Agent 任务通过 Bash 执行，参数与 stdin 分离，保存真实退出码；内部任务宿主不加载用户 Shell 配置，避免覆盖所选 Provider 的环境变量，并关闭 job control。普通终端仍使用所选 zsh/bash。任务终端暂显示原始协议输出，最终任务结果仍由既有解析器处理。
 - POSIX 可视任务日志上限为 5 MiB，写入失败或超限明确失败，不报告成功。Windows 保留现有日志裁剪与展示。
 - POSIX 停止持有所启动的根进程组身份。普通交互终端若另建作业进程组且仍存活，会保留未确认停止状态并报错；需通过另一个终端结束残留作业后重试。不能保证清理用户主动脱离 session 的进程。
-- 电脑控制、防休眠、接管内嵌浏览器控制暂不支持 macOS，相应入口禁用并说明。浏览器控制可使用已安装的外部 Chrome/Edge；仍需真实环境验收。
+- macOS 电脑控制可配置 Open Computer Use、KimiCU 两种外部 MCP 适配器，安装、权限与实际工具接入需分别验证，见[接入与验收步骤](macos-computer-control.md)。内置电脑控制、防休眠、接管内嵌浏览器控制仍未适配 macOS。浏览器控制可使用已安装的外部 Chrome/Edge；仍需真实环境验收。
 - 共享记忆没有 macOS 托管安装包；需手动安装兼容的 `ai-memory` 并加入 PATH，再配置与检查服务。
 - Codex 账户工具在 macOS 直接调用 PATH 中的 `cid`；新增登录需在终端执行 `cid add`，外部 Codex App 需手动重启。
 - 位图剪贴板使用跨平台插件；Finder 复制文件的原生文件列表读取尚未适配，文件可通过选择/拖入入口添加。

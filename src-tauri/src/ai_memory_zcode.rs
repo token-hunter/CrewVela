@@ -116,7 +116,7 @@ async fn query_sessions(
     for offset in (0..MAX_ROWS).step_by(PAGE_SIZE) {
         let url = sessions_url(base, workspace, project, offset)?;
         let body = service_json(
-            authenticated_request(client, url.to_string()).timeout(Duration::from_secs(5)),
+            authenticated_request(client, url.to_string())?.timeout(Duration::from_secs(5)),
         )
         .await
         .map_err(|error| anyhow::anyhow!("查询 ZCode 记忆会话失败：{error}"))?;

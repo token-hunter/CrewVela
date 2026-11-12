@@ -237,3 +237,8 @@
   .runtime-settings.settings-workspace .runtime-actions { flex-wrap: wrap; justify-content: flex-end; }
   .runtime-settings.settings-workspace .runtime-actions > div { width: 100%; }
 }
+
+/* macOS external adapters share the existing status area. */
+.external-control-status { margin-top: 20px; }
+.external-control-status h4 { margin: 0 0 8px; }
+.runtime-inline-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }

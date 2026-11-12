@@ -551,6 +551,11 @@ impl SessionActionQueue {
 
     /// 查看队首消息但不消费；flush_ready 在 PTY 写成功后才 commit_next，
     /// 写失败消息不丢、顺序不乱。
+    pub(crate) fn has_pending_work(&self, session_id: &str) -> bool {
+        let queued = self.items.lock().unwrap().get(session_id).is_some_and(|items| !items.is_empty());
+        queued || self.pending_submits.lock().unwrap().contains_key(session_id)
+    }
+
     #[cfg(test)]
     pub fn peek_next(&self, session_id: &str) -> Option<QueuedMessage> {
         self.items.lock().unwrap().get(session_id)?.front().cloned()
@@ -2486,7 +2491,7 @@ mod tests {
 
     fn session(id: &str, pty_id: Option<u32>) -> SessionRecord {
         SessionRecord {
-            id: id.into(),
+            launch_model: None,            id: id.into(),
             claude_session_id: id.into(),
             kind: SessionKind::Claude,
             shell: None,

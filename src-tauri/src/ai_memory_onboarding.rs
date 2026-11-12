@@ -7,9 +7,15 @@ use std::sync::Mutex;
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Request {
-    project_dir: String,
-    agents: Vec<String>,
-    local_archive: Option<String>,
+    pub(super) project_dir: String,
+    pub(super) agents: Vec<String>,
+    pub(super) local_archive: Option<String>,
+    #[serde(default)]
+    pub(super) target_version: Option<String>,
+    #[serde(default)]
+    pub(super) update: bool,
+    #[serde(default)]
+    pub(super) confirm_major: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -46,11 +52,11 @@ pub(super) fn require_idle() -> Result<(), String> {
 }
 
 #[derive(Clone)]
-struct Environment {
-    root: PathBuf,
-    home: PathBuf,
-    codex_home: PathBuf,
-    existing: Option<PathBuf>,
+pub(super) struct Environment {
+    pub(super) root: PathBuf,
+    pub(super) home: PathBuf,
+    pub(super) codex_home: PathBuf,
+    pub(super) existing: Option<PathBuf>,
 }
 
 impl Environment {
@@ -66,10 +72,10 @@ impl Environment {
             existing: locate_executable().map(|(path, _)| path),
         })
     }
-    fn data(&self) -> PathBuf {
+    pub(super) fn data(&self) -> PathBuf {
         self.root.join("ai-memory-data")
     }
-    fn config_paths(&self, agent: &str, project: &Path) -> (PathBuf, PathBuf) {
+    pub(super) fn config_paths(&self, agent: &str, project: &Path) -> (PathBuf, PathBuf) {
         if agent == "codex" {
             (
                 self.codex_home.join("config.toml"),
@@ -86,11 +92,27 @@ impl Environment {
 
 #[tauri::command]
 pub async fn ai_memory_quick_info() -> Result<Value, String> {
-    tokio::task::spawn_blocking(|| -> Result<Value> {
+    let mut info = tokio::task::spawn_blocking(|| -> Result<Value> {
         let agents = [("claude-code",crate::multi_agent::AgentRuntimeKind::ClaudeCode),("codex",crate::multi_agent::AgentRuntimeKind::Codex)]
             .map(|(id,kind)| json!({"id":id,"installed":crate::multi_agent::resolve_runtime_executable(kind).is_some()}));
-        Ok(json!({"supported":cfg!(all(windows,target_arch="x86_64")),"version":installation::VERSION,"agents":agents}))
-    }).await.map_err(|e|e.to_string())?.map_err(|e|format!("{e:#}"))
+        let package = installation::current_package();
+        let current = locate_executable();
+        let installed = current.as_ref().map(|(path,_)| installation::version(path)).transpose()?;
+        Ok(json!({"supported":package.is_some(),"package":package,"version":null,"agents":agents,"installedVersion":installed,"managed":current.is_some_and(|(_,source)|source=="managed"),"recoveryPending":updates::pending(&crate::providers::config_dir()?)}))
+    }).await.map_err(|e|e.to_string())?.map_err(|e|format!("{e:#}"))?;
+    if info["supported"] == true {
+        match releases::resolve(None).await {
+            Ok(release) => {
+                info["version"] = json!(release.version);
+                info["releaseId"] = json!(release.id);
+                info["updateError"] = json!(releases::compatible(&release.version)
+                    .err()
+                    .map(|e| e.to_string()));
+            }
+            Err(error) => info["updateError"] = json!(format!("{error:#}")),
+        }
+    }
+    Ok(info)
 }
 
 #[tauri::command]
@@ -129,7 +151,7 @@ fn persist(env: &Environment, job: &Job) -> Result<()> {
     )
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(super) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path.parent().context("文件缺少父目录")?;
     std::fs::create_dir_all(parent)?;
     if std::fs::metadata(path).is_ok_and(|m| m.permissions().readonly()) {
@@ -137,10 +159,14 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     }
     let temp = parent.join(format!(".memory-setup-{}.tmp", uuid::Uuid::new_v4()));
     let result = (|| -> Result<()> {
-        let mut file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temp)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temp)?;
         if let Ok(metadata) = std::fs::metadata(path) {
             file.set_permissions(metadata.permissions())?;
         }
@@ -163,6 +189,9 @@ fn new_job(request: &Request) -> Job {
         ("service", "初始化并启动本地服务"),
         ("project", "准备所选项目"),
     ];
+    if request.update {
+        steps.insert(1, ("backup", "备份安装、记忆和接入配置"));
+    }
     for agent in &request.agents {
         steps.push((
             agent.as_str(),
@@ -193,11 +222,17 @@ fn new_job(request: &Request) -> Job {
 
 #[tauri::command]
 pub fn ai_memory_quick_start(request: Request) -> Result<Job, String> {
-    if !cfg!(all(windows, target_arch = "x86_64")) {
-        return Err("快速启用暂支持 Windows x64，其他平台请使用接入配置".into());
+    if installation::current_package().is_none() {
+        return Err(
+            "快速启用支持 Windows x64 和 macOS（Apple Silicon / Intel）；当前平台请使用接入配置"
+                .into(),
+        );
     }
     validate_request(&request).map_err(|e| format!("{e:#}"))?;
     let env = Environment::current().map_err(|e| e.to_string())?;
+    if updates::pending(&env.root) {
+        return Err("上次更新未完成，请先恢复升级前快照".into());
+    }
     if server_url_override().is_some() {
         return Err("当前使用外部服务地址，快速启用不会修改外部服务；请使用接入配置".into());
     }
@@ -231,7 +266,12 @@ pub fn ai_memory_quick_start(request: Request) -> Result<Job, String> {
                 }
                 .into();
                 if let Err(error) = result {
-                    if let Some(step) = job.steps.iter_mut().find(|s| s.state == "running") {
+                    let failed = job
+                        .steps
+                        .iter()
+                        .position(|s| s.state == "running")
+                        .unwrap_or(job.steps.len() - 1);
+                    if let Some(step) = job.steps.get_mut(failed) {
                         step.state = "failed".into();
                         step.detail = format!("{error:#}");
                     }
@@ -250,6 +290,12 @@ pub fn ai_memory_quick_start(request: Request) -> Result<Job, String> {
 }
 
 fn validate_request(request: &Request) -> Result<PathBuf> {
+    if request.update && request.target_version.is_none() {
+        bail!("请先检查更新并选择目标版本");
+    }
+    if let Some(version) = &request.target_version {
+        releases::compatible(version)?;
+    }
     let path = Path::new(&request.project_dir);
     if !path.is_absolute() || !path.is_dir() {
         bail!("请选择存在的绝对项目目录");
@@ -320,6 +366,24 @@ fn precheck(env: &Environment, request: &Request, project: &Path) -> Result<()> 
                         "url" => value.is_string(),
                         "type" => value == "http",
                         "default_tools_approval_mode" => value == "approve",
+                        "headers" | "http_headers" => value.as_object().is_some_and(|headers| {
+                            headers.len() == 1
+                                && headers
+                                    .get("Authorization")
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|s| s.starts_with("Bearer "))
+                        }),
+                        // v3 generates explicit prompts for destructive memory tools.
+                        // Accept that restrictive default, never arbitrary tool overrides.
+                        "tools" if agent == "codex" => value.as_object().is_some_and(|tools| {
+                            tools.iter().all(|(name, settings)| {
+                                name.starts_with("memory_")
+                                    && settings.as_object().is_some_and(|fields| {
+                                        fields.len() == 1
+                                            && fields.get("approval_mode") == Some(&json!("prompt"))
+                                    })
+                            })
+                        }),
                         _ => false,
                     })
                 });
@@ -429,7 +493,7 @@ fn initialize_data(executable: &Path, data: &Path) -> Result<String> {
     managed_base(data)
 }
 
-fn setup_agent(
+pub(super) fn setup_agent(
     env: &Environment,
     executable: &Path,
     project: &Path,
@@ -489,6 +553,7 @@ fn setup_agent_with(
             if index == 1 {
                 command.args(["--capture-mode", "allowlist"]);
             }
+            auth::command(&mut command, &env.data(), base)?;
             let output = run(command);
             after[index] = read_optional(&paths[index])?;
             let output = output?;
@@ -521,7 +586,7 @@ fn setup_agent_with(
     Ok(())
 }
 
-async fn verify_tools(base: &str) -> Result<()> {
+pub(super) async fn verify_tools(base: &str, data: &Path) -> Result<()> {
     let server = crate::mcp::McpServerConfig {
         id: "memory-quick-check".into(),
         name: "ai-memory".into(),
@@ -530,12 +595,7 @@ async fn verify_tools(base: &str) -> Result<()> {
         args: vec![],
         env: Default::default(),
         url: Some(format!("{base}/mcp")),
-        headers: std::env::var("AI_MEMORY_AUTH_TOKEN")
-            .ok()
-            .filter(|t| !t.is_empty())
-            .map(|t| ("Authorization".into(), format!("Bearer {t}")))
-            .into_iter()
-            .collect(),
+        headers: auth::headers(data, base)?,
         enabled: true,
         source_plugin: None,
         created_at: 0,
@@ -551,11 +611,19 @@ async fn verify_tools(base: &str) -> Result<()> {
     Ok(())
 }
 
-async fn execute(
+pub(super) async fn execute(
     env: &Environment,
     request: &Request,
     update: &(impl Fn(&str, &str, &str) -> Result<()> + Sync),
 ) -> Result<()> {
+    let _operation = if request.update {
+        None
+    } else {
+        Some(updates::operation_lock(&env.root)?)
+    };
+    if updates::pending(&env.root) {
+        bail!("上次更新未完成，请先恢复升级前快照");
+    }
     update("precheck", "running", "核对项目、版本和配置范围")?;
     let project = validate_request(request)?;
     precheck(env, request, &project)?;
@@ -564,23 +632,23 @@ async fn execute(
         "done",
         "仅接入所选 Agent；现有项目路由和其他配置将保留",
     )?;
-    update(
-        "install",
-        "running",
-        "准备官方 v2.6.0 Windows x64 包，校验后才发布",
-    )?;
+    if request.update {
+        let release = releases::resolve(request.target_version.as_deref()).await?;
+        return updates::execute(env, request, &release, update).await;
+    }
+    update("install", "running", "准备所选官方稳定版，校验后才发布")?;
     let executable = if let Some(path) = &env.existing {
         let path = path.clone();
         let found = tokio::task::spawn_blocking(move || installation::version(&path)).await??;
-        if found != installation::VERSION {
-            bail!("已检测到 ai-memory {found}，保留原版本；请使用高级手动接入");
-        }
+        releases::compatible(&found)?;
         env.existing.clone().unwrap()
     } else {
         let _guard = service_lifecycle_lock(Duration::from_secs(20)).await?;
-        installation::install(
+        let release = releases::resolve(request.target_version.as_deref()).await?;
+        installation::install_release(
             &env.root.join("ai-memory"),
             request.local_archive.as_deref().map(Path::new),
+            &release,
         )
         .await?
     };
@@ -610,7 +678,7 @@ async fn execute(
         update(agent, "done", "接入配置已完成；现有运行中会话未重启")?;
     }
     update("check", "running", "检查实际记忆工具与项目捕获策略")?;
-    verify_tools(&base).await?;
+    verify_tools(&base, &env.data()).await?;
     let exe = executable;
     let data = env.data();
     let cwd = project.display().to_string();
@@ -644,6 +712,9 @@ mod tests {
             project_dir: root.join("project").display().to_string(),
             agents: vec!["claude-code".into(), "codex".into()],
             local_archive: None,
+            target_version: None,
+            update: false,
+            confirm_major: false,
         };
         (root, env, request)
     }
@@ -703,6 +774,22 @@ mod tests {
     }
 
     #[test]
+    fn v3_restrictive_tool_approvals_are_retained_but_custom_overrides_stop_setup() {
+        let (root, env, mut request) = fixture();
+        request.agents = vec!["codex".into()];
+        std::fs::create_dir_all(&env.codex_home).unwrap();
+        let path = env.codex_home.join("config.toml");
+        let base="[mcp_servers.ai-memory]\nurl='http://127.0.0.1:49374/mcp'\ndefault_tools_approval_mode='approve'\n[mcp_servers.ai-memory.http_headers]\nAuthorization='Bearer fixture-only'\n[mcp_servers.ai-memory.tools.memory_delete_page]\napproval_mode='prompt'\n";
+        std::fs::write(&path, base).unwrap();
+        assert!(precheck(&env, &request, Path::new(&request.project_dir)).is_ok());
+        let custom = base.replace("approval_mode='prompt'", "approval_mode='approve'");
+        std::fs::write(&path, &custom).unwrap();
+        assert!(precheck(&env, &request, Path::new(&request.project_dir)).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), custom);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn denied_capture_scope_and_user_changed_policy_are_not_accepted() {
         let report = json!({"server_resolution":"install-default","scope_resolution":"server-derived","policy_state":"inactive","admits_capture":false});
         assert!(scope_from_report(&report, "project").is_none());
@@ -721,11 +808,19 @@ mod tests {
     /// Uses the official, SHA256-verified release and a completely separate
     /// home/config/project tree. Never reads or writes real Agent configuration.
     #[tokio::test]
-    #[ignore = "requires official release ZIP: CREWVELA_AI_MEMORY_TEST_RELEASE_ZIP"]
+    #[ignore = "requires official platform archive: CREWVELA_AI_MEMORY_TEST_RELEASE_ARCHIVE"]
     async fn official_release_first_use_repeat_and_scope_acceptance() {
-        let archive = std::env::var("CREWVELA_AI_MEMORY_TEST_RELEASE_ZIP")
-            .expect("set official release ZIP path");
+        let archive = std::env::var("CREWVELA_AI_MEMORY_TEST_RELEASE_ARCHIVE")
+            .or_else(|_| std::env::var("CREWVELA_AI_MEMORY_TEST_RELEASE_ZIP"))
+            .expect("set official archive path for the current platform");
         let (root, env, mut request) = fixture();
+        request.target_version = Some(
+            std::env::var("CREWVELA_AI_MEMORY_TEST_RELEASE_VERSION")
+                .unwrap_or_else(|_| "2.6.0".into()),
+        );
+        let project = root.join("记忆测试 项目 O'Brien");
+        std::fs::create_dir(&project).unwrap();
+        request.project_dir = project.to_string_lossy().into_owned();
         // An unrelated listener on the default port must never be adopted.
         let _foreign_listener = std::net::TcpListener::bind("127.0.0.1:49374").ok();
         request.local_archive = Some(archive);
@@ -791,7 +886,10 @@ mod tests {
                 std::fs::read_to_string(env.data().join("capture-mode"))?.trim(),
                 "allowlist"
             );
-            let exe = env.root.join("ai-memory/ai-memory.exe");
+            let exe = env
+                .root
+                .join("ai-memory")
+                .join(installation::current_package().unwrap().executable_name());
             let unmarked = root.join("not-selected");
             std::fs::create_dir(&unmarked)?;
             assert!(
@@ -814,7 +912,10 @@ mod tests {
             let _guard = service_lifecycle_lock(Duration::from_secs(20))
                 .await
                 .unwrap();
-            managed_service().unwrap().stop().unwrap();
+            let mut service = managed_service().unwrap();
+            if service.is_running().unwrap() {
+                service.stop().unwrap();
+            }
         }
         result.unwrap();
         std::fs::remove_dir_all(root).unwrap();
@@ -873,5 +974,82 @@ mod tests {
             }
             std::fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated official v2.6.0 and v3.4.5 archives; never user data"]
+    async fn official_major_upgrade_failure_rollback_and_retry() {
+        let old_archive =
+            std::env::var("CREWVELA_AI_MEMORY_TEST_OLD_ARCHIVE").expect("set v2.6.0 archive");
+        let new_archive =
+            std::env::var("CREWVELA_AI_MEMORY_TEST_RELEASE_ARCHIVE").expect("set v3.4.5 archive");
+        let (root, mut env, mut request) = fixture();
+        request.target_version = Some("2.6.0".into());
+        request.local_archive = Some(old_archive);
+        let _foreign_listener = std::net::TcpListener::bind("127.0.0.1:49374").ok();
+        let update = |_: &str, _: &str, _: &str| Ok(());
+        let result = async {
+            execute(&env, &request, &update).await?;
+            let executable = env.root.join("ai-memory").join(installation::current_package().unwrap().executable_name());
+            env.existing = Some(executable.clone());
+            let data = env.data();
+            std::fs::write(data.join("keep-user-memory"), "preserve")?;
+            {
+                let db = rusqlite::Connection::open(data.join("db/memory.sqlite"))?;
+                db.execute_batch("CREATE TABLE crewvela_upgrade_fixture(value TEXT); INSERT INTO crewvela_upgrade_fixture VALUES('preserve-database');")?;
+            }
+            let paths = request.agents.iter().flat_map(|agent| {
+                let (mcp,hooks)=env.config_paths(agent,Path::new(&request.project_dir)); [mcp,hooks]
+            }).collect::<Vec<_>>();
+            let before = paths.iter().map(|p|std::fs::read(p)).collect::<std::io::Result<Vec<_>>>()?;
+            request.update = true;
+            request.target_version = Some("3.4.5".into());
+            request.local_archive = Some(new_archive);
+            let release = releases::resolve(Some("3.4.5")).await?;
+            assert!(updates::execute(&env,&request,&release,&update).await.unwrap_err().to_string().contains("跨大版本"));
+            request.confirm_major = true;
+            // All real migration, config and tool checks finish before an injected
+            // final failure. This exercises rollback of already migrated data.
+            let fail = |id: &str, state: &str, _: &str| {
+                if id == "check" && state == "done" {
+                    std::fs::write(data.join("candidate-only-data"), "retain failed candidate writes")?;
+                    bail!("fixture injected final validation failure");
+                }
+                Ok(())
+            };
+            let error = updates::execute(&env,&request,&release,&fail).await.unwrap_err();
+            assert!(format!("{error:#}").contains("已恢复旧安装"),"{error:#}");
+            assert_eq!(installation::version(&executable)?,"2.6.0");
+            assert!(!updates::pending(&env.root));
+            for (path,bytes) in paths.iter().zip(&before) { assert_eq!(&std::fs::read(path)?,bytes); }
+            assert!(!data.join("candidate-only-data").exists());
+            let backups=std::fs::read_dir(env.root.join("ai-memory-upgrade-backups"))?.collect::<std::io::Result<Vec<_>>>()?;
+            assert!(backups.iter().any(|entry|std::fs::read_dir(entry.path()).unwrap().any(|p|p.unwrap().path().join("candidate-only-data").is_file())));
+            let base=managed_base(&data)?;
+            assert_eq!(managed_status_for_data(&service_client(&base)?,&base,&data).await?["version"],"2.6.0");
+            execute(&env,&request,&update).await?;
+            assert_eq!(installation::version(&executable)?,"3.4.5");
+            assert_eq!(managed_status_for_data(&service_client(&base)?,&base,&data).await?["version"],"3.4.5");
+            assert_eq!(std::fs::read_to_string(data.join("keep-user-memory"))?,"preserve");
+            {
+                let db=rusqlite::Connection::open(data.join("db/memory.sqlite"))?;
+                let value:String=db.query_row("SELECT value FROM crewvela_upgrade_fixture",[],|r|r.get(0))?;
+                assert_eq!(value,"preserve-database");
+            }
+            assert!(!updates::pending(&env.root));
+            assert!(updates::execute(&env,&request,&release,&update).await.unwrap_err().to_string().contains("不高于"));
+            Ok::<_,anyhow::Error>(())
+        }.await;
+        {
+            let _guard = service_lifecycle_lock(Duration::from_secs(20))
+                .await
+                .unwrap();
+            let mut service = managed_service().unwrap();
+            if service.is_running().unwrap() {
+                service.stop().unwrap();
+            }
+        }
+        result.unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

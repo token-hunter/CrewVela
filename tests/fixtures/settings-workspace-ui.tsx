@@ -19,6 +19,14 @@ const statuses: Record<string, any> = {
   kimi_computer_use: structuredClone(KIMI_COMPUTER_USE_PREVIEW),
   open_computer_use: structuredClone(OPEN_COMPUTER_USE_PREVIEW),
 };
+if (/mac/i.test(navigator.platform)) {
+  const scenario = new URLSearchParams(location.search).get("scenario");
+  for (const prefix of ["open_computer_use", "kimi_computer_use"]) {
+    statuses[prefix].settings = { enabled: false };
+    statuses[prefix].macos = { supported: scenario !== "unsupported", installed: scenario !== "missing", executable: "/Applications/Fixture.app/Contents/MacOS/tool", mcpRegistered: false, accessibility: null, screenRecording: null, serviceRunning: null, detail: "运行时已检测到；权限尚未验证。" };
+    statuses[prefix].warning = null;
+  }
+}
 const runtimes = ["Claude Code", "Codex", "Kimi Code", "Pi", "OpenCode"].map((label, i) => ({ runtime: `runtime-${i}`, label, globalRoot: "C:/fixture/skills", projectRoot: ".agents/skills", discoveryRoots: [], recursiveScan: false, installed: i !== 4 }));
 const assets = ["frontend-design", "long-skill-name-for-overflow-verification-2026"].map((name, i) => ({ id: `asset-${i}`, name, description: "回归测试资产，不会读写真实目录", sourceType: "local", sourceRef: "C:/fixture/very-long-project-directory/skills/design", sourceRevision: null, centralPath: "C:/fixture/assets", contentHash: "a".repeat(64), trustState: "trusted", fileCount: 2, scriptCount: 0, riskSummary: [], updatedAt: 0 }));
 const snapshot: any = { assets, runtimes, deployments: [], skillSets: [] };
@@ -28,10 +36,18 @@ const calls: string[] = [];
 (window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(command: string, args: any) {
   calls.push(`${command} ${JSON.stringify(args ?? {})}`);
   report(calls.join("\n"));
-  if (failNext && (command.endsWith("_save") || command === "skill_center_deploy_batch")) { failNext = false; throw Error("测试保存失败"); }
+  if (failNext && (command.endsWith("_save") || command === "skill_center_deploy_batch" || command === "macos_computer_use_action")) { failNext = false; throw Error("测试保存失败"); }
+  if (command === "macos_computer_use_action") {
+    const status = statuses[args.tool === "kimiCu" ? "kimi_computer_use" : "open_computer_use"];
+    status.macos = { ...status.macos, accessibility: args.prepare, screenRecording: args.prepare, serviceRunning: args.tool === "kimiCu" ? args.prepare : null, detail: args.prepare ? "Mock 授权已完成；请重开 Agent 会话验证。" : "待授权：辅助功能和屏幕录制尚未授予。" };
+    return structuredClone(status.macos);
+  }
   const prefix = command.replace(/_(get|save)$/, "");
   if (statuses[prefix]) {
-    if (command.endsWith("_save")) statuses[prefix].settings = args.settings;
+    if (command.endsWith("_save")) {
+      statuses[prefix].settings = args.settings;
+      if (statuses[prefix].macos) statuses[prefix].macos.mcpRegistered = args.settings.enabled;
+    }
     return structuredClone(statuses[prefix]);
   }
   if (command === "skill_center_snapshot") return structuredClone(snapshot);

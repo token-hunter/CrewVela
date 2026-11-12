@@ -37,6 +37,8 @@ pub struct OpenComputerUseStatus {
     /// open-computer-use.exe 解析结果说明。
     pub runtime: String,
     pub warning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub macos: Option<crate::macos_computer_use::MacControlStatus>,
 }
 
 // ---- 设置持久化 ----
@@ -195,6 +197,8 @@ fn sync(settings: &OpenComputerUseSettings) -> Result<SyncOutcome> {
 
 /// 面板读取：设置 + 运行时状态；条目漂移时以 open-computer-use.json 为准自愈。
 fn status(app: &AppHandle) -> Result<OpenComputerUseStatus> {
+    #[cfg(target_os = "macos")]
+    { let _ = app; return mac_status(); }
     let _ = app;
     let config_dir = crate::providers::config_dir()?;
     let settings = load_settings_at(&settings_path_at(&config_dir))?;
@@ -229,6 +233,7 @@ fn status(app: &AppHandle) -> Result<OpenComputerUseStatus> {
         settings,
         runtime,
         warning: None,
+        macos: None,
     })
 }
 
@@ -237,10 +242,17 @@ fn status_from(settings: &OpenComputerUseSettings, outcome: &SyncOutcome) -> Ope
         settings: settings.clone(),
         runtime: outcome.runtime_label.clone(),
         warning: outcome.warnings.first().cloned(),
+        macos: None,
     }
 }
 
 fn save(settings: OpenComputerUseSettings) -> Result<OpenComputerUseStatus> {
+    #[cfg(target_os = "macos")]
+    {
+        let dir = crate::providers::config_dir()?;
+        crate::macos_computer_use::save(crate::macos_computer_use::MacControlTool::OpenComputerUse, &dir, &settings_path_at(&dir), settings.enabled)?;
+        return mac_status();
+    }
     if !cfg!(target_os = "windows") {
         anyhow::bail!("open-computer-use 当前仅支持 Windows");
     }
@@ -253,18 +265,30 @@ fn save(settings: OpenComputerUseSettings) -> Result<OpenComputerUseStatus> {
     Ok(status_from(&settings, &outcome))
 }
 
+
+#[cfg(target_os = "macos")]
+fn mac_status() -> Result<OpenComputerUseStatus> {
+    let dir = crate::providers::config_dir()?;
+    let settings = load_settings_at(&settings_path_at(&dir))?;
+    let macos = crate::macos_computer_use::inspect(crate::macos_computer_use::MacControlTool::OpenComputerUse, &dir, settings.enabled);
+    Ok(OpenComputerUseStatus {
+        runtime: macos.executable.clone().map(|p| format!("本机执行入口：{p}（stdio MCP）")).unwrap_or_else(|| "未检测到可用运行时".into()),
+        warning: Some(macos.detail.clone()), settings, macos: Some(macos),
+    })
+}
+
 // ---- Tauri 命令 ----
 
 #[tauri::command]
-pub fn open_computer_use_get(app: AppHandle) -> Result<OpenComputerUseStatus, String> {
-    status(&app).map_err(|error| format!("{error:#}"))
+pub async fn open_computer_use_get(app: AppHandle) -> Result<OpenComputerUseStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || status(&app)).await.map_err(|e| e.to_string())?.map_err(|error| format!("{error:#}"))
 }
 
 #[tauri::command]
-pub fn open_computer_use_save(
+pub async fn open_computer_use_save(
     settings: OpenComputerUseSettings,
 ) -> Result<OpenComputerUseStatus, String> {
-    save(settings).map_err(|error| format!("{error:#}"))
+    tauri::async_runtime::spawn_blocking(move || save(settings)).await.map_err(|e| e.to_string())?.map_err(|error| format!("{error:#}"))
 }
 
 #[cfg(test)]

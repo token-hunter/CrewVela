@@ -19,6 +19,14 @@ mod verification;
 pub mod zcode;
 #[path = "ai_memory_installation.rs"]
 mod installation;
+#[path = "ai_memory_release.rs"]
+mod releases;
+#[path = "ai_memory_auth.rs"]
+mod auth;
+#[path = "ai_memory_update.rs"]
+mod updates;
+#[tauri::command]
+pub async fn ai_memory_recover_update(confirmed: bool) -> Result<(), String> { updates::recover_update(confirmed).await }
 #[path = "ai_memory_onboarding.rs"]
 pub mod onboarding;
 #[tauri::command]
@@ -239,11 +247,9 @@ fn service_transport_error(error: reqwest::Error) -> ServiceHealthError {
     ServiceHealthError { state, message: message.into() }
 }
 
-fn authenticated_request(client: &reqwest::Client, url: String) -> reqwest::RequestBuilder {
-    let request = client.get(url);
-    match std::env::var("AI_MEMORY_AUTH_TOKEN").ok().filter(|token| !token.is_empty()) {
-        Some(token) => request.bearer_auth(token), None => request,
-    }
+fn authenticated_request(client: &reqwest::Client, url: String) -> Result<reqwest::RequestBuilder> {
+    let request = client.get(&url);
+    Ok(match auth::token(&data_dir()?, &url)? { Some(token) => request.bearer_auth(token), None => request })
 }
 
 fn loopback_socket_address(base: &str) -> Option<std::net::SocketAddr> {
@@ -314,9 +320,24 @@ async fn service_response_json(response: reqwest::Response) -> std::result::Resu
 }
 
 async fn admin_status_at(client: &reqwest::Client, base: &str) -> std::result::Result<Value, ServiceHealthError> {
-    let value = service_json(authenticated_request(client, format!("{}/admin/status", base.trim_end_matches('/'))).timeout(Duration::from_secs(2))).await?;
+    let request = authenticated_request(client, format!("{}/admin/status", base.trim_end_matches('/'))).map_err(|_| ServiceHealthError { state:"authentication_error", message:"无法读取本地记忆认证配置，请核对访问令牌文件".into() })?;
+    let value = service_json(request.timeout(Duration::from_secs(2))).await?;
     if value.get("version").and_then(Value::as_str).is_none_or(str::is_empty) || !value.get("counts").is_some_and(Value::is_object) {
         return Err(ServiceHealthError { state: "invalid_response", message: "记忆服务状态响应缺少 version 或 counts，无法确认服务可用".into() });
+    }
+    Ok(value)
+}
+
+async fn managed_status_for_data(client: &reqwest::Client, base: &str, data: &Path) -> std::result::Result<Value, ServiceHealthError> {
+    if managed_listener_is_unbound(base).map_err(|_| ServiceHealthError {state:"configuration_error",message:"无法检查本地记忆监听地址".into()})? {
+        return Err(ServiceHealthError {state:"offline",message:"本地记忆服务未启动".into()});
+    }
+    let headers = auth::headers(data, base).map_err(|_| ServiceHealthError {state:"authentication_error",message:"本地记忆认证配置无法读取".into()})?;
+    let mut request = client.get(format!("{}/admin/status", base.trim_end_matches('/'))).timeout(Duration::from_secs(2));
+    for (key,value) in headers { request = request.header(key,value); }
+    let value = service_json(request).await?;
+    if value.get("version").and_then(Value::as_str).is_none_or(str::is_empty) || !value.get("counts").is_some_and(Value::is_object) {
+        return Err(ServiceHealthError {state:"invalid_response",message:"记忆服务状态响应缺少 version 或 counts".into()});
     }
     Ok(value)
 }
@@ -413,6 +434,7 @@ fn setup_command(executable: &Path, data: &Path, url: &str, agent: SetupAgent, a
         command.current_dir(data);
     }
     command.creation_flags_no_window();
+    auth::command(&mut command, data, url)?;
     Ok(command)
 }
 
@@ -439,7 +461,27 @@ fn read_setup_output(mut pipe: impl std::io::Read + Send + 'static) -> std::sync
     receiver
 }
 
+fn scrub_setup_output(mut text: String, secret: Option<&str>, truncated: bool) -> String {
+    if let Some(secret) = secret.filter(|value| !value.is_empty()) {
+        // The bounded output reader can stop part-way through a token.
+        // Remove an incomplete token at that boundary as well as full matches.
+        if truncated {
+            for (length, _) in secret.char_indices().rev() {
+                if length > 0 && text.ends_with(&secret[..length]) {
+                    text.truncate(text.len() - length);
+                    text.push_str("[访问令牌已隐藏]");
+                    break;
+                }
+            }
+        }
+        text = text.replace(secret, "[访问令牌已隐藏]");
+    }
+    text
+}
+
 fn run_setup_command(mut command: Command, timeout: Duration) -> Result<SetupResult> {
+    let secret = command.get_envs().find(|(k,_)| *k == "AI_MEMORY_AUTH_TOKEN").and_then(|(_,v)| v).map(|s| s.to_string_lossy().into_owned())
+        .or_else(|| std::env::var("AI_MEMORY_AUTH_TOKEN").ok());
     command.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).stdin(std::process::Stdio::null());
     let mut child = command.spawn().context("启动配置命令失败")?;
     let stdout = read_setup_output(child.stdout.take().context("无法读取标准输出")?);
@@ -455,7 +497,7 @@ fn run_setup_command(mut command: Command, timeout: Duration) -> Result<SetupRes
     };
     let (out, out_truncated) = stdout.recv_timeout(Duration::from_secs(2)).context("标准输出未在限定时间内关闭")??;
     let (err, err_truncated) = stderr.recv_timeout(Duration::from_secs(2)).context("错误输出未在限定时间内关闭")??;
-    Ok(SetupResult { success: exit.success() && !timed_out, exit_code: exit.code(), timed_out, stdout: out, stderr: err, output_truncated: out_truncated || err_truncated })
+    Ok(SetupResult { success: exit.success() && !timed_out, exit_code: exit.code(), timed_out, stdout: scrub_setup_output(out,secret.as_deref(),out_truncated), stderr: scrub_setup_output(err,secret.as_deref(),err_truncated), output_truncated: out_truncated || err_truncated })
 }
 
 static SETUP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -485,6 +527,9 @@ fn guard_project_registration(path: &Path, action: SetupAction) -> Result<()> {
 pub async fn ai_memory_setup(agent: SetupAgent, action: SetupAction, project_dir: Option<String>) -> Result<SetupResult, String> {
     onboarding::require_idle()?;
     tokio::task::spawn_blocking(move || -> Result<SetupResult> {
+        let root=crate::providers::config_dir()?;
+        let _operation=updates::operation_lock(&root)?;
+        if updates::pending(&root) { bail!("上次更新未完成，请先恢复升级前快照"); }
         let _guard = SETUP_LOCK.try_lock().map_err(|_| anyhow::anyhow!("另一个接入配置正在执行，请稍后重试"))?;
         let (executable, _) = locate_executable().context("未找到 ai-memory，请先安装")?;
         let data = data_dir()?;
@@ -514,7 +559,7 @@ async fn status() -> Result<AiMemoryStatus> {
         installed: executable.is_some(),
         executable,
         install_source: source,
-        managed_install_available: cfg!(all(windows, target_arch = "x86_64")),
+        managed_install_available: installation::current_package().is_some(),
         server_url: resolved_server_url().unwrap_or_default(),
         server_running: server.is_some(),
         health_state,
@@ -531,7 +576,7 @@ async fn status() -> Result<AiMemoryStatus> {
     })
 }
 
-/// 校验并安装固定版本；已有兼容安装复用，数据目录保持独立。
+/// 校验并安装官方稳定版；更新已有安装需显式确认，数据目录保持独立。
 #[tauri::command]
 pub async fn ai_memory_install() -> Result<AiMemoryStatus, String> {
     onboarding::require_idle()?;
@@ -539,7 +584,9 @@ pub async fn ai_memory_install() -> Result<AiMemoryStatus, String> {
 }
 
 async fn install() -> Result<AiMemoryStatus> {
+    let _operation = updates::operation_lock(&crate::providers::config_dir()?)?;
     let _guard = service_lifecycle_lock(Duration::from_secs(20)).await?;
+    if updates::pending(&crate::providers::config_dir()?) { bail!("上次更新未完成，请先恢复升级前快照"); }
     installation::install(&managed_dir()?, None).await?;
     status().await
 }
@@ -552,6 +599,8 @@ pub async fn ai_memory_serve() -> Result<AiMemoryStatus, String> {
 }
 
 async fn serve() -> Result<AiMemoryStatus> {
+    let _operation = updates::operation_lock(&crate::providers::config_dir()?)?;
+    if updates::pending(&crate::providers::config_dir()?) { bail!("上次更新未完成，请先恢复升级前快照，未继续启动可能已迁移的数据"); }
     let _lifecycle = service_lifecycle_lock(Duration::from_secs(20)).await?;
     let client = service_client(&resolved_server_url().unwrap_or_default())?;
     match admin_status(&client).await {
@@ -571,7 +620,7 @@ async fn serve() -> Result<AiMemoryStatus> {
 /// Shared by manual startup and the first-use workflow; callers hold the lifecycle lock.
 async fn start_service_at(executable: &Path, data: &Path, base: &str) -> Result<()> {
     let client = service_client(base)?;
-    match managed_admin_status_at(&client, base).await {
+    match managed_status_for_data(&client, base, data).await {
         Ok(_) => return Ok(()),
         Err(error) if error.state == "offline" => {},
         Err(error) => return Err(error).context("记忆服务地址异常，未替换现有监听服务"),
@@ -613,6 +662,11 @@ async fn start_service_at(executable: &Path, data: &Path, base: &str) -> Result<
         // 不随本应用的作业对象 / Ctrl+C 传播退出。
         command.creation_flags(0x0800_0000 | 0x0000_0200);
     }
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::process::CommandExt;
+        command.current_dir(data).process_group(0);
+    }
     let child = command
         .spawn()
         .with_context(|| format!("启动 ai-memory 服务失败: {}", executable.display()))?;
@@ -622,7 +676,7 @@ async fn start_service_at(executable: &Path, data: &Path, base: &str) -> Result<
     wait_for_service_startup(
         Duration::from_secs(15),
         || managed_service()?.is_running(),
-        || managed_admin_status_at(&client, base),
+        || managed_status_for_data(&client, base, data),
         || {
             let mut service = managed_service()?;
             if service.is_running()? { service.stop()?; }
@@ -639,6 +693,7 @@ pub async fn ai_memory_stop() -> Result<AiMemoryStatus, String> {
 }
 
 async fn stop() -> Result<AiMemoryStatus> {
+    let _operation = updates::operation_lock(&crate::providers::config_dir()?)?;
     let _lifecycle = service_lifecycle_lock(Duration::from_secs(20)).await?;
     managed_service()?.stop()?;
     status().await
@@ -723,7 +778,7 @@ async fn open_handoffs(
 }
 
 async fn query_handoffs_at(client: &reqwest::Client, base: &str, workspace: &str, project: &str) -> Result<Vec<Value>> {
-    let response = authenticated_request(client, format!("{}/admin/handoffs", base.trim_end_matches('/')))
+    let response = authenticated_request(client, format!("{}/admin/handoffs", base.trim_end_matches('/')))?
         .query(&[("workspace", workspace), ("project", project), ("limit", "100")])
         .timeout(Duration::from_secs(3));
     let response = response.send().await.map_err(service_transport_error).context("读取共享记忆交接记录失败")?;
@@ -1305,9 +1360,28 @@ mod tests {
     fn setup_process_fixture() {
         let Ok(mode) = std::env::var("CREWVELA_SETUP_TEST_FIXTURE") else { return; };
         if mode == "timeout" { std::thread::sleep(Duration::from_secs(10)); return; }
+        if mode == "secret" {
+            let token=std::env::var("AI_MEMORY_AUTH_TOKEN").unwrap();
+            println!("{token}"); eprintln!("{token}"); return;
+        }
         println!("{}", "x".repeat(70000));
         eprintln!("fixture diagnostic");
         if mode == "failure" { std::process::exit(7); }
+    }
+
+    #[test]
+    fn setup_output_never_returns_the_child_service_token() {
+        assert_eq!(scrub_setup_output("diagnostic fixture-serv".into(),Some("fixture-service-token-only"),true),"diagnostic [访问令牌已隐藏]");
+        assert_eq!(scrub_setup_output("diagnostic fixture-serv".into(),None,true),"diagnostic fixture-serv");
+        let mut command=Command::new(std::env::current_exe().unwrap());
+        command.args(["--exact","ai_memory::tests::setup_process_fixture","--nocapture"])
+            .env("CREWVELA_SETUP_TEST_FIXTURE","secret").env("AI_MEMORY_AUTH_TOKEN","fixture-service-token-only");
+        let output=run_setup_command(command,Duration::from_secs(10)).unwrap();
+        assert!(output.success);
+        for stream in [output.stdout,output.stderr] {
+            assert!(!stream.contains("fixture-service-token-only"));
+            assert!(stream.contains("[访问令牌已隐藏]"));
+        }
     }
 
     #[test]

@@ -4,6 +4,7 @@ mod ai_memory;
 mod ai_memory_access;
 mod approvals;
 mod automation;
+mod automation_runtime;
 mod browser_control;
 mod browser_panel;
 mod clipboard_image;
@@ -44,6 +45,7 @@ mod native_zcode_sessions;
 mod harness_control;
 mod notification_history;
 mod open_computer_use;
+mod macos_computer_use;
 mod plugin_market;
 mod presets;
 mod projects;
@@ -2630,6 +2632,9 @@ fn open_session(
     pty_state: &PtyManager,
     session_state: &SessionManager,
 ) -> Result<SessionRecord, String> {
+    let mut effective_provider = provider.clone();
+    if let Some(model) = &record.launch_model { effective_provider.env.insert("ANTHROPIC_MODEL".into(), model.clone()); }
+    let provider = &effective_provider;
     let _admission = pty_state.admit_start().map_err(to_err)?;
     runtime_preferences::ensure_session_available(record).map_err(to_err)?;
     session_switch::ensure_can_start(&record.id).map_err(to_err)?;
@@ -3288,6 +3293,7 @@ fn open_runtime_session_checked(
         .configure_runtime_resume(&mut command, record)
         .map_err(to_err)?;
     configure_runtime_communication(kind, &mut command, record, session_state)?;
+    automation_runtime::configure_model(kind, &mut command, record.launch_model.as_deref()).map_err(to_err)?;
     session_switch::configure_target(&mut command, record).map_err(to_err)?;
     if yolo {
         configure_yolo_runtime_command(kind, &mut command, record, session_state)?;
@@ -5093,6 +5099,18 @@ fn set_agent_activity(
 /// 失败全部转化为熔断计数——自动化是无人值守路径，错误必须留在历史里。
 /// 时间型自动化出列执行。pty_poll_all 主循环会调用；另外由独立的
 /// automation_tick 心跳驱动——没有终端会话时主轮询不跑，调度器不会停摆。
+fn busy_automation_ids(automations: &AutomationManager, sessions: &SessionManager, queue: &SessionActionQueue, store: Option<&MultiAgentStore>) -> HashSet<String> {
+    automations.list().into_iter().filter(|item| item.active_session_ids.iter().any(|id| {
+        if queue.has_pending_work(id) { return true; }
+        let Some(session) = sessions.get(id) else { return false; };
+        if matches!(session.status, SessionStatus::Pending | SessionStatus::Waiting) || (session.status == SessionStatus::Running && !sessions.is_ready_for_prompt(id)) { return true; }
+        if let (Some(project), Some(agent), Some(store)) = (&session.multi_agent_project_id, &session.multi_agent_agent_id, store) {
+            return store.snapshot(project).map(|snapshot| snapshot.runs.iter().any(|run| run.agent_id == *agent && matches!(run.status, multi_agent::RunStatus::Queued | multi_agent::RunStatus::Starting | multi_agent::RunStatus::Running | multi_agent::RunStatus::WaitingInput | multi_agent::RunStatus::WaitingApproval)) || snapshot.tasks.iter().any(|task| task.assignee_agent_id.as_deref() == Some(agent.as_str()) && matches!(task.status, multi_agent::TaskStatus::Ready | multi_agent::TaskStatus::Claimed | multi_agent::TaskStatus::Running | multi_agent::TaskStatus::WaitingApproval | multi_agent::TaskStatus::InReview))).unwrap_or(true);
+        }
+        false
+    })).map(|item| item.id).collect()
+}
+
 fn dispatch_due_automations(
     pty_state: &PtyManager,
     session_state: &SessionManager,
@@ -5102,15 +5120,18 @@ fn dispatch_due_automations(
 ) -> Result<(), String> {
     let now = automation::now_millis();
     let mut report_error = None;
-    for (automation_id, action) in automation_state.collect_due(now).map_err(to_err)? {
-        let (ok, detail) = execute_automation_action(
+    let busy = busy_automation_ids(automation_state, session_state, action_queue, Some(multi_agent_store));
+    for (automation_id, action) in automation_state.collect_due_with_busy(now, &busy).map_err(to_err)? {
+        let mut targets = Vec::new();
+        let (ok, detail) = execute_automation_action_tracked(
             &action,
             pty_state,
             session_state,
             action_queue,
             Some(multi_agent_store),
+            &mut targets,
         );
-        if let Err(error) = automation_state.report_result(&automation_id, ok, detail, now) {
+        if let Err(error) = automation_state.report_dispatch_result(&automation_id, ok, detail, now, targets) {
             report_error.get_or_insert_with(|| to_err(error));
         }
     }
@@ -5194,7 +5215,9 @@ fn dispatch_session_event_automations(
         if !pending.iter().any(|transition| transition.to == status) {
             continue;
         }
-        let actions = match automation_state.collect_event(event, now) {
+        let sources = pending.iter().filter(|transition| transition.to == status).filter_map(|transition| session_state.get(&transition.session_id)).collect::<Vec<_>>();
+        let busy = busy_automation_ids(automation_state, session_state, action_queue, multi_agent_store);
+        let actions = match automation_state.collect_event_filtered(event, now, &sources, &busy) {
             Ok(actions) => actions,
             Err(error) => {
                 session_state.restore_transitions(pending);
@@ -5203,14 +5226,16 @@ fn dispatch_session_event_automations(
         };
         pending.retain(|transition| transition.to != status);
         for (automation_id, action) in actions {
-            let (ok, detail) = execute_automation_action(
+            let mut targets = Vec::new();
+            let (ok, detail) = execute_automation_action_tracked(
                 &action,
                 pty_state,
                 session_state,
                 action_queue,
                 multi_agent_store,
+                &mut targets,
             );
-            if let Err(error) = automation_state.report_result(&automation_id, ok, detail, now) {
+            if let Err(error) = automation_state.report_dispatch_result(&automation_id, ok, detail, now, targets) {
                 report_error.get_or_insert_with(|| to_err(error));
             }
         }
@@ -5254,12 +5279,18 @@ fn process_polled_session_exits(
     )
 }
 
-fn execute_automation_action(
+#[cfg(test)]
+fn execute_automation_action(action: &AutomationAction, pty: &PtyManager, sessions: &SessionManager, queue: &SessionActionQueue, store: Option<&MultiAgentStore>) -> (bool, String) {
+    execute_automation_action_tracked(action, pty, sessions, queue, store, &mut Vec::new())
+}
+
+fn execute_automation_action_tracked(
     action: &AutomationAction,
     pty_state: &PtyManager,
     session_state: &SessionManager,
     action_queue: &SessionActionQueue,
     multi_agent_store: Option<&MultiAgentStore>,
+    targets: &mut Vec<String>,
 ) -> (bool, String) {
     fn target_agent_session(
         project_id: &str,
@@ -5267,6 +5298,7 @@ fn execute_automation_action(
         store: &MultiAgentStore,
         session_state: &SessionManager,
         pty_state: &PtyManager,
+        expected_runtime: Option<AgentRuntimeKind>,
     ) -> Result<SessionRecord, String> {
         let snapshot = store.snapshot(project_id).map_err(to_err)?;
         let agent = snapshot
@@ -5275,6 +5307,8 @@ fn execute_automation_action(
             .find(|agent| agent.id == agent_id && agent.enabled)
             .ok_or_else(|| "目标 Agent 不存在、已停用或不属于该项目".to_string())?;
         agent.runtime_kind.ensure_available().map_err(to_err)?;
+        if expected_runtime.is_some_and(|kind| kind != agent.runtime_kind) { return Err("项目成员的 Agent 类型已变化".into()); }
+        if !automation_runtime::project_kind(agent.runtime_kind) { return Err("该 Agent 不支持项目自动化，请使用已打开的原生聊天会话".into()); }
         let session = session_state
             .list()
             .into_iter()
@@ -5282,6 +5316,7 @@ fn execute_automation_action(
                 session.multi_agent_project_id.as_deref() == Some(project_id)
                     && session.multi_agent_agent_id.as_deref() == Some(agent_id)
                     && !session.retired_agent_runtime
+                    && automation_runtime::session_runtime(session) == Some(agent.runtime_kind)
                     && session.archived_at.is_none()
             })
             .map(Ok)
@@ -5300,10 +5335,91 @@ fn execute_automation_action(
         store
             .link_agent_app_session(project_id, agent_id, &session.id)
             .map_err(to_err)?;
+        if expected_runtime.is_some() {
+            let lifecycle = session_state.lifecycle_lock(&session.id);
+            let _guard = lifecycle.lock().unwrap();
+            // Inactive project members use the supervisor's adapter, model and permission profile.
+            // Never convert an already running interactive PTY into a command host.
+            session_state.migrate_inactive_runtime_command_host(&session.id, |id| pty_state.is_running(id)).map_err(to_err)?;
+            let current = session_state.get(&session.id).ok_or("目标会话已删除")?;
+            if current.runtime_command_host { return Ok(current); }
+        }
+        if session.runtime_command_host || matches!(agent.runtime_kind, AgentRuntimeKind::DeepSeekHarness | AgentRuntimeKind::ZCode) {
+            session_state.set_runtime_command_host(&session.id, true).map_err(to_err)?;
+            return session_state.get(&session.id).ok_or_else(|| "目标会话已删除".to_string());
+        }
         open_direct_collaboration_session(&session, pty_state, session_state)
     }
 
     match action {
+        AutomationAction::RunAgent { runtime_kind, provider_id, model, cwd, prompt } => {
+            let result = (|| -> Result<SessionRecord, String> {
+                automation_runtime::validate_launch(*runtime_kind, provider_id.as_deref(), model.as_deref(), cwd).map_err(to_err)?;
+                runtime_kind.ensure_available().map_err(to_err)?;
+                if !std::path::Path::new(cwd).is_dir() { return Err("工作目录不存在或不是目录".into()); }
+                if let Some(provider_id) = provider_id {
+                    let mut provider = providers::get(provider_id).map_err(to_err)?.ok_or_else(|| format!("未找到 Provider: {provider_id}"))?;
+                    launcher::validate_provider(&provider)?;
+                    if let Some(model) = model { provider.env.insert("ANTHROPIC_MODEL".into(), model.clone()); }
+                    let key = secrets::get(&provider.auth_token_ref).map_err(to_err)?.ok_or_else(|| "该 Provider 尚未配置凭据".to_string())?;
+                    let started = launch_one_session(&provider, &key, cwd.clone(), false, false, false, None, None, pty_state, session_state, action_queue)?;
+                    targets.push(started.id.clone());
+                    let started = session_state.set_launch_model(&started.id, model.clone()).map_err(|error| format!("会话已启动，任务未排队；保存模型设置失败：{error:#}"))?;
+                    action_queue.enqueue_messages_durable(vec![(started.id.clone(), QueuedMessage::new(prompt.clone(), None))]).map_err(|error| format!("会话已启动但任务排队失败，会话保留：{error:#}"))?;
+                    return Ok(started);
+                }
+                let record = session_state.create_runtime(NewRuntimeSession { runtime_kind: runtime_kind.as_str().into(), cwd: cwd.clone(), project_id: None }).map_err(to_err)?;
+                let record = match session_state.set_launch_model(&record.id, model.clone()) {
+                    Ok(record) => record,
+                    Err(error) => { let detail = to_err(error); let _ = session_state.mark_error(&record.id, detail.clone()); return Err(detail); }
+                };
+                targets.push(record.id.clone());
+                let lifecycle = session_state.lifecycle_lock(&record.id);
+                let _guard = lifecycle.lock().unwrap();
+                match open_runtime_session(&record, pty_state, session_state) {
+                    Ok(started) => {
+                        action_queue.enqueue_messages_durable(vec![(started.id.clone(), QueuedMessage::new(prompt.clone(), None))])
+                            .map_err(|e| format!("会话已启动但任务排队失败，会话保留：{e:#}"))?;
+                        Ok(started)
+                    }
+                    Err(error) => { let _ = session_state.mark_error(&record.id, error.clone()); Err(error) }
+                }
+            })();
+            match result {
+                Ok(started) => { if !targets.contains(&started.id) { targets.push(started.id.clone()); } (true, format!("已启动 {} 会话「{}」，任务已排队；不代表任务完成", runtime_kind.as_str(), started.title)) },
+                Err(error) => (false, error),
+            }
+        }
+        AutomationAction::SendAgent { runtime_kind, session_id, body, project_id, agent_id } => {
+            let result = (|| -> Result<(), String> {
+                runtime_kind.ensure_available().map_err(to_err)?;
+                let target = match (project_id, agent_id) {
+                    (Some(project), Some(agent)) => target_agent_session(project, agent, multi_agent_store.ok_or("缺少项目存储")?, session_state, pty_state, Some(*runtime_kind))?,
+                    (None, None) => session_state.get(session_id).ok_or("目标会话不存在")?,
+                    _ => return Err("项目和成员必须同时选择".into()),
+                };
+                let lifecycle = session_state.lifecycle_lock(&target.id);
+                let _guard = lifecycle.lock().unwrap();
+                let target = session_state.get(&target.id).ok_or("目标会话已删除")?;
+                ensure_session_message_target(&target)?;
+                if !automation_runtime::message_candidate(&target, Some(*runtime_kind)) { return Err("目标会话已归档或 Agent 类型变化".into()); }
+                if project_id.is_none() && !automation_runtime::live_candidate(&target, *runtime_kind) { return Err("目标会话已停止或异常，请先恢复会话".into()); }
+                targets.push(target.id.clone());
+                action_queue.enqueue_messages_durable(vec![(target.id, QueuedMessage::new(body.clone(), None))]).map_err(to_err)
+            })();
+            match result { Ok(()) => (true, "任务已排队；不代表已投递或任务完成".into()), Err(error) => (false, error) }
+        }
+        AutomationAction::BroadcastAgent { runtime_kind, body } => {
+            if let Err(error) = runtime_kind.ensure_available() { return (false, to_err(error)); }
+            let rows = session_state.list().into_iter().filter(|s| automation_runtime::live_candidate(s, *runtime_kind)).collect::<Vec<_>>();
+            if rows.is_empty() { return (false, "所选 Agent 没有运行中的会话".into()); }
+            let ids = rows.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
+            let deliveries = ids.iter().map(|id| (id.clone(), QueuedMessage::new(body.clone(), None))).collect();
+            match action_queue.enqueue_messages_durable(deliveries) {
+                Ok(()) => { *targets = ids; (true, format!("已向 {} 个 {} 会话排队；未确认任务完成", targets.len(), runtime_kind.as_str())) },
+                Err(error) => (false, to_err(error)),
+            }
+        }
         AutomationAction::Launch {
             provider_id: _,
             cwd: _,
@@ -5314,9 +5430,10 @@ fn execute_automation_action(
             let Some(store) = multi_agent_store else {
                 return (false, "自动化执行缺少多智能体存储".into());
             };
-            match target_agent_session(project_id, agent_id, store, session_state, pty_state) {
+            match target_agent_session(project_id, agent_id, store, session_state, pty_state, None) {
                 Ok(session) => {
-                    action_queue.enqueue_many(&[session.id], prompt.clone());
+                    targets.push(session.id.clone());
+                    if let Err(error) = action_queue.enqueue_messages_durable(vec![(session.id.clone(), QueuedMessage::new(prompt.clone(), None))]) { return (false, to_err(error)); }
                     (
                         true,
                         format!("已启动项目 Agent「{}」并排队 Prompt", session.title),
@@ -5344,22 +5461,24 @@ fn execute_automation_action(
                     .filter(|value| !value.trim().is_empty())
                     .or_else(|| dirs::home_dir().map(|path| path.display().to_string()))
                     .unwrap_or_else(|| ".".to_string());
-                launch_one_session(
+                let started = launch_one_session(
                     &provider,
                     &key,
                     cwd,
                     false,
                     false,
                     false,
-                    Some(prompt),
+                    None,
                     None,
                     pty_state,
                     session_state,
                     action_queue,
-                )
+                )?;
+                if let Err(error) = action_queue.enqueue_messages_durable(vec![(started.id.clone(), QueuedMessage::new(prompt.clone(), None))]) { targets.push(started.id.clone()); return Err(format!("会话已启动但任务排队失败：{error:#}")); }
+                Ok(started)
             })();
             match result {
-                Ok(started) => (true, format!("已启动会话「{}」", started.title)),
+                Ok(started) => { targets.push(started.id.clone()); (true, format!("已启动会话「{}」，Prompt 已排队；不代表任务完成", started.title)) },
                 Err(error) => (false, error),
             }
         }
@@ -5372,8 +5491,9 @@ fn execute_automation_action(
             let Some(store) = multi_agent_store else {
                 return (false, "自动化执行缺少多智能体存储".into());
             };
-            match target_agent_session(project_id, agent_id, store, session_state, pty_state) {
+            match target_agent_session(project_id, agent_id, store, session_state, pty_state, None) {
                 Ok(session) => {
+                    targets.push(session.id.clone());
                     match action_queue.enqueue_messages_durable(vec![(session.id.clone(), QueuedMessage::new(body.clone(), None))]) {
                         Ok(()) => (true, format!("已排队发给 Agent「{}」", session.title)),
                         Err(error) => (false, format!("{error:#}")),
@@ -5389,6 +5509,7 @@ fn execute_automation_action(
             let _guard = lifecycle.lock().unwrap();
             match session_state.get(session_id) {
             Some(target) => {
+                targets.push(target.id.clone());
                 if let Err(error) = ensure_session_message_target(&target) {
                     return (false, error);
                 }
@@ -5405,7 +5526,7 @@ fn execute_automation_action(
         },
         AutomationAction::Broadcast { body } => {
             match action_queue.enqueue_broadcast(body, &session_state.list()) {
-                Ok(receipt) => (true, format!("已广播给 {} 个会话", receipt.target_count)),
+                Ok(receipt) => { targets.extend(receipt.targets.iter().map(|t| t.session_id.clone())); (true, format!("已排队广播给 {} 个 Claude Code Provider 会话；不代表任务完成", receipt.target_count)) },
                 Err(error) => (false, error.to_string()),
             }
         }
@@ -5429,12 +5550,37 @@ fn create_automation(
 
 fn create_automation_inner(input: NewAutomation, session_state: &SessionManager, multi_agent_store: &MultiAgentStore, automation_state: &AutomationManager) -> Result<Automation, String> {
     let direct_target_lifecycle = match &input.action {
-        AutomationAction::Message { session_id, project_id: None, agent_id: None, .. } => Some(session_state.lifecycle_lock(session_id)),
+        AutomationAction::Message { session_id, project_id: None, agent_id: None, .. } | AutomationAction::SendAgent { session_id, project_id: None, agent_id: None, .. } => Some(session_state.lifecycle_lock(session_id)),
         _ => None,
     };
     let _direct_target_guard = direct_target_lifecycle.as_ref().map(|lock| lock.lock().unwrap());
+    if let automation::AutomationTrigger::OnSessionEventFiltered { runtime_kind, project_id, session_id, .. } = &input.trigger {
+        if let Some(kind) = runtime_kind { kind.ensure_available().map_err(to_err)?; }
+        if let Some(id) = project_id { multi_agent_store.snapshot(id).map_err(to_err)?; }
+        if let Some(id) = session_id { let source = session_state.get(id).ok_or("事件来源会话不存在")?; ensure_session_message_target(&source)?; }
+    }
     // 模块外校验：provider / 目标会话真实存在（模块内只校验自洽性）。
     match &input.action {
+        AutomationAction::RunAgent { runtime_kind, provider_id, model, cwd, .. } => {
+            automation_runtime::validate_launch(*runtime_kind, provider_id.as_deref(), model.as_deref(), cwd).map_err(to_err)?;
+            runtime_kind.ensure_available().map_err(to_err)?;
+            if !std::path::Path::new(cwd).is_dir() { return Err("工作目录不存在或不是目录".into()); }
+            if let Some(id) = provider_id { providers::get(id).map_err(to_err)?.ok_or_else(|| "Provider 不存在".to_string())?; }
+        }
+        AutomationAction::SendAgent { runtime_kind, session_id, project_id, agent_id, .. } => {
+            runtime_kind.ensure_available().map_err(to_err)?;
+            if let (Some(project_id), Some(agent_id)) = (project_id, agent_id) {
+                if !automation_runtime::project_kind(*runtime_kind) { return Err("该 Agent 不支持项目自动化，请使用已有会话".into()); }
+                let snapshot = multi_agent_store.snapshot(project_id).map_err(to_err)?;
+                if !snapshot.agents.iter().any(|a| a.id == *agent_id && a.enabled && a.runtime_kind == *runtime_kind) { return Err("项目成员已停用或 Agent 类型不符".into()); }
+            } else {
+                let target = session_state.get(session_id).ok_or_else(|| "目标会话不存在".to_string())?;
+                ensure_session_message_target(&target)?;
+                if !automation_runtime::message_candidate(&target, Some(*runtime_kind)) { return Err("目标 Agent 类型不符".into()); }
+            }
+        }
+        AutomationAction::BroadcastAgent { runtime_kind, .. } => { runtime_kind.ensure_available().map_err(to_err)?; }
+
         AutomationAction::Launch {
             provider_id,
             project_id,
@@ -6192,6 +6338,7 @@ pub fn run() {
             kimi_computer_use::kimi_computer_use_save,
             open_computer_use::open_computer_use_get,
             open_computer_use::open_computer_use_save,
+            macos_computer_use::macos_computer_use_action,
             general_settings::general_settings_get,
             general_settings::general_settings_save,
             plugin_market_snapshot,
@@ -6265,6 +6412,7 @@ pub fn run() {
             ai_memory_access::ai_memory_project_access,
             ai_memory::zcode::ai_memory_zcode_sessions,
             ai_memory::ai_memory_install,
+            ai_memory::ai_memory_recover_update,
             ai_memory::ai_memory_serve,
             ai_memory::onboarding::ai_memory_quick_info,
             ai_memory::onboarding::ai_memory_quick_start,
@@ -6975,7 +7123,7 @@ mod tests {
             } else { sessions.create_runtime(NewRuntimeSession { runtime_kind:"codex".into(), cwd:root.display().to_string(), project_id:None }).unwrap() };
             let action = AutomationAction::Message { session_id:record.id.clone(), body:"must not enqueue".into(), project_id:None, agent_id:None };
             // Simulate a definition created before its target became history.
-            let input = NewAutomation { name:"old direct target".into(), trigger:automation::AutomationTrigger::Once { at:1 }, action:action.clone(), max_runs:None, max_consecutive_failures:Some(1) };
+            let input = NewAutomation { name:"old direct target".into(), trigger:automation::AutomationTrigger::Once { at:1 }, action:action.clone(), max_runs:None, max_consecutive_failures:Some(1), overlap_policy: automation::OverlapPolicy::Allow };
             let legacy = automations.create(input.clone(), automation::now_millis()).unwrap();
             if retired { sessions.retire_agent_runtime_sessions("fixture-project", "fixture-agent").unwrap(); }
             else { sessions.archive(&record.id).unwrap(); }
@@ -6992,6 +7140,62 @@ mod tests {
         }
         let (ok, detail) = execute_automation_action(&AutomationAction::Message { session_id:"不存在的会话标识".into(), body:"text".into(), project_id:None, agent_id:None }, &PtyManager::new(), &sessions, &queue, None);
         assert!(!ok); assert!(detail.contains("目标会话不存在"));
+        drop(store); drop(sessions); std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn agent_automation_scopes_delivery_and_tracks_busy_queue_without_running_agents() {
+        let (root, sessions) = lifecycle_fixture();
+        let queue = SessionActionQueue::open_at(root.join("mailbox.json"), root.join("outbox")).unwrap();
+        let ptys = PtyManager::new();
+        let mut records = Vec::new();
+        for kind in ["codex_chat", "claude_chat", "pi_chat"] {
+            let record = sessions.create_runtime(NewRuntimeSession { runtime_kind: kind.into(), cwd:root.display().to_string(), project_id:None }).unwrap();
+            sessions.mark_native_runtime_status(&record.id, SessionStatus::Running, None, None).unwrap();
+            records.push(record);
+        }
+        let action = AutomationAction::BroadcastAgent { runtime_kind:AgentRuntimeKind::CodexChat, body:"exact message".into() };
+        let mut targets=Vec::new();
+        let (ok, detail) = execute_automation_action_tracked(&action, &ptys, &sessions, &queue, None, &mut targets);
+        assert!(ok, "{detail}"); assert_eq!(targets, vec![records[0].id.clone()]);
+        assert_eq!(queue.peek_next(&records[0].id).unwrap().body, "exact message");
+        assert!(queue.peek_next(&records[1].id).is_none() && queue.peek_next(&records[2].id).is_none());
+        let manager = AutomationManager::new();
+        let task = manager.create(NewAutomation {name:"fixture".into(),trigger:automation::AutomationTrigger::Interval {minutes:1},action,max_runs:None,max_consecutive_failures:Some(3),overlap_policy:automation::OverlapPolicy::Skip}, 1).unwrap();
+        manager.report_dispatch_result(&task.id, true, detail, 2, targets).unwrap();
+        assert!(busy_automation_ids(&manager, &sessions, &queue, None).contains(&task.id));
+        let wrong = AutomationAction::SendAgent { runtime_kind:AgentRuntimeKind::ClaudeChat,session_id:records[0].id.clone(),body:"wrong".into(),project_id:None,agent_id:None };
+        assert!(!execute_automation_action(&wrong, &ptys, &sessions, &queue, None).0);
+        sessions.mark_stopped(&records[0].id).unwrap();
+        let stopped = AutomationAction::SendAgent { runtime_kind:AgentRuntimeKind::CodexChat,session_id:records[0].id.clone(),body:"stopped".into(),project_id:None,agent_id:None };
+        let (ok,detail) = execute_automation_action(&stopped, &ptys, &sessions, &queue, None);
+        assert!(!ok && detail.contains("恢复"), "{detail}");
+        assert_eq!(queue.peek_next(&records[0].id).unwrap().body, "exact message");
+        sessions.set_launch_model(&records[0].id,Some("literal-model".into())).unwrap();
+        drop(queue); drop(sessions);
+        let reopened = SessionManager::open_at(root.join("sessions.json"),root.join("events")).unwrap();
+        assert_eq!(reopened.get(&records[0].id).unwrap().launch_model.as_deref(), Some("literal-model"));
+        drop(reopened); std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn agent_automation_native_project_members_use_scheduler_bridge_instead_of_pty() {
+        let (root, sessions) = lifecycle_fixture();
+        let store = MultiAgentStore::open_at(root.join("project.db")).unwrap();
+        let project = store.create_project(CreateProjectInput { name:"automation fixture".into(),goal:"queue only".into(),root_path:root.display().to_string(),default_branch:"main".into() }).unwrap();
+        let queue=SessionActionQueue::new();
+        let ptys=PtyManager::new();
+        for kind in [AgentRuntimeKind::DeepSeekHarness, AgentRuntimeKind::ZCode, AgentRuntimeKind::Codex, AgentRuntimeKind::Pi] {
+            let agent = store.create_agent(CreateAgentInput {avatar_id:None,project_id:project.id.clone(),name:kind.as_str().into(),runtime_kind:kind,role:multi_agent::AgentRole::Worker,description:String::new(),persona:Default::default(),persona_custom:String::new(),model:None,permission_profile:multi_agent::PermissionProfile::Default,max_concurrency:1}).unwrap();
+            let action = AutomationAction::SendAgent { runtime_kind:kind, session_id:String::new(),body:"native project task".into(),project_id:Some(project.id.clone()),agent_id:Some(agent.id) };
+            let mut targets=Vec::new();
+            let (ok,detail) = execute_automation_action_tracked(&action,&ptys,&sessions,&queue,Some(&store),&mut targets);
+            assert!(ok,"{detail}"); assert_eq!(targets.len(),1);
+            let target=sessions.get(&targets[0]).unwrap();
+            assert!(target.runtime_command_host && target.pty_id.is_none());
+            assert_eq!(queue.peek_next(&target.id).unwrap().body,"native project task");
+        }
+        assert!(ptys.poll_all().is_empty());
         drop(store); drop(sessions); std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -7184,12 +7388,12 @@ mod tests {
         let completed = automations.create(NewAutomation {
             name: "完成事件".into(),
             trigger: automation::AutomationTrigger::OnSessionEvent { event: SessionEventKind::Completed },
-            action: AutomationAction::Broadcast { body: "done".into() }, max_runs: None, max_consecutive_failures: Some(10),
+            action: AutomationAction::Broadcast { body: "done".into() }, max_runs: None, max_consecutive_failures: Some(10), overlap_policy: automation::OverlapPolicy::Allow,
         }, automation::now_millis()).unwrap();
         let failed = automations.create(NewAutomation {
             name: "失败事件".into(),
             trigger: automation::AutomationTrigger::OnSessionEvent { event: SessionEventKind::Failed },
-            action: AutomationAction::Broadcast { body: "failed".into() }, max_runs: None, max_consecutive_failures: Some(10),
+            action: AutomationAction::Broadcast { body: "failed".into() }, max_runs: None, max_consecutive_failures: Some(10), overlap_policy: automation::OverlapPolicy::Allow,
         }, automation::now_millis()).unwrap();
         let ptys = PtyManager::new();
         let queue = SessionActionQueue::open_at(root.join("mailbox.json"), root.join("outbox")).unwrap();
@@ -7252,7 +7456,7 @@ mod tests {
                         body: "已失败".into(),
                     },
                     max_runs: None,
-                    max_consecutive_failures: None,
+                    max_consecutive_failures: None, overlap_policy: automation::OverlapPolicy::Allow,
                 },
                 automation::now_millis(),
             )
@@ -7308,7 +7512,7 @@ mod tests {
                         body: "失败".into(),
                     },
                     max_runs: None,
-                    max_consecutive_failures: None,
+                    max_consecutive_failures: None, overlap_policy: automation::OverlapPolicy::Allow,
                 },
                 automation::now_millis(),
             )

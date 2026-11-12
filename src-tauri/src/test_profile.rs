@@ -351,7 +351,7 @@ mod tests {
     }
     #[test]
     fn external_account_history_tools_and_unknown_commands_are_blocked() {
-        for command in ["cid_list_accounts","cid_init_accounts","launch_multi","launch_terminal","launch_runtime_session","resume_session","ai_memory_status","ai_memory_quick_start","skill_center_snapshot","plugin_market_snapshot","automation_tick","check_codex_quota_updates","send_session_message","unknown_command"] {
+        for command in ["cid_list_accounts","cid_init_accounts","launch_multi","launch_terminal","launch_runtime_session","resume_session","ai_memory_status","ai_memory_quick_start","ai_memory_recover_update","skill_center_snapshot","plugin_market_snapshot","automation_tick","check_codex_quota_updates","send_session_message","unknown_command"] {
             assert!(!allowed_command(command),"{command}");
         }
         for command in ["test_profile_info","list_sessions","list_projects","list_providers","get_key_state","general_settings_get","session_snapshot"] { assert!(allowed_command(command)); }

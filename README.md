@@ -81,7 +81,7 @@ https://github.com/user-attachments/assets/14b2afaf-b851-402e-bae4-d33cd1e159f7
 | ZCode | ZCode CLI | ZCode Desktop |
 | DeepSeek Harness | 暂不支持 | DeepSeek Harness |
 
-CrewVela 不附送模型、订阅或 Agent 账号。共享记忆快速配置目前面向 Windows x64 的 Claude Code / Codex；其他接入方式与条件见[使用手册](docs/user-guide.md)。
+CrewVela 不附送模型、订阅或 Agent 账号。源码中的共享记忆快速配置支持 Windows x64、macOS Apple Silicon / Intel 的 Claude Code / Codex，可发现官方最新稳定版并显式更新托管安装，更新前备份数据与接入配置；Mac 原生首次启用与升级仍待实机验收，已有 Release 附件不会自动更新。其他接入方式与条件见[使用手册](docs/user-guide.md)。
 
 ## 开始使用
 

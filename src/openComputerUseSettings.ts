@@ -9,6 +9,7 @@ export interface OpenComputerUseStatus {
   settings: OpenComputerUseSettings;
   runtime: string;
   warning: string | null;
+  macos?: import("./macosComputerUse").MacControlStatus;
 }
 
 export const DEFAULT_OPEN_COMPUTER_USE_SETTINGS: OpenComputerUseSettings = {
@@ -17,7 +18,7 @@ export const DEFAULT_OPEN_COMPUTER_USE_SETTINGS: OpenComputerUseSettings = {
 
 /** 覆盖范围与安全说明（面板固定文案，单独导出便于单测）。 */
 export const OPEN_COMPUTER_USE_COVERAGE =
-  "开启后注册 open-computer-use MCP 服务器（开源 iFurySt/open-codex-computer-use，基于无障碍 API 的非侵入式操控，stdio）。原生聊天（Claude/Codex/Kimi/DSH）、多智能体与 Claude/Codex 终端会话中的 Agent 都可以通过它读取界面状态并点击、输入（需已执行 npm i -g open-computer-use 安装）。";
+  "开启后注册 open-computer-use MCP 服务器（开源 iFurySt/open-codex-computer-use，基于无障碍 API 的非侵入式操控，stdio）。原生聊天（Claude/Codex/Kimi/DSH）、多智能体与 Claude/Codex 终端会话中的 Agent 都可以通过它读取界面状态并点击、输入（Windows 旧版 npm i -g open-computer-use；macOS 按上游说明安装 @opensymph/open-computer-use 或官方应用，需 macOS 14+、辅助功能与屏幕录制权限；已有会话需重开）。";
 
 export const OPEN_COMPUTER_USE_SAFETY_NOTE =
   "open-computer-use 为第三方开源实现（MIT），Agent 的点击与输入会真实作用于你的电脑；观察截图包含真实屏幕内容并会发送给模型提供方。密码/验证码等敏感操作请自行斟酌或手动完成。";

@@ -40,6 +40,9 @@ import { formatTokens } from "../format";
 import { CollaborationSettingsPanel } from "./CollaborationSettingsPanel";
 import { SharedMemorySettingsPanel } from "./SharedMemorySettingsPanel";
 import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
+import { QuickCommandCenter } from "./QuickCommandCenter";
+import type { QuickContext } from "../quickCommands";
+import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
 import { AutomationPanel } from "./AutomationPanel";
 import { PetSettingsPanel } from "./PetSettingsPanel";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
@@ -57,6 +60,8 @@ import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { ProviderQuotaCell } from "./ProviderQuotaCell";
 
 interface Props {
+  quickContext?: QuickContext;
+  onSessionsChange?: (sessions: SessionRecord[]) => void;
   sessions: SessionRecord[];
   archivedSessions: SessionRecord[];
   projects: Project[];
@@ -95,6 +100,7 @@ export type SettingsSection =
   | "collaboration"
   | "sharedMemory"
   | "automation"
+  | "quickCommands"
   | "git"
   | "browserControl"
   | "computerControl"
@@ -107,6 +113,8 @@ export type SettingsSection =
   | "archivedSessions";
 
 export function SettingsDialog({
+  quickContext,
+  onSessionsChange,
   sessions,
   archivedSessions,
   projects,
@@ -143,6 +151,7 @@ export function SettingsDialog({
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
+  const [automationEditing, setAutomationEditing] = useState(false);
   const [appearanceTab, setAppearanceTab] = useState<"appearance" | "skins">(
     "appearance",
   );
@@ -212,6 +221,7 @@ export function SettingsDialog({
           keywords: "定时 任务 automation",
           icon: <AutomationIcon size={16} />,
         },
+        { id: "quickCommands" as const, label: "快捷指令", keywords: "快捷 指令 command 收藏 自定义 范围", icon: <TerminalWindowIcon size={16} /> },
       ],
     },
     {
@@ -325,6 +335,7 @@ export function SettingsDialog({
       description: "跨智能体共享项目上下文，让下一次会话接着做。",
       note: "",
     },
+    quickCommands: { eyebrow: "设置 / 智能体", title: "快捷指令", description: "搜索、收藏和配置常用操作，执行前核对具体目标。", note: "" },
     automation: {
       eyebrow: "AUTOMATION",
       title: "自动化",
@@ -366,7 +377,7 @@ export function SettingsDialog({
       eyebrow: "COMPUTER USE",
       title: "电脑控制",
       description:
-        "管理 Agent 操作本机 Windows 应用时可用的控制方式。",
+        "管理 Agent 操作本机桌面应用时可用的控制方式。",
       note: "",
     },
     mcp: {
@@ -475,8 +486,8 @@ export function SettingsDialog({
           >
             <div className="dialog-heading settings-heading">
                 <div>
-                  <h2 id="settings-title">{sectionCopy.title}</h2>
-                  <p>{sectionCopy.description}</p>
+                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? "创建自动化" : sectionCopy.title}</h2>
+                  {!(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
                 </div>
               <div className="settings-heading-actions">
                 {activeSection === "providers" && (
@@ -698,8 +709,11 @@ export function SettingsDialog({
               <CollaborationSettingsPanel onClose={onClose} initialTab={initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} />
             ) : activeSection === "sharedMemory" ? (
               <SharedMemorySettingsPanel />
+            ) : activeSection === "quickCommands" ? (
+              <QuickCommandCenter manage sessions={sessions} providers={selectableProviders} context={quickContext} onSessionsChange={onSessionsChange} />
             ) : activeSection === "automation" ? (
               <AutomationPanel
+                onFormOpenChange={setAutomationEditing}
                 sessions={sessions}
                 providers={selectableProviders}
                 embedded

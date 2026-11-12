@@ -2611,7 +2611,9 @@ export default function App() {
                         variant="docked"
                         providers={selectableProviders}
                         sessions={sessions}
-                        defaultCwd={selectedSession?.cwd ?? null}
+                        defaultCwd={activeWorkspaceRoot}
+                        quickContext={{ workspaceSessionIds: tabSessions.map(s => s.id), projectId: selectedSession?.projectId ?? null, cwd: activeWorkspaceRoot }}
+                        onOpenQuickSettings={() => openSettingsSection("quickCommands")}
                         onClose={closeRightSidebar}
                         onDetach={detachControl}
                         onSessionsChange={handleSessionSnapshot}
@@ -2733,6 +2735,8 @@ export default function App() {
           )}
           {settingsOpen && (
             <SettingsDialog
+              quickContext={{ workspaceSessionIds: tabSessions.map(s => s.id), projectId: selectedSession?.projectId ?? null, cwd: activeWorkspaceRoot }}
+              onSessionsChange={handleSessionSnapshot}
               sessions={sessions}
               archivedSessions={archivedSessions}
               projects={projects}

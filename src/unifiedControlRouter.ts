@@ -24,6 +24,9 @@ export function resolveUnifiedControlRoute(
   // @目标只在项目协作与终端定向投递中存在；普通自然语言默认保持轻量快速指挥。
   if (/(^|\s)@[\p{L}\p{N}_-]+/u.test(normalized)) return "multi_agent";
 
+  // Broadcast content may mention a project; the outer action still selects sessions.
+  if (/(?:发送|广播|发给).*(?:所有|全部|运行).*会话/u.test(normalized)) return "quick";
+
   // 没有 @ 时，仅明确的项目生命周期或任务编排指令进入项目协作。
   if (
     /(?:启动|暂停|恢复|继续|取消|检查|打开).*(?:当前|这个|该)?(?:协作)?项目/u.test(
