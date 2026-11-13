@@ -1,0 +1,76 @@
+// Production React handlers + isolated IPC; never installs or authorizes software.
+import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { chromium } from 'playwright';
+const base = process.env.CREWVELA_UI_URL || 'http://127.0.0.1:1432';
+mkdirSync('output/macos-computer-control-install', { recursive: true });
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  const url = query => `${base}/tests/fixtures/macos-computer-control-ui.html?page=computer&${query}`;
+  const section = title => page.locator('section.external-control-status').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
+  const setting = title => page.getByRole('switch', { name: new RegExp(`^${title}`) });
+  await page.goto(url('scenario=missing&installHold=1'));
+  const ocu = section('Open Computer Use');
+  const kimi = section('KimiCU');
+  await page.getByRole('button', { name: '安装并启用 Open Computer Use', exact: true }).waitFor();
+  assert.equal(await setting('Open Computer Use').isDisabled(), true);
+  await page.getByRole('button', { name: '安装并启用 Open Computer Use', exact: true }).click();
+  await ocu.getByText('正在校验官方安装包…', { exact: true }).waitFor();
+  await page.evaluate(() => window.__computerMock.emit('macos-computer-use-install-progress', { tool: 'kimiCu', requestId: 'foreign', message: '不应显示的其他任务进度' }));
+  assert.equal(await page.getByText('不应显示的其他任务进度', { exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: '安装并启用 KimiCU', exact: true }).isDisabled(), true);
+  await page.evaluate(() => window.__computerMock.release());
+  await page.getByText(/安装并启用完成，请在官方窗口完成系统授权/).first().waitFor();
+  assert.equal(await setting('Open Computer Use').isChecked(), true);
+  assert.match(await ocu.innerText(), /待授权/);
+  assert.match(await ocu.innerText(), /已注册/);
+  assert.equal(await ocu.getByText('已授予', { exact: true }).count(), 0);
+  await ocu.getByRole('button', { name: '打开 Open Computer Use 授权', exact: true }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('.external-control-status')][0].innerText.includes('已授予'));
+  assert.equal(await ocu.getByText('已授予', { exact: true }).count(), 2);
+  await page.screenshot({ path: 'output/macos-computer-control-install/installed-awaiting-kimi.png' });
+  // Retry failed installs and keep the other method enabled.
+  await page.goto(url('scenario=missing'));
+  await page.getByRole('button', { name: '下次保存失败', exact: true }).click();
+  await page.getByRole('button', { name: '安装并启用 KimiCU', exact: true }).click();
+  await page.getByText(/下载校验失败，已有安装未修改/).waitFor();
+  assert.equal(await setting('KimiCU').isChecked(), false);
+  await page.getByRole('button', { name: '安装并启用 KimiCU', exact: true }).click();
+  await page.getByText(/安装并启用完成，请在官方窗口完成系统授权/).first().waitFor();
+  assert.equal(await setting('KimiCU').isChecked(), true);
+  assert.equal(await setting('Open Computer Use').isChecked(), false);
+  // Partial setup failure refreshes actual installation without claiming enabled.
+  await page.goto(url('scenario=missing&installOutcome=partial'));
+  await page.getByRole('button', { name: '安装并启用 Open Computer Use', exact: true }).click();
+  await page.getByText(/MCP 配置冲突/).waitFor();
+  assert.equal(await setting('Open Computer Use').isChecked(), false);
+  assert.equal(await page.getByRole('button', { name: '安装并启用 Open Computer Use', exact: true }).count(), 0);
+  assert.equal(await ocu.getByRole('button', { name: '打开 Open Computer Use 授权', exact: true }).isEnabled(), true);
+  await page.goto(url('scenario=unsupported'));
+  assert.equal(await page.getByRole('button', { name: '安装并启用 KimiCU', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: '安装并启用 Open Computer Use', exact: true }).isDisabled(), true);
+  await page.goto(url('scenario=missing&installHold=1'));
+  await page.getByRole('button', { name: '安装并启用 Open Computer Use', exact: true }).click();
+  await page.getByText('正在校验官方安装包…', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '常规', exact: true }).click();
+  await page.waitForFunction(() => window.__computerMock.listeners.size === 0);
+  await page.evaluate(() => window.__computerMock.release());
+  await page.getByRole('button', { name: '电脑控制', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.computer-settings input[role="switch"]')?.checked);
+  assert.equal(await setting('Open Computer Use').isChecked(), true, 'returning after background install reads actual settings');
+  await page.setViewportSize({ width: 820, height: 700 });
+  await page.getByRole('button', { name: '安装并启用 KimiCU', exact: true }).scrollIntoViewIfNeeded();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.screenshot({ path: 'output/macos-computer-control-install/narrow-settings.png' });
+  // Explicit Windows comparison uses the same production component.
+  const win = await browser.newPage();
+  await win.addInitScript(() => Object.defineProperty(navigator, 'platform', { get: () => 'Win32' }));
+  await win.goto(`${base}/tests/fixtures/settings-workspace-ui.html?page=computer`);
+  await win.getByRole('switch', { name: /^内置电脑控制/ }).waitFor();
+  assert.equal(await win.getByRole('button', { name: /安装并启用/ }).count(), 0);
+  await win.close();
+  assert.deepEqual(errors, []);
+  console.log('PASS: macOS install/progress/auth/retry/partial failure and Windows unchanged controls');
+} finally { await browser.close(); }
