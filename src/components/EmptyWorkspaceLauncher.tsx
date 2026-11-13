@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import { RuntimeManagementDialog } from "./RuntimeManagementDialog";
 import { open as openDirectory } from "@tauri-apps/plugin-dialog";
 import {
   useEffect,
@@ -28,18 +30,20 @@ interface Props {
   directory: SessionDirectory | null;
   onDirectoryChange: (directory: SessionDirectory) => void;
   onLaunch: (runtime: NewSessionAgent, directory: SessionDirectory | null) => void;
-  onManageAgents: () => void;
 }
 
 /**
  * 空工作区：参照 Claude Code 桌面版新会话页——像素吉祥物站在目录卡片上，
  * 先勾选工作目录，再从「选择 Agent」下拉里选一个，选完即在该目录开始会话。
  */
-export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange, onLaunch, onManageAgents }: Props) {
+export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange, onLaunch }: Props) {
   const { isRuntimeEnabled, ready, error } = useRuntimeAvailability();
   // 与「选择 Agent」弹窗共用排序（拖动卡片调整过的顺序在这里同样生效）。
-  const terminalOrder = useRuntimeOrder(TERMINAL_AGENTS, NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY).order;
-  const chatOrder = useRuntimeOrder(CHAT_AGENTS, NEW_SESSION_CHAT_ORDER_STORAGE_KEY).order;
+  const terminalPreferences = useRuntimeOrder(TERMINAL_AGENTS, NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY);
+  const chatPreferences = useRuntimeOrder(CHAT_AGENTS, NEW_SESSION_CHAT_ORDER_STORAGE_KEY);
+  const terminalOrder = terminalPreferences.order;
+  const chatOrder = chatPreferences.order;
+  const [managingAgents, setManagingAgents] = useState(false);
 
   const chosenId = directory?.id ?? null;
   const [picking, setPicking] = useState(false);
@@ -281,7 +285,7 @@ export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange,
               className="ews-option is-footer"
               onClick={() => {
                 close(false);
-                onManageAgents();
+                setManagingAgents(true);
               }}
             >
               <GearSixIcon size={15} aria-hidden="true" />
@@ -290,6 +294,20 @@ export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange,
           </div>
         )}
       </section>
+      {managingAgents && createPortal(
+        <RuntimeManagementDialog
+          order={[...terminalOrder, ...chatOrder]}
+          orderError={terminalPreferences.error || chatPreferences.error}
+          onReorder={(kind, target, position) => {
+            const preferences = terminalOrder.some(runtime => runtime === kind) ? terminalPreferences : chatPreferences;
+            const source = preferences.order.find(runtime => runtime === kind);
+            const destination = preferences.order.find(runtime => runtime === target);
+            if (source && destination) preferences.reorder(source, destination, position);
+          }}
+          onClose={() => { setManagingAgents(false); setOpen(true); }}
+        />,
+        document.body,
+      )}
     </div>
   );
 }

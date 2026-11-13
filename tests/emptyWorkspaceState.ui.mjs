@@ -86,11 +86,14 @@ try {
       await page.keyboard.press("Escape");
       await providerStep.waitFor({ state: "detached" });
 
-      // 「管理 Agent」打开设置里管理 Agent 启用状态的页面。
+      // 「管理 Agent」直接打开已有管理弹窗，关闭后返回 Agent 列表。
       await pill.click();
       await popover.getByRole("button", { name: "管理 Agent", exact: true }).click();
-      await page.getByRole("heading", { name: "模型设置", exact: true }).waitFor();
-      await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+      const management = page.getByRole("dialog", { name: "管理 Runtime", exact: true });
+      await management.waitFor();
+      await management.getByRole("button", { name: "关闭", exact: true }).click();
+      await popover.waitFor();
+      await page.keyboard.press("Escape");
 
       // 上面的 Provider 起步只影响那一次：从侧栏再打开新建弹窗，仍从「选择 Agent」开始；
       // 弹窗里点 Agent 卡片走的是与空状态共用的启动链路。

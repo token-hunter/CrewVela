@@ -2575,7 +2575,6 @@ export default function App() {
                       }
                       startAgentSession(runtime, project ?? undefined);
                     }}
-                    onManageAgents={() => openSettingsSection("providers")}
                   />
                 ) : null}
               </div>
