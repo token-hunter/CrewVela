@@ -416,7 +416,7 @@ export function SettingsDialog({
       labelledBy="settings-dialog-title"
     >
         <header className="settings-window-header">
-          <span id="settings-dialog-title">CrewVela · 设置</span>
+          <span id="settings-dialog-title">设置</span>
           <button type="button" className="dialog-close" aria-label="关闭设置" onClick={onClose}>
             <XIcon size={18} aria-hidden="true" />
           </button>
