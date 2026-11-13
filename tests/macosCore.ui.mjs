@@ -13,7 +13,7 @@ try {
   assert.equal(await page.getByRole("menuitem", {name:`新建 ${absent} 终端`,exact:true}).count(),0);
   await page.getByRole("menuitem", {name:`新建 ${shells[1]} 终端`,exact:true}).click();
   assert.equal(await page.locator("output").textContent(),shells[1].toLowerCase());
-  await page.getByRole("button", { name: /新建终端 在当前工作区/ }).click();
+  await page.getByRole("button", { name: "终端", exact: true }).click();
   assert.equal(await page.locator("output").textContent(),shells[0].toLowerCase());
   const keepAwake=page.locator("label").filter({hasText:"保持电脑运行"}).locator("input");
   const panel=page.locator("label").filter({hasText:"优先内置浏览器面板"}).locator("input");

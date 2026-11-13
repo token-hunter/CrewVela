@@ -31,7 +31,10 @@ const records = [{ source: { ...sessions[0], id: "original" }, targetId: "relaye
 function Fixture() {
   const [visible, setVisible] = useState(true);
   if (location.search.includes("drag")) return <MultiTerminal sessions={sessions} switchRecords={records} selectedSessionId={null} theme="dark" preview onClose={() => {}} onToggleMaximize={() => {}} onSessionsChange={() => {}} />;
-  return <><button onClick={() => setVisible(false)}>关闭终端</button>{visible && <TerminalPane sessionId={1} title="初始化测试" providerName="fixture" kind="terminal" shell="powershell" cwd="/fixture" status="running" theme="dark" hidden={false} onClose={() => setVisible(false)} />}</>;
+  const pane = visible && <TerminalPane sessionId={1} title="初始化测试" providerName="fixture" kind="terminal" shell="powershell" cwd="/fixture" status="running" theme="dark" hidden={false} onClose={() => setVisible(false)} />;
+  return <><button onClick={() => setVisible(false)}>关闭终端</button>{location.search.includes("sidebar")
+    ? <div className="unified-right-sidebar-content"><div className="right-sidebar-panel right-sidebar-terminal active">{pane}</div></div>
+    : pane}</>;
 }
 document.body.style.cssText = "margin:0;background:#202020;color:#eee;font-family:system-ui";
 document.getElementById("root")!.style.cssText = "height:90vh;display:flex;flex-direction:column";

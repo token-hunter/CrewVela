@@ -1,17 +1,15 @@
+import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
 import { isTerminalShell, terminalShells, shellLabel } from "../platform";
 import type { TerminalShell } from "../types";
 import { useEffect, useRef } from "react";
-import { TreeStructureIcon } from "@phosphor-icons/react/dist/csr/TreeStructure";
-import { StackIcon } from "@phosphor-icons/react/dist/csr/Stack";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { RobotIcon } from "@phosphor-icons/react/dist/csr/Robot";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
-import { SquaresFourIcon } from "@phosphor-icons/react/dist/csr/SquaresFour";
-import { CodeBlockIcon } from "@phosphor-icons/react/dist/csr/CodeBlock";
+import { HouseIcon } from "@phosphor-icons/react/dist/csr/House";
 import { CornersOutIcon } from "@phosphor-icons/react/dist/csr/CornersOut";
 import { CornersInIcon } from "@phosphor-icons/react/dist/csr/CornersIn";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
@@ -35,12 +33,12 @@ interface Props {
 export function sidebarTabKind(id: string): string { return id.split(":", 1)[0]; }
 function ResourceIcon({ id }: { id: string }) {
   id = sidebarTabKind(id);
-  if (id === "files") return <StackIcon size={16} />;
+  if (id === "files") return <FolderSimpleIcon size={16} />;
   if (id === "browser") return <GlobeIcon size={16} />;
-  if (id === "git") return <TreeStructureIcon size={16} />;
+  if (id === "git") return <GitBranchIcon size={16} weight="regular" />;
   if (id === "multi_agent") return <RobotIcon size={16} />;
-  if (id === "terminal") return <CodeBlockIcon size={16} />;
-  return <SquaresFourIcon size={16} />;
+  if (id === "terminal") return <TerminalWindowIcon size={16} />;
+  return <HouseIcon size={16} />;
 }
 export function RightSidebarActivityBar(props: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -94,16 +92,13 @@ export function RightSidebarActivityBar(props: Props) {
   );
 }
 export function RightSidebarStart({ root, onOpenTool }: { root: string | null; onOpenTool: (tool: SidebarTool) => void }) {
-  return <div className="right-sidebar-start">
-    <SquaresFourIcon className="right-sidebar-start-mark" size={46} />
-    <h2>工作面板</h2><p>文件、终端、网页与协作，随手切换</p>
+  return <nav className="right-sidebar-start" aria-label="工作区工具" data-workspace-root={root ?? undefined}>
     <div className="right-sidebar-start-tools">
-      <button type="button" disabled={!root} onClick={() => onOpenTool("files")}><FolderSimpleIcon size={23} /><span><strong>工作区文件</strong><small>浏览和预览当前工作区的文件</small></span><span className="right-sidebar-start-arrow">↗</span></button>
-      <button type="button" disabled={!root} onClick={() => onOpenTool(terminalShells()[0])}><TerminalWindowIcon size={23} /><span><strong>新建终端</strong><small>在当前工作区运行 {shellLabel(terminalShells()[0])}</small></span><span className="right-sidebar-start-arrow">↗</span></button>
-      <button type="button" onClick={() => onOpenTool("browser")}><GlobeIcon size={23} /><span><strong>浏览器</strong><small>打开网页或搜索内容</small></span><span className="right-sidebar-start-arrow">↗</span></button>
-      <button type="button" onClick={() => onOpenTool("git")}><GitBranchIcon size={23} weight="regular" /><span><strong>源代码控制</strong><small>查看 Git 更改与提交记录</small></span><span className="right-sidebar-start-arrow">↗</span></button>
-      <button type="button" onClick={() => onOpenTool("multi_agent")}><RobotIcon size={23} /><span><strong>多智能体</strong><small>协调智能体任务与协作进度</small></span><span className="right-sidebar-start-arrow">↗</span></button>
+      <button type="button" disabled={!root} title="浏览工作区文件" onClick={() => onOpenTool("files")}><FolderSimpleIcon size={20} aria-hidden="true" /><span>文件</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
+      <button type="button" disabled={!root} title={`在当前工作区运行 ${shellLabel(terminalShells()[0])}`} onClick={() => onOpenTool(terminalShells()[0])}><TerminalWindowIcon size={20} aria-hidden="true" /><span>终端</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
+      <button type="button" title="打开网页或搜索内容" onClick={() => onOpenTool("browser")}><GlobeIcon size={20} aria-hidden="true" /><span>浏览器</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
+      <button type="button" title="查看 Git 更改与提交记录" onClick={() => onOpenTool("git")}><GitBranchIcon size={20} weight="regular" aria-hidden="true" /><span>Git</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
+      <button type="button" title="协调智能体任务与协作进度" onClick={() => onOpenTool("multi_agent")}><RobotIcon size={20} aria-hidden="true" /><span>协作</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
     </div>
-    <div className="right-sidebar-start-context" title={root ?? undefined}>{root ? `当前工作区 · ${root}` : "先打开一个工作区，即可使用文件和终端"}</div>
-  </div>;
+  </nav>;
 }

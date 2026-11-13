@@ -38,15 +38,15 @@ try {
  await pick(custom);
  assert.equal(await checkedPath(),custom);
  assert.equal(await card.getByRole('radio',{name:'new-project',exact:true}).isChecked(),true);
- if(!await page.locator('.right-sidebar-start-context').isVisible())await page.getByRole('button',{name:'切换右侧栏',exact:true}).click();
- assert.equal(await page.locator('.right-sidebar-start-context').getAttribute('title'),custom,'right sidebar follows directory');
+ if(!await page.locator('.right-sidebar-start').isVisible())await page.getByRole('button',{name:'切换右侧栏',exact:true}).click();
+ assert.equal(await page.locator('.right-sidebar-start').getAttribute('data-workspace-root'),custom,'right sidebar follows directory');
  await pick(null);assert.equal(await checkedPath(),custom,'cancel retains custom directory');
  await picker.click(); await page.evaluate(()=>window.directoryMock.reject());
  await card.getByRole('alert').waitFor();assert.match(await card.getByRole('alert').innerText(),/fixture picker failure/);
  assert.equal(await checkedPath(),custom,'failure retains directory');
  // Switch back to an existing project and match a selected existing path.
  await card.locator('label').first().click();assert.equal(await checkedPath(),original);
- assert.equal(await page.locator('.right-sidebar-start-context').getAttribute('title'),original);
+ assert.equal(await page.locator('.right-sidebar-start').getAttribute('data-workspace-root'),original);
  await pick(original);assert.equal(await card.getByRole('radio').count(),1,'existing path is reused');
  await pick(custom);
  // Workspace tabs retain independent directory choices.
@@ -65,7 +65,7 @@ try {
  await page.getByRole('dialog',{name:'选择 Agent',exact:true}).getByRole('button',{name:'DeepSeek Harness',exact:true}).click();
  await page.locator('.harness-chat').waitFor();
  assert.equal(await page.evaluate(()=>window.directoryMock.calls.length),dialogCalls,'Agent must not ask for directory again');
- assert.equal(await page.locator('.right-sidebar-start-context').getAttribute('title'),custom);
+ assert.equal(await page.locator('.right-sidebar-start').getAttribute('data-workspace-root'),custom);
  assert.ok(await page.getByText('DeepSeek Harness · new-project',{exact:true}).count());
  console.log('PASS: immediate picker, selection, cancel/error retention, right sidebar, existing projects, independent tabs, stale dialog and native chat launch');
  await page.close();
@@ -87,6 +87,7 @@ try {
  process.env.CREWVELA_UI_URL='http://127.0.0.1:1489';
  process.env.CREWVELA_UI_ENTRY='/tests/fixtures/empty-workspace-directory-ui.html';
  await import('./emptyWorkspaceState.ui.mjs');
+ await import('./rightSidebarStart.ui.mjs');
 
 
 }finally{await browser.close();server.kill()}

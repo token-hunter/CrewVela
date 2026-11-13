@@ -1872,23 +1872,20 @@
 .right-sidebar-new-menu { position: absolute; top: 43px; right: 8px; z-index: 2; width: 220px; display: flex; flex-direction: column; padding: 5px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-elev); box-shadow: 0 6px 24px rgba(0,0,0,.1); }
 .right-sidebar-new-menu > button { width: 100%; min-width: 0; height: 34px; display: flex; justify-content: flex-start; gap: 10px; padding: 0 10px; border-radius: 5px; color: var(--text); font-size: 12px; }
 .right-sidebar-new-menu > button:disabled { opacity: .4; cursor: default; }
-.right-sidebar-start { height: 100%; display: flex; flex-direction: column; align-items: center; padding: 28px 24px; overflow: auto; color: var(--text); }
+.right-sidebar-start { height: 100%; display: flex; flex-direction: column; align-items: center; padding: 24px clamp(20px, 9.6%, 52px); overflow: auto; color: var(--text); }
+.right-sidebar-start::before, .right-sidebar-start::after { content: ""; min-height: 0; width: 100%; }
+.right-sidebar-start::before { flex: 9 0 0; }
+.right-sidebar-start::after { flex: 11 0 0; }
 .right-sidebar-start > * { flex-shrink: 0; }
-.right-sidebar-start-mark { color: var(--text-dim); opacity: .32; margin-top: auto; margin-bottom: 17px; }
-.right-sidebar-start h2 { font-size: 17px; font-weight: 500; margin: 0 0 8px; }
-.right-sidebar-start > p { font-size: 12px; margin: 0 0 30px; color: var(--text-dim); }
-/* The sidebar mounts at zero width during expansion. WebKit can retain Grid's
-   initial wrapped-text row heights; a flex column reflows as the width grows. */
-.right-sidebar-start-tools { width: 100%; max-width: 390px; display: flex; flex-direction: column; gap: 12px; }
-.right-sidebar-start-tools > button { min-height: 74px; display: flex; align-items: center; gap: 16px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 11px; background: transparent; color: var(--text); text-align: left; }
-.right-sidebar-start-tools > button:hover { background: var(--bg-hover); border-color: var(--border-strong); }
-.right-sidebar-start-tools > button > svg { flex-shrink: 0; color: var(--accent); }
-.right-sidebar-start-tools > button:first-child > svg { color: #d39b47; }
-.right-sidebar-start-tools strong { display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px; }
-.right-sidebar-start-tools small { display: block; color: var(--text-dim); font-size: 11px; line-height: 1.5; }
-.right-sidebar-start-arrow { margin-left: auto; color: var(--text-dim); font-size: 16px; }
+.right-sidebar-start-tools { width: 100%; max-width: none; display: flex; flex-direction: column; gap: 0; }
+.right-sidebar-start-tools > button { min-height: 44px; display: flex; align-items: center; gap: 22px; padding: 10px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.right-sidebar-start-tools > button:hover:not(:disabled) { background: var(--bg-hover); }
+.right-sidebar-start-tools > button > svg { flex-shrink: 0; color: var(--text-dim); }
+.right-sidebar-start-tools > button > span { min-width: 0; overflow-wrap: anywhere; line-height: 24px; }
+.right-sidebar-start-tools > button > .right-sidebar-start-arrow { margin-left: auto; width: 16px; height: 16px; }
 .right-sidebar-start-tools > button:disabled { opacity: .4; cursor: default; }
-.right-sidebar-start-context { margin-top: 24px; margin-bottom: auto; color: var(--text-dim); opacity: .8; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
+
+/* 终端面板的高度与标题栏独立于开始页菜单样式。 */
 .right-sidebar-terminal > .pane { height: 100%; }
 .right-sidebar-terminal .pane-head { display: none; }
 .right-sidebar-activity-bar button:focus-visible, .right-sidebar-start-tools > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

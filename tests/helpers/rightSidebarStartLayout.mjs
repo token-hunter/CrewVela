@@ -19,8 +19,14 @@ export async function checkSidebarStartLayout({ fullApp = false, cycles = 10 } =
     await pause(200); // Include completion of the real App's 160ms expansion transition.
     const grid = document.querySelector(".right-sidebar-start-tools");
     const heights = cards().map(button => button.getBoundingClientRect().height);
-    assert(heights.every(height => height >= 73 && height <= 90), `cycle ${cycle}: inflated cards ${heights}`);
-    assert(grid.getBoundingClientRect().height <= 500, `cycle ${cycle}: inflated entry list`);
+    assert(heights.every(height => height >= 44 && height <= 48), `cycle ${cycle}: incorrect menu rows ${heights}`);
+    assert(grid.getBoundingClientRect().height <= 240, `cycle ${cycle}: inflated entry list`);
+    const hostRect = document.querySelector(".right-sidebar-start").getBoundingClientRect();
+    const menuRect = grid.getBoundingClientRect();
+    if (hostRect.height >= 500) {
+      const center = (menuRect.top + menuRect.height / 2 - hostRect.top) / hostRect.height;
+      assert(center >= 0.44 && center <= 0.49, `cycle ${cycle}: menu not centered slightly above midpoint (${center})`);
+    }
     assert(cards().every(button => {
       const text = button.querySelector("span");
       return text.getBoundingClientRect().height <= button.clientHeight;
@@ -41,11 +47,11 @@ export async function checkSidebarStartLayout({ fullApp = false, cycles = 10 } =
     document.querySelector('[aria-label="有工作区"]').click();
     await wait(() => cards()[0].disabled && cards()[1].disabled, "workspace-dependent entries not disabled");
     assert(cards().slice(2).every(button => !button.disabled), "independent entries disabled");
-    const description = cards()[0].querySelector("small");
-    description.textContent = "较长的工作区说明，布局应按内容增高而不是裁切。".repeat(12);
+    const label = cards()[0].querySelector("span");
+    label.textContent = "较长的工作区入口名称，应按内容增高而不是裁切。".repeat(12);
     await pause(50);
-    assert(cards()[0].getBoundingClientRect().height > 90, "long text cannot expand card");
-    assert(description.getBoundingClientRect().height <= cards()[0].clientHeight, "long text clipped");
+    assert(cards()[0].getBoundingClientRect().height > 48, "long label cannot expand row");
+    assert(label.getBoundingClientRect().height <= cards()[0].clientHeight, "long label clipped");
   }
   return { cycles, measurements, callbacks: !fullApp, adaptiveHeight: !fullApp };
 }

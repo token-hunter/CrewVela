@@ -811,53 +811,6 @@ body {
   border-radius: 8px;
 }
 
-.right-sidebar-start h2 {
-  font: 400 24px/1.3 var(--serif-font);
-  letter-spacing: -0.01em;
-}
-
-.right-sidebar-start-mark {
-  opacity: 0.5;
-}
-
-.right-sidebar-start-tools {
-  gap: 8px;
-}
-
-.right-sidebar-start-tools > button {
-  min-height: 74px;
-  gap: 14px;
-  padding: 14px 16px;
-  border-color: var(--border);
-  border-radius: 12px;
-  background: var(--bg-elev);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
-}
-
-.right-sidebar-start-tools > button:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background: var(--bg-elev);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 0 8px 20px rgba(0, 0, 0, 0.06);
-  transform: translateY(-1px);
-}
-
-/* 图标放进柔和的圆角方块，统一中性色 */
-.right-sidebar-start-tools > button > svg,
-.right-sidebar-start-tools > button:first-child > svg {
-  width: 36px;
-  height: 36px;
-  padding: 8px;
-  border-radius: 10px;
-  background: var(--bg-active);
-  color: var(--text-dim);
-}
-
-.right-sidebar-start-tools strong {
-  font-size: 13.5px;
-  font-weight: 500;
-}
-
 /* ---------- 菜单与弹层：统一圆角、底色与阴影 ---------- */
 .unified-tools-menu,
 .rail-new-menu,
