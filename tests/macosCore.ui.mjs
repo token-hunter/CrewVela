@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
+import { mkdirSync } from "node:fs";
+mkdirSync("output/macos-browser-panel-agent", { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 try {
  for (const [platform, shells] of [["Win32", ["PowerShell", "CMD"]], ["MacIntel", ["zsh", "bash"]]]) {
@@ -18,11 +20,27 @@ try {
   const keepAwake=page.locator("label").filter({hasText:"保持电脑运行"}).locator("input");
   const panel=page.locator("label").filter({hasText:"优先内置浏览器面板"}).locator("input");
   assert.equal(await keepAwake.isDisabled(),platform === "MacIntel");
-  assert.equal(await panel.isDisabled(),platform === "MacIntel");
+  assert.equal(await panel.isDisabled(),false);
+  assert.equal(await panel.isChecked(),true);
+  await panel.uncheck();
+  assert.equal(await panel.isChecked(),false);
+  await panel.check();
   if(platform === "MacIntel") await page.getByText("内置电脑控制暂未适配",{exact:false}).waitFor();
   else await page.getByRole("switch", {name: /^内置电脑控制/}).waitFor();
   assert.deepEqual(errors,[]);
   await page.screenshot({path:`.scratch/macos-apple-silicon-core/ui-${platform}.png`,fullPage:true});
+  await page.goto(new URL("/tests/fixtures/crewvela-settings-frame-ui.html?open=1&section=browserControl&mock=browser&theme=dark", process.env.CREWVELA_UI_URL || "http://127.0.0.1:1432").href);
+  const savedPanel = page.getByRole("switch", { name: /^优先内置浏览器面板/ });
+  const save = page.getByRole("button", { name: "保存并应用", exact: true });
+  await savedPanel.uncheck(); await save.click();
+  await page.getByText("已开启浏览器控制", { exact: true }).waitFor();
+  assert.equal(await savedPanel.isChecked(), false);
+  assert.equal(await save.isDisabled(), true);
+  await savedPanel.check(); await save.click();
+  await page.getByText("已开启浏览器控制", { exact: true }).waitFor();
+  assert.equal(await savedPanel.isChecked(), true);
+  assert.equal(await save.isDisabled(), true);
+  await page.screenshot({ path: `output/macos-browser-panel-agent/settings-${platform}.png` });
   await page.goto(new URL("/tests/fixtures/codex-accounts-ui.html", process.env.CREWVELA_UI_URL || "http://127.0.0.1:1432").href);
   await page.locator(".cid-account-row").nth(4).waitFor();
   const restart = page.getByRole("button", {name:"重启 Codex",exact:true});

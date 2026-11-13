@@ -5,7 +5,17 @@ description: 通过 browser-control MCP 驱动用户本机 Chrome/Edge 完成网
 
 # 浏览器控制（browser-control）
 
-你可以通过 MCP 服务器 `browser-control`（基于官方 @playwright/mcp）驱动浏览器。**默认在实际调用浏览器工具时自动打开并接管 CrewVela 右侧栏的内置浏览器面板**：导航、点击、输入会实时显示在用户看得到的面板里。普通聊天、MCP 初始化和查询工具列表不会打开浏览器；面板连接失败时使用外部 Chrome/Edge 窗口。
+你可以通过 MCP 服务器 `browser-control` 驱动浏览器。**默认在实际调用浏览器工具时自动打开并接管 CrewVela 右侧栏的内置浏览器面板**：导航、点击、输入会实时显示在用户看得到的面板里。普通聊天、MCP 初始化和查询工具列表不会打开浏览器；Windows 面板连接失败时使用外部 Chrome/Edge 窗口。Windows 与外部浏览器基于官方 @playwright/mcp，macOS 内置面板使用下面的专用适配器。
+
+### macOS 面板
+
+macOS 面板通过内置 WKWebView MCP 适配器操作，Windows 与外部浏览器继续使用 @playwright/mcp。macOS 支持导航、可见文本与控件 DOM 快照（带 ref）、点击、文本和批量表单填写、下拉选择、后退、等待、同步 JavaScript 与可见区域 PNG 截图。以当前 `tools/list` 为准，不调用未列出的工具。
+
+- macOS 快照是 DOM 文本与控件表示，不是完整系统无障碍树。开放 Shadow DOM 与同源 iframe 可读取；跨源 iframe 不可读取。
+- 点击、悬停、按键采用 DOM 合成事件，不保证接受可信硬件事件的网站兼容。按键仅支持 Enter、Tab、Shift+Tab、Escape；文本使用 `browser_type`。
+- 原生文件选择器、浏览器原生对话框、下载管理、网络调试和新标签页暂未接入；不得把未执行的操作报告为成功。
+- macOS 面板故障会明确报错，不自动转到其他浏览器重复操作；需要外部模式时请用户关闭「优先内置浏览器面板」、保存并重启会话。外部模式与面板登录态独立。
+- 旧 ref 在刷新快照后失效。提交或导航报错时先读取当前快照，不能盲目重试可能已经完成的操作。
 
 ## 内置面板模式（默认）
 

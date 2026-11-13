@@ -7,6 +7,7 @@ try {
   const errors = [];
   page.on("pageerror", error => { errors.push(error.message); console.error(error.message); });
   await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
     let next = 1;
     const callbacks = new Map(), listeners = new Map();
     window.__qaCalls = [];
@@ -44,7 +45,7 @@ try {
   const reactUrl = moduleSource.match(/"([^" ]*\/react\.js[^" ]*)"/)[1];
   const domSource = await (await fetch(`${base}/src/main.tsx`)).text();
   const domUrl = domSource.match(/"([^" ]*\/react-dom_client\.js[^" ]*)"/)[1];
-  await page.route("**/__browser-instances-qa", route => route.fulfill({ contentType: "text/html", body: `<!doctype html><html><head><style>.slot{width:900px;height:650px}.browser-host{width:900px;height:500px}</style></head><body><div id="root"></div><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module">import React from '${reactUrl}';import ReactDOM from '${domUrl}';import {BrowserPanel} from '/src/components/BrowserPanel.tsx';const root=ReactDOM.createRoot(document.getElementById('root'));window.__qaRender=(active='a',closed=[])=>root.render(React.createElement(React.Fragment,null,...['a','b','c'].filter(id=>!closed.includes(id)).map(id=>React.createElement('div',{key:id,className:'slot',hidden:id!==active,'data-id':id},React.createElement(BrowserPanel,{panelId:id,active:id===active})))));window.__qaRender();</script></body></html>` }));
+  await page.route("**/__browser-instances-qa", route => route.fulfill({ contentType: "text/html", body: `<!doctype html><html><head><style>.slot{width:900px;height:650px}.browser-host{width:900px;height:500px}</style></head><body><div id="root"></div><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module">import React from '${reactUrl}';import ReactDOM from '${domUrl}';import {BrowserPanel} from '/src/components/BrowserPanel.tsx';const root=ReactDOM.createRoot(document.getElementById('root'));window.__qaRender=(active='a',closed=[])=>root.render(React.createElement(React.Fragment,null,...['a','b','c'].filter(id=>!closed.includes(id)).map(id=>React.createElement('div',{key:id,className:'slot',hidden:id!==active,'data-id':id},React.createElement(BrowserPanel,{panelId:id,active:id===active})))));window.__qaDefault=()=>root.render(React.createElement('div',{className:'slot'},React.createElement(BrowserPanel,{active:true})));window.__qaRender();</script></body></html>` }));
   await page.goto(`${process.env.CREWVELA_UI_URL || "http://127.0.0.1:1420"}/__browser-instances-qa`);
   const input = id => page.locator(`[data-id="${id}"]`).getByRole("textbox", { name: "地址栏" });
   const navigate = async (id, url) => { await input(id).fill(url); await input(id).press("Enter"); await page.waitForFunction(id => !!window.__qaViews[id], id); };
@@ -71,6 +72,31 @@ try {
   await page.waitForFunction(() => window.__qaCalls.some(x => x.command === "browser_panel_close" && x.args.panelId === "c"));
   assert.equal(await page.evaluate(() => !!window.__qaViews.c), false, "late open must release the closed instance");
   assert.equal(await page.evaluate(() => window.__qaViews.b.url), "https://example.com/b", "closing c must preserve b");
+  // The Agent has already created a hidden default panel before React mounts.
+  await page.evaluate(() => {
+    localStorage.removeItem("crewvela-browser-panel-state-v1");
+    window.__qaViews.default = { url: "https://agent.example/first", visible: false };
+    window.__qaEmit("browser-control-panel-needed", { url: "https://agent.example/first" });
+    window.__qaDefault();
+  });
+  await page.waitForFunction(() => window.__qaViews.default.visible);
+  const defaultInput = page.getByRole("textbox", { name: "地址栏" });
+  await page.waitForFunction(() => document.querySelector('input[aria-label="地址栏"]').value === "https://agent.example/first");
+  assert.equal(await defaultInput.inputValue(), "https://agent.example/first");
+  await page.evaluate(async () => {
+    const modal = await import('/src/components/ui/modalStack.ts');
+    window.__qaModal = modal.pushModal();
+    window.__qaEmit("browser-control-panel-needed", { url: window.__qaViews.default.url });
+  });
+  await page.waitForFunction(() => !window.__qaViews.default.visible);
+  await page.evaluate(async () => {
+    const modal = await import('/src/components/ui/modalStack.ts'); modal.removeModal(window.__qaModal);
+    window.__qaEmit("browser-control-panel-needed", { url: window.__qaViews.default.url });
+  });
+  await page.waitForFunction(() => window.__qaViews.default.visible);
+  await page.evaluate(() => { delete window.__qaViews.default; window.__qaEmit("browser-panel-agent-closed", {}); });
+  await defaultInput.fill("https://manual.example/reopen"); await defaultInput.press("Enter");
+  await page.waitForFunction(() => window.__qaViews.default?.url === "https://manual.example/reopen" && window.__qaViews.default.visible);
   assert.deepEqual(errors, []);
   console.log("PASS: mock IPC instance IDs, visibility, event isolation and closing during async creation");
 } finally { await browser.close(); }

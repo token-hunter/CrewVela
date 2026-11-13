@@ -10,7 +10,7 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   const url = query => `${base}/tests/fixtures/crewvela-settings-frame-ui.html?open=1&section=browserControl&${query}`;
   await page.goto(url("mock=browser&fail=1&theme=dark"));
-  const channel = page.getByLabel("使用的浏览器", { exact: true });
+  const channel = page.locator("#browser-control-channel");
   const save = page.getByRole("button", { name: "保存并应用", exact: true });
   assert.equal(await save.isEnabled(), false);
   await channel.selectOption("msedge");

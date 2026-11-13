@@ -9,6 +9,7 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { IS_MAC } from "../platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowClockwise";
 import { ArrowLeftIcon } from "@phosphor-icons/react/dist/csr/ArrowLeft";
@@ -142,6 +143,38 @@ export function BrowserPanel({ active, panelId }: Props) {
         openingRef.current = false;
       });
   }, [syncBounds, panelInvoke]);
+
+  // WKWebView 的显隐仍由前端统一控制，Agent 不得把原生视图显示在设置弹窗上方。
+  useEffect(() => {
+    if (!IS_MAC || panelId) return;
+    let disposed = false;
+    const activate = listen<{ url?: string }>("browser-control-panel-needed", (event) => {
+      overlayRef.current = hasOpenModal();
+      if (!startedRef.current) {
+        const url = event.payload?.url;
+        if (url) { currentUrlRef.current = url; setCurrentUrl(url); setAddress(url); }
+        startedRef.current = true; setStarted(true);
+      }
+      requestAnimationFrame(() => openOrCreatePanel());
+    });
+    // 兼容首次激活事件早于组件挂载的时序；查询不会创建页面。
+    if (!startedRef.current) void panelInvoke<string>("browser_panel_current_url").then(url => {
+      if (disposed || !url || startedRef.current) return;
+      currentUrlRef.current = url; setCurrentUrl(url); setAddress(url);
+      saveBrowserPanelState({ url }); startedRef.current = true; setStarted(true);
+      overlayRef.current = hasOpenModal();
+      requestAnimationFrame(() => openOrCreatePanel());
+    }).catch(() => {});
+    const closed = listen("browser-panel-agent-closed", () => {
+      createdRef.current = false;
+      startedRef.current = false;
+      currentUrlRef.current = "";
+      lastRectRef.current = null;
+      saveBrowserPanelState({ url: "" });
+      setStarted(false); setCurrentUrl(""); setAddress(""); setLoading(false); setError("");
+    });
+    return () => { disposed = true; void activate.then(dispose => dispose()); void closed.then(dispose => dispose()); };
+  }, [openOrCreatePanel, panelInvoke, panelId]);
 
   useEffect(() => {
     activeRef.current = active;

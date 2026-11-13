@@ -7,6 +7,8 @@ mod automation;
 mod automation_runtime;
 mod browser_control;
 mod browser_panel;
+#[cfg(target_os = "macos")]
+mod browser_panel_macos;
 mod clipboard_image;
 mod codex_accounts;
 mod codex_communication;

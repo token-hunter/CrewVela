@@ -399,6 +399,16 @@ fn open_panel_locked<R: tauri::Runtime>(
                 },
             );
         });
+    // macOS 14+ 的持久面板存储与主应用隔离；不同验收配置目录也不串登录态。
+    #[cfg(target_os = "macos")]
+    {
+        use sha2::{Digest, Sha256};
+        let config = crate::providers::config_dir().map_err(|e| e.to_string())?;
+        let digest = Sha256::digest(format!("crewvela-browser-panel-v1:{}", config.display()));
+        let mut identifier = [0; 16];
+        identifier.copy_from_slice(&digest[..16]);
+        builder = builder.data_store_identifier(identifier);
+    }
     // Windows：独立 WebView2 环境（独立数据目录 + 面板专属 CDP 端口），
     // browser-control 桥接脚本凭端口文件接管本面板；主窗口 webview 不在暴露面。
     #[cfg(target_os = "windows")]

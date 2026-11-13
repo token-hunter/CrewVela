@@ -60,6 +60,14 @@ keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# WKWebView 的公开截图 API；仅 macOS 编译，不改变 Windows WebView2 接管。
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+block2 = "0.6.2"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "WKWebView", "WKSnapshotConfiguration"] }
+
 [target.'cfg(windows)'.dependencies]
 junction = "2"
 clipboard-win = "5.4.1"
