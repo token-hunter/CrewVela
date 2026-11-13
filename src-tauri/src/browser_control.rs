@@ -283,6 +283,19 @@ pub(crate) fn resolve_engine() -> Result<EngineLaunch> {
     })
 }
 
+fn resolve_control_browser(settings: &BrowserControlSettings) -> Result<ResolvedBrowser> {
+    if cfg!(target_os = "macos") && settings.prefer_panel {
+        Ok(ResolvedBrowser { engine_args: Vec::new(), label: "内置 WKWebView".into() })
+    } else { resolve_browser(settings) }
+}
+
+fn resolve_control_engine(settings: &BrowserControlSettings) -> Result<EngineLaunch> {
+    if cfg!(target_os = "macos") && settings.prefer_panel {
+        let node = which::which("node").context("未找到 Node.js；面板 MCP 接入需要 Node.js 22+")?.display().to_string();
+        Ok(EngineLaunch { command: node.clone(), node_path: node, args: Vec::new(), label: "内置 WKWebView MCP 适配器".into(), note: None })
+    } else { resolve_engine() }
+}
+
 fn global_node_modules_candidates() -> Vec<PathBuf> {
     if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA")
@@ -311,18 +324,26 @@ fn materialize_bridge_at(config_dir: &Path) -> Result<PathBuf> {
     }
     std::fs::write(
         &path,
-        include_str!("../resources/browser-control-bridge.mjs"),
+        bridge_source(),
     )?;
+    #[cfg(target_os = "macos")]
+    std::fs::write(path.with_file_name("browser-panel-dom.mjs"), include_str!("../resources/browser-panel-dom.mjs"))?;
     Ok(path)
+}
+
+fn bridge_source() -> &'static str {
+    if cfg!(target_os = "macos") { include_str!("../resources/browser-control-macos.mjs") }
+    else { include_str!("../resources/browser-control-bridge.mjs") }
 }
 
 /// 桥接脚本升级保活：物化文件与程序内置版本不一致时重写（例如安装新版本后
 /// 旧 bridge 缺少按工具调用激活等修复）。此操作不创建或显示浏览器。
 fn refresh_bridge_materialization(config_dir: &Path) {
-    let builtin = include_str!("../resources/browser-control-bridge.mjs");
+    let builtin = bridge_source();
     let path = bridge_path_at(config_dir);
     match std::fs::read_to_string(&path) {
-        Ok(current) if current == builtin => {}
+        Ok(current) if current == builtin && (!cfg!(target_os = "macos") ||
+            std::fs::read_to_string(path.with_file_name("browser-panel-dom.mjs")).ok().as_deref() == Some(include_str!("../resources/browser-panel-dom.mjs"))) => {}
         _ => {
             if let Err(error) = materialize_bridge_at(config_dir) {
                 eprintln!("[crewvela] 刷新浏览器控制桥接脚本失败：{error:#}");
@@ -347,7 +368,9 @@ pub fn refresh_installed_skill(app: &AppHandle) {
         }
         let path = config_dir.join(SKILL_DIR_NAME).join("SKILL.md");
         let builtin = include_str!("../../skills/browser-control/SKILL.md");
-        if std::fs::read_to_string(path).ok().as_deref() != Some(builtin) {
+        let native_migration = cfg!(target_os = "macos") && settings.prefer_panel &&
+            native_panel_entry_drifted(&mcp::load()?, &config_dir);
+        if native_migration || std::fs::read_to_string(path).ok().as_deref() != Some(builtin) {
             let outcome = sync(&settings, &app.state::<SkillCenter>())?;
             for warning in outcome.warnings {
                 eprintln!("[crewvela] 浏览器控制升级：{warning}");
@@ -358,6 +381,12 @@ pub fn refresh_installed_skill(app: &AppHandle) {
     if let Err(error) = outcome {
         eprintln!("[crewvela] 更新浏览器控制技能失败：{error:#}");
     }
+}
+
+fn native_panel_entry_drifted(servers: &[McpServerConfig], config_dir: &Path) -> bool {
+    let bridge = bridge_path_at(config_dir).display().to_string();
+    !servers.iter().any(|entry| entry.source_plugin.as_deref() == Some(BUILTIN_SOURCE_KEY)
+        && entry.enabled && entry.args.first() == Some(&bridge))
 }
 
 pub(crate) fn build_mcp_config(
@@ -467,26 +496,31 @@ pub(crate) fn sync_at(
             warnings.push(format!("撤下浏览器控制技能失败：{error:#}"));
         }
         return Ok(SyncOutcome {
-            resolved_browser_label: resolve_browser(settings)
+            resolved_browser_label: resolve_control_browser(settings)
                 .map(|item| item.label)
                 .unwrap_or_else(|_| "未解析（浏览器控制已关闭）".into()),
-            engine_label: resolve_engine()
+            engine_label: resolve_control_engine(settings)
                 .map(|item| item.label)
                 .unwrap_or_else(|_| "未解析（缺少 Node.js 或 @playwright/mcp）".into()),
             warnings,
         });
     }
 
-    let resolved_browser = resolve_browser(settings)?;
-    let engine = resolve_engine()?;
+    let resolved_browser = resolve_control_browser(settings)?;
+    let engine = resolve_control_engine(settings)?;
     // 面板优先（Windows）：物化桥接脚本并让 MCP 条目走它；面板端口文件由
     // browser_panel 创建面板时写入，桥接在实际工具调用前请求激活并确定模式。
-    let bridge_path = if settings.prefer_panel && cfg!(target_os = "windows") {
+    let bridge_path = if settings.prefer_panel && cfg!(any(target_os = "windows", target_os = "macos")) {
         match materialize_bridge_at(config_dir) {
             Ok(path) => Some(path),
             Err(error) => {
+                #[cfg(target_os = "macos")]
+                return Err(error.context("无法更新 macOS 面板适配器，未替换现有 MCP 配置"));
+                #[cfg(not(target_os = "macos"))]
+                {
                 warnings.push(format!("物化浏览器控制桥接脚本失败（退回直连模式）：{error:#}"));
                 None
+                }
             }
         }
     } else {
@@ -553,7 +587,12 @@ fn sync(settings: &BrowserControlSettings, center: &SkillCenter) -> Result<SyncO
 /// 面板优先模式的面板状态行。None = 未启用面板优先 / 平台不支持。
 /// 端口文件由 browser_panel 创建面板 webview 时写入。
 fn summarize_panel(config_dir: &Path) -> Option<String> {
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = config_dir;
+        Some("使用内置 WKWebView 面板；实际调用浏览器工具时自动显示。".into())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = config_dir;
         None
@@ -825,6 +864,11 @@ fn authorized_panel_request(header: &str, token: &str) -> bool {
 /// 桥接专用 loopback 服务。只收到认证的实际工具请求才创建/激活面板。
 /// 单线程串行确保，不占用主线程，不复用协作服务或开放外网接口。
 pub fn start_panel_request_service(app: &AppHandle, config_dir: &Path) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::browser_panel_macos::start_service(app, config_dir)?;
+        refresh_bridge_materialization(config_dir);
+    }
     #[cfg(target_os = "windows")]
     {
         use std::io::{Read, Write};
@@ -914,7 +958,8 @@ fn status(app: &AppHandle) -> Result<BrowserControlStatus> {
             .iter()
             .find(|server| server.source_plugin.as_deref() == Some(BUILTIN_SOURCE_KEY))
         {
-            Some(entry) => !entry.enabled,
+            Some(entry) => !entry.enabled || (cfg!(target_os = "macos") && settings.prefer_panel &&
+                native_panel_entry_drifted(&servers, &config_dir)),
             None => true,
         };
         if drifted {
@@ -922,8 +967,8 @@ fn status(app: &AppHandle) -> Result<BrowserControlStatus> {
             return Ok(status_from(&settings, &outcome, panel));
         }
     }
-    let resolved = resolve_browser(&settings).ok();
-    let engine = resolve_engine().ok();
+    let resolved = resolve_control_browser(&settings).ok();
+    let engine = resolve_control_engine(&settings).ok();
     Ok(BrowserControlStatus {
         settings: settings.clone(),
         resolved_browser: resolved.as_ref().map(|item| item.label.clone()),
@@ -967,8 +1012,8 @@ fn save(app: AppHandle, settings: BrowserControlSettings) -> Result<BrowserContr
         return Ok(status_from(&settings, &outcome, panel));
     }
     // 开启前先校验浏览器与引擎可解析，失败则不落盘（保持原状态）。
-    resolve_browser(&settings)?;
-    resolve_engine()?;
+    resolve_control_browser(&settings)?;
+    resolve_control_engine(&settings)?;
     save_settings_at(&settings_path_at(&config_dir), &settings)?;
     let center = app.state::<SkillCenter>();
     let outcome = sync(&settings, &center)?;
@@ -993,6 +1038,30 @@ pub fn browser_control_save(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_panel_upgrade_detects_legacy_direct_entry_and_repairs_script_assets() {
+        let dir = temp_dir();
+        let browser = ResolvedBrowser { engine_args: vec![], label: "fixture".into() };
+        let engine = EngineLaunch { command: "node".into(), args: vec!["playwright-cli.js".into()], node_path: "node".into(), label: "fixture".into(), note: None };
+        let settings = BrowserControlSettings { enabled: true, ..Default::default() };
+        let direct = build_mcp_config(&settings, &browser, &engine, None);
+        assert!(native_panel_entry_drifted(&[direct], &dir));
+        let bridge = materialize_bridge_at(&dir).unwrap();
+        let entry = build_mcp_config(&settings, &browser, &engine, Some(&bridge));
+        assert!(!native_panel_entry_drifted(&[entry], &dir));
+        #[cfg(target_os = "macos")]
+        {
+            let dom = bridge.with_file_name("browser-panel-dom.mjs");
+            std::fs::remove_file(&dom).unwrap();
+            refresh_bridge_materialization(&dir);
+            assert_eq!(std::fs::read_to_string(dom).unwrap(), include_str!("../resources/browser-panel-dom.mjs"));
+            assert!(std::fs::read_to_string(bridge).unwrap().contains("crewvela-wkwebview"));
+            let no_external_browser = BrowserControlSettings { browser: BrowserChannel::Custom, custom_path: "/missing-browser".into(), ..settings };
+            assert_eq!(resolve_control_browser(&no_external_browser).unwrap().label, "内置 WKWebView");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn panel_request_requires_exact_route_and_bearer_token() {
@@ -1378,7 +1447,12 @@ mod tests {
         let dir = temp_dir();
         let bridge = materialize_bridge_at(&dir).unwrap();
         let content = std::fs::read_to_string(&bridge).unwrap();
-        assert!(content.contains("parseBridgeArgs"));
+        if cfg!(target_os = "macos") {
+            assert!(content.contains("MacOSPanelBridge"));
+            assert!(bridge.with_file_name("browser-panel-dom.mjs").is_file());
+        } else {
+            assert!(content.contains("parseBridgeArgs"));
+        }
         assert_eq!(bridge, bridge_path_at(&dir));
         // 端口文件路径与面板写入位置一致（bridge 默认取同目录 panel-cdp.json）。
         assert_eq!(
@@ -1479,5 +1553,24 @@ mod tests {
         // SQLite 连接持句柄，先释放再清理沙箱。
         drop(center);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_bridge_write_failure_keeps_existing_mcp_entry() {
+        let dir = temp_dir();
+        let file = dir.join("mcp-servers.json");
+        let center = SkillCenter::open_at(dir.join("skill-center")).unwrap();
+        let settings = BrowserControlSettings { enabled: true, ..Default::default() };
+        let browser = ResolvedBrowser { engine_args: vec![], label: "fixture".into() };
+        let engine = EngineLaunch { command: "node".into(), args: vec!["old-playwright.js".into()], node_path: "node".into(), label: "fixture".into(), note: None };
+        let existing = build_mcp_config(&settings, &browser, &engine, None);
+        mcp::upsert_builtin_server_at(&file, BUILTIN_SOURCE_KEY, existing).unwrap();
+        let before = std::fs::read(&file).unwrap();
+        std::fs::create_dir_all(bridge_path_at(&dir)).unwrap();
+        assert!(sync_at(&dir, &file, &center, &settings).is_err());
+        assert_eq!(std::fs::read(&file).unwrap(), before);
+        drop(center);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

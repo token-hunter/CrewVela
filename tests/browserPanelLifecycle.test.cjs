@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 // 执行真实组件的 hooks 和 effect，IPC 用可控 Promise 放大创建期间的竞态。
-function mountPanel(initialUrl = 'https://example.com') {
+function mountPanel(initialUrl = 'https://example.com', mac = false, existingNativeUrl = null) {
   const calls = [];
   const slots = [];
   const effects = [];
@@ -17,6 +17,7 @@ function mountPanel(initialUrl = 'https://example.com') {
   let modal = false;
   let deferred;
   let boundsFailure = false;
+  let nativeExists = !!existingNativeUrl;
   const host = { getBoundingClientRect: () => ({ left: 100, top: 50, width: 600, height: 400 }) };
   const react = {
     memo: (component) => component,
@@ -36,13 +37,15 @@ function mountPanel(initialUrl = 'https://example.com') {
   const invoke = (command, args) => {
     calls.push({ command, args });
     if (command === 'browser_panel_open') {
+      nativeExists = true;
       return new Promise((resolve, reject) => { deferred = { resolve, reject }; });
     }
     if (command === 'browser_panel_set_bounds' && boundsFailure) {
       boundsFailure = false;
       return Promise.reject(new Error('temporary bounds failure'));
     }
-    return Promise.resolve(command === 'browser_panel_current_url' ? 'https://example.com' : undefined);
+    if (command === 'browser_panel_current_url') return nativeExists ? Promise.resolve(existingNativeUrl || 'https://example.com') : Promise.reject(new Error('no panel'));
+    return Promise.resolve();
   };
   const jsx = (type, props) => {
     if (props?.ref && type === 'div') props.ref.current = host;
@@ -61,6 +64,7 @@ function mountPanel(initialUrl = 'https://example.com') {
       if (name === '@tauri-apps/api/core') return { invoke };
       if (name === '@tauri-apps/api/event') return { listen: (name, callback) => { listeners.set(name, callback); return Promise.resolve(() => {}); } };
       if (name === '@tauri-apps/plugin-opener') return { openUrl: () => Promise.resolve() };
+      if (name === '../platform') return { IS_MAC: mac };
       if (name.endsWith('browserPanelState')) return {
         loadBrowserPanelState: () => ({ url: initialUrl }),
         saveBrowserPanelState: () => {},
@@ -99,6 +103,7 @@ function mountPanel(initialUrl = 'https://example.com') {
     tick: () => intervals[0](),
     setModal: (value) => { modal = value; },
     navigate: (url) => listeners.get('browser-panel-navigated')({ payload: { url } }),
+    event: (name) => { if (name === 'browser-panel-agent-closed') nativeExists = false; listeners.get(name)?.({ payload: {} }); },
     resolve: () => deferred.resolve(),
     reject: () => deferred.reject(new Error('temporary WebView failure')),
     error: () => slots[4],
@@ -175,3 +180,29 @@ for (const state of ['inactive', 'modal']) {
     assert.equal(completed.filter((call) => call.command === 'browser_panel_set_bounds').length, 0);
   });
 }
+
+test('macOS Agent激活尊重已打开弹窗，关闭后不保留失效控制器', async () => {
+  const panel = mountPanel('https://example.com', true);
+  panel.resolve(); await flush();
+  panel.setModal(true);
+  const before = panel.calls.length;
+  panel.event('browser-control-panel-needed'); await flush();
+  assert.ok(panel.calls.slice(before).some(call => call.command === 'browser_panel_set_visible' && !call.args.visible));
+  assert.equal(opens(panel).length, 1);
+  panel.event('browser-panel-agent-closed');
+  panel.setModal(false); panel.render(true);
+  assert.equal(opens(panel).length, 1, 'close must not immediately recreate');
+  panel.navigate('https://example.org'); panel.render(true);
+  assert.equal(opens(panel).length, 2, 'navigation after close recreates the view');
+});
+
+test('macOS 首次Agent事件早于懒挂载时，从已存在的native URL恢复并显示', async () => {
+  const panel = mountPanel('', true, 'https://agent.example');
+  assert.equal(opens(panel).length, 0);
+  // No activation or navigation event is delivered to this newly-mounted component.
+  await flush();
+  assert.equal(opens(panel).length, 1);
+  assert.equal(opens(panel)[0].args.url, 'https://agent.example');
+  panel.resolve(); await flush();
+  assert.ok(!panel.calls.some(call => call.command === 'browser_panel_navigate'), 'must not restore an old or empty URL over the Agent page');
+});

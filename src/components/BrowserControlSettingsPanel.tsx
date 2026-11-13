@@ -88,8 +88,8 @@ export function BrowserControlSettingsPanel() {
           <fieldset className="workspace-browser-options" disabled={!draft.enabled}>
             <SettingsGroup title="浏览器">
               <div className="runtime-field browser-channel-field">
-                <div><label htmlFor="browser-control-channel">使用的浏览器</label>
-                  <small id="browser-control-channel-hint">{BROWSER_CHANNEL_OPTIONS.find(option => option.id === draft.browser)?.hint}</small>
+                <div><label htmlFor="browser-control-channel">{IS_MAC ? "外部浏览器" : "使用的浏览器"}</label>
+                  <small id="browser-control-channel-hint">{IS_MAC && draft.preferPanel ? "关闭内置面板优先后使用此配置。" : BROWSER_CHANNEL_OPTIONS.find(option => option.id === draft.browser)?.hint}</small>
                 </div>
                 <select id="browser-control-channel" aria-describedby="browser-control-channel-hint" value={draft.browser} onChange={event => selectChannel(event.target.value as BrowserChannelId)}>
                   {BROWSER_CHANNEL_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
@@ -102,7 +102,7 @@ export function BrowserControlSettingsPanel() {
             </SettingsGroup>
             <SettingsGroup title="运行方式">
               <SettingSwitch title="无头模式" hint="使用外部浏览器时隐藏窗口。" checked={draft.headless} onChange={headless => setDraft({ ...draft, headless })} />
-              <SettingSwitch title="优先内置浏览器面板" hint={IS_MAC ? "macOS 当前使用外部 Chrome/Edge，暂不支持接管内置面板" : "在应用内显示操作，面板不可用时使用外部浏览器。"} disabled={IS_MAC} checked={!IS_MAC && draft.preferPanel} onChange={preferPanel => setDraft({ ...draft, preferPanel })} />
+              <SettingSwitch title="优先内置浏览器面板" hint={IS_MAC ? "在应用内显示网页操作；如需外部 Chrome/Edge，请关闭此项并重启会话。" : "在应用内显示操作，面板不可用时使用外部浏览器。"} checked={draft.preferPanel} onChange={preferPanel => setDraft({ ...draft, preferPanel })} />
             </SettingsGroup>
           </fieldset>
         </fieldset>

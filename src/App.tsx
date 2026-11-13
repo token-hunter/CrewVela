@@ -1,5 +1,5 @@
 import { attentionOpenMode, type AttentionKind } from "./sidebarAttention";
-import { isTerminalShell, shellLabel } from "./platform";
+import { IS_MAC, isTerminalShell, shellLabel } from "./platform";
 import { sidebarTabKind } from "./components/RightSidebarActivityBar";
 import "./components/native-chat-tab-sort.css";
 import { useRuntimeAvailability } from "./runtimeAvailability";
@@ -2158,8 +2158,12 @@ export default function App() {
   useEffect(() => {
     if (UI_PREVIEW) return;
     let disposed = false;
-    const unlisten = listen("browser-control-panel-needed", () => {
-      if (!disposed) void selectRightSidebarTabRef.current("browser");
+    const unlisten = listen<{ url?: string } | null>("browser-control-panel-needed", (event) => {
+      if (disposed) return;
+      // macOS 先创建隐藏的 WKWebView，再懒挂载 React 容器；先保存真实 URL，
+      // 首挂载即可恢复 started，避免漏掉同一事件后一直隐藏或导航到旧恢复点。
+      if (IS_MAC && event.payload?.url) saveBrowserPanelState({ url: event.payload.url });
+      void selectRightSidebarTabRef.current("browser");
     }).catch(error => {
       if (!disposed) showError(`浏览器面板事件监听失败：${String(error)}`);
     });
