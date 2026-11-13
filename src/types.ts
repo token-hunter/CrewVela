@@ -88,6 +88,9 @@ export interface Project {
   updatedAt: number;
 }
 
+/** 会话工作目录；临时目录不关联项目。 */
+export type SessionDirectory = Pick<Project, "name" | "path"> & { id?: string };
+
 /** 一键启动预设：固定的 provider + 目录组合 + 启动开关。 */
 export interface LaunchPreset {
   id: string;

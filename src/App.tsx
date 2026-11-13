@@ -25,6 +25,7 @@ import type {
   AppTheme,
   LaunchPreset,
   Project,
+  SessionDirectory,
   ProviderConfig,
   SessionRecord,
   SessionTypeFilter,
@@ -767,17 +768,22 @@ export default function App() {
     null,
   );
   // 项目下新建会话流程：记录目标项目，目录选择随之锁定为项目路径。
-  const [launchProject, setLaunchProject] = useState<Project | null>(null);
+  const [launchProject, setLaunchProject] = useState<SessionDirectory | null>(null);
   const [dirPromptFor, setDirPromptFor] = useState<{
     provider: ProviderConfig;
     count: number;
     autoMode: boolean;
     yolo: boolean;
     initialPrompt: string;
-    project: Project | null;
+    project: SessionDirectory | null;
   } | null>(null);
   const [workspace, setWorkspace] =
     useState<WorkspaceTabState>(loadWorkspaceTabs);
+  const [emptyDirectories, setEmptyDirectories] = useState<Record<string, SessionDirectory>>({});
+  const selectedEmptyDirectory = emptyDirectories[workspace.activeTabId];
+  const emptyDirectory = selectedEmptyDirectory?.id
+    ? projects.find(project => project.id === selectedEmptyDirectory.id) ?? projects[0] ?? null
+    : selectedEmptyDirectory ?? projects[0] ?? null;
   const closingWorkspaceRef = useRef(false);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -1595,7 +1601,7 @@ export default function App() {
       | "opencode"
       | "zcode_cli"
     >,
-    project?: Project,
+    project?: SessionDirectory,
   ) => {
     if (!isRuntimeEnabled(runtimeKind)) { showError("该 Runtime 未启用或配置尚未加载"); return; }
     const current = sessions.find(
@@ -1642,11 +1648,11 @@ export default function App() {
     }
   }, [refreshSessions, selectedSessionId, sessions, showError]);
 
-  const openDeepSeekHarness = useCallback(async (project?: Project) => {
+  const openDeepSeekHarness = useCallback(async (project?: SessionDirectory) => {
     if (!isRuntimeEnabled("deepseek_harness")) { showError("DeepSeek Harness 未启用或配置尚未加载"); return; }
     if (UI_PREVIEW) {
       const id = project ? `preview-harness-${Date.now()}` : "preview-harness-session";
-      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, ...(project ? { cwd: project.path, projectId: project.id, title: `DeepSeek Harness · ${project.name}` } : {}) }, ...items]);
+      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, ...(project ? { cwd: project.path, projectId: project.id ?? null, title: `DeepSeek Harness · ${project.name}` } : {}) }, ...items]);
       setSessionTypeFilter("all");
       setSelectedSessionId(id);
       setMultiAgentWorkspaceProjectId(null);
@@ -1671,12 +1677,12 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openZCode = useCallback(async (project?: Project) => {
+  const openZCode = useCallback(async (project?: SessionDirectory) => {
     const label = "ZCode Desktop";
     if (!isRuntimeEnabled("zcode")) { showError(`${label} 未启用或配置尚未加载`); return; }
     if (UI_PREVIEW) {
       const id = project ? `preview-zcode-${Date.now()}` : "preview-zcode-session";
-      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "zcode", providerId: "local-runtime-zcode", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id, title: `${label} · ${project.name}` } : {}) }, ...items]);
+      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "zcode", providerId: "local-runtime-zcode", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id ?? null, title: `${label} · ${project.name}` } : {}) }, ...items]);
       setSessionTypeFilter("all");
       setSelectedSessionId(id);
       setMultiAgentWorkspaceProjectId(null);
@@ -1701,12 +1707,12 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openClaudeChat = useCallback(async (project?: Project) => {
+  const openClaudeChat = useCallback(async (project?: SessionDirectory) => {
     const label = "Claude Code Chat";
     if (!isRuntimeEnabled("claude_chat")) { showError(`${label} 未启用或配置尚未加载`); return; }
     if (UI_PREVIEW) {
       const id = project ? `preview-claude-${Date.now()}` : "preview-claude-session";
-      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "claude_chat", providerId: "local-runtime-claude_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id, title: `${label} · ${project.name}` } : {}) }, ...items]);
+      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "claude_chat", providerId: "local-runtime-claude_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id ?? null, title: `${label} · ${project.name}` } : {}) }, ...items]);
       setSessionTypeFilter("all");
       setSelectedSessionId(id);
       setMultiAgentWorkspaceProjectId(null);
@@ -1731,13 +1737,13 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openCodexChat = useCallback(async (project?: Project) => {
+  const openCodexChat = useCallback(async (project?: SessionDirectory) => {
     // codex_chat 原生聊天持独立启停开关；适配器驱动本机 codex CLI。
     const label = "Codex Chat";
     if (!isRuntimeEnabled("codex_chat")) { showError(`${label} 未启用或配置尚未加载`); return; }
     if (UI_PREVIEW) {
       const id = project ? `preview-codex-${Date.now()}` : "preview-codex-session";
-      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "codex_chat", providerId: "local-runtime-codex_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id, title: `${label} · ${project.name}` } : {}) }, ...items]);
+      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "codex_chat", providerId: "local-runtime-codex_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id ?? null, title: `${label} · ${project.name}` } : {}) }, ...items]);
       setSessionTypeFilter("all");
       setSelectedSessionId(id);
       setMultiAgentWorkspaceProjectId(null);
@@ -1762,13 +1768,13 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openKimiChat = useCallback(async (project?: Project) => {
+  const openKimiChat = useCallback(async (project?: SessionDirectory) => {
     // kimi_chat 原生聊天持独立启停开关；直连本机 kimi CLI 的原生 ACP server（kimi acp）。
     const label = "Kimi Code Chat";
     if (!isRuntimeEnabled("kimi_chat")) { showError(`${label} 未启用或配置尚未加载`); return; }
     if (UI_PREVIEW) {
       const id = project ? `preview-kimi-${Date.now()}` : "preview-kimi-session";
-      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "kimi_chat", providerId: "local-runtime-kimi_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id, title: `${label} · ${project.name}` } : {}) }, ...items]);
+      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "kimi_chat", providerId: "local-runtime-kimi_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id ?? null, title: `${label} · ${project.name}` } : {}) }, ...items]);
       setSessionTypeFilter("all");
       setSelectedSessionId(id);
       setMultiAgentWorkspaceProjectId(null);
@@ -1793,13 +1799,13 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openOpenCodeChat = useCallback(async (project?: Project) => {
+  const openOpenCodeChat = useCallback(async (project?: SessionDirectory) => {
     // opencode_chat 原生聊天持独立启停开关；直连本机 opencode CLI 的原生 ACP server（opencode acp）。
     const label = "OpenCode Chat";
     if (!isRuntimeEnabled("opencode_chat")) { showError(`${label} 未启用或配置尚未加载`); return; }
     if (UI_PREVIEW) {
       const id = project ? `preview-opencode-${Date.now()}` : "preview-opencode-session";
-      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "opencode_chat", providerId: "local-runtime-opencode_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id, title: `${label} · ${project.name}` } : {}) }, ...items]);
+      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "opencode_chat", providerId: "local-runtime-opencode_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id ?? null, title: `${label} · ${project.name}` } : {}) }, ...items]);
       setSessionTypeFilter("all");
       setSelectedSessionId(id);
       setMultiAgentWorkspaceProjectId(null);
@@ -1824,13 +1830,13 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openPiChat = useCallback(async (project?: Project) => {
+  const openPiChat = useCallback(async (project?: SessionDirectory) => {
     // pi_chat 原生聊天持独立启停开关；直连本机 pi CLI 的 pi --mode rpc 原生会话。
     const label = "Pi Chat";
     if (!isRuntimeEnabled("pi_chat")) { showError(`${label} 未启用或配置尚未加载`); return; }
     if (UI_PREVIEW) {
       const id = project ? `preview-pi-${Date.now()}` : "preview-pi-session";
-      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "pi_chat", providerId: "local-runtime-pi_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id, title: `${label} · ${project.name}` } : {}) }, ...items]);
+      if (project || !sessions.some(item => item.id === id)) setSessions(items => [{ ...PREVIEW_SESSIONS.find(item => item.id === "preview-harness-session")!, id, agentRuntimeKind: "pi_chat", providerId: "local-runtime-pi_chat", providerName: label, title: label, ...(project ? { cwd: project.path, projectId: project.id ?? null, title: `${label} · ${project.name}` } : {}) }, ...items]);
       setSessionTypeFilter("all");
       setSelectedSessionId(id);
       setMultiAgentWorkspaceProjectId(null);
@@ -1856,12 +1862,12 @@ export default function App() {
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
   // zcode CLI 是终端交互式 TUI：走通用 Runtime PTY 会话链路，与 ZCode Desktop 原生聊天分离。
-  const openZCodeCli = useCallback(async (project?: Project) => launchRuntimeSession("zcode_cli", project), [launchRuntimeSession]);
+  const openZCodeCli = useCallback(async (project?: SessionDirectory) => launchRuntimeSession("zcode_cli", project), [launchRuntimeSession]);
 
   // 按 Agent 新建会话：带项目则用项目目录，不带则走各 Agent 自己的选目录步骤。
   // 「选择 Agent」弹窗与空工作区共用；Claude Code 要先选 Provider，不走这里。
   const startAgentSession = useCallback(
-    (runtime: Exclude<NewSessionAgent, "claude_code">, project?: Project) => {
+    (runtime: Exclude<NewSessionAgent, "claude_code">, project?: SessionDirectory) => {
       if (runtime === "deepseek_harness") void openDeepSeekHarness(project);
       else if (runtime === "claude_chat") void openClaudeChat(project);
       else if (runtime === "codex_chat") void openCodexChat(project);
@@ -2222,7 +2228,7 @@ export default function App() {
   const activeWorkspaceRoot =
     selectedSession && tabOf(selectedSession.id) === workspace.activeTabId
       ? selectedSession.cwd
-      : tabSessions[0]?.cwd ?? projects[0]?.path ?? null;
+      : (selectedEmptyDirectory ? emptyDirectory?.path : tabSessions[0]?.cwd) ?? emptyDirectory?.path ?? null;
   workspaceRootRef.current = activeWorkspaceRoot;
   usePtyPolling(handleSessionSnapshot, openRightSidebarTabs.some(tab => tab.startsWith("terminal:")) && !UI_PREVIEW);
   const openSidebarTool = async (tool: SidebarTool) => {
@@ -2554,7 +2560,10 @@ export default function App() {
                 ) : !multiAgentWorkspaceProjectId && !selectedSession &&
                   !tabSessions.some(item => !sidebarTerminalIds.includes(item.id) && isPtySession(item)) ? (
                   <EmptyWorkspaceLauncher
+                    key={workspace.activeTabId}
                     projects={projects}
+                    directory={emptyDirectory}
+                    onDirectoryChange={(directory) => setEmptyDirectories(current => ({ ...current, [workspace.activeTabId]: directory }))}
                     onLaunch={(runtime, project) => {
                       if (!isRuntimeEnabled(runtime)) return;
                       if (runtime === "claude_code") {

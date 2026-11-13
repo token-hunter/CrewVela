@@ -17,7 +17,7 @@ try {
     const page = await browser.newPage({ viewport: { width, height } });
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
-    await page.goto(`${base}/?ui-preview=1&sessions=empty`);
+    await page.goto(`${base}${process.env.CREWVELA_UI_ENTRY || "/"}?ui-preview=1&sessions=empty`);
     const empty = page.locator(".empty-state");
     await empty.waitFor();
     const card = empty.getByRole("region", { name: "新建会话" });
@@ -29,13 +29,13 @@ try {
     const mascot = card.locator("img.ews-mascot");
     assert.equal(await mascot.evaluate((img) => img.complete && img.naturalWidth > 0), true, `${size}: mascot loads`);
 
-    // 工作目录：项目在前、「选择其他目录…」在后，默认勾第一个项目。
+    // 工作目录：默认勾第一个项目，末尾按钮立即打开目录选择。
     const dirs = card.getByRole("radiogroup", { name: "工作目录" });
     const radios = dirs.getByRole("radio");
-    assert.ok((await radios.count()) >= 2, `${size}: at least one project plus 选择其他目录…`);
-    const other = dirs.getByRole("radio", { name: "选择其他目录…", exact: true });
+    assert.ok((await radios.count()) >= 1, `${size}: at least one project`);
+    const other = dirs.getByRole("button", { name: "选择其他目录…", exact: true });
     assert.equal(await radios.first().isChecked(), true, `${size}: first project checked by default`);
-    assert.equal(await other.isChecked(), false);
+    assert.equal(await other.isEnabled(), true);
     const projectName = (await dirs.locator("label").first().innerText()).trim();
 
     // 卡片和吉祥物都完整落在空状态区域内。
@@ -69,12 +69,14 @@ try {
     assert.equal(await pill.evaluate((element) => element === document.activeElement), true, `${size}: focus back on the pill`);
 
     if (width === 1280) {
-      // 勾选随点击移动（单选）。
-      await dirs.getByText("选择其他目录…", { exact: true }).click();
-      assert.equal(await other.isChecked(), true);
-      assert.equal(await radios.first().isChecked(), false);
-      await dirs.locator("label").first().click();
+      // 取消目录选择保留当前项目。入口为按钮，选完才改变单选项。
+      await page.evaluate(() => {
+        (window).__TAURI_INTERNALS__ = { invoke: async () => null };
+      });
+      await other.click();
+      await page.waitForFunction(() => !document.querySelector(".ews-row.is-other")?.disabled);
       assert.equal(await radios.first().isChecked(), true);
+      await page.evaluate(() => { delete window.__TAURI_INTERNALS__; });
 
       // Claude Code 还要选 Provider：直接进入弹窗的 Provider 步骤，不再让人重新选 Agent。
       await pill.click();

@@ -1,3 +1,4 @@
+import { open as openDirectory } from "@tauri-apps/plugin-dialog";
 import {
   useEffect,
   useLayoutEffect,
@@ -19,13 +20,14 @@ import {
   NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY,
   useRuntimeOrder,
 } from "../runtimePreferences";
-import type { Project } from "../types";
+import type { Project, SessionDirectory } from "../types";
 import { CHAT_AGENTS, TERMINAL_AGENTS, type NewSessionAgent } from "./NewSessionDialog";
 
 interface Props {
   projects: Project[];
-  /** project 为 null 表示「选择其他目录」：沿用各 Agent 现有的选目录步骤。 */
-  onLaunch: (runtime: NewSessionAgent, project: Project | null) => void;
+  directory: SessionDirectory | null;
+  onDirectoryChange: (directory: SessionDirectory) => void;
+  onLaunch: (runtime: NewSessionAgent, directory: SessionDirectory | null) => void;
   onManageAgents: () => void;
 }
 
@@ -33,19 +35,43 @@ interface Props {
  * 空工作区：参照 Claude Code 桌面版新会话页——像素吉祥物站在目录卡片上，
  * 先勾选工作目录，再从「选择 Agent」下拉里选一个，选完即在该目录开始会话。
  */
-export function EmptyWorkspaceLauncher({ projects, onLaunch, onManageAgents }: Props) {
+export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange, onLaunch, onManageAgents }: Props) {
   const { isRuntimeEnabled, ready, error } = useRuntimeAvailability();
   // 与「选择 Agent」弹窗共用排序（拖动卡片调整过的顺序在这里同样生效）。
   const terminalOrder = useRuntimeOrder(TERMINAL_AGENTS, NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY).order;
   const chatOrder = useRuntimeOrder(CHAT_AGENTS, NEW_SESSION_CHAT_ORDER_STORAGE_KEY).order;
 
-  // undefined = 还没手动选过，默认勾第一个项目（项目可能在挂载后才加载完）；null = 其他目录。
-  const [choice, setChoice] = useState<string | null | undefined>(undefined);
-  const chosenId =
-    choice === undefined || (choice !== null && !projects.some((project) => project.id === choice))
-      ? projects[0]?.id ?? null
-      : choice;
-  const chosenProject = projects.find((project) => project.id === chosenId) ?? null;
+  const chosenId = directory?.id ?? null;
+  const [picking, setPicking] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const pickingRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const pickDirectory = async () => {
+    if (pickingRef.current) return;
+    pickingRef.current = true;
+    setPicking(true);
+    setDirectoryError(null);
+    try {
+      const selected = await openDirectory({ directory: true, multiple: false, title: "选择工作目录", defaultPath: directory?.path });
+      if (!mountedRef.current || typeof selected !== "string" || !selected.trim()) return;
+      const normalize = (path: string) => {
+        const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+        return /^[A-Za-z]:/.test(path) || path.startsWith("\\\\") ? normalized.toLowerCase() : normalized;
+      };
+      const existing = projects.find(project => normalize(project.path) === normalize(selected));
+      const name = selected.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || selected;
+      onDirectoryChange(existing ?? { path: selected, name });
+    } catch (reason) {
+      if (mountedRef.current) setDirectoryError(`选择目录失败：${String(reason)}`);
+    } finally {
+      pickingRef.current = false;
+      if (mountedRef.current) setPicking(false);
+    }
+  };
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -78,7 +104,7 @@ export function EmptyWorkspaceLauncher({ projects, onLaunch, onManageAgents }: P
 
   const launch = (runtime: NewSessionAgent) => {
     close(false);
-    onLaunch(runtime, chosenProject);
+    if (!pickingRef.current) onLaunch(runtime, directory);
   };
 
   useEffect(() => {
@@ -166,25 +192,34 @@ export function EmptyWorkspaceLauncher({ projects, onLaunch, onManageAgents }: P
                 type="radio"
                 name="ews-project"
                 checked={project.id === chosenId}
-                onChange={() => setChoice(project.id)}
+                disabled={picking}
+                onChange={() => { setDirectoryError(null); onDirectoryChange(project); }}
               />
               <FolderSimpleIcon size={16} aria-hidden="true" />
               <span className="ews-row-label">{project.name}</span>
               {project.id === chosenId && <CheckIcon className="ews-check" size={15} weight="bold" aria-hidden="true" />}
             </label>
           ))}
-          <label className="ews-row is-other">
-            <input type="radio" name="ews-project" checked={chosenId === null} onChange={() => setChoice(null)} />
+          {directory && !directory.id && (
+            <label className="ews-row" title={directory.path}>
+              <input type="radio" name="ews-project" checked disabled={picking} onChange={() => {}} />
+              <FolderSimpleIcon size={16} aria-hidden="true" />
+              <span className="ews-row-label">{directory.name}</span>
+              <CheckIcon className="ews-check" size={15} weight="bold" aria-hidden="true" />
+            </label>
+          )}
+          <button type="button" className="ews-row is-other" disabled={picking} onClick={() => void pickDirectory()}>
             <FolderSimplePlusIcon size={16} aria-hidden="true" />
-            <span className="ews-row-label">选择其他目录…</span>
-            {chosenId === null && <CheckIcon className="ews-check" size={15} weight="bold" aria-hidden="true" />}
-          </label>
+            <span className="ews-row-label">{picking ? "正在选择目录…" : "选择其他目录…"}</span>
+          </button>
         </div>
+        {directoryError && <div role="alert">{directoryError}</div>}
         <div className="ews-divider" />
         <button
           ref={pillRef}
           type="button"
           className="ews-pill"
+          disabled={picking || !directory}
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls={open ? "ews-agent-popover" : undefined}

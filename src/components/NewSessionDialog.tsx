@@ -3,7 +3,7 @@ import { DotsSixVertical } from "@phosphor-icons/react";
 import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
 import { runtimeCategory } from "../runtimeTaxonomy";
 import { useRuntimeAvailability } from "../runtimeAvailability";
-import type { AgentRuntimeKind, Project, ProviderConfig } from "../types";
+import type { AgentRuntimeKind, SessionDirectory, ProviderConfig } from "../types";
 import { PROVIDER_LOGOS, providerTone } from "../providerLogos";
 import {
   NEW_SESSION_CHAT_ORDER_STORAGE_KEY,
@@ -36,7 +36,7 @@ export const CHAT_AGENTS = NEW_SESSION_AGENTS.filter(
 );
 
 interface Props {
-  project?: Project | null;
+  project?: SessionDirectory | null;
   /** 从空工作区选了 Claude Code 时直接进入 Provider 步骤。 */
   initialStep?: "agent" | "provider";
   onRuntimeSelect?: (runtime: Exclude<AgentRuntimeKind, "claude_code" | "oh_my_pi" | "minimax_code" | "unsupported">) => void;
@@ -122,7 +122,7 @@ export function NewSessionDialog({
           <div>
             <span className="eyebrow">NEW TASK</span>
             <h2 id="new-session-title">{chooseAgent ? "选择 Agent" : "选择 Provider"}</h2>
-            <p>{chooseAgent ? (project ? `在项目「${project.name}」中创建会话，使用项目工作目录。` : "选择本次会话使用的 Agent，下一步选择工作目录。") : "选择模型服务或本地配置，继续创建 CLI 会话。"}</p>
+            <p>{chooseAgent ? (project ? `在「${project.name}」中创建会话，使用已选工作目录。` : "选择本次会话使用的 Agent，下一步选择工作目录。") : "选择模型服务或本地配置，继续创建 CLI 会话。"}</p>
           </div>
           <button className="dialog-close" aria-label="关闭" onClick={onClose}>
             ×
