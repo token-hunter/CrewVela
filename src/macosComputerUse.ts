@@ -1,4 +1,9 @@
 export type MacControlTool = "openComputerUse" | "kimiCu";
+export interface MacControlInstallProgress {
+  tool: MacControlTool;
+  requestId: string;
+  message: string;
+}
 export interface MacControlStatus {
   supported: boolean;
   installed: boolean;

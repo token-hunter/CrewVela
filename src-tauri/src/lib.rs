@@ -48,6 +48,8 @@ mod harness_control;
 mod notification_history;
 mod open_computer_use;
 mod macos_computer_use;
+#[cfg(target_os = "macos")]
+mod macos_computer_use_install;
 mod plugin_market;
 mod presets;
 mod projects;
@@ -6416,6 +6418,7 @@ pub fn run() {
             open_computer_use::open_computer_use_get,
             open_computer_use::open_computer_use_save,
             macos_computer_use::macos_computer_use_action,
+            macos_computer_use::macos_computer_use_install,
             general_settings::general_settings_get,
             general_settings::general_settings_save,
             plugin_market_snapshot,

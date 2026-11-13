@@ -1,44 +1,45 @@
-# macOS 外部电脑控制
+# macOS 电脑控制安装与授权
 
-CrewVela 在 Mac 上接入 Open Computer Use、KimiCU 的 stdio MCP 服务。内置 PowerShell 电脑控制仍仅用于 Windows。此改动不附带第三方安装包，不移植内置方式，也不会自动授予 macOS 权限。
+CrewVela 在 macOS 14+ 接入 Open Computer Use、KimiCU 的 stdio MCP 服务。Windows 原有三种控制方式和安装路径保持；内置 PowerShell 电脑控制仍仅用于 Windows。
 
-## Open Computer Use
+## 首次使用
 
-1. 按[上游安装说明](https://github.com/opensymph/open-computer-use)安装 macOS 14+ 运行时。当前 npm 入口为 `npm install -g @opensymph/open-computer-use`，命令为 `open-computer-use`（也支持 `ocu`）；已有旧包所提供的同名命令仍可发现。
-2. 重新打开 CrewVela，进入设置 → 电脑控制，重新检测运行时。Finder 启动时复用应用已有的登录 Shell PATH 初始化；MCP 配置也保留该 PATH，供 npm 启动器查找 Node。
-3. 点击“打开 Open Computer Use 授权”，由上游 `doctor` 打开权限引导。辅助功能、屏幕录制由用户在系统设置中授予。
-4. 点击“检查 Open Computer Use 权限”：使用上游 `doctor --no-ui` 的明确布尔状态。旧版本不支持该格式时显示待检查及原因，不把无法识别的输出视为通过。
-5. 启用并保存，再新开或恢复 Agent 会话，核对其 MCP 工具加载状态。
+1. 设置 → 电脑控制，在所需工具旁点击「安装并启用」。两种方式相互独立，不要求同时安装。
+2. 查看官方版本获取、下载、哈希与签名检查、安装进度。失败会保留错误信息，可重试；不会执行远程 shell 安装脚本。
+3. 安装完成后自动注册 CrewVela 管理的 MCP 条目并打开官方授权引导。按官方应用提示，在系统设置中确认辅助功能和屏幕录制。
+4. 点击「检查权限」，确认两项权限与 KimiCU 服务状态。安装或配置成功不等于权限已授予或 Agent 工具已连接。
+5. 重开 Agent 会话加载 MCP，再验证工具连接。授权引导失败时可点击「打开授权」重试；MCP 部分配置失败时，应用已安装的状态会保留，可启用并保存或重新连接。
 
-支持 PATH 中的启动器、`~/Applications/Open Computer Use.app`、`/Applications/Open Computer Use.app`。应用包读取实际 `CFBundleExecutable`，验证应用标识、最低系统版本及 Mach-O 架构。npm 启动器负责选择其自带的当前平台运行时。
+## 安装来源和位置
 
-## KimiCU
+### Open Computer Use
 
-1. 按[Kimi 官方说明](https://www.kimi.com/code/docs/kimi-code-cli/customization/plugins.html#kimi-computer-use-v0-5-4)安装 KimiCU.app。当前官方 Mac 安装包为 Apple Silicon、macOS 14+；CrewVela 不会在 Intel Mac 上启用此入口。
-2. 支持 `~/Applications/KimiCU.app`、`/Applications/KimiCU.app`；PATH 中指向其他位置有效 KimiCU.app 的 `kimi-cu` 链接也可发现。读取官方应用标识 `ai.kimi.cu` 和实际执行入口，不拼接 Windows 路径或个人目录。
-3. 点击“打开 KimiCU 授权与后台服务”。检查 `service-status`，服务未运行时执行官方 `install`，然后通过 macOS `open -a` 打开已检测到的应用。不会执行卸载、强制退出服务或自行编写 LaunchAgent。
-4. 在 KimiCU 官方窗口完成辅助功能与屏幕录制授权，再点击“检查 KimiCU 权限”。通过官方 `xpc-ping` 的权限字段和 `service-status` 分别报告权限与服务；失败或未知格式保持待检查。
-5. 启用并保存，在新开的 Agent 会话中检查 `kimi-cu` 工具加载。
+从 [官方 GitHub Releases](https://github.com/iFurySt/open-computer-use/releases) 选择正式发布的 macOS Universal 应用包，使用发布资产的 SHA256/大小、包内版本、Bundle ID `com.ifuryst.opencomputeruse`、开发者 Team ID `J9P29FA5BX`、安全时间戳、严格签名和 Gatekeeper 进行校验。
 
-## 状态与配置
+安装至 `~/Applications/Open Computer Use.app`。不要求全局 npm，不修改 shell 配置或系统 PATH。用户目录中的有效应用优先于旧 npm 启动器；仍兼容 PATH 中的 `open-computer-use` / `ocu` 以及系统 Applications 的已有有效安装。已有目标身份不符或为符号链接时拒绝替换；正常发布失败会恢复旧应用。
 
-- “已安装”只说明找到执行入口，“MCP 已注册”只说明配置存在；都不等于工具已加载、连接成功或操作完成。
-- 读取设置不会准备后台服务或申请系统授权。权限检查、授权引导和服务准备均通过明确按钮执行；程序探测有超时和输出上限。
-- 启用后只更新 CrewVela 自己管理的 MCP 条目。用户手动添加的同名 MCP 保持不动并报冲突。
-- 迁移目录、更新运行时或从 Windows 迁移配置后，点击“重新连接”更新该条目的本机执行入口及 PATH。随后重开会话。
-- 保存失败会恢复该适配器原有 MCP 条目；配置损坏会明确报错。关闭某种方式只移除 CrewVela 管理的对应条目，不卸载软件或清理第三方数据。
-- 独立首次启动测试模式继续禁止真实电脑控制；网页 Mock 通过不代表 Mac 原生验收通过。
+### KimiCU
 
-## Mac 实机验收（待执行）
+读取 [官方版本清单](https://cdn.kimi.com/kimi-computer-use/latest/version.json)，按硬件选择 `app`（Apple Silicon）或 `app_x86_64`（Intel），不把 arm64 包兜底给 Intel。校验官方 SHA256、包内版本、Bundle ID `ai.kimi.cu`、Team ID `2J9472RW75`、安全时间戳、严格签名和 Gatekeeper。
 
-在独立测试账号或可回滚的测试环境验收；不要使用包含真实密码、验证码、支付或发布操作的页面。
+遵循 [官方安装流程](https://cdn.kimi.com/kimi-computer-use/latest/setup_macos.sh)，由已验签应用执行 `install-bundle` 安装至 `/Applications/KimiCU.app`，让官方运行时管理服务和升级事务。CrewVela 不自行 kill/bootout 或编写 LaunchAgent。
 
-1. 普通模式从 Finder 启动、终端启动各一次，分别验证 Homebrew/npm 自定义前缀、含空格中文的应用路径和有效 PATH 链接。
-2. 缺少运行时、macOS 13、KimiCU 在 Intel Mac、损坏应用包、不可执行文件、架构不匹配时显示原因，不启动 MCP；原有已启用配置仍可关闭。
-3. 两种方式分别验证未授权、只授予一项、两项均授予、撤销权限；界面必须区分未知、待授权和已授予。禁止借用 CrewVela 自身的权限作结论。
-4. KimiCU 服务未准备时，按钮可完成官方服务准备；重复点击不卸载或强制结束已有服务。拒绝权限时应正常显示原因。
-5. 分别保存启用，重新打开 Claude Code/Codex 等受支持会话，完成 MCP initialize/tools/list；在测试应用中读取界面、截图、点击、输入、滚动，确认真实行为。
-6. 同时启用两种方式及单独关闭其中一种，不应删除用户自定义 MCP。手动同名条目、损坏配置、只读目录、更新后路径漂移均应有明确反馈。
-7. Windows 回归原有三种控制方式；不要求 Windows 使用 Mac 的 `.app` 路径、权限检查或服务命令。
+**当前账户必须能写系统 Applications。** 标准账户无写权限时明确失败，不弹管理员认证、不执行 sudo，也不假定官方服务支持用户级应用位置。若官方安装已部分完成，会重新检测真实安装状态并报告未完成步骤。
 
-本开发环境是 Windows，不能据此声称上述 Mac 原生操作已通过。测试记录应注明系统版本、架构、第三方运行时版本及成功/失败步骤，不记录账号或密钥。
+## 状态与保护
+
+- 官方 HTTPS 来源白名单限制重定向；清单/安装包有大小上限、连接/读取/总超时，解包前检查路径、类型、符号链接祖先/链接链及展开大小。
+- 同进程和跨进程安装互斥；安装进度按工具和随机请求标识过滤，不混入另一窗口/任务。
+- 读取设置不会安装、准备服务或申请权限；只有明确的安装/授权按钮才触发这些操作。首次启动隔离模式拒绝真实安装和电脑控制。
+- 自动启用只更新 CrewVela 管理的当前工具 MCP。用户手工同名 MCP 会报冲突并保留；设置保存失败会恢复该工具原条目，不影响另一种控制方式。
+- “已安装”“MCP 已注册”“权限已授予”“工具连接成功”分别判断，未知权限保持待检查。OCU 正式版调用 `doctor --json`，读取 `accessibilityTrusted`、`screenCaptureGranted` 并核对 `allGranted`；KimiCU 读取 `xpc-ping` 明确字段。不把自由文本当作授权证据。
+- 安装成功后的授权失败不会删除应用；重新打开设置仍可继续授权。外部安装/服务命令失败不会无依据承诺第三方事务已回滚。
+
+## 验证和边界
+
+- `npm test`：既有电脑控制与相关功能 Node 回归。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-default-features macos_computer_use`：平台/应用/权限解析、注册回滚、安装清单、摘要、归档链接安全、发布回滚、互斥测试。
+- `tests/macosComputerUseInstall.ui.mjs`：真实 React + 隔离 Mock，验证两工具入口、进度过滤、下载失败重试、权限拒绝、部分配置失败和 Windows 界面。
+- `official_downloads_validate_without_installing -- --ignored --nocapture`：下载真实官方包至临时目录并完成 SHA/元数据/签名/公证验证，不安装、不启动服务、不申请权限。
+
+本轮官方包验证覆盖 OCU 1.1.4 与 KimiCU 0.7.6。Windows 无设备实测；Intel 包仅验证上游清单与元数据，未在 Intel 设备运行。真实 KimiCU `install-bundle`/launchd、用户 TCC 授权和所有 Agent 客户端待用户安装测试。OCU 测试覆盖正常错误恢复，不覆盖进程强制退出的完整恢复；异常退出时可能留下同目录隐藏旧包，需要保留以便恢复。

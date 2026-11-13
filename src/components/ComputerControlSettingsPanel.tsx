@@ -1,8 +1,9 @@
 import { IS_MAC } from "../platform";
-import { macControlLabel, permissionLabel, type MacControlTool, type MacControlStatus } from "../macosComputerUse";
+import { macControlLabel, permissionLabel, type MacControlTool, type MacControlStatus, type MacControlInstallProgress } from "../macosComputerUse";
 import "../styles/settings-workspace.css";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Monitor, Cube, Stack, ShieldCheck } from "@phosphor-icons/react";
 import { SettingsGroup, SettingSwitch, SettingsActions } from "./ui/RuntimeSettings";
 import {
@@ -56,6 +57,11 @@ export function ComputerControlSettingsPanel() {
   const [loading, setLoading] = useState(!UI_PREVIEW);
   const [reload, setReload] = useState(0);
   const saveInFlight = useRef(false);
+  const [installingTool, setInstallingTool] = useState<MacControlTool | null>(null);
+  const [installProgress, setInstallProgress] = useState("");
+  const installRequest = useRef<string | null>(null);
+  const installUnlisten = useRef<(() => void) | null>(null);
+  useEffect(() => () => { installRequest.current = null; installUnlisten.current?.(); installUnlisten.current = null; }, []);
 
   useEffect(() => {
     if (UI_PREVIEW) return;
@@ -120,9 +126,51 @@ export function ComputerControlSettingsPanel() {
     finally { saveInFlight.current = false; setBusy(false); }
   };
 
+  const installMacRuntime = async (tool: MacControlTool) => {
+    if (saveInFlight.current || !ready) return;
+    const requestId = crypto.randomUUID();
+    installRequest.current = requestId;
+    saveInFlight.current = true; setBusy(true); setNotice(null);
+    setInstallingTool(tool); setInstallProgress("准备下载官方运行时…");
+    let unlisten: (() => void) | undefined;
+    let resultNotice = "";
+    let installedStatus: MacControlStatus | null = null;
+    try {
+      unlisten = await listen<MacControlInstallProgress>("macos-computer-use-install-progress", event => {
+        if (installRequest.current === requestId && event.payload.requestId === requestId && event.payload.tool === tool) setInstallProgress(event.payload.message);
+      });
+      if (installRequest.current !== requestId) { unlisten(); return; }
+      installUnlisten.current = unlisten;
+      const macos = await invoke<MacControlStatus>("macos_computer_use_install", { tool, requestId });
+      installedStatus = macos;
+      resultNotice = macos.detail;
+    } catch (error) {
+      resultNotice = `安装或设置未完成：${String(error)}。可重试安装；如已安装，请继续授权或重新连接。`;
+    } finally {
+      if (installUnlisten.current === unlisten) { unlisten?.(); installUnlisten.current = null; }
+      // Read actual persisted settings after partial failure too. Never infer
+      // that a downloaded app, a permission, or an MCP connection is ready.
+      if (installRequest.current === requestId) {
+        try {
+          if (tool === "openComputerUse") {
+            const latest = await invoke<OpenComputerUseStatus>("open_computer_use_get");
+            if (installRequest.current === requestId) { setOpenStatus(installedStatus ? { ...latest, macos: installedStatus, warning: installedStatus.detail } : latest); setOpenDraft(latest.settings); }
+          } else {
+            const latest = await invoke<KimiComputerUseStatus>("kimi_computer_use_get");
+            if (installRequest.current === requestId) { setKimiStatus(installedStatus ? { ...latest, macos: installedStatus, installed: installedStatus.installed, mcpRegistered: installedStatus.mcpRegistered, warning: installedStatus.detail } : latest); setKimiDraft(latest.settings); }
+          }
+        } catch (error) { resultNotice += ` 重新读取安装状态失败：${String(error)}`; }
+        if (installRequest.current === requestId) {
+          setNotice(resultNotice); setInstallingTool(null); setInstallProgress("");
+          installRequest.current = null; saveInFlight.current = false; setBusy(false);
+        }
+      }
+    }
+  };
+
   const allMethods = [
     { title: "内置电脑控制", hint: "通过 MCP 与技能读取窗口、点击和输入。", icon: Monitor, enabled: draft.enabled, change: setDraft, status, coverage: COMPUTER_CONTROL_COVERAGE, safety: COMPUTER_CONTROL_SAFETY_NOTE },
-    { title: "KimiCU", hint: IS_MAC ? "安装官方 Mac 应用，打开授权与后台服务，再保存启用。" : "需单独安装，使用时自动启动。", icon: Cube, enabled: kimiDraft.enabled, change: setKimiDraft, status: kimiStatus, coverage: KIMI_COMPUTER_USE_COVERAGE, safety: KIMI_COMPUTER_USE_SAFETY_NOTE },
+    { title: "KimiCU", hint: IS_MAC ? "可一键安装官方应用并启用；系统权限需你确认。" : "需单独安装，使用时自动启动。", icon: Cube, enabled: kimiDraft.enabled, change: setKimiDraft, status: kimiStatus, coverage: KIMI_COMPUTER_USE_COVERAGE, safety: KIMI_COMPUTER_USE_SAFETY_NOTE },
     { title: "Open Computer Use", hint: "通过本机安装的 open-computer-use 提供 MCP 服务。", icon: Stack, enabled: openDraft.enabled, change: setOpenDraft, status: openStatus, coverage: OPEN_COMPUTER_USE_COVERAGE, safety: OPEN_COMPUTER_USE_SAFETY_NOTE },
   ];
   const methods = IS_MAC ? [allMethods[2], allMethods[1]] : allMethods;
@@ -148,6 +196,14 @@ export function ComputerControlSettingsPanel() {
           </dl>
           {IS_MAC && external.map(({ title, tool, macos }) => <section key={tool} className="runtime-group external-control-status">
             <h4>{title}</h4><p role="status">{macControlLabel(macos)}</p>
+            {!macos?.installed && <div className="runtime-inline-actions">
+              <button type="button" className="btn primary" disabled={busy || !ready || !macos?.supported} onClick={() => void installMacRuntime(tool)}>
+                {installingTool === tool ? `正在安装 ${title}…` : `安装并启用 ${title}`}
+              </button>
+            </div>}
+            {installingTool === tool && <p role="status" aria-live="polite">{installProgress}</p>}
+            {!macos?.installed && <p className="runtime-note">从官方来源下载安装，自动配置此工具的连接；随后引导你确认系统权限。</p>}
+            {!macos?.installed && <p className="runtime-note">{tool === "kimiCu" ? "KimiCU 安装到系统“应用程序”，当前账户需有写入权限。" : "Open Computer Use 安装到你的“应用程序”目录。"}</p>}
             <dl className="runtime-facts">
               <div><dt>辅助功能</dt><dd>{permissionLabel(macos?.accessibility)}</dd></div>
               <div><dt>屏幕录制</dt><dd>{permissionLabel(macos?.screenRecording)}</dd></div>
@@ -169,7 +225,7 @@ export function ComputerControlSettingsPanel() {
               }}>重新连接 {title}</button>
             </div>
           </section>)}
-          {IS_MAC && <><p className="runtime-note">首次使用：先安装官方运行时，再重新检测。授权须由你在系统设置中完成；不会自动授予权限。</p><button type="button" className="btn secondary" disabled={busy || loading} onClick={() => setReload(n => n + 1)}>重新检测本机运行时</button></>}
+          {IS_MAC && <><p className="runtime-note">首次使用：安装并启用 → 在官方应用中授予辅助功能与屏幕录制 → 检查权限 → 重开 Agent 会话验证工具连接。系统权限需你确认。</p><button type="button" className="btn secondary" disabled={busy || loading} onClick={() => setReload(n => n + 1)}>重新检测本机运行时</button></>}
           {methods.map(method => method.status?.warning && <p key={method.title} className="runtime-warning" role="alert">{method.title}：{method.status.warning}</p>)}
           <details className="runtime-details"><summary>运行时详情与安全说明</summary>
             {methods.map(method => <section key={method.title}><h4>{method.title}</h4><p>{method.status?.runtime}</p><p>{method.coverage}</p><p>{method.safety}</p></section>)}

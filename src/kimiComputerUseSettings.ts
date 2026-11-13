@@ -20,7 +20,7 @@ export const DEFAULT_KIMI_COMPUTER_USE_SETTINGS: KimiComputerUseSettings = {
 
 /** 覆盖范围与安全说明（面板固定文案，单独导出便于单测）。 */
 export const KIMI_COMPUTER_USE_COVERAGE =
-  "开启后注册 kimi-cu MCP 服务器（KimiCU 官方客户端，stdio）。原生聊天、多智能体与支持 MCP 的终端会话可通过 KimiCU 截图并操控本机 Windows / macOS 应用（需先安装 KimiCU）。macOS 需要 Apple Silicon、macOS 14+，并在官方应用中准备后台服务、授予辅助功能与屏幕录制权限；已有会话需重开。";
+  "开启后注册 kimi-cu MCP 服务器（KimiCU 官方客户端，stdio）。原生聊天、多智能体与支持 MCP 的终端会话可通过 KimiCU 截图并操控本机 Windows / macOS 应用（需先安装 KimiCU）。macOS 需要 14+ 和匹配芯片的官方运行时，可在此一键安装并准备后台服务，再由你授予辅助功能与屏幕录制权限；已有会话需重开。";
 
 export const KIMI_COMPUTER_USE_SAFETY_NOTE =
   "KimiCU 为第三方实现，Agent 的点击与输入会真实作用于你的电脑；观察截图包含真实屏幕内容并会发送给模型提供方。密码/验证码等敏感操作请自行斟酌或手动完成。";

@@ -23,7 +23,7 @@ if (/mac/i.test(navigator.platform)) {
   const scenario = new URLSearchParams(location.search).get("scenario");
   for (const prefix of ["open_computer_use", "kimi_computer_use"]) {
     statuses[prefix].settings = { enabled: false };
-    statuses[prefix].macos = { supported: scenario !== "unsupported", installed: scenario !== "missing", executable: "/Applications/Fixture.app/Contents/MacOS/tool", mcpRegistered: false, accessibility: null, screenRecording: null, serviceRunning: null, detail: "运行时已检测到；权限尚未验证。" };
+    statuses[prefix].macos = { supported: scenario !== "unsupported", installed: scenario !== "missing" && scenario !== "unsupported", executable: "/Applications/Fixture.app/Contents/MacOS/tool", mcpRegistered: false, accessibility: null, screenRecording: null, serviceRunning: null, detail: "运行时已检测到；权限尚未验证。" };
     statuses[prefix].warning = null;
   }
 }
@@ -33,9 +33,32 @@ const snapshot: any = { assets, runtimes, deployments: [], skillSets: [] };
 let failNext = false;
 let report: (text: string) => void = () => {};
 const calls: string[] = [];
-(window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(command: string, args: any) {
+let nextCallback = 1;
+const callbacks = new Map<number, (value: any) => void>();
+const listeners = new Map<number, any>();
+const emit = (event: string, payload: any) => { for (const item of listeners.values()) if (item.event === event) callbacks.get(item.handler)?.({ payload }); };
+(window as any).__computerMock = { calls, emit, listeners };
+(window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: (_event: string, id: number) => listeners.delete(id) };
+(window as any).__TAURI_INTERNALS__ = { transformCallback: (callback: (value: any) => void) => { const id = nextCallback++; callbacks.set(id, callback); return id; }, async invoke(command: string, args: any) {
   calls.push(`${command} ${JSON.stringify(args ?? {})}`);
   report(calls.join("\n"));
+  if (command === "plugin:event|listen") { const id = nextCallback++; listeners.set(id, args); return id; }
+  if (command === "plugin:event|unlisten") { listeners.delete(args.eventId); return; }
+  if (command === "macos_computer_use_install") {
+    const failed = failNext; failNext = false;
+    emit("macos-computer-use-install-progress", { ...args, message: "正在校验官方安装包…" });
+    if (new URLSearchParams(location.search).get("installHold") === "1") await new Promise<void>(resolve => { (window as any).__computerMock.release = resolve; });
+    else await new Promise(resolve => setTimeout(resolve, 300));
+    if (failed) throw Error("测试：下载校验失败，已有安装未修改");
+    const status = statuses[args.tool === "kimiCu" ? "kimi_computer_use" : "open_computer_use"];
+    status.macos = { ...status.macos, installed: true, accessibility: false, screenRecording: false, serviceRunning: args.tool === "kimiCu" ? true : null, mcpRegistered: true, detail: "安装并启用完成，请在官方窗口完成系统授权，再重开 Agent 会话。" };
+    status.settings = { enabled: true }; status.installed = true; status.mcpRegistered = true;
+    if (new URLSearchParams(location.search).get("installOutcome") === "partial") {
+      status.settings.enabled = false; status.macos.mcpRegistered = false;
+      throw Error("运行时已安装，但 MCP 配置冲突，请启用并保存");
+    }
+    return structuredClone(status.macos);
+  }
   if (failNext && (command.endsWith("_save") || command === "skill_center_deploy_batch" || command === "macos_computer_use_action")) { failNext = false; throw Error("测试保存失败"); }
   if (command === "macos_computer_use_action") {
     const status = statuses[args.tool === "kimiCu" ? "kimi_computer_use" : "open_computer_use"];
