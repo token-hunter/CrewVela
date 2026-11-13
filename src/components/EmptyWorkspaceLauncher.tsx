@@ -14,7 +14,6 @@ import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
 import { FolderSimplePlusIcon } from "@phosphor-icons/react/dist/csr/FolderSimplePlus";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
-import orangeCoder from "../assets/pets/orange-coder.png";
 import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import {
@@ -33,7 +32,7 @@ interface Props {
 }
 
 /**
- * 空工作区：参照 Claude Code 桌面版新会话页——像素吉祥物站在目录卡片上，
+ * 空工作区：参照 Claude Code 桌面版新会话页——目录卡片提供工作目录，
  * 先勾选工作目录，再从「选择 Agent」下拉里选一个，选完即在该目录开始会话。
  */
 export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange, onLaunch }: Props) {
@@ -188,7 +187,6 @@ export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange,
   return (
     <div className="empty-state">
       <section ref={cardRef} className="ews-card" aria-label="新建会话">
-        <img className="ews-mascot" src={orangeCoder} alt="" aria-hidden="true" />
         <div className="ews-projects" role="radiogroup" aria-label="工作目录">
           {projects.map((project) => (
             <label key={project.id} className="ews-row" title={project.path}>

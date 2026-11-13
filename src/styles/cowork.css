@@ -375,13 +375,13 @@ body {
   color: var(--danger);
 }
 
-/* ---------- 空工作区：参照 Claude Code 桌面版新会话页（像素吉祥物 + 目录卡片 + 「选择 Agent」下拉） ---------- */
+/* ---------- 空工作区：参照 Claude Code 桌面版新会话页（目录卡片 + 「选择 Agent」下拉） ---------- */
 .empty-state {
   --ews-line: color-mix(in srgb, var(--text) 11%, transparent);
   justify-content: flex-start;
   overflow-y: auto;
-  /* 卡片在中线偏上，下拉往下展开时留得出空间；最小值给吉祥物留出头顶位置 */
-  padding: clamp(64px, 26vh, 240px) 24px 24px;
+  /* 保留卡片偏上的布局，收回原吉祥物占用的 52px 顶部空间。 */
+  padding: clamp(24px, calc(26vh - 52px), 188px) 24px 24px;
   background: transparent;
   text-align: start;
 }
@@ -395,17 +395,6 @@ body {
   border-radius: 12px;
   background: var(--bg-popover);
   box-shadow: var(--shadow-md);
-}
-
-/* 像素吉祥物「站」在卡片右上角的边上 */
-.ews-mascot {
-  position: absolute;
-  top: -52px;
-  right: 22px;
-  width: 64px;
-  height: 64px;
-  pointer-events: none;
-  user-select: none;
 }
 
 /* 项目多时在卡片内滚动，约 6 行 */

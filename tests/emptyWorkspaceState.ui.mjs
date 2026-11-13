@@ -1,5 +1,5 @@
 // Run against Vite: node tests/emptyWorkspaceState.ui.mjs
-// 空工作区参照 Claude Code 桌面版新会话页：像素吉祥物站在工作目录卡片上，底部是「选择 Agent」下拉。
+// 空工作区保留工作目录卡片与「选择 Agent」下拉，不展示吉祥物。
 // 勾选目录后在下拉里选一个 Agent，即在该目录开始会话；旧的标题、说明和提示都不再出现。
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
@@ -23,11 +23,12 @@ try {
     const card = empty.getByRole("region", { name: "新建会话" });
     await card.waitFor();
 
-    // 只剩吉祥物 + 卡片：旧的标题、说明、输入框式入口和底部提示都已删除。
+    // 只保留目录卡片，移除吉祥物并收回其顶部空间。
     assert.equal(await empty.getByText("这个工作区还没有会话").count(), 0, `${size}: old heading removed`);
     assert.equal(await empty.locator("h1, p, small").count(), 0, `${size}: no leftover copy blocks`);
-    const mascot = card.locator("img.ews-mascot");
-    assert.equal(await mascot.evaluate((img) => img.complete && img.naturalWidth > 0), true, `${size}: mascot loads`);
+    assert.equal(await card.locator("img.ews-mascot").count(), 0, `${size}: empty workspace mascot removed`);
+    const topPadding = await empty.evaluate(element => parseFloat(getComputedStyle(element).paddingTop));
+    assert.ok(Math.abs(topPadding - Math.min(188, Math.max(24, height * 0.26 - 52))) < 1, `${size}: mascot headroom reclaimed`);
 
     // 工作目录：默认勾第一个项目，末尾按钮立即打开目录选择。
     const dirs = card.getByRole("radiogroup", { name: "工作目录" });
@@ -38,10 +39,9 @@ try {
     assert.equal(await other.isEnabled(), true);
     const projectName = (await dirs.locator("label").first().innerText()).trim();
 
-    // 卡片和吉祥物都完整落在空状态区域内。
+    // 目录卡片完整落在空状态区域内。
     const area = await empty.boundingBox();
     assert.ok(inside(await card.boundingBox(), area), `${size}: card inside the empty state`);
-    assert.ok(inside(await mascot.boundingBox(), area), `${size}: mascot inside the empty state`);
 
     // 「选择 Agent」下拉：聚焦搜索框，分组列出 Agent，并完整落在空状态区域内。
     const pill = card.getByRole("button", { name: "选择 Agent", exact: true });
@@ -118,7 +118,7 @@ try {
     assert.deepEqual(pageErrors.filter((message) => !/transformCallback|__TAURI/.test(message)), []);
     await page.close();
   }
-  console.log("PASS: empty workspace shows the mascot card, picks a directory, filters and launches an Agent there");
+  console.log("PASS: empty workspace shows the directory card without a mascot, picks a directory, filters and launches an Agent there");
 } finally {
   await browser.close();
 }
