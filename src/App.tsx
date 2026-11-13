@@ -69,7 +69,7 @@ import { NewSessionDialog, type NewSessionAgent } from "./components/NewSessionD
 import { AddProjectDialog } from "./components/AddProjectDialog";
 import { TranscriptViewer } from "./components/TranscriptViewer";
 import { SessionSwitchDialog } from "./components/SessionSwitchDialog";
-import { SWITCH_RUNTIME_LABELS, isStructuredZCodeCli, needsSwitchRecovery, projectSwitchSessions, retainedSwitchSource, switchSlotId, switchSelectionAfterSnapshot, switchWorkspaceAssignment, switchedHistory, type SessionSwitchRecord } from "./sessionSwitch";
+import { SWITCH_RUNTIME_LABELS, isStructuredZCodeCli, switchRecoveryKind, switchRecoveryInWorkspace, projectSwitchSessions, retainedSwitchSource, switchSlotId, switchSelectionAfterSnapshot, switchWorkspaceAssignment, switchedHistory, type SessionSwitchRecord } from "./sessionSwitch";
 import { isPtySession, isSessionActive, isNativeChatSession, isStandaloneHarnessSession, isStandaloneClaudeChatSession, isStandaloneCodexChatSession, isStandaloneKimiChatSession, isStandaloneOpenCodeChatSession, isStandalonePiChatSession, isStandaloneZCodeSession } from "./sessionCapabilities";
 import {
   SettingsDialog,
@@ -438,7 +438,7 @@ export default function App() {
       pending = true;
       try {
         const items = await invoke<SessionSwitchRecord[]>("session_switch_list");
-        if (!disposed) { setSwitchRecords((current) => keepIfUnchanged(current, items)); setSwitchRecordsReady(true); }
+        if (!disposed) { setSwitchRecords((current) => keepIfUnchanged(current, items.map(item => current.some(record => record.id === item.id && record.recoveryDismissed) ? { ...item, recoveryDismissed: true } : item))); setSwitchRecordsReady(true); }
       } catch (error) {
         console.error("加载 Agent 接力记录失败:", error);
       } finally { pending = false; }
@@ -1914,6 +1914,20 @@ export default function App() {
     }
   }, [isRuntimeEnabled, tabOf, showError]);
 
+  const [endingSwitchId, setEndingSwitchId] = useState<string | null>(null);
+  const endingSwitchRef = useRef(false);
+  const endStaleSwitch = async (item: SessionSwitchRecord) => {
+    if (endingSwitchRef.current) return;
+    endingSwitchRef.current = true;
+    setEndingSwitchId(item.id);
+    try {
+      const updated = UI_PREVIEW ? { ...item, recoveryDismissed: true }
+        : await invoke<SessionSwitchRecord>("session_switch_dismiss_recovery", { id: item.id });
+      setSwitchRecords(current => current.map(record => record.id === updated.id ? updated : record));
+    } catch (error) { showError(`结束接力失败：${String(error)}`); }
+    finally { endingSwitchRef.current = false; setEndingSwitchId(null); }
+  };
+
   const handleSessionSnapshot = useCallback((snapshot: SessionRecord[]) => {
     setSessions(snapshot);
     setSelectedSessionId((current) => switchSelectionAfterSnapshot(current, snapshot, switchRecords, switchFor?.id ?? null));
@@ -2498,7 +2512,14 @@ export default function App() {
                   session={selectedSession} record={selectedRelaySource} target={sessions.find(item => item.id === selectedRelaySource.targetId)} preview={UI_PREVIEW}
                   onSelectTarget={() => { if (selectedRelaySource.targetId) void selectSession(selectedRelaySource.targetId); }} onDetails={() => openRelayDetails(selectedSession)}
                 /></div>}
-                {!multiAgentWorkspaceProjectId && switchRecords.filter((item) => needsSwitchRecovery(item, sessions, [...sessions, ...archivedSessions])).map((item) => <button key={item.id} className="btn secondary session-switch-recovery" onClick={() => { setSwitchDraft(item); setSwitchFor(item.source); }}>接力待处理：{item.source.title}</button>)}
+                {!multiAgentWorkspaceProjectId && sessionsReady && switchRecordsReady && switchRecords.filter(item => switchRecoveryInWorkspace(item, workspace.assignments, switchRecords, workspace.activeTabId)).map(item => {
+                  const kind = switchRecoveryKind(item, sessions, [...sessions, ...archivedSessions]);
+                  if (!kind) return null;
+                  return <div key={item.id} className="session-switch-recovery" role="status">
+                    <button className="btn secondary" onClick={() => { setSwitchDraft(item); setSwitchFor(item.source); }}>{kind === "target-missing" ? "接力目标已不存在" : kind === "target-archived" ? "接力目标已归档" : "接力中断待处理"}：{item.source.title}</button>
+                    {kind !== "interrupted" && <button className="btn secondary" disabled={endingSwitchId !== null} title="结束此条失效接力提醒，保留历史，不恢复或启动会话" onClick={() => void endStaleSwitch(item)}>{endingSwitchId === item.id ? "正在结束…" : "结束接力"}</button>}
+                  </div>;
+                })}
                 {sessions.filter(item => !retainedSwitchSource(item.id, switchRecords) && (isNativeChatSession(item) || isStructuredZCodeCli(item, switchRecords)) && (visitedNativeSessions.includes(item.id) || isStructuredZCodeCli(item, switchRecords) || selectedSessionId === item.id)).map(item => {
                   const active = !multiAgentWorkspaceProjectId && selectedSessionId === item.id;
                   const props = { managedToolbar: true, session: item, preview: UI_PREVIEW, onSessionRecord: handleHarnessSessionRecord, active, switching: switchingNativeAgent, onHandoffAgent: () => openSwitch(item), onSwitchCli: isStructuredZCodeCli(item, switchRecords) ? () => openSwitch(item) : undefined, enabledAgents: { deepseek_harness: isRuntimeEnabled("deepseek_harness"), claude_chat: isRuntimeEnabled("claude_chat"), codex_chat: isRuntimeEnabled("codex_chat"), kimi_chat: isRuntimeEnabled("kimi_chat"), opencode_chat: isRuntimeEnabled("opencode_chat"), pi_chat: isRuntimeEnabled("pi_chat"), zcode: isRuntimeEnabled("zcode") }, onSwitchAgent: isStructuredZCodeCli(item, switchRecords) ? undefined : (kind: NativeAgentKind) => void switchNativeAgent(item, kind) };

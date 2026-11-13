@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { needsSwitchRecovery, projectSwitchSessions, retainedSwitchSource, sessionSwitchReason, switchedHistory, switchSlotId, switchSelectionAfterSnapshot, switchWorkspaceAssignment, switchTargets, CLI_SWITCH_RUNTIMES, CHAT_SWITCH_RUNTIMES } from "../src/sessionSwitch.ts";
+import { switchRecoveryKind, switchRecoveryInWorkspace, needsSwitchRecovery, projectSwitchSessions, retainedSwitchSource, sessionSwitchReason, switchedHistory, switchSlotId, switchSelectionAfterSnapshot, switchWorkspaceAssignment, switchTargets, CLI_SWITCH_RUNTIMES, CHAT_SWITCH_RUNTIMES } from "../src/sessionSwitch.ts";
 import type { SessionRecord } from "../src/types.ts";
 import type { SessionSwitchRecord } from "../src/sessionSwitch.ts";
 
@@ -124,4 +124,23 @@ test("separate handoff chains survive reload, cancellation, and an earlier legac
   assert.deepEqual(projectSwitchSessions([c,b],mixed).map(item=>item.id),['b','c']);
   assert.equal(switchSlotId('b',mixed),'a');assert.equal(switchSlotId('c',mixed),'c');
   assert.equal(retainedSwitchSource('a',[{...loaded[0],state:'preview'}]),null);
+});
+
+test("recovery reminders stay in their owning workspace and do not leak from removed workspaces", () => {
+  const item = record(source("a"), "gone");
+  assert.equal(switchRecoveryInWorkspace(item, { a: "tab-a" }, [item], "tab-b"), false);
+  assert.equal(switchRecoveryInWorkspace(item, { a: "tab-a" }, [item], "tab-a"), true);
+  assert.equal(switchRecoveryInWorkspace(item, {}, [item], "tab-a"), false);
+  assert.equal(switchRecoveryInWorkspace(item, { gone: "tab-b" }, [item], "tab-b"), true);
+});
+test("stale recovery distinguishes removed, archived, interrupted and healthy targets", () => {
+  const original = { ...source("a"), archivedAt: 1 };
+  const item = record(original, "gone");
+  assert.equal(switchRecoveryKind(item, [], [original]), "target-missing");
+  assert.equal(switchRecoveryKind(item, [], [original, { ...target("gone"), archivedAt: 2 }]), "target-archived");
+  assert.equal(switchRecoveryKind(item, [target("gone")], [original, target("gone")]), null);
+  assert.equal(switchRecoveryKind({ ...item, state: "launching" }, [], [original]), "interrupted");
+  assert.equal(switchRecoveryKind({ ...item, recoveryDismissed: true }, [], [original]), null);
+  assert.equal(needsSwitchRecovery({ ...item, recoveryDismissed: true }, [], [original]), false);
+  assert.equal(switchedHistory("gone", [{ ...item, recoveryDismissed: true }])?.id, original.id);
 });

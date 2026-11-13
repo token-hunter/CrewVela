@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import App from "../../src/App";
 import type { SessionRecord } from "../../src/types";
 import "../../src/styles.css";
+import "../../src/styles/cowork.css";
 
 let sessions: SessionRecord[] = ["one", "two"].map((id, i) => ({
   id, title: `fixture-${id}`, kind: "terminal", shell: "powershell", claudeSessionId: "",
@@ -21,6 +22,7 @@ let providers = [{ id: "fixture-provider", name: "Fixture provider", baseUrl: "h
 const shuffledKeys = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).sort(() => Math.random() - 0.5));
 const api = {
   calls, pending, rejectProviderDelete: true,
+  rejectSwitchDismiss: false, switchCommands: [] as string[],
   usages: {} as Record<string, unknown>,
   switchRecords: [] as unknown[],
   registerCallback(fn: (event: unknown) => void) { const id = callbacks.size + 1; callbacks.set(id, fn); return id; },
@@ -48,6 +50,17 @@ const api = {
     if (command === "get_runtime_preferences") return { disabledRuntimes: [] };
     if (command === "session_usages") return shuffledKeys(structuredClone(api.usages));
     if (command === "session_switch_list") return structuredClone(api.switchRecords);
+    if (command === "list_archived_sessions" && location.search.includes("handoff-recovery")) return [(api.switchRecords[0] as any).source];
+    if (command === "session_switch_dismiss_recovery") {
+      api.switchCommands.push(command);
+      if (api.rejectSwitchDismiss) throw Error("fixture dismiss failed");
+      const index = api.switchRecords.findIndex(item => (item as any).id === args?.id);
+      if (index < 0) throw Error("missing fixture handoff");
+      const updated = { ...(api.switchRecords[index] as any), recoveryDismissed: true };
+      api.switchRecords[index] = updated;
+      localStorage.setItem("fixture-handoff-record", JSON.stringify(updated));
+      return structuredClone(updated);
+    }
     if (command === "plugin:event|listen") {
       if (new URLSearchParams(location.search).has("event-error") && ["multi-agent-workspace-open", "browser-control-panel-needed"].includes(String(args?.event))) {
         throw Error(`fixture listener rejected: ${args?.event}`);
@@ -58,6 +71,15 @@ const api = {
     return null;
   },
 };
+if (location.search.includes("handoff-recovery")) {
+  const saved = localStorage.getItem("fixture-handoff-record");
+  api.switchRecords = [saved ? JSON.parse(saved) : {
+    id: "stale-handoff", source: { ...sessions[0], kind: "claude", shell: null, agentRuntimeKind: "claude_code", archivedAt: 123, title: "已归档的接力来源" },
+    sourcePosition: 0, sourcePty: null, targetId: "deleted-target", threadId: null,
+    targetRuntime: "codex", state: "queued", historyMode: "handoff", context: "fixture history retained", error: null,
+  }];
+  sessions = sessions.filter(item => item.id !== "one");
+}
 Object.assign(window, { appSessionMock: api });
 localStorage.setItem("crewvela-notification-settings-v1", JSON.stringify({ enabled: false }));
 localStorage.setItem("crewvela-workspace-tabs", JSON.stringify({ tabs: [{ id: "a", title: "工作区 A" }, { id: "b", title: "工作区 B" }], activeTabId: "a", assignments: { one: "a", two: "a" } }));

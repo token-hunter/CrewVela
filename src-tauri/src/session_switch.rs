@@ -105,6 +105,8 @@ pub struct SwitchRecord {
     #[serde(default)]
     pub preserve_source: bool,
     #[serde(default)]
+    pub recovery_dismissed: bool,
+    #[serde(default)]
     pub source_history: Vec<crate::transcript::TranscriptMessage>,
     #[serde(default)]
     pub source_permission: Option<String>,
@@ -283,6 +285,28 @@ fn context(source: &SessionRecord) -> String {
 pub fn session_switch_list() -> Result<Vec<SwitchRecord>, String> {
     existing_records().map_err(|error| error.to_string())
 }
+fn dismiss_recovery_at(db: &Connection, id: &str, sessions: &SessionManager) -> Result<SwitchRecord> {
+    let mut item = records(db)?.into_iter().find(|item| item.id == id).context("接力记录不存在")?;
+    if item.recovery_dismissed { return Ok(item); }
+    if item.state != "queued" { bail!("仅能结束目标已归档或不存在的已提交接力提醒"); }
+    let target_lock = item.target_id.as_ref().map(|id| sessions.lifecycle_lock(id));
+    let _guard = target_lock.as_ref().map(|lock| lock.lock().unwrap());
+    if item.target_id.as_ref().and_then(|id| sessions.get(id)).is_some_and(|target| target.archived_at.is_none()) {
+        bail!("目标会话仍存在，请先处理该接力，不能结束提醒");
+    }
+    item.recovery_dismissed = true;
+    save(db, &item)?;
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn session_switch_dismiss_recovery(id: String, sessions: State<'_, SessionManager>) -> Result<SwitchRecord, String> {
+    (|| -> Result<_> {
+        let _lock = SWITCH_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        dismiss_recovery_at(&database()?, &id, &sessions)
+    })().map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn session_switch_history(
     session_id: String,
@@ -432,6 +456,7 @@ fn prepare_switch_preview<R: tauri::Runtime>(
             target_runtime,
             source_history,
             preserve_source: true,
+            recovery_dismissed: false,
             source_permission,
             context: preview_context,
             source,
@@ -1264,6 +1289,7 @@ mod tests {
                 id: uuid::Uuid::new_v4().to_string(),
                 source_position: 0,
                 preserve_source: false,
+                recovery_dismissed: false,
                 source_pty: None,
                 source,
                 target_id: None,
@@ -1279,6 +1305,55 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn dismiss_recovery_persists_without_restoring_source_or_removing_history() {
+        let fixture = Fixture::new();
+        let mut item = fixture.record();
+        fixture.sessions.archive(&item.source.id).unwrap();
+        item.state = "queued".into();
+        item.target_id = Some("removed-target".into());
+        save(&fixture.db, &item).unwrap();
+        let before = serde_json::to_value(fixture.sessions.get(&item.source.id)).unwrap();
+        let updated = dismiss_recovery_at(&fixture.db, &item.id, &fixture.sessions).unwrap();
+        assert!(updated.recovery_dismissed);
+        assert_eq!(updated.state, "queued");
+        assert_eq!(updated.context, item.context);
+        assert_eq!(serde_json::to_value(fixture.sessions.get(&item.source.id)).unwrap(), before);
+        let reopened = open_at(&fixture.root.join("session-switches.sqlite")).unwrap();
+        assert!(records(&reopened).unwrap()[0].recovery_dismissed);
+        assert!(dismiss_recovery_at(&fixture.db, &item.id, &fixture.sessions).unwrap().recovery_dismissed);
+        let mut legacy = serde_json::to_value(&item).unwrap();
+        legacy.as_object_mut().unwrap().remove("recoveryDismissed");
+        assert!(!serde_json::from_value::<SwitchRecord>(legacy).unwrap().recovery_dismissed);
+    }
+
+    #[test]
+    fn dismiss_recovery_rejects_unfinished_states_and_live_targets_but_accepts_archived_target() {
+        let fixture = Fixture::new();
+        let mut item = fixture.record();
+        for state in ["preview", "stopping", "launching", "sending", "cancelled"] {
+            item.state = state.into(); save(&fixture.db, &item).unwrap();
+            assert!(dismiss_recovery_at(&fixture.db, &item.id, &fixture.sessions).is_err());
+            assert!(!records(&fixture.db).unwrap()[0].recovery_dismissed);
+        }
+        let target = fixture.record().source;
+        item.state = "queued".into(); item.target_id = Some(target.id.clone());
+        save(&fixture.db, &item).unwrap();
+        assert!(dismiss_recovery_at(&fixture.db, &item.id, &fixture.sessions).is_err());
+        fixture.sessions.archive(&target.id).unwrap();
+        assert!(dismiss_recovery_at(&fixture.db, &item.id, &fixture.sessions).unwrap().recovery_dismissed);
+    }
+
+    #[test]
+    fn dismiss_recovery_failed_save_does_not_end_the_persisted_reminder() {
+        let fixture = Fixture::new();
+        let mut item = fixture.record(); item.state = "queued".into();
+        save(&fixture.db, &item).unwrap();
+        let readonly = Connection::open_with_flags(fixture.root.join("session-switches.sqlite"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        assert!(dismiss_recovery_at(&readonly, &item.id, &fixture.sessions).is_err());
+        assert!(!records(&fixture.db).unwrap()[0].recovery_dismissed);
+    }
+
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.root);
@@ -1812,6 +1887,7 @@ mod tests {
             logical_id: Some(logical.into()),
             source_history: vec![],
             preserve_source: true,
+            recovery_dismissed: false,
             state: "preview".into(),
             history_mode: "handoff".into(),
             context: "fixture".into(),

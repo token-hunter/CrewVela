@@ -6587,6 +6587,7 @@ pub fn run() {
             session_switch::session_switch_preview,
             session_switch::session_switch_confirm,
             session_switch::session_switch_restore,
+            session_switch::session_switch_dismiss_recovery,
             resume_session,
             rename_session,
             stop_session,

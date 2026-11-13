@@ -16,6 +16,7 @@ export interface SessionSwitchRecord {
   historyMode: "official" | "handoff";
   context: string;
   error: string | null;
+  recoveryDismissed?: boolean;
 }
 
 export const SWITCH_RUNTIME_LABELS: Partial<Record<AgentRuntimeKind, string>> = { claude_code: "Claude Code", codex: "Codex CLI", kimi_code: "Kimi Code", pi: "Pi", opencode: "OpenCode", zcode_cli: "ZCode CLI", deepseek_harness: "DeepSeek Harness", claude_chat: "Claude Code Chat", codex_chat: "Codex Chat", kimi_chat: "Kimi Chat", opencode_chat: "OpenCode Chat", pi_chat: "Pi Chat", zcode: "ZCode Desktop" };
@@ -84,6 +85,7 @@ export function isStructuredZCodeCli(session: SessionRecord, records: SessionSwi
 }
 
 export function needsSwitchRecovery(item: SessionSwitchRecord, sessions: SessionRecord[], availableSources?: SessionRecord[]): boolean {
+  if (item.recoveryDismissed) return false;
   if (availableSources && !availableSources.some((source) => source.id === item.source.id)) return false;
   return item.state !== "cancelled" && (Boolean(item.error) || !["preview", "queued"].includes(item.state)
     || (item.state === "queued" && !sessions.some((session) => session.id === item.targetId)));
@@ -108,4 +110,18 @@ export function switchWorkspaceAssignment(id: string, assignments: Record<string
     id = incoming.source.id;
   }
   return fallbackTabId;
+}
+
+export function switchRecoveryKind(item: SessionSwitchRecord, sessions: SessionRecord[], available: SessionRecord[]): "target-missing" | "target-archived" | "interrupted" | null {
+  if (!needsSwitchRecovery(item, sessions, available)) return null;
+  if (item.state === "queued" && !sessions.some(session => session.id === item.targetId)) {
+    return available.some(session => session.id === item.targetId && session.archivedAt) ? "target-archived" : "target-missing";
+  }
+  return "interrupted";
+}
+
+export function switchRecoveryInWorkspace(item: SessionSwitchRecord, assignments: Record<string, string>, records: SessionSwitchRecord[], activeTabId: string): boolean {
+  const owner = switchWorkspaceAssignment(item.source.id, assignments, records, "")
+    || (item.targetId ? switchWorkspaceAssignment(item.targetId, assignments, records, "") : "");
+  return owner !== "" && owner === activeTabId;
 }
