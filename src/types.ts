@@ -115,10 +115,9 @@ export type AppearanceTheme =
 export type AppearanceBackground = "solid" | "soft" | "texture";
 export type AppearanceAccent =
   | "clay"
-  | "blue"
+  | "none"
   | "purple"
   | "cyan"
-  | "green"
   | "orange"
   | "pink"
   | "coral"

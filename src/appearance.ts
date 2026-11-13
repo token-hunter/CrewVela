@@ -33,15 +33,18 @@ const APPEARANCE_BACKGROUNDS: AppearanceBackground[] = [
 ];
 const APPEARANCE_ACCENTS: AppearanceAccent[] = [
   "clay",
-  "blue",
+  "none",
   "purple",
   "cyan",
-  "green",
   "orange",
   "pink",
   "coral",
   "gray",
 ];
+
+export function migrateAppearanceAccent(value: unknown): unknown {
+  return value === "blue" || value === "green" ? "none" : value;
+}
 
 function includesValue<T extends string>(values: T[], value: unknown): value is T {
   return typeof value === "string" && values.includes(value as T);
@@ -52,6 +55,7 @@ export function loadAppearance(): AppAppearance {
     const raw = window.localStorage.getItem(APPEARANCE_STORAGE_KEY);
     if (raw) {
       const stored = JSON.parse(raw) as Partial<AppAppearance>;
+      const accent = migrateAppearanceAccent(stored.accent);
       return {
         theme: includesValue(APPEARANCE_THEMES, stored.theme)
           ? stored.theme
@@ -59,8 +63,8 @@ export function loadAppearance(): AppAppearance {
         background: includesValue(APPEARANCE_BACKGROUNDS, stored.background)
           ? stored.background
           : DEFAULT_APPEARANCE.background,
-        accent: includesValue(APPEARANCE_ACCENTS, stored.accent)
-          ? stored.accent
+        accent: includesValue(APPEARANCE_ACCENTS, accent)
+          ? accent
           : DEFAULT_APPEARANCE.accent,
         followSystem: stored.followSystem === true,
         terminalTransparent: stored.terminalTransparent === true,

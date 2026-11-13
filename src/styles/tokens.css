@@ -300,14 +300,6 @@
   --brand-fill-hover: #d97757;
 }
 
-:root[data-appearance-accent="blue"] {
-  --accent: #58a6ff;
-  --accent-rgb: 88, 166, 255;
-  --accent-strong: #79b8ff;
-  --accent-2: #58a6ff;
-  --on-accent: #07111f;
-}
-
 :root[data-appearance-accent="purple"] {
   --accent: #9b7af0;
   --accent-rgb: 155, 122, 240;
@@ -322,14 +314,6 @@
   --accent-strong: #68ccd5;
   --accent-2: #3ebac6;
   --on-accent: #071b1e;
-}
-
-:root[data-appearance-accent="green"] {
-  --accent: #69b34c;
-  --accent-rgb: 105, 179, 76;
-  --accent-strong: #83c769;
-  --accent-2: #69b34c;
-  --on-accent: #0e1b09;
 }
 
 :root[data-appearance-accent="orange"] {
@@ -380,13 +364,6 @@
   --accent-fill-hover: #2e2d2b;
 }
 
-:root[data-theme="light"][data-appearance-accent="blue"] {
-  --accent: #0969da;
-  --accent-rgb: 9, 105, 218;
-  --accent-strong: #0757b5;
-  --accent-2: #0969da;
-}
-
 :root[data-theme="light"][data-appearance-accent="purple"] {
   --accent: #8250df;
   --accent-rgb: 130, 80, 223;
@@ -399,13 +376,6 @@
   --accent-rgb: 0, 119, 130;
   --accent-strong: #00616a;
   --accent-2: #007782;
-}
-
-:root[data-theme="light"][data-appearance-accent="green"] {
-  --accent: #1a7f37;
-  --accent-rgb: 26, 127, 55;
-  --accent-strong: #14692c;
-  --accent-2: #1a7f37;
 }
 
 :root[data-theme="light"][data-appearance-accent="orange"] {
@@ -542,3 +512,28 @@
   }
 }
 
+
+/* 无强调色：保留中性的交互层次与焦点提示。 */
+:root[data-appearance-accent="none"] {
+  --accent: #c9c9c6;
+  --accent-rgb: 201, 201, 198;
+  --accent-strong: #eeeeeb;
+  --accent-2: #c9c9c6;
+  --on-accent: #171717;
+  --accent-fill: #e5e5e2;
+  --on-accent-fill: #171717;
+  --accent-fill-hover: #ffffff;
+  --brand-fill: var(--accent-fill);
+  --on-brand-fill: var(--on-accent-fill);
+  --brand-fill-hover: var(--accent-fill-hover);
+}
+:root[data-theme="light"][data-appearance-accent="none"] {
+  --accent: #454543;
+  --accent-rgb: 69, 69, 67;
+  --accent-strong: #252524;
+  --accent-2: #454543;
+  --on-accent: #ffffff;
+  --accent-fill: #292928;
+  --on-accent-fill: #ffffff;
+  --accent-fill-hover: #454543;
+}

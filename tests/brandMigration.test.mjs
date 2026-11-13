@@ -30,7 +30,7 @@ test('brand migration retains old appearance values and current settings take pr
   assert.equal(result.migrated, 2);
   const previous = globalThis.window;
   globalThis.window = { localStorage: storage };
-  try { assert.deepEqual(loadAppearance(), appearance); } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
+  try { assert.deepEqual(loadAppearance(), { ...appearance, accent: "none" }); } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
   values.set(`${LEGACY_NAME}-appearance`, JSON.stringify({ theme: 'light' }));
   assert.equal((await migrateStorageNamespace(storage)).retained, 1);
   assert.equal(values.get('crewvela-appearance'), JSON.stringify(appearance));

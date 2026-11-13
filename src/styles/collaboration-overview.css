@@ -73,7 +73,7 @@
 @media(max-width:700px){.settings-collaboration-dialog{grid-template-columns:150px minmax(0,1fr)!important}.settings-collaboration-dialog .settings-content-inner{padding:20px 12px!important}.settings-collaboration-dialog .settings-nav{padding:20px 8px}.settings-collaboration-dialog .settings-nav-item{font-size:13px;padding:0 8px}.collab-page-header{height:100px;gap:8px}.collab-page-header h2{font-size:26px}.collab-page-header>.btn{padding:0 8px;font-size:12px}.collab-page-header p{font-size:12px}.collab-tabs{gap:0}.collab-tabs button{padding:0 7px;font-size:13px}.collab-tabs b{padding:1px 4px}.collab-diagnostic-summary{padding:12px;height:auto;min-height:60px;flex-wrap:wrap;font-size:12px}.collab-task-columns,.collab-task-row{grid-template-columns:minmax(140px,1.5fr) minmax(110px,1fr) 90px 46px 20px;gap:8px;padding:0 12px}.collab-task-panel{overflow:auto}.collab-task-panel>header{min-width:475px}.collab-task-columns,.collab-stage{min-width:475px}.collab-side-panels{display:flex}.collab-project-counts{display:none}}
 
 /* Match the approved desktop prototype without changing other settings pages. */
-.settings-collaboration-dialog{--accent:#a78bfa;--accent-rgb:167,139,250}
+:root:not([data-appearance-accent="none"]) .settings-collaboration-dialog{--accent:#a78bfa;--accent-rgb:167,139,250}
 .settings-collaboration-dialog .settings-content-inner{box-sizing:border-box}
 .settings-collaboration-dialog .settings-nav{padding:24px 12px}
 .settings-collaboration-dialog .settings-back{padding:0 12px}

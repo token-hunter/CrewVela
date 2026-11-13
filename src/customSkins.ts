@@ -1,3 +1,4 @@
+import { migrateAppearanceAccent } from "./appearance.ts";
 import type {
   AppAppearance,
   AppearanceAccent,
@@ -27,7 +28,7 @@ export const CUSTOM_SKINS_STORAGE_KEY = "crewvela-custom-skins-v1";
 
 const THEMES: AppearanceTheme[] = ["dark", "light", "ocean", "purple", "sand", "aurora"];
 const BACKGROUNDS: AppearanceBackground[] = ["solid", "soft", "texture"];
-const ACCENTS: AppearanceAccent[] = ["clay", "blue", "purple", "cyan", "green", "orange", "pink", "coral", "gray"];
+const ACCENTS: AppearanceAccent[] = ["none", "clay", "purple", "cyan", "orange", "pink", "coral", "gray"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -37,11 +38,12 @@ function parseAppearance(value: unknown): AppAppearance {
   if (!isRecord(value)) throw new Error("皮肤缺少 appearance 配置");
   if (!THEMES.includes(value.theme as AppearanceTheme)) throw new Error("不支持的主题类型");
   if (!BACKGROUNDS.includes(value.background as AppearanceBackground)) throw new Error("不支持的背景类型");
-  if (!ACCENTS.includes(value.accent as AppearanceAccent)) throw new Error("不支持的强调色");
+  const accent = migrateAppearanceAccent(value.accent);
+  if (!ACCENTS.includes(accent as AppearanceAccent)) throw new Error("不支持的强调色");
   return {
     theme: value.theme as AppearanceTheme,
     background: value.background as AppearanceBackground,
-    accent: value.accent as AppearanceAccent,
+    accent: accent as AppearanceAccent,
     followSystem: value.followSystem === true,
   };
 }
