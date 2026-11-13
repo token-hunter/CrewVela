@@ -98,7 +98,7 @@ export function RightSidebarStart({ root, onOpenTool }: { root: string | null; o
       <button type="button" disabled={!root} title={`在当前工作区运行 ${shellLabel(terminalShells()[0])}`} onClick={() => onOpenTool(terminalShells()[0])}><TerminalWindowIcon size={20} aria-hidden="true" /><span>终端</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
       <button type="button" title="打开网页或搜索内容" onClick={() => onOpenTool("browser")}><GlobeIcon size={20} aria-hidden="true" /><span>浏览器</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
       <button type="button" title="查看 Git 更改与提交记录" onClick={() => onOpenTool("git")}><GitBranchIcon size={20} weight="regular" aria-hidden="true" /><span>Git</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
-      <button type="button" title="协调智能体任务与协作进度" onClick={() => onOpenTool("multi_agent")}><RobotIcon size={20} aria-hidden="true" /><span>协作</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
+      <button type="button" title="协调智能体任务与协作进度" onClick={() => onOpenTool("multi_agent")}><RobotIcon size={20} aria-hidden="true" /><span>多智能体</span><CaretRightIcon className="right-sidebar-start-arrow" size={16} aria-hidden="true" /></button>
     </div>
   </nav>;
 }

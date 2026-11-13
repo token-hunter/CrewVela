@@ -37,7 +37,7 @@ for (const platform of ['Win32', 'MacIntel']) test(`${platform} 开始页完整�
   const entries = cards(render('C:/example/crewvela'));
   assert.equal(entries.length, 5);
   assert.deepEqual(entries.map(entry => entry.children[1].children[0]),
-    ['文件', '终端', '浏览器', 'Git', '协作']);
+    ['文件', '终端', '浏览器', 'Git', '多智能体']);
   assert.deepEqual(entries.map(entry => entry.children[0].type), ['folder', 'terminal-window', 'globe', 'git-branch', 'robot']);
   for (const [index, id] of ['files:one', 'terminal:one', 'browser:one', 'git:one', 'multi_agent:one'].entries()) {
     assert.equal(scope.ResourceIcon({ id }).type, entries[index].children[0].type, `${id}: tab and menu icon must match start entry`);
