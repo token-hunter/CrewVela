@@ -501,7 +501,7 @@ export default function App() {
   const [collaborationInitialTab, setCollaborationInitialTab] = useState<"overview" | "diagnostics">("overview");
   const [collaborationDiagnosticGlobal, setCollaborationDiagnosticGlobal] = useState(false);
   const [collaborationInitialProjectId, setCollaborationInitialProjectId] = useState<string | undefined>();
-  const [settingsTarget, setSettingsTarget] = useState<SettingsSection>("providers");
+  const [settingsTarget, setSettingsTarget] = useState<SettingsSection>("generalSettings");
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>(
     UI_PREVIEW ? PREVIEW_PROJECTS : [],
@@ -2311,6 +2311,10 @@ export default function App() {
 
   // 渲染层回调（useCallback 保持引用稳定，配合 memo 组件跳过重渲染）。
   const collapseSidebar = useCallback(() => setSidebarCollapsed(true), []);
+  const openGeneralSettings = useCallback(
+    () => openSettingsSection("generalSettings"),
+    [openSettingsSection],
+  );
   const openProviderSettings = useCallback(
     () => openSettingsSection("providers"),
     [openSettingsSection],
@@ -2453,7 +2457,7 @@ export default function App() {
         deleteAllDisabled={tabSessions.length === 0}
         onDeleteAll={deleteAllTabSessions}
         onOpenSection={openSettingsSection}
-        onOpenSettings={openProviderSettings}
+        onOpenSettings={openGeneralSettings}
         onOpenAttentionSession={openAttentionSession}
       />
       <div className="communication-sidebar-hint"><CommunicationDiscoveryHint suppressed={Boolean(guideRequest) || settingsOpen} projectId={multiAgentWorkspaceProjectId ?? undefined} /></div>
@@ -2769,7 +2773,7 @@ export default function App() {
               onOpenSettings={() => {
                 setNewSessionOpen(false);
                 setLaunchProject(null);
-                openSettingsSection("providers");
+                openProviderSettings();
               }}
               onClose={() => {
                 setNewSessionOpen(false);

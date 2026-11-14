@@ -9,14 +9,16 @@ const settingsSource = readFileSync(
 );
 const stylesSource = readStyles();
 
-test("所有设置页共用固定窗口框架，标题栏不随正文滚动", () => {
-  assert.match(settingsSource, /className="settings-dialog settings-native"/);
+test("所有设置页共用固定窗口与分类导航，模型页只调整内容", () => {
+  assert.match(settingsSource, /className=\{`settings-dialog settings-native\$\{activeSection === "providers" \? " settings-model-focus" : ""\}`\}/);
   assert.match(settingsSource, /labelledBy="settings-dialog-title"/);
   assert.match(settingsSource, /className="settings-window-header"/);
   assert.match(stylesSource, /width: min\(1280px, calc\(100vw - 64px\)\)/);
   assert.match(stylesSource, /height: min\(900px, calc\(100dvh - 64px\)\)/);
   assert.match(settingsSource, /className="settings-content" key=\{activeSection\}/);
   assert.doesNotMatch(settingsSource, /settings-feature-dialog|settings-workspace-dialog|collaboration-content|shared-memory-content/);
+  assert.match(settingsSource, /<aside className="settings-nav">/);
+  assert.doesNotMatch(settingsSource, /<aside[^>]+hidden=/);
 });
 
 test("统一设置提供固定关闭入口、搜索和分组导航", () => {

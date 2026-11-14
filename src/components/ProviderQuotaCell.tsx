@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowClockwise";
 import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
@@ -20,10 +20,12 @@ export function ProviderQuotaCell({
   provider,
   hasKey,
   active,
+  children,
 }: {
   provider: ProviderConfig;
   hasKey: boolean;
   active: boolean;
+  children?: (parts: { values: ReactNode; controls: ReactNode }) => ReactNode;
 }) {
   const [quota, setQuota] = useState<ProviderQuota | null>(null);
   const [busy, setBusy] = useState(false);
@@ -75,12 +77,7 @@ export function ProviderQuotaCell({
     return () => { sequence.current++; inFlight.current = false; document.removeEventListener("visibilitychange", onVisible); window.clearInterval(poll); window.clearInterval(tick); };
   }, [refresh, active, provider.hidden]);
 
-  return (
-    <div
-      className="provider-quota"
-      aria-label={`${provider.name} 账户额度`}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
+  const controls = (
       <div className="provider-quota-meta">
         <small>{quotaUpdated(quota?.updatedAt ?? null, clock)}</small>
         <button
@@ -96,6 +93,9 @@ export function ProviderQuotaCell({
           />
         </button>
       </div>
+  );
+  const values = (
+    <>
       {quota?.status === "error" && (
         <small className="provider-quota-error">
           {quota.message}
@@ -142,6 +142,8 @@ export function ProviderQuotaCell({
           </small>
         )
       )}
-    </div>
+    </>
   );
+  if (children) return children({ values, controls });
+  return <div className="provider-quota" aria-label={`${provider.name} 账户额度`} onPointerDown={(event) => event.stopPropagation()}>{controls}{values}</div>;
 }

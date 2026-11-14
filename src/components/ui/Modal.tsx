@@ -69,7 +69,7 @@ export function Modal({
         if (event.target instanceof Element && event.target.closest('.model-combobox.open')) return;
         // Close the open import disclosure before its containing dialog, including
         // keyboard events dispatched from the dialog rather than its summary.
-        const importMenu = dialogRef.current?.querySelector<HTMLDetailsElement>('.skill-import-menu[open]');
+        const importMenu = dialogRef.current?.querySelector<HTMLDetailsElement>('.skill-import-menu[open], .model-provider-more[open]');
         if (importMenu) {
           event.preventDefault();
           event.stopPropagation();

@@ -49,7 +49,9 @@ import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 import { SkinSettingsPanel } from "./SkinSettingsPanel";
 import { AutomationIcon } from "./AutomationIcon";
 import { ArchivedSessionsPanel } from "./ArchivedSessionsPanel";
-import { PROVIDER_LOGOS, providerTone } from "../providerLogos";
+import { CaretDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
+import { InfoIcon } from "@phosphor-icons/react/dist/csr/Info";
+import { WarningCircleIcon } from "@phosphor-icons/react/dist/csr/WarningCircle";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { SkillCenterPanel } from "./SkillCenterPanel";
 import { McpSettingsPanel } from "./McpSettingsPanel";
@@ -140,7 +142,7 @@ export function SettingsDialog({
   onDeleteArchivedSession,
   onViewArchivedTranscript,
   onClose,
-  initialSection = "providers",
+  initialSection = "generalSettings",
   initialCollaborationTab = "overview",
   initialCollaborationDiagnosticGlobal = false,
   initialCollaborationProjectId,
@@ -150,12 +152,14 @@ export function SettingsDialog({
   );
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
+  const [orderError, setOrderError] = useState("");
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
   const [automationEditing, setAutomationEditing] = useState(false);
   const [appearanceTab, setAppearanceTab] = useState<"appearance" | "skins">(
     "appearance",
   );
   const [navQuery, setNavQuery] = useState("");
+  const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null);
   const blockRowDragRef = useRef(false);
 
   const settingsNavGroups = [
@@ -302,8 +306,11 @@ export function SettingsDialog({
     nextIds.splice(targetIndex, 0, draggedProviderId);
     resetDragState();
     setSavingOrder(true);
+    setOrderError("");
     try {
       await onReorder(nextIds);
+    } catch (error) {
+      setOrderError(`排序未保存：${String(error)}`);
     } finally {
       setSavingOrder(false);
     }
@@ -410,7 +417,7 @@ export function SettingsDialog({
   return (
     <Modal
       overlayClassName="dialog-overlay settings-overlay settings-native-overlay"
-      className="settings-dialog settings-native"
+      className={`settings-dialog settings-native${activeSection === "providers" ? " settings-model-focus" : ""}`}
       onClose={onClose}
       closeOnOverlayClick
       labelledBy="settings-dialog-title"
@@ -486,14 +493,14 @@ export function SettingsDialog({
           >
             <div className="dialog-heading settings-heading">
                 <div>
-                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? "创建自动化" : sectionCopy.title}</h2>
-                  {!(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
+                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? "创建自动化" : activeSection === "providers" ? "模型服务" : sectionCopy.title}</h2>
+                  {activeSection !== "providers" && !(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
                 </div>
               <div className="settings-heading-actions">
                 {activeSection === "providers" && (
-                  <button className="btn primary" onClick={onNew}>
+                  <button className="btn primary" aria-label="新建模型服务" onClick={onNew}>
                     <PlusIcon size={16} aria-hidden="true" />
-                    <span>新建模型服务</span>
+                    <span>新建</span>
                   </button>
                 )}
                 {activeSection === "appearance" &&
@@ -525,29 +532,28 @@ export function SettingsDialog({
 
             {activeSection === "providers" ? (
               <div className="settings-provider-list settings-provider-quota-list">
-                <p className="settings-provider-quota-note">
-                  账户额度每 5 分钟更新；本地用量是 Token 统计，不代表账户额度。
-                </p>
+                {orderError && <p role="alert">{orderError}</p>}
+
                 {providers.map((provider) => {
                   const hasKey = keyStates[provider.id] ?? false;
                   const configured = provider.baseUrl.length > 0;
                   const effectiveModel = stripOneM(provider.env.ANTHROPIC_MODEL ?? "");
                   const usage = usageByProvider[provider.id] ?? 0;
-                  const tone = providerTone(provider);
-                  const logo = PROVIDER_LOGOS[tone];
+                  const expanded = expandedProviderId === provider.id;
+                  const warnings = [!configured && "缺少端点", !hasKey && "缺少 Key", !effectiveModel && "兜底模型未配置"].filter(Boolean).join("、");
                   return (
                     <article
-                      className={`settings-provider-row settings-provider-quota-row${provider.hidden ? " is-hidden" : ""}${
+                      className={`settings-provider-row settings-provider-quota-row${expanded ? " is-expanded" : ""}${provider.hidden ? " is-hidden" : ""}${
                         draggedProviderId === provider.id ? " dragging" : ""
                       }${dropTargetId === provider.id ? " drop-target" : ""}`}
                       key={provider.id}
                       draggable={!savingOrder}
-                      title="拖动整行调整顺序，单击内容编辑"
+                      aria-label={`${provider.name || provider.id} 模型服务`}
                       onPointerDownCapture={(event) => {
                         const target = event.target;
                         blockRowDragRef.current =
                           target instanceof Element &&
-                          Boolean(target.closest(".settings-provider-actions, .provider-quota"));
+                          Boolean(target.closest(".model-provider-detail, .provider-quota-meta"));
                       }}
                       onPointerUpCapture={() => {
                         blockRowDragRef.current = false;
@@ -589,118 +595,42 @@ export function SettingsDialog({
                         void moveProvider(provider.id);
                       }}
                     >
-                      <span
-                        className="settings-provider-drag-handle"
-                        title="也可以拖动整张卡片"
-                        aria-hidden="true"
-                      >
-                        <DotsSixVertical
-                          size={18}
-                          weight="bold"
-                          aria-hidden="true"
-                        />
-                      </span>
-                      <button
-                        className="settings-provider-main"
-                        type="button"
-                        onClick={() => onEdit(provider)}
-                      >
-                        <span
-                          className={`provider-choice-icon${logo ? " has-logo" : ""}`}
-                          data-provider-tone={tone}
-                        >
-                          {logo ? (
-                            <img src={logo} alt="" aria-hidden="true" />
-                          ) : (
-                            (provider.name || provider.id)
-                              .slice(0, 1)
-                              .toUpperCase()
-                          )}
-                        </span>
-                        <span className="settings-provider-copy">
-                          <span className="settings-provider-title">
-                            <strong>{provider.name || provider.id}</strong>
-                            {provider.builtin && (
-                              <span className="badge builtin">内置</span>
-                            )}
-                            {provider.hidden && (
-                              <span className="badge provider-hidden">
-                                已隐藏
-                              </span>
-                            )}
-                          </span>
-                          <small title={provider.baseUrl || "尚未配置 API 端点"}>
-                            {provider.baseUrl || "尚未配置 API 端点"}
-                          </small>
-                          <span className="settings-provider-status">
-                            <span
-                              className={`status-chip ${configured ? "ok" : "warn"}`}
-                            >
-                              {configured ? "端点已配置" : "缺少端点"}
-                            </span>
-                            <span className={`status-chip ${hasKey ? "ok" : "warn"}`}>
-                              {hasKey ? "Key 已设置" : "缺少 Key"}
-                            </span>
-                            <span
-                              className={`status-chip ${effectiveModel ? "ok" : "warn"}`}
-                              title={effectiveModel ? "未匹配角色时实际使用的兜底模型" : "未设置 ANTHROPIC_MODEL，会话将使用 Claude Code 内置默认模型"}
-                            >
-                              {effectiveModel ? `兜底 ${effectiveModel}` : "兜底模型未配置"}
-                            </span>
-                          </span>
-                        </span>
-                      </button>
-                      <div className="settings-provider-usage settings-provider-quota-usage">
-                        <ProviderQuotaCell provider={provider} hasKey={hasKey} active={activeSection === "providers"} />
-                        <small title="该模型服务全部会话的累计 token（含输入/输出/缓存），不代表账户额度">本地用量：{usage > 0 ? `${formatTokens(usage)} tok` : "—"}</small>
-                      </div>
-                      <span className="settings-provider-actions">
-                        <button
-                          className="settings-provider-edit"
-                          type="button"
-                          onClick={() => onEdit(provider)}
-                        >
-                          <PencilSimpleIcon size={14} aria-hidden="true" />
-                          <span>编辑</span>
-                        </button>
-                        {provider.builtin ? (
-                          <>
-                            <button
-                              className="settings-provider-icon-action"
-                              type="button"
-                              title={provider.hidden ? "重新显示" : "隐藏"}
-                              aria-label={`${provider.hidden ? "重新显示" : "隐藏"} ${provider.name || provider.id}`}
-                              onClick={() =>
-                                onSetHidden(provider.id, !provider.hidden)
-                              }
-                            >
-                              {provider.hidden ? (
-                                <EyeIcon size={14} />
-                              ) : (
-                                <EyeSlashIcon size={14} />
-                              )}
+                      <ProviderQuotaCell provider={provider} hasKey={hasKey} active={activeSection === "providers"}>
+                        {({ values, controls }) => <>
+                          <div className="model-provider-heading">
+                            <span className="settings-provider-drag-handle" draggable={!savingOrder} title="拖动调整顺序" aria-hidden="true"><DotsSixVertical size={18} /></span>
+                            <button className="model-provider-toggle" type="button" aria-expanded={expanded} aria-controls={`model-detail-${provider.id}`} onClick={() => setExpandedProviderId(expanded ? null : provider.id)}>
+                              <span className="model-provider-name"><strong>{provider.name || provider.id}</strong>{warnings && <WarningCircleIcon className="model-provider-warning" size={16} aria-label={warnings} />}</span>
+                              <span className="provider-quota model-provider-summary">{values}</span>
+                              <CaretDownIcon className="model-provider-chevron" size={17} aria-hidden="true" />
                             </button>
-                            <button
-                              className="settings-provider-icon-action"
-                              type="button"
-                              title="恢复默认"
-                              aria-label={`恢复 ${provider.name || provider.id} 默认配置`}
-                              onClick={() => onRestoreDefault(provider.id)}
-                            >
-                              <ArrowCounterClockwiseIcon size={14} />
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            className="settings-provider-delete"
-                            type="button"
-                            aria-label={`删除 ${provider.name || provider.id}`}
-                            onClick={() => onDelete(provider.id)}
-                          >
-                            <TrashIcon size={14} aria-hidden="true" />
-                          </button>
-                        )}
-                      </span>
+                          </div>
+                          {expanded && <div className="model-provider-detail" id={`model-detail-${provider.id}`}>
+                            <dl className="model-provider-fields">
+                              <div><dt>接口地址</dt><dd className={configured ? "" : "model-provider-warning"}>{provider.baseUrl || "尚未配置"}</dd></div>
+                              <div><dt>API Key</dt><dd className={hasKey ? "" : "model-provider-warning"}>{hasKey ? "已设置" : "尚未设置"}</dd></div>
+                              <div><dt>兜底模型</dt><dd className={effectiveModel ? "" : "model-provider-warning"} title="未匹配角色时使用；未配置时使用 Claude Code 内置默认模型">{effectiveModel || "未配置（使用内置默认模型）"}</dd></div>
+                              <div><dt>本地 Token</dt><dd>{usage > 0 ? formatTokens(usage) : "—"}<button type="button" className="model-provider-info" aria-label="本地用量说明" title="全部会话累计 Token（含输入、输出、缓存），不代表账户额度；无统计时显示 —。"><InfoIcon size={16} /></button></dd></div>
+                            </dl>
+                            <footer className="model-provider-footer">
+                              <div className="settings-provider-actions">
+                                <button className="settings-provider-edit" type="button" onClick={() => onEdit(provider)} title="配置修改在下次启动或恢复会话时生效"><PencilSimpleIcon size={16} /><span>编辑配置</span></button>
+                                <details className="model-provider-more" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false; }}>
+                                  <summary>更多<CaretDownIcon size={14} /></summary>
+                                  <div className="model-provider-menu" onClick={(event) => { const details = event.currentTarget.closest("details"); if (details) details.open = false; }}>
+                                    <span className="model-provider-kind">{provider.builtin ? "内置服务" : "自建服务"}</span>
+                                    {provider.builtin ? <>
+                                      <button type="button" onClick={() => onSetHidden(provider.id, !provider.hidden)}>{provider.hidden ? <EyeIcon size={16} /> : <EyeSlashIcon size={16} />}{provider.hidden ? "重新显示" : "隐藏"}</button>
+                                      <button type="button" onClick={() => onRestoreDefault(provider.id)}><ArrowCounterClockwiseIcon size={16} />恢复默认</button>
+                                    </> : <button className="settings-provider-delete" type="button" onClick={() => onDelete(provider.id)}><TrashIcon size={16} />删除服务</button>}
+                                  </div>
+                                </details>
+                              </div>
+                              <div className="provider-quota model-provider-refresh">{controls}</div>
+                            </footer>
+                          </div>}
+                        </>}
+                      </ProviderQuotaCell>
                     </article>
                   );
                 })}

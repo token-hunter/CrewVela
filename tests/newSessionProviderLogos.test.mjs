@@ -15,9 +15,11 @@ const logosSource = readFileSync(
   "utf8",
 );
 
-test("新建会话和模型设置复用同一套 Provider Logo", () => {
+test("新建会话保留 Provider Logo，极简模型设置使用可访问的服务名称", () => {
   assert.match(dialogSource, /PROVIDER_LOGOS, providerTone/);
-  assert.match(settingsSource, /PROVIDER_LOGOS, providerTone/);
+  assert.match(settingsSource, /className="model-provider-name"/);
+  assert.match(settingsSource, /<strong>\{provider.name \|\| provider.id\}<\/strong>/);
+  assert.match(settingsSource, /aria-expanded=\{expanded\}/);
   assert.match(dialogSource, /<img src=\{logo\} alt="" aria-hidden="true" \/>/);
   assert.match(logosSource, /agent-kimi-code\.svg/);
   assert.match(logosSource, /model-zhipu\.svg/);
