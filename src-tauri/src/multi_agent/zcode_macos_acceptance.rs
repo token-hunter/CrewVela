@@ -184,3 +184,35 @@ fn zcode_macos_installed_native_js_tool_stays_off_dock() -> Result<()> {
     println!("ZCODE_DOCK_NATIVE_TOOL_OK mcp_tool=js result=323 foreground=0 no_model_request=true");
     Ok(())
 }
+
+#[test]
+#[ignore = "installed macOS ZCode Individual account; reads catalog and binds six public model variants in isolated storage, no model request"]
+fn zcode_macos_installed_individual_catalog_matches_windows_variants() -> Result<()> {
+    let root = IsolatedRoot::new()?;
+    let stopped = AtomicBool::new(false);
+    let mut progress = || Ok(());
+    let mut deny = |_: &Value, _: &AtomicBool| Ok(false);
+    let mut connection = DesktopConnection::open(root.command(true)?, &root.0, None, false, vec![], &stopped, &mut deny, &mut progress)?;
+    let result = (|| -> Result<()> {
+        anyhow::ensure!(connection.model_catalog_notice().is_none(), "healthy Individual account must not receive a Start Plan notice");
+        let mut verified = 0;
+        for model in ["GLM-5.3", "GLM-5.3-Flash"] {
+            for level in ["low", "high", "max"] {
+                let choice = connection.models.iter().find(|choice| {
+                    choice.selection["providerId"] == "account:bigmodel-individual-coding-plan" &&
+                    choice.selection["modelId"] == model && choice.selection["options"]["reasoningLevel"] == level
+                }).context("installed Individual catalog did not include the expected public model variant")?.id.clone();
+                connection.set_model(&choice, &stopped, &mut deny)?;
+                anyhow::ensure!(connection.selected_model_id.as_deref() == Some(choice.as_str()), "native model binding was not confirmed");
+                verified += 1;
+            }
+        }
+        println!("ZCODE_MACOS_INDIVIDUAL_CATALOG_OK public_model_variants={verified} bindings=6 start_plan_notice=false no_model_request=true");
+        Ok(())
+    })();
+    let shutdown = connection.shutdown();
+    drop(connection);
+    result?;
+    shutdown?;
+    Ok(())
+}

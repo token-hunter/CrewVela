@@ -46,9 +46,11 @@ $env:CREWVELA_ZCODE_ROOT = 'D:\zcode'
 
 在协作中心的团队成员编辑器中选择 Runtime **ZCode Desktop**。模型填写 ZCode Desktop 中的实际 `providerId/modelId`，留空使用 Agent 本地默认模型。
 
-支持 ZCode Desktop 配置的 Personal 自定义 API 模型；独立聊天还支持当前安装版的 Individual Coding Plan 和 Start Plan 账号模型。协作任务本期仍使用 Personal 模型。Agent 沿用其本地 provider 配置，默认位置是用户目录的 `.zcode/v2/provider_config.json`；已有 `ZCODE_DATA_BASE_DIR` 或 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 覆盖会继承给 Agent。API 密钥仍由 ZCode Desktop 本地配置持有，不需要填写到 CrewVela 的模型字段。
+支持 ZCode Desktop 配置的 Personal 自定义 API 模型；独立聊天支持 Individual Coding Plan 账号模型。Start Plan 仍保持原有暂停保护，不因目录修复而开放；只有当前确实选择 Start Plan 时才显示其暂停提示。协作任务本期仍使用 Personal 模型。Agent 沿用其本地 provider 配置，默认位置是用户目录的 `.zcode/v2/provider_config.json`；已有 `ZCODE_DATA_BASE_DIR` 或 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 覆盖会继承给 Agent。API 密钥仍由 ZCode Desktop 本地配置持有，不需要填写到 CrewVela 的模型字段。
 
 ZCode Desktop 账号模型依赖桌面 Host 动态鉴权。CrewVela 从 ZCode Desktop 本地登录状态读取当前账号，查询原生账号权益后同步模型目录；模型请求校验当前会话、所选模型与账号身份，凭据仅在后端私有通信中使用，不写入 CrewVela 的聊天定位、模型列表或日志。账号登录与凭据更新仍在 ZCode Desktop 中完成；未登录、缓存缺失、身份变化或权益不可用会明确提示。登录或切换账号后，停止并恢复 CrewVela 中的 ZCode Desktop 会话以刷新目录与身份。Team 和 off-peak 模型暂不支持。
+
+ZCode 3.18.2 的 `enc:v2` 登录缓存使用系统安全存储或受管 secret。账号 helper 按原生服务名及 credentials.json 绝对路径摘要，只读访问安装版自带 keyring；核对密钥来源、指纹和 AES-GCM 标签。不会创建系统密钥、迁移或重写凭据，安全存储不可用时明确拒绝。显式 `ZCODE_CREDENTIAL_SECRET` 与 `ZCODE_CREDENTIAL_SECRET_FILE` 不可同时使用；无 OS 固定来源时才考虑原生受限的 credential-secret 文件。Windows 既有 enc:v1、Personal/Individual 目录及鉴权路径保留。未知 enc 格式不再当明文令牌。
 
 官方 MCP 鉴权是工作区级请求，可能在创建会话返回前到达，不携带 sessionId。CrewVela 按原生协议回复 `official_auth_unavailable`，具体 MCP 状态由 ZCode Desktop 按传输类型处理；此拒绝不会终止普通 Personal API 会话，也不会提供账号凭据或尝试匿名连接需要鉴权的官方 HTTP MCP。依赖官方鉴权的能力仍不可用，stdio MCP 可保留连接并向插件传递鉴权失败信息。
 

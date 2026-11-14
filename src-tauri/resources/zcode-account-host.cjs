@@ -2,14 +2,18 @@
 // disk writes, credential logging, or renderer IPC. Native contracts are from
 // ZCode Desktop services credentialCipherProvider, accountProviderCredentialKey,
 // accountProviderRequestAuthService and codingPlanProviderAvailability.
-const {readFile,readdir} = require('node:fs/promises');
+const {readFile,readdir,stat} = require('node:fs/promises');
+const {createRequire} = require('node:module');
 const {createHash,createDecipheriv} = require('node:crypto');
 const {homedir,userInfo,platform} = require('node:os');
 const {join,resolve,dirname} = require('node:path');
 const sha = value => createHash('sha256').update(value).digest('hex');
 function decrypt(value, env=process.env) {
   if (typeof value !== 'string') return '';
-  if (!value.startsWith('enc:v1:')) return value;
+  if (!value.startsWith('enc:v1:')) {
+    if(value.startsWith('enc:'))throw Error('ZCode Desktop 登录凭据需要受支持的安全解密器，请更新 CrewVela');
+    return value;
+  }
   const parts=value.slice(7).split('.');
   if(parts.length!==3) throw Error('ZCode Desktop 登录凭据格式损坏，请在原生 ZCode Desktop 重新登录');
   const [iv,tag,body]=parts.map(x=>Buffer.from(x,'base64url'));
@@ -25,12 +29,85 @@ async function readJson(path, optional=false) {
   try {return JSON.parse(await readFile(path,'utf8'));}
   catch(e) {if(optional&&e.code==='ENOENT')return {};throw Error('ZCode Desktop 本地账号配置无法读取');}
 }
-async function readLocal(input) {
+function secureStorageError(){return Error('ZCode Desktop 安全登录存储暂不可用，请解锁系统凭据存储后重新加载模型；不会把加密内容当作登录令牌');}
+function nativeKeyStore(input,file){
+  // Load the first-party N-API keyring from the installed desktop, using the
+  // same service and absolute-path account hash as its credential cipher.
+  // Never initialize a cipher or call set/delete: that could create or migrate keys.
+  try{
+    const native=createRequire(join(dirname(input.builtin),'..','..','app.asar','package.json'))('@napi-rs/keyring');
+    const entry=new native.AsyncEntry('ZCode Credential Encryption',sha(resolve(file)),{linux:{store:'secret-service'}});
+    return {get:()=>entry.getPassword()};
+  }catch{throw secureStorageError();}
+}
+async function managedSecret(file,explicit){
+  try{
+    const info=await stat(file);
+    if(!info.isFile()||(!explicit&&process.platform!=='win32'&&(info.mode&0o77)!==0))throw secureStorageError();
+    const value=await readFile(file,'utf8'),size=Buffer.byteLength(value,'utf8');
+    if(size<32||size>4096)throw secureStorageError();
+    return value;
+  }catch(error){if(!explicit&&error.code==='ENOENT')return null;throw secureStorageError();}
+}
+async function credentialKey(input,file,record,context){
+  const cacheKey=resolve(file);
+  if(!context.keys.has(cacheKey))context.keys.set(cacheKey,(async()=>{
+    const env=process.env;
+    if(env.ZCODE_CREDENTIAL_SECRET&&env.ZCODE_CREDENTIAL_SECRET_FILE)throw secureStorageError();
+    let secret=env.ZCODE_CREDENTIAL_SECRET;
+    if(!secret&&env.ZCODE_CREDENTIAL_SECRET_FILE)secret=await managedSecret(env.ZCODE_CREDENTIAL_SECRET_FILE,true);
+    if(secret)return {source:'env',key:Buffer.from(sha(secret),'hex')};
+    let pinned;
+    try{pinned=await readFile(join(dirname(file),'credential-source'),'utf8');}
+    catch(error){if(error.code!=='ENOENT')throw secureStorageError();}
+    if(pinned!==undefined&&pinned!=='os\n')throw secureStorageError();
+    const osPinned=pinned==='os\n'||Object.values(record).some(v=>typeof v==='string'&&v.startsWith('enc:v2:os:'));
+    if(!osPinned){
+      secret=await managedSecret(join(dirname(file),'credential-secret'),false);
+      if(secret)return {source:'env',key:Buffer.from(sha(secret),'hex')};
+      if(Object.values(record).some(v=>typeof v==='string'&&v.startsWith('enc:v2:env:')))throw secureStorageError();
+    }
+    let encoded;
+    try{
+      const store=(context.createKeyStore||nativeKeyStore)(input,file);
+      // The native AsyncEntry must outlive its task (not just the call that
+      // returns the Promise). Keep its wrapper through the whole operation.
+      context.keyStores??=new Map();context.keyStores.set(cacheKey,store);
+      encoded=await store.get();
+    }catch{throw secureStorageError();}
+    if(typeof encoded!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(encoded))throw secureStorageError();
+    const key=Buffer.from(encoded,'base64url');
+    if(key.length!==32)throw secureStorageError();
+    return {source:'os',key};
+  })());
+  return context.keys.get(cacheKey);
+}
+async function openCredentials(input,file,record,context){
+  const values=new Map(),errors=new Set();
+  for(const [name,value]of Object.entries(record)){
+    try{
+      if(typeof value!=='string'){values.set(name,'');continue;}
+      if(!value.startsWith('enc:v2:')){values.set(name,decrypt(value));continue;}
+      const parts=value.slice(7).split(':');
+      if(parts.length!==3||!['os','env'].includes(parts[0])||!/^[a-f0-9]{24}$/.test(parts[1]))throw secureStorageError();
+      const material=await credentialKey(input,file,record,context);
+      if(material.source!==parts[0]||sha(material.key).slice(0,24)!==parts[1])throw secureStorageError();
+      const encrypted=parts[2].split('.');
+      if(encrypted.length!==3||encrypted.some(v=>!/^[A-Za-z0-9_-]*$/.test(v)))throw secureStorageError();
+      const [iv,tag,body]=encrypted.map(v=>Buffer.from(v,'base64url'));
+      if(iv.length!==12||tag.length!==16)throw secureStorageError();
+      const cipher=createDecipheriv('aes-256-gcm',material.key,iv);cipher.setAuthTag(tag);
+      values.set(name,Buffer.concat([cipher.update(body),cipher.final()]).toString('utf8'));
+    }catch{errors.add(name);}
+  }
+  return name=>{if(errors.has(name))throw secureStorageError();return(values.get(name)||'').trim();};
+}
+async function readLocal(input,context={keys:new Map()}) {
   const directory=join(process.env.ZCODE_DATA_BASE_DIR?.trim()||process.env.HOME?.trim()||homedir(),'.zcode','v2');
   const [credentials,settings,builtin]=await Promise.all([
     readJson(join(directory,'credentials.json'),true),readJson(join(directory,'setting.json'),true),readJson(input.builtin)
   ]);
-  const load=key=>decrypt(credentials[key]).trim();
+  const load=await openCredentials(input,join(directory,'credentials.json'),credentials,context);
   // The native source-header builder reuses this existing device identity.
   // Do not create/repair telemetry state or expose its value in the snapshot.
   let deviceMid;
@@ -136,9 +213,10 @@ function officialOrigin(value, fallback, allowed){
   if(!allowed.includes(origin))throw Error('ZCode Desktop 账号端点不是受支持的官方地址，已停止鉴权');
   return origin;
 }
-async function snapshot(input,request=fetch,createClient=nativeProjectTokenClient) {
+async function snapshot(input,request=fetch,createClient=nativeProjectTokenClient,createKeyStore) {
+  const credentialContext={keys:new Map(),createKeyStore};
   if(!input.version){try{input.version=require(join(dirname(input.builtin),'..','..','app.asar','package.json')).version;}catch{}}
-  const local=await readLocal(input),providers={},states={},scopes={};
+  const local=await readLocal(input,credentialContext),providers={},states={},scopes={};
   const rules=builtinRules(local).filter(r=>r.config?.access?.type==='zhipu-account');
   for(const rule of rules){
     const access=rule.config.access,providerId=rule.providerId;
@@ -181,7 +259,7 @@ async function snapshot(input,request=fetch,createClient=nativeProjectTokenClien
     if(entitled)scopes[providerId]={scope:auth.scope,access:{type:'zhipu-account',accountType:access.accountType,mode:access.mode,entitled:true},...(projectToken?{projectToken:true,loginFingerprint:sha(auth.oauthToken)}:{})};
   }
   // Do not publish a stale identity after asynchronous entitlement queries.
-  const fresh=await readLocal(input);
+  const fresh=await readLocal(input,credentialContext);
   for(const [id,grant] of Object.entries(scopes)){
     const current=material(fresh,id,grant.access);
     if(current?.scope!==grant.scope||(grant.projectToken&&sha(current?.oauthToken||'')!==grant.loginFingerprint))throw Error('ZCode Desktop 登录账号发生变化，请恢复会话刷新模型');
@@ -189,10 +267,16 @@ async function snapshot(input,request=fetch,createClient=nativeProjectTokenClien
   const revision=`zcode-builtin:${local.builtin.revision}:${sha(resolve(input.builtin))}`;
   const config={basedOnZCodeBuiltinRevision:revision,providers,states};
   config.revision=`account:${sha(JSON.stringify(config))}`;
-  return {config,scopes,startPlanUnavailable:rules.some(rule=>rule.config.access.mode==='start-plan')};
+  // A built-in Start Plan rule is present even when another connection is in
+  // use. Do not turn that dormant rule into a misleading active-account error.
+  const family=local.settings.providerFamilyDomain;
+  const startPlanUnavailable=local.settings.providerFamilyConnectionSelections?.[family]?.kind==='start-plan'&&
+    rules.some(rule=>rule.config.access.accountType===family&&rule.config.access.mode==='start-plan');
+  return {config,scopes,startPlanUnavailable};
 }
-async function auth(input,request=fetch,createClient=nativeProjectTokenClient){
-  const local=await readLocal(input),grant=input.grant;
+async function auth(input,request=fetch,createClient=nativeProjectTokenClient,createKeyStore){
+  const credentialContext={keys:new Map(),createKeyStore};
+  const local=await readLocal(input,credentialContext),grant=input.grant;
   const rule=builtinRules(local).find(r=>r.providerId===input.providerId);
   if(!grant||!rule||['type','accountType','mode'].some(k=>rule.config.access[k]!==grant.access[k]))throw Error('ZCode Desktop 账号模型身份已变化，请恢复会话');
   if(rule.config.access.mode==='start-plan')throw Error('ZCode Desktop Start Plan 当前暂不支持在 CrewVela 中使用，请重新加载并选择其他可用模型');
@@ -201,15 +285,19 @@ async function auth(input,request=fetch,createClient=nativeProjectTokenClient){
   if(grant.projectToken&&(!current.oauthToken||sha(current.oauthToken)!==grant.loginFingerprint))throw Error('ZCode Desktop 登录状态已变化，请重新加载模型');
   const key=grant.projectToken?await personalToken(input,local,current,request,createClient):current.key;
   if(!key)throw Error('ZCode Desktop 当前账号凭据不可用，请重新加载模型');
-  const fresh=material(await readLocal(input),input.providerId,grant.access);
+  const fresh=material(await readLocal(input,credentialContext),input.providerId,grant.access);
   if(fresh?.scope!==grant.scope||(grant.projectToken&&sha(fresh?.oauthToken||'')!==grant.loginFingerprint))throw Error('ZCode Desktop 登录状态已变化，请重新加载模型');
   return {headersApplied:true,requestAuth:{apiKey:key}};
 }
 module.exports={decrypt,material,personalEntitled,startEntitlement,snapshot,auth,officialOrigin};
 if(require.main===module||process.env.CREWVELA_ZCODE_ACCOUNT_HELPER==='1'){
+  // One private request per process. First-party modules may retain native
+  // handles; finish only after the complete JSON frame has flushed, rather
+  // than making the parent wait for those unrelated handles to disappear.
+  const finish=value=>process.stdout.write(JSON.stringify(value),()=>process.exit(0));
   let bytes='';process.stdin.setEncoding('utf8');process.stdin.on('data',s=>bytes+=s);
   process.stdin.on('end',async()=>{
-    try{const input=JSON.parse(bytes);const result=await(input.operation==='auth'?auth(input):snapshot(input));process.stdout.write(JSON.stringify({result}));}
-    catch(e){const message=/^ZCode Desktop |^无法确认原生 ZCode Desktop/.test(e.message)?e.message:'ZCode Desktop 账号服务暂不可用，请在原生 ZCode Desktop 重新登录后恢复会话';process.stdout.write(JSON.stringify({error:message}));}
+    try{const input=JSON.parse(bytes);const result=await(input.operation==='auth'?auth(input):snapshot(input));finish({result});}
+    catch(e){const message=/^ZCode Desktop |^无法确认原生 ZCode Desktop/.test(e.message)?e.message:'ZCode Desktop 账号服务暂不可用，请在原生 ZCode Desktop 重新登录后恢复会话';finish({error:message});}
   });
 }
