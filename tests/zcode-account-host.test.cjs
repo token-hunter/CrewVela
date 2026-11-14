@@ -136,6 +136,7 @@ test('disabled Start Plan never sends device identity; personal entitlement and 
     assert.deepEqual(loaded.config.providers[startId].builtinModelIds,[]);
     assert.equal(loaded.scopes[startId],undefined);
     assert.equal(loaded.config.states[personalId].availability,'available');assert.ok(loaded.scopes[personalId]);
+    assert.equal(loaded.startPlanUnavailable,false,'a dormant Start Plan rule must not mask the selected Individual account');
     assert.equal(JSON.stringify(loaded).includes('synthetic-native-device'),false,'device ID never goes to the renderer config');
     assert.equal(await require('node:fs/promises').readFile(join(dir,'telemetry-state.json'),'utf8'),telemetry,'native state remains untouched');
     for(const invalid of ['{broken',JSON.stringify({deviceMid:'bad\r\nheader'}),JSON.stringify({deviceMid:42}),JSON.stringify({deviceMid:'  '})]){
@@ -203,3 +204,105 @@ test('missing personal cache refreshes the existing OAuth project token and keep
     await assert.rejects(host.auth({...input,providerId,grant:snapshot.scopes[providerId]},request,factory),/登录|变化/);
   }finally{if(previous===undefined)delete process.env.ZCODE_DATA_BASE_DIR;else process.env.ZCODE_DATA_BASE_DIR=previous;await rm(root,{recursive:true,force:true});}
 });
+
+function encryptV2(value,key,source='os'){
+  const iv=Buffer.alloc(12,3),cipher=createCipheriv('aes-256-gcm',key,iv);
+  const body=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);
+  const fingerprint=createHash('sha256').update(key).digest('hex').slice(0,24);
+  return `enc:v2:${source}:${fingerprint}:${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${body.toString('base64url')}`;
+}
+async function withV2Fixture(body){
+  const root=await mkdtemp(join(tmpdir(),'zcode-v2-readonly-')),directory=join(root,'.zcode/v2');
+  const envKeys=['ZCODE_DATA_BASE_DIR','ZCODE_CREDENTIAL_SECRET','ZCODE_CREDENTIAL_SECRET_FILE'];
+  const previous=Object.fromEntries(envKeys.map(k=>[k,process.env[k]]));
+  process.env.ZCODE_DATA_BASE_DIR=root;delete process.env.ZCODE_CREDENTIAL_SECRET;delete process.env.ZCODE_CREDENTIAL_SECRET_FILE;
+  try{
+    await mkdir(directory,{recursive:true});
+    const providerId='account:bigmodel-individual-coding-plan',key=Buffer.alloc(32,9);
+    const plaintext={'oauth:active_provider':'bigmodel','oauth:bigmodel:user_info':JSON.stringify({id:'fixture-v2-account'}),
+      [`account-provider:coding-plan:${providerId}:account:fixture-v2-account:api-key`]:'synthetic-private-api-key'};
+    const credentials=Object.fromEntries(Object.entries(plaintext).map(([k,v])=>[k,encryptV2(v,key)]));
+    const file=join(directory,'credentials.json'),builtin=join(root,'builtin.json');
+    await writeFile(file,JSON.stringify(credentials));await writeFile(join(directory,'credential-source'),'os\n');
+    await writeFile(join(directory,'setting.json'),JSON.stringify({providerFamilyDomain:'bigmodel',providerFamilyConnectionSelections:{bigmodel:{kind:'individual-coding-plan'}}}));
+    await writeFile(builtin,JSON.stringify({revision:1,config:{providerConfigRules:{providerRules:[{providerId,config:{access:{type:'zhipu-account',accountType:'bigmodel',mode:'individual-coding-plan'}}},{providerId:'account:bigmodel-start-plan',config:{access:{type:'zhipu-account',accountType:'bigmodel',mode:'start-plan'}}}]}}}));
+    const request=async()=>new Response(JSON.stringify({data:[{productName:'Coding Plan',status:'VALID',inCurrentPeriod:true}]}));
+    await body({root,directory,file,builtin,providerId,key,plaintext,credentials,request});
+  }finally{
+    for(const k of envKeys)if(previous[k]===undefined)delete process.env[k];else process.env[k]=previous[k];
+    await rm(root,{recursive:true,force:true});
+  }
+}
+test('v2 OS keyring decrypts current Individual account privately without creating or changing state',async()=>withV2Fixture(async f=>{
+  const fs=require('node:fs/promises'),before=await fs.readFile(f.file,'utf8');let reads=0;
+  const store=()=>({get:async()=>{reads++;return f.key.toString('base64url');},set:()=>assert.fail('must not write OS keys'),delete:()=>assert.fail('must not delete OS keys')});
+  const input={builtin:f.builtin,version:'3.18.2'};
+  const result=await host.snapshot(input,f.request,undefined,store);
+  assert.equal(result.config.states[f.providerId].availability,'available');assert.ok(result.scopes[f.providerId]);
+  assert.equal(result.startPlanUnavailable,false);assert.equal(reads,1,'snapshot and identity recheck reuse one read-only key');
+  const grant=result.scopes[f.providerId];
+  const auth=await host.auth({...input,providerId:f.providerId,grant},f.request,undefined,store);
+  assert.equal(auth.requestAuth.apiKey,'synthetic-private-api-key');
+  assert.ok(!JSON.stringify(result).includes('synthetic-private-api-key'));
+  assert.ok(!JSON.stringify(result).includes(f.key.toString('base64url')));
+  assert.equal(await fs.readFile(f.file,'utf8'),before);
+  assert.equal(await fs.readFile(join(f.directory,'credential-source'),'utf8'),'os\n');
+  assert.equal((await fs.readdir(f.directory)).some(name=>name.includes('secret')),false);
+}));
+test('v2 missing, mismatched, locked OS key and damaged tag fail closed before any entitlement request',async()=>withV2Fixture(async f=>{
+  let requested=0;const request=async()=>{requested++;throw Error('must not query without decrypted account');};
+  for(const store of [()=>({get:async()=>null}),()=>({get:async()=>Buffer.alloc(32,8).toString('base64url')}),()=>({get:async()=>{throw Error('sensitive raw keyring failure');}})]){
+    await assert.rejects(host.snapshot({builtin:f.builtin},request,undefined,store),error=>/安全登录存储/.test(error.message)&&!error.message.includes('sensitive'));
+  }
+  const corrupt={...f.credentials};corrupt['oauth:active_provider']=corrupt['oauth:active_provider'].slice(0,-1)+'!';await writeFile(f.file,JSON.stringify(corrupt));
+  await assert.rejects(host.snapshot({builtin:f.builtin},request,undefined,()=>({get:async()=>f.key.toString('base64url')})),/安全登录存储/);
+  assert.equal(requested,0);
+}));
+test('v2 managed secret and source selection follow the native contract without OS key fallback',async()=>withV2Fixture(async f=>{
+  const fs=require('node:fs/promises'),secret='synthetic-managed-secret-that-is-long-enough';
+  const key=createHash('sha256').update(secret).digest();
+  await fs.rm(join(f.directory,'credential-source'));
+  await writeFile(f.file,JSON.stringify(Object.fromEntries(Object.entries(f.plaintext).map(([k,v])=>[k,encryptV2(v,key,'env')]))));
+  const secretFile=join(f.directory,'credential-secret');await writeFile(secretFile,secret,{mode:0o600});
+  const store=()=>assert.fail('env credentials must not consult OS keyring');
+  let result=await host.snapshot({builtin:f.builtin},f.request,undefined,store);
+  assert.ok(result.scopes[f.providerId]);
+  if(process.platform!=='win32'){
+    await fs.chmod(secretFile,0o644);
+    await assert.rejects(host.snapshot({builtin:f.builtin},f.request,undefined,store),/安全登录存储/);
+    await fs.chmod(secretFile,0o600);
+  }
+  process.env.ZCODE_CREDENTIAL_SECRET=secret;
+  result=await host.snapshot({builtin:f.builtin},f.request,undefined,store);assert.ok(result.scopes[f.providerId]);
+  process.env.ZCODE_CREDENTIAL_SECRET_FILE=secretFile;
+  await assert.rejects(host.snapshot({builtin:f.builtin},f.request,undefined,store),/安全登录存储/);
+  delete process.env.ZCODE_CREDENTIAL_SECRET;
+  result=await host.snapshot({builtin:f.builtin},f.request,undefined,store);assert.ok(result.scopes[f.providerId]);
+}));
+test('unknown encryption versions are never treated as plaintext login credentials',()=>{
+  assert.throws(()=>host.decrypt('enc:v2:os:synthetic'),/安全解密器/);
+  assert.throws(()=>host.decrypt('enc:v99:synthetic'),/安全解密器/);
+});
+
+test('one-shot private helper flushes its JSON and exits even if imported native modules keep handles',async()=>{
+  const {spawnSync}=require('node:child_process');
+  const root=await mkdtemp(join(tmpdir(),'zcode-host-exit-'));
+  try{
+    const builtin=join(root,'builtin.json');await writeFile(builtin,JSON.stringify({revision:1,config:{providerConfigRules:{providerRules:[]}}}));
+    const entry=require('node:path').resolve(__dirname,'../src-tauri/resources/zcode-account-host.cjs');
+    const script=`setInterval(()=>{},1000);require(${JSON.stringify(entry)});`;
+    const child=spawnSync(process.execPath,['-e',script],{input:JSON.stringify({operation:'snapshot',builtin}),encoding:'utf8',timeout:3000,
+      env:{...process.env,ZCODE_DATA_BASE_DIR:root,CREWVELA_ZCODE_ACCOUNT_HELPER:'1'}});
+    assert.equal(child.error,undefined);assert.equal(child.status,0);assert.equal(child.stderr,'');
+    assert.equal(JSON.parse(child.stdout).result.startPlanUnavailable,false);
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('v2 account change during entitlement lookup cannot publish the previous account grant',async()=>withV2Fixture(async f=>{
+  const request=async()=>{
+    const changed={...f.credentials,'oauth:bigmodel:user_info':encryptV2(JSON.stringify({id:'different-fixture-account'}),f.key)};
+    await writeFile(f.file,JSON.stringify(changed));
+    return f.request();
+  };
+  await assert.rejects(host.snapshot({builtin:f.builtin},request,undefined,()=>({get:async()=>f.key.toString('base64url')})),/账号发生变化/);
+}));
