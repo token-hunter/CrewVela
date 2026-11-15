@@ -16,7 +16,9 @@ try {
   assert.equal(await page.locator(".settings-native").count(), 1);
   assert.equal(await page.locator(".skill-import-menu[open]").count(), 0);
   await choose("browser-control").check(); await choose("agent-reach").check();
+  const codexWidth = (await page.locator('.skill-runtime-tabs [data-runtime="codex"]').boundingBox()).width;
   await page.locator('.skill-runtime-tabs [data-runtime="codex"]').click();
+  assert.equal((await page.locator('.skill-runtime-tabs [data-runtime="codex"]').boundingBox()).width, codexWidth, "selection does not shift adjacent Agent buttons");
   assert.equal(await choose("agent-reach").isChecked(), true, "adding Agent preserves selected Skills");
   assert.equal(await page.locator('.skill-runtime-tabs [aria-pressed="true"]').count(), 2);
   assert.equal(await page.getByRole("button", { name: "部署到 2 个 Agent", exact: true }).isEnabled(), true);
@@ -89,6 +91,18 @@ try {
   for (const theme of ["dark", "light"]) for (const size of [{ width: 1440, height: 1024 }, { width: 820, height: 540 }, { width: 687, height: 903 }]) {
     await page.setViewportSize(size); await page.goto(url(`theme=${theme}&skills=long`));
     await page.locator("tbody tr").first().waitFor();
+    const picker = await page.locator(".skill-runtime-tabs").evaluate(element => {
+      const buttons = [...element.querySelectorAll("button")];
+      return { width: element.clientWidth, overflow: element.scrollWidth > element.clientWidth, buttons: buttons.map(button => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height, background: getComputedStyle(button).backgroundColor, color: getComputedStyle(button).color })) };
+    });
+    assert.equal(picker.overflow, false, "Agent choices wrap within the panel");
+    assert.ok(picker.buttons.every(button => button.width < 180 && button.height >= 36), "Agent choices fit their names with usable click targets");
+    assert.notEqual(picker.buttons[0].background, picker.buttons[0].color, "selected Agent retains readable foreground");
+    await page.locator('.skill-runtime-tabs [data-runtime="claude_code"]').focus();
+    await page.keyboard.press("End");
+    assert.equal(await page.locator('.skill-runtime-tabs [data-runtime="opencode"]').evaluate(button => button === document.activeElement), true);
+    await page.keyboard.press("Space");
+    assert.equal(await page.locator('.skill-runtime-tabs [aria-pressed="true"]').count(), 2, "keyboard selection remains additive");
     await page.locator(".skill-target-details > summary").click();
     await page.locator(".skill-target-details > summary").press(process.platform === "darwin" ? "End" : "Control+End"); // 滚到末尾的快捷键因平台而异：macOS 的 Control+End 不滚动
     await page.waitForFunction(() => document.querySelector(".skill-distribution-body").scrollTop > 0); // 键盘滚动是平滑动画，等待其生效再测量

@@ -16,13 +16,17 @@
 .skill-runtime-first .skill-center-actions .btn { justify-content: flex-start; white-space: nowrap; background: transparent; border-color: transparent; color: var(--text); }
 .skill-runtime-first .skill-center-actions .btn:hover { background: var(--bg-hover); }
 .skill-runtime-first .skill-distribution-body { flex: 1; min-height: 0; overflow: auto; padding: 24px 6px 24px 0; scrollbar-width: thin; overscroll-behavior: contain; }
-.skill-runtime-first .skill-runtime-tabs { display: flex; gap: 10px; padding: 0 0 22px; overflow-x: auto; scrollbar-width: thin; }
-.skill-runtime-first .skill-runtime-tabs button { flex: 1 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--text); font-size: 15px; cursor: pointer; }
-.skill-runtime-first .skill-runtime-tabs button.active { border-color: var(--accent-fill); background: var(--accent-fill); color: var(--on-accent-fill); }
-.skill-runtime-first .skill-runtime-tabs :is(img, svg) { width: 20px; height: 20px; object-fit: contain; flex: none; }
+.skill-runtime-first .skill-runtime-tabs { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 2px 22px; }
+.skill-runtime-first .skill-runtime-tabs button { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--text); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.skill-runtime-first .skill-runtime-tabs button:hover { background: color-mix(in srgb, var(--text) 6%, var(--bg-elev)); }
+.skill-runtime-first .skill-runtime-tabs button.active { border-color: color-mix(in srgb, var(--text) 38%, var(--border)); background: color-mix(in srgb, var(--text) 10%, var(--bg-elev)); }
+.skill-runtime-first .skill-runtime-tabs button.active:hover { background: color-mix(in srgb, var(--text) 14%, var(--bg-elev)); }
+.skill-runtime-first .skill-runtime-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.skill-runtime-first .skill-runtime-tabs :is(img, svg) { width: 18px; height: 18px; object-fit: contain; flex: none; }
+.skill-runtime-first .skill-runtime-tabs .skill-runtime-check { width: 14px; height: 14px; opacity: 0; }
+.skill-runtime-first .skill-runtime-tabs button.active .skill-runtime-check { opacity: 1; }
 :root:not([data-theme="light"]) .skill-runtime-tabs [data-runtime="pi"] img,
-:root:not([data-theme="light"]) .skill-runtime-tabs [data-runtime="opencode"] img,
-.skill-runtime-tabs :is([data-runtime="pi"], [data-runtime="opencode"]).active img { filter: invert(1); }
+:root:not([data-theme="light"]) .skill-runtime-tabs [data-runtime="opencode"] img { filter: invert(1); }
 .skill-runtime-first .skill-center-scopebar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 0; border: 0; margin-bottom: 18px; }
 .skill-runtime-first .skill-current-target { font-size: 13px; font-weight: 500; }
 .skill-runtime-first .skill-center-scopebar label { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; }

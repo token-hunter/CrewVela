@@ -323,7 +323,7 @@ export function SkillCenterPanel({ projects }: Props) {
         const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
         buttons[next]?.focus();
       }}>{snapshot.runtimes.map(runtime => <button type="button" data-runtime={runtime.runtime} className={selectedRuntimes.includes(runtime) ? "active" : ""} aria-pressed={selectedRuntimes.includes(runtime)} key={runtime.runtime} onClick={() => toggleRuntime(runtime.runtime)}>
-        {RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind] ? <img src={RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind]} alt="" /> : <Package />}<span>{runtime.label}</span>{selectedRuntimes.includes(runtime) && <Check size={14} aria-hidden="true" />}
+        {RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind] ? <img src={RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind]} alt="" /> : <Package />}<span>{runtime.label}</span><Check className="skill-runtime-check" size={14} aria-hidden="true" />
       </button>)}</div>}
       <div className={`skill-center-scopebar${activeTab === "market" || activeTab === "updates" ? " hidden" : ""}`}>
         {activeTab === "matrix" && <strong className="skill-current-target">当前目标：{targetLabel}</strong>}
