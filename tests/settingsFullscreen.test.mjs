@@ -10,7 +10,7 @@ const settingsSource = readFileSync(
 const stylesSource = readStyles();
 
 test("所有设置页共用固定窗口与分类导航，模型页只调整内容", () => {
-  assert.match(settingsSource, /className=\{`settings-dialog settings-native\$\{activeSection === "providers" \? " settings-model-focus" : ""\}`\}/);
+  assert.match(settingsSource, /className=\{`settings-dialog settings-native\$\{activeSection === "providers" && modelView === "connections" \? " settings-model-focus" : ""\}`\}/);
   assert.match(settingsSource, /labelledBy="settings-dialog-title"/);
   assert.match(settingsSource, /className="settings-window-header"/);
   assert.match(stylesSource, /width: min\(1280px, calc\(100vw - 64px\)\)/);

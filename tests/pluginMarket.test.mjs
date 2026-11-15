@@ -10,7 +10,23 @@ import {
   compatibilityLabel,
   pluginModes,
   pluginSupportsAgent,
+  pluginUpstreamUrl,
+  CURATED_PLUGIN_PREVIEW,
+  BUILTIN_CANDIDATE_COUNT,
 } from "../src/pluginMarket.ts";
+
+test("内置候选使用同一清单并链接到固定上游目录，拒绝不安全链接", () => {
+  const market = CURATED_PLUGIN_PREVIEW.marketplaces[0];
+  assert.equal(BUILTIN_CANDIDATE_COUNT, 16);
+  assert.equal(market.plugins.length, BUILTIN_CANDIDATE_COUNT);
+  for (const plugin of market.plugins) {
+    assert.match(pluginUpstreamUrl({ market, plugin }), new RegExp(`/tree/${plugin.version}[a-f\\d]+/skills/${plugin.name}$`));
+    assert.ok(plugin.compatibility.dependencies.length > 0);
+  }
+  const plugin = { ...market.plugins[0], sourceDisplay: "local fixture" };
+  assert.equal(pluginUpstreamUrl({ market: { ...market, url: "javascript:alert(1)" }, plugin }), null);
+  assert.equal(pluginUpstreamUrl({ market: { ...market, url: null }, plugin: { ...plugin, sourceDisplay: "owner/repo / ../private @ " + "a".repeat(40) } }), null);
+});
 
 test("Codex 原生包与连接器明确区分安装方式和 Agent 边界", () => {
   const plugin = { ...PLUGIN_MARKET_PREVIEW.marketplaces[0].plugins[0], compatibility: { format: "codex", status: "native", nativeCodex: true, nativeClaude: false, skillCompatible: false, components: ["Skill ×12"], note: "保留根引用" } };

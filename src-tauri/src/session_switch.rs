@@ -1440,7 +1440,7 @@ mod tests {
         let worker = std::thread::spawn(move || {
             entered_tx.send(()).unwrap();
             let result =
-                crate::open_direct_collaboration_session(&stale, &PtyManager::new(), &sessions);
+                crate::open_direct_collaboration_session(&stale, &PtyManager::new(), &sessions, None);
             result_tx.send(result).unwrap();
         });
         entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -1489,6 +1489,7 @@ mod tests {
                     &stale,
                     &PtyManager::new(),
                     &sessions,
+                    None,
                 ))
                 .unwrap();
         });

@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadAppearance, saveAppearance } from '../src/appearance.ts';
-import { parseCustomSkin, loadCustomSkins } from '../src/customSkins.ts';
 
 test('removed accents migrate, remaining accents persist and invalid values still fall back', () => {
   const previous = globalThis.window;
@@ -19,20 +18,4 @@ test('removed accents migrate, remaining accents persist and invalid values stil
       assert.equal(JSON.parse(values.get('crewvela-appearance')).accent, appearance.accent);
     }
   } finally { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; }
-});
-
-test('imported and previously saved skins migrate removed accents without losing skins', () => {
-  const previous = globalThis.localStorage;
-  try {
-    for (const accent of ['blue', 'green', 'none', 'purple']) {
-      const appearance = { theme: 'dark', background: 'solid', accent };
-      const expected = ['blue', 'green'].includes(accent) ? 'none' : accent;
-      assert.equal(parseCustomSkin(JSON.stringify({ appearance })).appearance.accent, expected);
-      globalThis.localStorage = { getItem: () => JSON.stringify([{ id: 'saved', name: '保留皮肤', appearance }]) };
-      const skins = loadCustomSkins();
-      assert.equal(skins.length, 1);
-      assert.equal(skins[0].appearance.accent, expected);
-    }
-    assert.throws(() => parseCustomSkin(JSON.stringify({ theme: 'dark', background: 'solid', accent: 'invalid' })), /不支持的强调色/);
-  } finally { if (previous === undefined) delete globalThis.localStorage; else globalThis.localStorage = previous; }
 });

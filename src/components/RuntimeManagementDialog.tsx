@@ -100,9 +100,6 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
   </div>;
   return <Modal className="collab-runtime-management" ariaLabel="管理 Runtime" onClose={onClose}>
     <header><h3>管理 Runtime</h3><button type="button" className="btn secondary" onClick={onClose}>关闭</button></header>
-    <p>开关对整个应用生效。禁用后隐藏使用入口并阻止执行，历史数据保留。有运行中的会话或任务时，请先停止再禁用。</p>
-    <p>协作中心仅显示已启用且支持协作调度的 Runtime；仅原生聊天的 Runtime 可在原生聊天入口使用。</p>
-    <p>按住行或左侧拖动柄上下拖拽，也可使用右侧箭头。仅在分组内排序，松开后自动保存。</p>
     {(error || availability.error) && <p role="alert" className="collaboration-settings-error">{error || availability.error}</p>}
     {orderError && <p role="alert" className="collaboration-settings-error">{orderError}</p>}
     {!availability.ready && <button type="button" className="btn secondary" onClick={() => void availability.refresh()}>重新加载配置</button>}

@@ -26,31 +26,25 @@ function render(options, activeIndex = 0) {
   return { tree, nodes: visit(tree), selected, highlighted, effects, listRef };
 }
 
-test("紧凑菜单保留分组、全局键盘索引和原始 Agent/会话身份", () => {
+test("候选只展示具体 Agent，保留键盘索引及成员身份", () => {
   const options = [
-    { key: "all", token: "@All", kind: "all", description: "当前项目全部 Agent · 2 个实例", section: "群组", targetCount: 2 },
-    { key: "cli", token: "@ZCodeCLI", kind: "runtime", runtimeKind: "zcode_cli", description: "CLI Agent · 0 个实例", section: "群组", targetCount: 0 },
     { key: "agent", token: "@审查员", kind: "agent", agentId: "exact-agent", runtimeKind: "codex", description: "Codex · 审查", section: "具体 Agent", targetCount: 1 },
-    { key: "session", token: "@Codex-2", kind: "session", sessionId: "exact-session", runtimeKind: "codex", description: "Codex · 运行中", section: "终端会话", targetCount: 1 },
+    { key: "developer", token: "@开发员", kind: "agent", agentId: "developer", runtimeKind: "codex", description: "Codex · 开发", section: "具体 Agent", targetCount: 1 },
   ];
-  const h = render(options, 2);
+  const h = render(options, 1);
   const rows = h.nodes.filter((node) => node.props.role === "option");
-  assert.equal(rows.length, 4);
+  assert.equal(rows.length, 2);
   assert.equal(rows.filter((node) => node.props["aria-selected"]).length, 1);
-  assert.equal(rows[2].props.id, "fixture-list-option-2");
-  assert.equal(rows[1].props.disabled, undefined, "No project instances does not mean a runtime is unavailable");
-  rows[3].props.onClick();
-  assert.equal(h.selected[0], options[3], "Select the exact original object including session binding");
-  rows[2].props.onClick();
-  assert.equal(h.selected[1], options[2]);
+  assert.equal(rows[1].props.id, "fixture-list-option-1");
+  rows[1].props.onClick();
+  assert.equal(h.selected[0], options[1]);
+  rows[0].props.onClick();
+  assert.equal(h.selected[1], options[0]);
   rows[1].props.onMouseMove();
   assert.deepEqual(h.highlighted, [1]);
   let prevented = false;
   rows[1].props.onMouseDown({ preventDefault() { prevented = true; } });
-  assert.equal(prevented, true, "Clicking an option must preserve composer focus before insertion");
-  assert.equal(rows[1].props.children[2].props.children, "CLI Agent");
-  assert.equal(options[1].description, "CLI Agent · 0 个实例", "Display compaction must not mutate target metadata");
-  assert.equal(rows[1].props.children[3].props.children, 0);
+  assert.equal(prevented, true);
 });
 
 test("键盘选项超出可视区域时只滚动菜单结果区", () => {

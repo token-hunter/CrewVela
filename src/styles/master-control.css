@@ -309,7 +309,7 @@
 
 .multi-agent-mention-menu {
   position: absolute;
-  z-index: var(--z-float-raised);
+  z-index: var(--z-popover);
   right: 0;
   bottom: calc(100% + 5px);
   left: 0;
@@ -745,7 +745,7 @@
   letter-spacing: .08em;
 }
 
-.multi-agent-control .multi-agent-target-section > button {
+.multi-agent-control .multi-agent-target-section > [role="listbox"] > button {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) 22px;
   align-items: center;
@@ -759,13 +759,13 @@
   text-align: left;
 }
 
-.multi-agent-control .multi-agent-target-section > button:hover:not(:disabled),
-.multi-agent-control .multi-agent-target-section > button.selected {
+.multi-agent-control .multi-agent-target-section > [role="listbox"] > button:hover:not(:disabled),
+.multi-agent-control .multi-agent-target-section > [role="listbox"] > button.selected {
   border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
   background: transparent;
 }
 
-.multi-agent-target-section > button > i {
+.multi-agent-target-section > [role="listbox"] > button > i {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -778,12 +778,12 @@
   font-style: normal;
 }
 
-.multi-agent-target-section > button > i.runtime-logo-frame {
+.multi-agent-target-section > [role="listbox"] > button > i.runtime-logo-frame {
   border-color: transparent;
   background: transparent;
 }
 
-.multi-agent-target-section > button > i.runtime-logo-frame img {
+.multi-agent-target-section > [role="listbox"] > button > i.runtime-logo-frame img {
   display: block;
   width: 20px;
   height: 20px;
@@ -791,7 +791,7 @@
 }
 
 :root:not([data-theme="light"])
-  .multi-agent-target-section > button > i.runtime-logo-frame img:is(
+  .multi-agent-target-section > [role="listbox"] > button > i.runtime-logo-frame img:is(
   [data-runtime="pi"],
   [data-runtime="opencode"]
   ) {
@@ -799,18 +799,18 @@
   filter: invert(1);
 }
 
-.multi-agent-target-section > button.selected > i,
-.multi-agent-target-section > button.selected > svg {
+.multi-agent-target-section > [role="listbox"] > button.selected > i,
+.multi-agent-target-section > [role="listbox"] > button.selected > svg {
   color: var(--accent);
 }
 
-.multi-agent-target-section > button > span {
+.multi-agent-target-section > [role="listbox"] > button > span {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.multi-agent-target-section > button strong {
+.multi-agent-target-section > [role="listbox"] > button strong {
   overflow: hidden;
   color: var(--text);
   font-size: var(--text-xs);
@@ -818,7 +818,7 @@
   white-space: nowrap;
 }
 
-.multi-agent-target-section > button small {
+.multi-agent-target-section > [role="listbox"] > button small {
   overflow: hidden;
   color: var(--text-faint);
   font-size: var(--text-2xs);
@@ -826,7 +826,7 @@
   white-space: nowrap;
 }
 
-.multi-agent-target-section > button em {
+.multi-agent-target-section > [role="listbox"] > button em {
   color: var(--text-faint);
   font-size: var(--text-2xs);
   font-style: normal;
@@ -1282,7 +1282,6 @@
   margin-bottom: var(--space-10);
   padding: 11px;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
   border-radius: var(--radius);
   background: var(--bg-elev);
 }
@@ -2241,3 +2240,18 @@
   color: var(--text);
 }
 
+
+/* Member selection keeps explicit recipients visible while choosing several. */
+.multi-agent-target-section > [role="listbox"] { display: grid; gap: 2px; }
+.multi-agent-target-selection-header { display: flex; align-items: center; gap: 6px; padding: 5px 7px; }
+.multi-agent-target-selection-header > span { flex: 1; color: var(--text-faint); font-size: var(--text-2xs); }
+.multi-agent-target-selection-header > button,
+.multi-agent-mention-header > button { padding: 3px 8px; font-size: var(--text-xs); }
+.multi-agent-mention-header > button { margin-left: auto; }
+.multi-agent-target-section > [role="listbox"] > button > .multi-agent-target-checkbox {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border: 1px solid var(--border); border-radius: 4px;
+}
+.multi-agent-target-section > [role="listbox"] > button.selected > .multi-agent-target-checkbox {
+  border-color: var(--accent); color: var(--accent);
+}

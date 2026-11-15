@@ -5,7 +5,6 @@ import { SettingsDialog } from "../../src/components/SettingsDialog";
 import { DEFAULT_APPEARANCE } from "../../src/appearance";
 import { DEFAULT_PET_SETTINGS } from "../../src/petSettings";
 import { DEFAULT_NOTIFICATION_SETTINGS } from "../../src/notificationSettings";
-import { DEFAULT_COMPANION_SETTINGS } from "../../src/companionSettings";
 import type { ProviderConfig } from "../../src/types";
 import type { ProviderQuota } from "../../src/providerQuota";
 import "../../src/styles.css";
@@ -41,11 +40,11 @@ function Fixture() {
   const [providers, setProviders] = useState(initial);
   const [open, setOpen] = useState(true);
   const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
-  return <><output id="fixture-events" hidden />{open ? <SettingsDialog initialSection="providers" sessions={[]} archivedSessions={[]} projects={[]} providers={providers}
+  return <><output id="fixture-events" hidden />{open ? <SettingsDialog initialSection="providers" initialModelView="connections" sessions={[]} archivedSessions={[]} projects={[]} providers={providers}
     keyStates={Object.fromEntries(providers.map(p => [p.id, true]))} usageByProvider={{}}
     appearance={appearance} resolvedAppearanceTheme={document.documentElement.dataset.theme === "light" ? "light" : "dark"}
-    petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS} companionSettings={DEFAULT_COMPANION_SETTINGS}
-    onAppearanceChange={setAppearance} onPetSettingsChange={() => {}} onNotificationSettingsChange={() => {}} onCompanionSettingsChange={() => {}}
+    petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS}
+    onAppearanceChange={setAppearance} onPetSettingsChange={() => {}} onNotificationSettingsChange={() => {}}
     onEdit={p => record(`edit:${p.id}`)} onNew={() => record("new")}
     onDelete={id => { record(`delete:${id}`); setProviders(ps => ps.filter(p => p.id !== id)); }}
     onSetHidden={(id, hidden) => { record(`hidden:${id}:${hidden}`); setProviders(ps => ps.map(p => p.id === id ? { ...p, hidden } : p)); }}

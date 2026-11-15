@@ -30,7 +30,6 @@ mod zcode_communication_acceptance_tests;
 mod computer_control;
 pub mod computer_control_mcp;
 mod control;
-mod dynamic_skins;
 pub mod general_settings;
 mod git_source_control;
 mod keep_awake;
@@ -46,7 +45,6 @@ mod native_session_titles;
 mod native_zcode_sessions;
 mod harness_control;
 mod notification_history;
-mod open_computer_use;
 mod macos_computer_use;
 #[cfg(target_os = "macos")]
 mod macos_computer_use_install;
@@ -59,6 +57,7 @@ mod provider_quota;
 mod providers;
 mod pty;
 mod runtime_preferences;
+mod model_assignments;
 mod runtime_dependencies;
 mod runtime_admission;
 mod secrets;
@@ -507,6 +506,16 @@ fn list_providers() -> Result<Vec<ProviderConfig>, String> {
     providers::load().map(|f| f.providers).map_err(to_err)
 }
 
+#[tauri::command(async)]
+fn model_assignments_snapshot(store: State<'_, MultiAgentStore>, sessions: State<'_, SessionManager>) -> Result<model_assignments::Snapshot, String> {
+    model_assignments::snapshot(&store, &sessions).map_err(to_err)
+}
+
+#[tauri::command(async)]
+fn model_assignments_save(input: model_assignments::SaveInput, store: State<'_, MultiAgentStore>, sessions: State<'_, SessionManager>) -> Result<model_assignments::Snapshot, String> {
+    model_assignments::save(input, &store, &sessions).map_err(to_err)
+}
+
 #[tauri::command]
 fn get_provider(id: String) -> Result<Option<ProviderConfig>, String> {
     providers::get(&id).map_err(to_err)
@@ -558,34 +567,6 @@ fn save_provider(provider: ProviderConfig, key: Option<String>) -> Result<(), St
     Ok(())
 }
 
-#[tauri::command]
-fn import_dynamic_skin(
-    app: AppHandle,
-    source_path: String,
-) -> Result<dynamic_skins::ImportedDynamicSkin, String> {
-    dynamic_skins::import_mpkg(&app, &source_path).map_err(to_err)
-}
-
-#[tauri::command]
-fn delete_dynamic_skin(app: AppHandle, id: String) -> Result<(), String> {
-    dynamic_skins::delete_dynamic_skin(&app, &id).map_err(to_err)
-}
-
-#[tauri::command]
-fn attach_dynamic_skin_audio(
-    app: AppHandle,
-    id: String,
-    source_path: String,
-) -> Result<String, String> {
-    dynamic_skins::attach_dynamic_skin_audio(&app, &id, &source_path).map_err(to_err)
-}
-
-#[tauri::command]
-fn read_skin_config_file(source_path: String) -> Result<String, String> {
-    dynamic_skins::read_skin_config(&source_path).map_err(to_err)
-}
-
-// ---- 通知历史 ----
 
 #[tauri::command]
 async fn notification_history_list(
@@ -1665,7 +1646,7 @@ fn prepare_direct_collaboration_sessions(
                 .get(&candidate.id)
                 .ok_or_else(|| "会话已删除".to_string())?
         } else {
-            open_direct_collaboration_session(&candidate, pty_state, session_state)?
+            open_direct_collaboration_session(&candidate, pty_state, session_state, Some(store))?
         };
         if !was_running {
             started_titles.push(started.title.clone());
@@ -1801,6 +1782,7 @@ fn direct_collaboration_delivery(
         .collect::<Vec<_>>().join("\n");
     let instruction = match direction {
         Some((_, recipient)) => format!("这是单向通信指令：你是发送者，只给接收者（完整会话 ID：{recipient}）发送用户要求的消息；不要广播，也不要给接收者创建或规划新任务。"),
+        None if targets.len() > 1 && multi_agent::self_introduction_requested(message) => "本次是成员间介绍：每位参与者主动使用原会话通信工具，向名单中每个其他参与者发送一次用户要求的介绍内容；不要只在本地输出介绍。按当前会话的真实身份介绍，不冒充其他参与者，不编造对方回复。收到其他人的介绍后只在本地查看，不再发送确认或问候，不创建工程任务。".into(),
         None => "只联系下列其他参与者，不要向当前会话自身发送。其他参与者收到的是各自的协作指令；不要冒充它们或编造其回复。".into(),
     };
     format!(
@@ -2526,7 +2508,7 @@ fn ma_start_project(
         .filter(|agent| agent.runtime_kind.is_retired())
         .map(|agent| agent.id.as_str())
         .collect::<HashSet<_>>();
-    if snapshot.tasks.iter().any(|task| {
+    let retired_task_count = snapshot.tasks.iter().filter(|task| {
         task.assignee_agent_id
             .as_deref()
             .is_some_and(|id| removed_agents.contains(id))
@@ -2534,17 +2516,23 @@ fn ma_start_project(
                 task.status,
                 multi_agent::TaskStatus::Done | multi_agent::TaskStatus::Cancelled
             )
-    }) {
-        return Err("项目仍有任务指派给已移除的 Runtime；请先改派后再启动".to_string());
-    }
-    supervisor
+    }).count();
+    // Historical assignments stay intact. The scheduler excludes retired members
+    // and keeps their dependents blocked, while independent work can proceed.
+    let mut receipt = supervisor
         .start(
             store.inner().clone(),
             project_id,
             multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()),
             collaboration_bridge.inner().clone(),
         )
-        .map_err(to_err)
+        .map_err(to_err)?;
+    if receipt.accepted && retired_task_count > 0 {
+        receipt.message.push_str(&format!(
+            "；另有 {retired_task_count} 个任务仍指派给已移除的 Runtime，已保留且不会执行，请改派后继续；依赖这些任务的工作仍需等待"
+        ));
+    }
+    Ok(receipt)
 }
 
 #[tauri::command]
@@ -2689,6 +2677,10 @@ fn open_session(
     // "No conversation found with session ID" 退出。退化为 --session-id
     // 全新启动：同一 session id，等价于把会话重新拉起来。
     let resume = resume && crate::usage::transcript_path(record).is_some_and(|path| path.exists());
+    session_state.record_model_assignment(&record.id, model_assignments::ResolvedSelection {
+        connection_id: provider.id.clone(), model: provider.env.get("ANTHROPIC_MODEL").cloned(),
+        source: if record.launch_model.is_some() { "session" } else { "session_connection" }.into(),
+    }).map_err(to_err)?;
     // MCP 管理页启用的 server 注入本次会话；配置读取失败不阻塞会话启动。
     let mcp_servers = crate::mcp::enabled_claude_map().unwrap_or_else(|error| {
         eprintln!("[crewvela] 读取 MCP 配置失败：{error:#}");
@@ -3308,7 +3300,7 @@ fn open_runtime_session_with_yolo(
     session_state: &SessionManager,
     yolo: bool,
 ) -> Result<SessionRecord, String> {
-    open_runtime_session_checked(record, pty_state, session_state, yolo, None)
+    open_runtime_session_checked(record, pty_state, session_state, yolo, None, None)
 }
 
 fn open_runtime_session_for_switch(
@@ -3317,7 +3309,7 @@ fn open_runtime_session_for_switch(
     session_state: &SessionManager,
     switch_id: &str,
 ) -> Result<SessionRecord, String> {
-    open_runtime_session_checked(record, pty_state, session_state, false, Some(switch_id))
+    open_runtime_session_checked(record, pty_state, session_state, false, Some(switch_id), None)
 }
 
 fn open_runtime_session_checked(
@@ -3326,6 +3318,7 @@ fn open_runtime_session_checked(
     session_state: &SessionManager,
     yolo: bool,
     switch_id: Option<&str>,
+    member_store: Option<&MultiAgentStore>,
 ) -> Result<SessionRecord, String> {
     let _admission = pty_state.admit_start().map_err(to_err)?;
     let yolo = session_switch::check_runtime_start(&record.id, yolo, switch_id).map_err(to_err)?;
@@ -3359,7 +3352,13 @@ fn open_runtime_session_checked(
         .configure_runtime_resume(&mut command, record)
         .map_err(to_err)?;
     configure_runtime_communication(kind, &mut command, record, session_state)?;
-    automation_runtime::configure_model(kind, &mut command, record.launch_model.as_deref()).map_err(to_err)?;
+    let selection = match member_store {
+        Some(store) => model_assignments::for_session(record, store),
+        None => model_assignments::for_runtime(kind.as_str(), record.launch_model.as_deref()),
+    }.map_err(to_err)?;
+    model_assignments::configure_connection(&mut command, kind.as_str(), &selection).map_err(to_err)?;
+    model_assignments::configure_model(&mut command, kind.as_str(), selection.model.as_deref()).map_err(to_err)?;
+    session_state.record_model_assignment(&record.id, selection).map_err(to_err)?;
     session_switch::configure_target(&mut command, record).map_err(to_err)?;
     if yolo {
         configure_yolo_runtime_command(kind, &mut command, record, session_state)?;
@@ -5427,7 +5426,7 @@ fn execute_automation_action_tracked(
             session_state.set_runtime_command_host(&session.id, true).map_err(to_err)?;
             return session_state.get(&session.id).ok_or_else(|| "目标会话已删除".to_string());
         }
-        open_direct_collaboration_session(&session, pty_state, session_state)
+        open_direct_collaboration_session(&session, pty_state, session_state, Some(store))
     }
 
     match action {
@@ -5805,6 +5804,7 @@ fn open_direct_collaboration_session(
     record: &SessionRecord,
     pty_state: &PtyManager,
     session_state: &SessionManager,
+    store: Option<&MultiAgentStore>,
 ) -> Result<SessionRecord, String> {
     // Auto-wakeup must not cross a stop/transfer/restore with an obsolete snapshot.
     let lifecycle = session_state.lifecycle_lock(&record.id);
@@ -5834,7 +5834,7 @@ fn open_direct_collaboration_session(
             session_state,
         );
     }
-    open_runtime_session_with_yolo(&record, pty_state, session_state, record.yolo)
+    open_runtime_session_checked(&record, pty_state, session_state, record.yolo, None, store)
 }
 
 fn persist_cli_collaboration_message_with_id(
@@ -6219,6 +6219,9 @@ pub fn run() {
             if !test_profile::active() { if let Err(error) = windows_notification::initialize() {
                 eprintln!("[crewvela] 初始化 Windows 通知身份失败：{error:#}");
             } }
+            if let Err(error) = mcp::retire_removed_integrations_at(&config_dir) {
+                eprintln!("[crewvela] 清理已移除集成的旧配置失败：{error:#}");
+            }
             runtime_preferences::get()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             let runtime_admission = runtime_admission::RuntimeAdmission::default();
@@ -6386,11 +6389,9 @@ pub fn run() {
             git_merge_abort,
             git_remote,
             git_generate_commit_message,
-            import_dynamic_skin,
-            delete_dynamic_skin,
-            attach_dynamic_skin_audio,
-            read_skin_config_file,
             list_providers,
+            model_assignments_snapshot,
+            model_assignments_save,
             get_provider_quota,
             notification_history_list,
             notification_history_append,
@@ -6415,8 +6416,6 @@ pub fn run() {
             computer_control::computer_control_save,
             kimi_computer_use::kimi_computer_use_get,
             kimi_computer_use::kimi_computer_use_save,
-            open_computer_use::open_computer_use_get,
-            open_computer_use::open_computer_use_save,
             macos_computer_use::macos_computer_use_action,
             macos_computer_use::macos_computer_use_install,
             general_settings::general_settings_get,
@@ -6824,6 +6823,74 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn project_start_keeps_retired_tasks_without_blocking_available_members() {
+        let (root, sessions) = lifecycle_fixture();
+        runtime_preferences::with_disabled_for_test(multi_agent::AgentRuntimeKind::Pi, || {
+            let database = root.join("control.db");
+            let store = MultiAgentStore::open_at(database.clone()).unwrap();
+            let project = store.create_project(CreateProjectInput {
+                name: "mixed runtime project".into(), goal: "preserve legacy tasks".into(),
+                root_path: root.display().to_string(), default_branch: "main".into(),
+            }).unwrap();
+            let create_agent = |name: &str| store.create_agent(serde_json::from_value(serde_json::json!({
+                "projectId": project.id, "name": name, "runtimeKind": "codex", "role": "worker"
+            })).unwrap()).unwrap();
+            let legacy = create_agent("legacy");
+            let current = create_agent("current");
+            let create_task = |name: &str, agent: &str| store.create_task(serde_json::from_value(serde_json::json!({
+                "projectId": project.id, "title": name, "acceptanceCriteria": "fixture",
+                "assigneeAgentId": agent, "workspaceMode": "read_only"
+            })).unwrap()).unwrap();
+            let old = create_task("legacy work", &legacy.id);
+            let dependent = create_task("wait for legacy work", &current.id);
+            store.add_dependency(multi_agent::AddDependencyInput {
+                task_id: dependent.id.clone(), depends_on_task_id: old.id.clone(),
+            }).unwrap();
+            let connection = rusqlite::Connection::open(&database).unwrap();
+            connection.execute("UPDATE ma_agents SET runtime_kind='removed_runtime' WHERE id=?1", [&legacy.id]).unwrap();
+            drop(connection);
+            drop(store);
+            let store = MultiAgentStore::open_at(database).unwrap();
+            let before = store.snapshot(&project.id).unwrap();
+            let app = tauri::test::mock_app();
+            app.manage(store.clone());
+            app.manage(MultiAgentSupervisor::default());
+            app.manage(PtyManager::new());
+            app.manage(sessions.clone());
+            app.manage(CollaborationBridge::start(store.clone()).unwrap());
+            let receipt = ma_start_project(project.id.clone(), app.state(), app.state(), app.state(), app.state(), app.state())
+                .expect("historical retired work must not prevent starting available members");
+            assert!(receipt.accepted);
+            assert!(receipt.message.contains("1 个任务"), "{}", receipt.message);
+            assert!(app.state::<MultiAgentSupervisor>().pause(&store, &project.id).unwrap().accepted);
+            let after = store.snapshot(&project.id).unwrap();
+            assert_eq!(after.tasks.len(), before.tasks.len());
+            for previous in &before.tasks {
+                let task = after.tasks.iter().find(|task| task.id == previous.id).unwrap();
+                assert_eq!(task.status, previous.status);
+                assert_eq!(task.assignee_agent_id, previous.assignee_agent_id);
+            }
+            assert!(sessions.list().iter().any(|session| session.multi_agent_agent_id.as_deref() == Some(&current.id)));
+            assert!(!sessions.list().iter().any(|session| session.multi_agent_agent_id.as_deref() == Some(&legacy.id)));
+            assert!(store.runnable_tasks(&project.id).unwrap().is_empty(), "legacy dependencies must still block dependents");
+            assert!(store.claim_task(multi_agent::ClaimTaskInput {
+                task_id: old.id, agent_id: legacy.id, lease_seconds: 60,
+            }).is_err());
+            let independent = store.create_task(serde_json::from_value(serde_json::json!({
+                "projectId": project.id, "title": "new independent task", "acceptanceCriteria": "fixture",
+                "assigneeAgentId": current.id, "workspaceMode": "read_only"
+            })).unwrap()).unwrap();
+            store.route_runnable_tasks(&project.id).unwrap();
+            assert!(store.runnable_tasks(&project.id).unwrap().iter().any(|(task, _)| task.id == independent.id));
+            store.set_project_status(&project.id, multi_agent::ProjectStatus::Active).unwrap();
+            let run = store.claim_task(multi_agent::ClaimTaskInput {
+                task_id: independent.id.clone(), agent_id: current.id, lease_seconds: 60,
+            }).unwrap();
+            assert_eq!(run.task_id, independent.id);
+        });
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn audit_blocking_commands_leave_the_event_loop_responsive_and_preserve_errors() {
         let (release, wait) = std::sync::mpsc::channel();
@@ -7789,6 +7856,40 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    #[ignore = "launches installed Codex with real configuration; does not send a model prompt"]
+    fn real_codex_startup_becomes_ready_after_update_skip() {
+        let root = std::env::temp_dir().join(format!("crewvela-codex-ready-{}", uuid::Uuid::new_v4()));
+        let sessions = SessionManager::open_at(root.join("sessions.json"), root.join("events")).unwrap();
+        let record = sessions.create_runtime(sessions::NewRuntimeSession {
+            runtime_kind: "codex".into(), cwd: root.display().to_string(), project_id: None,
+        }).unwrap();
+        let ptys = PtyManager::new();
+        let started = open_runtime_session(&record, &ptys, &sessions).unwrap();
+        let id = started.pty_id.unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+        let mut skipped = false;
+        while ptys.is_running(id) && std::time::Instant::now() < deadline {
+            mark_interactive_runtime_prompts(&ptys.poll_all(), &sessions);
+            let output = String::from_utf8_lossy(&ptys.transcript_tail(id, 128 * 1024).unwrap()).into_owned();
+            if !skipped && output.contains("Update now") && output.contains("Skip") {
+                ptys.write(id, b"\x1b").unwrap();
+                skipped = true;
+            }
+            if sessions.is_ready_for_prompt(&record.id) { break; }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let output = String::from_utf8_lossy(&ptys.transcript_tail(id, 128 * 1024).unwrap()).into_owned();
+        let ready = sessions.is_ready_for_prompt(&record.id);
+        let blocked = sessions.runtime_prompt_is_blocked(&record.id);
+        ptys.kill(id).unwrap();
+        let evidence = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.scratch/codex-delivery-hook");
+        std::fs::create_dir_all(&evidence).unwrap();
+        std::fs::write(evidence.join("codex-startup-raw.log"), &output).unwrap();
+        assert!(ready, "installed Codex composer never became input-ready; update_skipped={skipped}, blocked={blocked}; see .scratch/codex-delivery-hook/codex-startup-raw.log");
+    }
+
+    #[cfg(windows)]
+    #[test]
     #[ignore = "launches installed interactive Codex locally, without sending a prompt"]
     fn real_codex_interactive_startup_reaches_tui_without_exit() {
         let root = std::env::temp_dir().join(format!("crewvela-codex-startup-{}", uuid::Uuid::new_v4()));
@@ -7909,6 +8010,46 @@ mod tests {
             .pty_id
             .is_none());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn colloquial_three_member_chat_reuses_exact_roster_and_broadcasts_to_each() {
+        let (root, sessions) = lifecycle_fixture();
+        let create = |runtime: &str, agent: &str, name: &str| {
+            sessions.create_agent(sessions::NewAgentSession {
+                avatar_id: None, project_id: "project-a".into(), agent_id: agent.into(),
+                runtime_kind: runtime.into(), agent_name: name.into(), cwd: root.display().to_string(),
+            }).unwrap()
+        };
+        let claude = create("claude_code", "claude", "模型验收-Claude");
+        let codex = create("codex", "codex", "模型验收-Codex");
+        let zcode = create("zcode_cli", "zcode", "聊天-ZCodeCLI");
+        let reviewer = create("codex", "reviewer", "语义复核员");
+        for (message, exact_members) in [
+            ("@ClaudeCode @Codex @ZCodeCLI 你们三个聊下", false),
+            ("@模型验收-Claude @模型验收-Codex @聊天-ZCodeCLI 你三聊个天", true),
+        ] {
+            let request = direct_message_request(message).expect("chat must bypass the engineering planner");
+            let explicit = [AgentRuntimeKind::ClaudeCode, AgentRuntimeKind::Codex, AgentRuntimeKind::ZCodeCli];
+            let runtimes = direct_collaboration_runtimes(message, Some(&request), exact_members, (!exact_members).then_some(explicit.as_slice()));
+            let ids = if exact_members { vec!["claude".into(), "codex".into(), "zcode".into()] } else { Vec::new() };
+            let targets = resolve_direct_collaboration_sessions(&[claude.clone(), codex.clone(), zcode.clone(), reviewer.clone()], Some("project-a"), &runtimes, &ids, &[]).unwrap();
+            // Runtime groups can contain several matching members; exact mentions must not expand.
+            if exact_members { assert_eq!(targets.len(), 3); assert!(!targets.iter().any(|s| s.id == reviewer.id)); }
+            let direction = resolve_direct_message_direction(Some(&request), &targets).unwrap();
+            assert_eq!(direction, None);
+            let recipients = direct_message_execution_sessions(&targets, direction);
+            assert_eq!(recipients.len(), targets.len());
+            for current in recipients {
+                let delivery = direct_collaboration_delivery(message, &targets, current, direction);
+                assert!(delivery.contains(message));
+                for other in targets.iter().filter(|s| s.id != current.id) {
+                    assert!(delivery.contains(&format!("完整会话 ID：{}", other.id)));
+                }
+            }
+        }
+        drop(sessions);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -8568,6 +8709,12 @@ mod tests {
         assert!(sessions.is_ready_for_prompt(&record.id), "completed Codex must not retain the previous turn's busy blocker");
         mark_interactive_runtime_prompts(&frame("\x1b[0m\x1b[?25h"), &sessions);
         assert!(sessions.is_ready_for_prompt(&record.id), "cursor-only rendering must not revoke confirmed completion");
+        mark_interactive_runtime_prompts(&frame("\x1b[H\x1b[1;1H\x1b[0m"), &sessions);
+        assert!(sessions.is_ready_for_prompt(&record.id), "moving the cursor home does not replace the screen or revoke a completed turn");
+        mark_interactive_runtime_prompts(&frame("\x1b[H\x1b[0Junknown replacement screen"), &sessions);
+        assert!(!sessions.is_ready_for_prompt(&record.id), "home followed by display erasure must revoke readiness");
+        mark_interactive_runtime_prompts(&frame("\x1b]7501;state=done:app=codex\x1b\\"), &sessions);
+        assert!(sessions.is_ready_for_prompt(&record.id));
         mark_interactive_runtime_prompts(&frame("Working (3s · esc to interrupt) · Running hooks\n› Ask Codex to do anything\n"), &sessions);
         assert!(!sessions.is_ready_for_prompt(&record.id));
         mark_interactive_runtime_prompts(&frame("\x1b]7501;state=done:app=codex\x1b\\"), &sessions);

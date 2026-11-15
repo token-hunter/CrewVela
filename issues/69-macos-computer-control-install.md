@@ -26,3 +26,7 @@ KimiCU0.7.6只读service-status/xpc-ping检查显示服务与权限正常。Node
 ## 用户验收
 
 权限诊断修复版ARM64 DMG已通过完整性、严格签名、版本与构建源码一致性检查；用户安装测试后确认没有问题，授权提交、合并main并推送GitHub。
+
+## 后续范围调整（2026-11-15）
+
+以上为历史验收记录。Open Computer Use 支持已按用户要求移除，当前保留 KimiCU；见 issues/71-remove-open-computer-use.md、docs/macos-computer-control.md。

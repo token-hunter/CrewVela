@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::model_assignments::find_claude_provider;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -65,6 +67,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
 }
 
 pub struct RuntimeRequest {
+    pub model_selection: crate::model_assignments::ResolvedSelection,
     pub run_id: String,
     pub cwd: PathBuf,
     pub project: MultiAgentProject,
@@ -201,6 +204,7 @@ impl AgentTerminalHost {
             cwd: request.cwd.display().to_string(),
         })?;
         self.sessions.set_runtime_command_host(&session.id, true)?;
+        self.sessions.record_model_assignment(&session.id, request.model_selection.clone())?;
         let environment = command.get_envs().map(|(key, value)| (key.to_os_string(), value.map(|value| value.to_os_string()))).collect();
         let pty_id = self.ensure_environment_terminal(&session, &request.cwd, environment)?;
         session = self.sessions.attach_runtime(&session.id, pty_id)?;
@@ -295,6 +299,7 @@ impl AgentTerminalHost {
                 self.sessions
                     .configure_pi_readiness(&mut native_command, &session.id)?;
             }
+            self.sessions.record_model_assignment(&session.id, request.model_selection.clone())?;
             let id = self.pty.open_agent_program(
                 &native_command,
                 &session.id,
@@ -1115,7 +1120,12 @@ impl MultiAgentSupervisor {
         let registry = if message { &self.message_projects } else { &self.projects };
         let mut projects = registry.lock().unwrap();
         anyhow::ensure!(!self.shutting_down.load(Ordering::Acquire), "应用正在退出，不能启动协作执行或消息投递");
-        if projects.contains_key(project_id) { return Ok(false); }
+        if let Some(current) = projects.get(project_id) {
+            if !message && current.load(Ordering::Acquire) {
+                anyhow::bail!("项目调度器正在停止，请等待停止完成后重试启动");
+            }
+            return Ok(false);
+        }
         projects.insert(project_id.to_owned(), Arc::clone(cancelled));
         Ok(true)
     }
@@ -1149,8 +1159,8 @@ impl MultiAgentSupervisor {
             if !self.register_start(&project_id, &cancelled, false)? {
                 return Ok(ProjectExecutionReceipt {
                     project_id,
-                    accepted: false,
-                    message: "项目调度器已在运行".to_string(),
+                    accepted: true,
+                    message: "项目调度器正在启动或运行，已复用现有调度".to_string(),
                 });
             }
         }
@@ -1599,6 +1609,9 @@ fn execute_run(
             return Err(error);
         }
     };
+    let model_selection = crate::model_assignments::for_agent(&agent, store, &terminal_host.sessions)?;
+    let mut agent = agent;
+    agent.model = model_selection.model.clone();
     let mut task = task;
     task.workspace_mode = execution_workspace_mode(&task, agent.runtime_kind);
     if let Err(error) = validate_readonly_runtime(task.workspace_mode, agent.runtime_kind) {
@@ -1609,7 +1622,7 @@ fn execute_run(
     let _ = store.append_runtime_event(super::AppendRuntimeEventInput {
         run_id: run_id.clone(),
         event_type: "starting".to_string(),
-        payload: serde_json::json!({"taskTitle": task.title, "runtime": agent.runtime_kind}),
+        payload: serde_json::json!({"taskTitle": task.title, "runtime": agent.runtime_kind, "modelAssignment": &model_selection}),
     });
     let _ = store.append_run_log(&run_id, "system", &format!("准备执行任务：{}", task.title));
     let message_turn = task.id.starts_with("cli-message-");
@@ -1692,6 +1705,7 @@ fn execute_run(
     }, &agent.id)?;
     let collaboration_messages = store.scoped_messages(&project.id, &task.id, &agent.id, 50)?;
     let request = RuntimeRequest {
+        model_selection,
         run_id: run_id.clone(),
         cwd: cwd.clone(),
         project,
@@ -2504,7 +2518,7 @@ fn execute_preferred_acp(
     if kind != ManagedAcpKind::DeepSeekHarness && request_requires_session_cli(request)? {
         return Ok(None);
     }
-    if kind != ManagedAcpKind::DeepSeekHarness && request.agent.model.is_some() {
+    if kind != ManagedAcpKind::DeepSeekHarness && (request.agent.model.is_some() || request.model_selection.connection_id != "local") {
         let _ = request.store.append_run_log(
             &request.run_id,
             "system",
@@ -2548,6 +2562,7 @@ fn execute_preferred_acp(
     request
         .store
         .link_agent_app_session(&request.project.id, &request.agent.id, &session.id)?;
+    request.terminal_host.sessions.record_model_assignment(&session.id, request.model_selection.clone())?;
     request
         .terminal_host
         .sessions
@@ -4357,37 +4372,9 @@ fn configure_claude_provider(
     command: &mut Command,
     request: &RuntimeRequest,
 ) -> Result<Option<crate::providers::ProviderConfig>> {
-    let Some(hint) = request
-        .agent
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    else {
-        return Ok(None);
-    };
-    let providers = crate::providers::load()?.providers;
-    let Some(provider) = find_claude_provider(hint, &providers) else {
-        return Ok(None);
-    };
-    crate::launcher::validate_provider(provider).map_err(anyhow::Error::msg)?;
-    let key = crate::secrets::get(&provider.auth_token_ref)?
-        .ok_or_else(|| anyhow!("Provider {} 尚未配置 API Key", provider.name))?;
-    for variable in crate::launcher::CLEAR_VARS {
-        command.env_remove(variable);
-    }
-    command.envs(crate::launcher::build_env(provider, &key));
-    Ok(Some(provider.clone()))
+    crate::model_assignments::configure_connection(command, "claude_code", &request.model_selection)
 }
 
-fn find_claude_provider<'a>(
-    hint: &str,
-    providers: &'a [crate::providers::ProviderConfig],
-) -> Option<&'a crate::providers::ProviderConfig> {
-    providers.iter().find(|provider| {
-        provider.id.eq_ignore_ascii_case(hint) || provider.name.eq_ignore_ascii_case(hint)
-    })
-}
 
 fn session_cli_prompt(project_id: &str) -> String {
     let cli = std::env::current_exe()
@@ -4653,9 +4640,11 @@ fn codex_native_prompt_ready(raw: &str) -> bool {
     !blocked_after_composer && (legacy_ready || current_ready)
 }
 
-fn codex_native_update_prompt(raw: &str) -> bool {
+pub(crate) fn codex_native_update_prompt(raw: &str) -> bool {
     let plain = strip_terminal_control_sequences(raw).to_ascii_lowercase();
-    plain.contains("update available")
+    // Cursor-based redraws may emit only fragments of the banner (e.g.
+    // "Updat available"). Identify the actionable menu, not its decorative title.
+    plain.contains("update now")
         && plain.contains("skip")
         && (plain.contains("press enter to continue") || plain.contains("enter continue"))
 }
@@ -5316,6 +5305,34 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+
+    #[test]
+    fn repeated_project_start_reuses_the_existing_scheduler() {
+        let root = std::env::temp_dir().join(format!("supervisor-idempotent-{}", uuid::Uuid::new_v4()));
+        let store = MultiAgentStore::open_at(PathBuf::from(":memory:")).unwrap();
+        let project = store.create_project(super::super::CreateProjectInput { name:"repeat".into(), goal:"reuse scheduler".into(), root_path:root.display().to_string(), default_branch:"main".into() }).unwrap();
+        let sessions = SessionManager::open_at(root.join("sessions.json"), root.join("events")).unwrap();
+        let supervisor = MultiAgentSupervisor::default();
+        let original = Arc::new(AtomicBool::new(false));
+        supervisor.projects.lock().unwrap().insert(project.id.clone(), Arc::clone(&original));
+        let receipt = supervisor.start(store.clone(), project.id.clone(), AgentTerminalHost::new(PtyManager::new(), sessions.clone()), CollaborationBridge::start(store.clone()).unwrap()).unwrap();
+        assert!(receipt.accepted, "an existing scheduler must not turn auto-start into a failure");
+        assert!(Arc::ptr_eq(supervisor.projects.lock().unwrap().get(&project.id).unwrap(), &original));
+        assert_eq!(supervisor.active_project_ids(), vec![project.id.clone()]);
+        assert!(sessions.list().is_empty(), "reuse must not prepare another set of sessions");
+        assert_eq!(store.project(&project.id).unwrap().status, project.status);
+        assert!(store.snapshot(&project.id).unwrap().tasks.is_empty());
+        drop(store); drop(sessions); std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn repeated_project_start_does_not_accept_a_stopping_scheduler() {
+        let supervisor = MultiAgentSupervisor::default();
+        let original = Arc::new(AtomicBool::new(true));
+        supervisor.projects.lock().unwrap().insert("project".into(), Arc::clone(&original));
+        assert!(supervisor.register_start("project", &Arc::new(AtomicBool::new(false)), false).is_err());
+        assert!(Arc::ptr_eq(supervisor.projects.lock().unwrap().get("project").unwrap(), &original));
+    }
 
     #[test]
     fn supervisor_shutdown_fences_both_registries_and_restores_after_failure() {

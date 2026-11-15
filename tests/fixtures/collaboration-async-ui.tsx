@@ -32,7 +32,7 @@ const fixture = { calls, pending, holdReads: false,
     if (command === "plugin:event|listen") return Promise.resolve(1);
     if (command === "ma_list_projects") return Promise.resolve([{ id: "project-A", name: "project-A" }, { id: "project-B", name: "project-B" }]);
     if (command === "ma_probe_runtimes") return Promise.resolve([{ kind: "codex", installed: true, executable: "/fixture/codex", version: "fixture", protocol: "cli", capabilities: [], error: null }]);
-    if (["browser_control_get", "browser_control_save", "computer_control_get", "computer_control_save", "kimi_computer_use_get", "kimi_computer_use_save", "open_computer_use_get", "open_computer_use_save", "general_settings_get", "general_settings_save", "fixture_save_agent", "ma_takeover_agent", "ma_return_agent_control", "send_session_message", "respond_session_approval", "create_automation"].includes(command) || (mode === "automation" && command === "ma_snapshot") || (fixture.holdReads && ["list_approval_cards", "ma_list_interventions"].includes(command))) {
+    if (["browser_control_get", "browser_control_save", "computer_control_get", "computer_control_save", "kimi_computer_use_get", "kimi_computer_use_save", "general_settings_get", "general_settings_save", "fixture_save_agent", "ma_takeover_agent", "ma_return_agent_control", "send_session_message", "respond_session_approval", "create_automation"].includes(command) || (mode === "automation" && command === "ma_snapshot") || (fixture.holdReads && ["list_approval_cards", "ma_list_interventions"].includes(command))) {
       return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
     }
     if (command === "ma_snapshot") return Promise.resolve({ project: { id: args.projectId, name: args.projectId }, agents: members.map(member => ({ id: member.id, name: member.id, runtimeKind: member.runtimeKind, enabled: true, capabilities: [] })), agentSessions: members.map(member => ({ agentId: member.id, appSessionId: member.id })), messages: [], runs: [], tasks: mode === "workspace" ? [{ id: "task", assigneeAgentId: "acp", status: "running" }] : [], events: [], runtimeEvents: [], artifacts: [], memories: [] });
@@ -51,7 +51,7 @@ const fixture = { calls, pending, holdReads: false,
     if (error) item.reject(new Error(error));
     else if (command.startsWith("general_settings_")) item.resolve({ settings: item.args?.settings ?? { ...DEFAULT_GENERAL_SETTINGS, terminalFontSize: 28 }, proxyEnvActive: false, keepAwakeActive: false, warning: null });
     else if (command.startsWith("browser_control_")) item.resolve({ settings: item.args?.settings ?? DEFAULT_BROWSER_CONTROL_SETTINGS, engine: "fixture", resolvedBrowser: "fixture", warning: null });
-    else if (/^(computer_control|kimi_computer_use|open_computer_use)_/.test(command)) item.resolve({ settings: item.args?.settings ?? { enabled: false }, runtime: "fixture", warning: null });
+    else if (/^(computer_control|kimi_computer_use)_/.test(command)) item.resolve({ settings: item.args?.settings ?? { enabled: false }, runtime: "fixture", warning: null });
     else item.resolve(null);
   },
   finishReadsNewestFirst() {

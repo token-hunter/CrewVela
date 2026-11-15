@@ -26,10 +26,12 @@ if (new URLSearchParams(window.location.search).has("curation")) {
   snapshot.marketplaces = candidates.map(market => ({ ...market, plugins: market.plugins.filter(plugin => snapshot.selectedPluginIds!.includes(`${plugin.name}@${market.id}`)) }));
 }
 const calls: { cmd: string; args: any }[] = [];
+let failLoad = new URLSearchParams(location.search).has("load-error");
 const pending: Array<{ cmd: string; resolve: () => void; reject: (error: Error) => void }> = [];
 Object.assign(window, { __pluginPending: pending, __pluginHolds: new URLSearchParams(location.search).has("delay-load") ? ["plugin_market_snapshot"] : [] });
 Object.assign(window, { __pluginCalls: calls, __pluginSnapshot: snapshot, __TAURI_INTERNALS__: { invoke: async (cmd: string, args: any) => {
   calls.push({ cmd, args });
+  if (cmd === "plugin_market_snapshot" && failLoad) { failLoad = false; throw new Error("测试目录加载失败"); }
   const captured = cmd === "plugin_market_snapshot" ? structuredClone(snapshot) : null;
   if ((window as any).__pluginHolds.includes(cmd)) await new Promise<void>((resolve, reject) => pending.push({ cmd, resolve, reject }));
   if (cmd === "plugin_market_add_official") {
@@ -67,5 +69,8 @@ Object.assign(window, { __pluginCalls: calls, __pluginSnapshot: snapshot, __TAUR
   if (cmd === "plugin_market_add" || cmd === "plugin_market_refresh") return {};
   throw new Error(`Unexpected command ${cmd}`);
 } } });
-document.body.style.cssText = "margin:0;background:#1e1e1e;color:#eee;font-family:system-ui;";
-createRoot(document.getElementById("root")!).render(<div style={{ maxWidth: 1200, margin: "0 auto", padding: 32 }}><header style={{ fontSize: 26, borderBottom: "1px solid #393939", paddingBottom: 18, marginBottom: 18 }}>插件市场</header><PluginMarketPanel projects={[{ id: "demo", name: "测试项目", path: "F:/project/demo", badgeColor: "", createdAt: 0, updatedAt: 0 }]} /></div>);
+document.documentElement.dataset.theme = "dark";
+createRoot(document.getElementById("root")!).render(<div className="settings-overlay"><div className="settings-dialog" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", maxWidth: "none", maxHeight: "none" }}>
+  <aside className="settings-nav"><div className="settings-brand">设置</div><div style={{ margin: "12px 0 24px", padding: 10, border: "1px solid var(--border)", borderRadius: 7, color: "var(--text-dim)", fontSize: 13 }}>搜索设置</div><nav className="settings-nav-list">{["常规", "外观", "模型设置", "协作中心", "共享记忆", "自动化", "浏览器控制", "电脑控制", "插件市场", "Skills", "MCP"].map(label => <span className={"settings-nav-item" + (label === "插件市场" ? " active" : "")} key={label}>{label}</span>)}</nav><small style={{ display: "block", marginTop: 24, color: "var(--text-faint)" }}>隔离 Mock · 不会实际安装</small></aside>
+  <div className="settings-content"><div className="settings-content-inner"><div className="settings-heading"><h2>插件市场</h2></div><PluginMarketPanel projects={[{ id: "demo", name: "测试项目", path: "F:/project/demo", badgeColor: "", createdAt: 0, updatedAt: 0 }]} /></div></div>
+</div></div>);

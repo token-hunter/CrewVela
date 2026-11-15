@@ -21,3 +21,7 @@ Status: ready-for-human
 - 官方源码核对 Open Computer Use doctor --no-ui JSON；官方 KimiCU.app.zip 元数据确认 ai.kimi.cu / kimi-cu / macOS 14.0 / arm64（本次包 0.7.3），只读检查，未安装运行。
 - Mac 原生构建、Finder 启动、系统授权、后台服务及真实 MCP/截图/点击/输入未验证；不将网页 Mock 或 Windows 编译结果当作 Mac 验收。
 - 未提交、未推送、未打包，仓库可见性未变更。
+
+## 后续范围调整（2026-11-15）
+
+以上为历史验收记录。Open Computer Use 支持已按用户要求移除，当前保留 KimiCU；见 issues/71-remove-open-computer-use.md、docs/macos-computer-control.md。

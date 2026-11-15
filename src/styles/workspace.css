@@ -584,14 +584,7 @@
   color: var(--text);
 }
 
-:root[data-deep-skin] .archived-sessions {
-  border-top-color: var(--deep-skin-line);
-}
 
-:root[data-deep-skin] .archived-session-item:hover {
-  border-color: var(--deep-skin-line);
-  background: var(--deep-skin-card);
-}
 
 .rail-badge {
   position: absolute;

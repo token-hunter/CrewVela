@@ -15,14 +15,13 @@ import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
 import { MonitorIcon } from "@phosphor-icons/react/dist/csr/Monitor";
-import { BooksIcon } from "@phosphor-icons/react/dist/csr/Books";
+import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
 import { PlugsIcon } from "@phosphor-icons/react/dist/csr/Plugs";
 import { PackageIcon } from "@phosphor-icons/react/dist/csr/Package";
 import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { SlidersIcon } from "@phosphor-icons/react/dist/csr/Sliders";
-import { SquaresFourIcon } from "@phosphor-icons/react/dist/csr/SquaresFour";
 import { StopIcon } from "@phosphor-icons/react/dist/csr/Stop";
 import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
@@ -66,7 +65,7 @@ const SIDEBAR_SHORTCUT_ICONS: Record<string, () => ReactNode> = {
   browserControl: () => <GlobeIcon size={17} />,
   computerControl: () => <MonitorIcon size={17} />,
   pluginMarket: () => <PackageIcon size={17} />,
-  skills: () => <BooksIcon size={17} />,
+  skills: () => <ScrollIcon size={17} weight="regular" />,
   mcp: () => <PlugsIcon size={17} />,
   archivedSessions: () => <ArchiveIcon size={17} />,
 };
@@ -232,7 +231,13 @@ export function AppSidebar(props: Props) {
               aria-pressed={!props.viewFocused}
               onClick={props.onOverviewView}
             >
-              <SquaresFourIcon size={17} />
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
+                <rect x="3" y="3" width="18" height="18" rx="3" />
+                <rect x="6.5" y="6.4" width="2.2" height="2.2" rx="0.5" fill="currentColor" stroke="none" />
+                <rect x="6.5" y="10.9" width="2.2" height="2.2" rx="0.5" fill="currentColor" stroke="none" />
+                <rect x="6.5" y="15.4" width="2.2" height="2.2" rx="0.5" fill="currentColor" stroke="none" />
+                <path d="M11.5 7.5H17.5M11.5 12H17.5M11.5 16.5H17.5" strokeLinecap="round" />
+              </svg>
             </button>
           </span>
         </div>

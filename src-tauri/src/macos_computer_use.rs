@@ -9,16 +9,15 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum MacControlTool { OpenComputerUse, KimiCu }
+pub enum MacControlTool { KimiCu }
 
 #[cfg(any(target_os = "macos", test))]
 impl MacControlTool {
     fn source(self) -> &'static str { match self {
-        Self::OpenComputerUse => "builtin@open-computer-use",
         Self::KimiCu => "builtin@kimi-computer-use",
     } }
     fn name(self) -> &'static str { match self {
-        Self::OpenComputerUse => "open-computer-use", Self::KimiCu => "kimi-cu",
+        Self::KimiCu => "kimi-cu",
     } }
 }
 
@@ -77,26 +76,6 @@ fn bundle_executable(app: &Path, info: &serde_json::Value, id: &str) -> Result<P
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn parse_ocu_permissions(raw: &str) -> Result<(bool, bool)> {
-    let value: serde_json::Value = serde_json::from_str(raw).context("权限检查格式不兼容；请更新 Open Computer Use")?;
-    // Published 1.1.x `doctor --json` uses explicit flat permission booleans.
-    // The older development schema below is retained for compatible runtimes.
-    if value.get("accessibilityTrusted").is_some() || value.get("screenCaptureGranted").is_some() {
-        let accessibility = value["accessibilityTrusted"].as_bool().context("缺少有效辅助功能状态")?;
-        let screen = value["screenCaptureGranted"].as_bool().context("缺少有效屏幕录制状态")?;
-        if value["allGranted"].as_bool() != Some(accessibility && screen) {
-            bail!("权限检查返回的汇总与具体状态不一致，请在官方应用中核对");
-        }
-        return Ok((accessibility, screen));
-    }
-    if value["kind"] != "doctor" || value["schema_version"] != 1 || value["ui"] != false {
-        bail!("权限检查格式不兼容；请更新 Open Computer Use");
-    }
-    Ok((value["permissions"]["accessibility"].as_bool().context("缺少辅助功能状态")?,
-        value["permissions"]["screen_recording"].as_bool().context("缺少屏幕录制状态")?))
-}
-
-#[cfg(any(target_os = "macos", test))]
 fn parse_kimi_permissions(raw: &str) -> Result<(bool, bool)> {
     // These are the official CLI's explicit permission fields, not generic
     // occurrences of true/false elsewhere in a diagnostic log.
@@ -136,11 +115,6 @@ mod native {
         if raw.is_empty() { raw = result.stderr; }
         String::from_utf8(raw).context("电脑控制检查未返回 UTF-8")
     }
-    fn ocu_permissions(exe: &Path) -> Result<(bool, bool)> {
-        // Unlike `doctor`, --json never launches onboarding. Missing grants
-        // are valid false booleans, not a generic execution failure.
-        output(exe, &["doctor", "--json"]).and_then(|raw| parse_ocu_permissions(&raw))
-    }
     fn app_binary(app: &Path, id: &str) -> Result<PathBuf> {
         let plist = app.join("Contents/Info.plist");
         let text = output(Path::new("/usr/bin/plutil"), &["-convert", "json", "-o", "-", plist.to_str().context("应用路径编码无效")?])?;
@@ -173,10 +147,9 @@ mod native {
         exe.ancestors().find(|p| p.extension().is_some_and(|ext| ext == "app")).map(Path::to_path_buf)
     }
     pub(super) fn discover(tool: MacControlTool) -> Result<PathBuf> {
-        // User-level app installs created by the guided installer take priority
-        // over an older npm shim in PATH. No shell/profile changes are needed.
-        let name = match tool { MacControlTool::OpenComputerUse => "Open Computer Use.app", MacControlTool::KimiCu => "KimiCU.app" };
-        let id = match tool { MacControlTool::OpenComputerUse => "com.ifuryst.opencomputeruse", MacControlTool::KimiCu => "ai.kimi.cu" };
+        // Prefer a valid user-level app before inspecting PATH and system Applications.
+        let name = "KimiCU.app";
+        let id = "ai.kimi.cu";
         if let Some(home) = dirs::home_dir() {
             let app = home.join("Applications").join(name);
             if app.is_dir() {
@@ -185,26 +158,11 @@ mod native {
         }
         // lib::run initializes Finder PATH once, before any runtime discovery.
         // Resolve symlinks for a CLI in a relocated .app, never infer a user name.
-        let cli = which::which(tool.name()).or_else(|e| if matches!(tool, MacControlTool::OpenComputerUse) { which::which("ocu") } else { Err(e) });
+        let cli = which::which(tool.name());
         if let Ok(cli) = cli {
             let canonical = std::fs::canonicalize(&cli)?;
             if let Some(app) = app_for_exe(&canonical) {
-                return app_binary(&app, match tool { MacControlTool::KimiCu => "ai.kimi.cu", _ => "com.ifuryst.opencomputeruse" });
-            }
-            if matches!(tool, MacControlTool::OpenComputerUse) {
-                executable(&cli)?;
-                // npm's launcher uses /usr/bin/env node; the captured PATH is
-                // also stored on its MCP entry for non-terminal child hosts.
-                let mut head = [0u8; 4096];
-                use std::io::Read;
-                let count = std::fs::File::open(&cli)?.read(&mut head)?;
-                if head[..count].starts_with(b"#!") && String::from_utf8_lossy(&head[..count]).contains("node") {
-                    which::which("node").context("Open Computer Use npm 启动器需要 Node.js，请安装后重新打开 CrewVela")?;
-                }
-                if !head[..count].starts_with(b"#!") && !binary_supports(&head[..count], apple_silicon()) {
-                    bail!("Open Computer Use 执行入口不支持当前架构");
-                }
-                return Ok(cli);
+                return app_binary(&app, id);
             }
         }
         let mut apps = vec![];
@@ -229,7 +187,6 @@ mod native {
     }
     fn config(tool: MacControlTool, exe: &Path) -> Result<crate::mcp::McpServerConfig> {
         let mut config = match tool {
-            MacControlTool::OpenComputerUse => crate::open_computer_use::build_mcp_config(&crate::open_computer_use::OpenComputerUseSettings { enabled: true }, exe),
             MacControlTool::KimiCu => crate::kimi_computer_use::build_mcp_config(&crate::kimi_computer_use::KimiComputerUseSettings { enabled: true }, exe),
         };
         config.env.insert("PATH".into(), std::env::var("PATH").context("PATH 编码无效")?);
@@ -285,7 +242,6 @@ mod native {
         let exe = discover(tool)?;
         if prepare {
             match tool {
-                MacControlTool::OpenComputerUse => { output(&exe, &["doctor"])?; },
                 MacControlTool::KimiCu => {
                     // Official install is idempotent. Do not uninstall/bootout
                     // an existing service or edit the user's LaunchAgents.
@@ -299,7 +255,6 @@ mod native {
         let dir = crate::providers::config_dir()?;
         let mut result = inspect(tool, &dir, false);
         let probe = match tool {
-            MacControlTool::OpenComputerUse => ocu_permissions(&exe),
             MacControlTool::KimiCu => {
                 let service = output(&exe, &["service-status"]);
                 result.service_running = service.ok().map(|s| s.split_whitespace().any(|part| part == "status=1"));
@@ -319,35 +274,13 @@ mod native {
     #[cfg(test)]
     mod tests {
         use super::*;
-        #[cfg(target_os = "macos")]
-        #[test]
-        fn published_doctor_cli_receives_json_flag_and_preserves_missing_permissions() {
-            use std::os::unix::fs::PermissionsExt;
-            let dir = std::env::temp_dir().join(format!("ocu-published-doctor-{}", uuid::Uuid::new_v4()));
-            std::fs::create_dir(&dir).unwrap();
-            let cli = dir.join("OpenComputerUse");
-            std::fs::write(&cli, "#!/bin/sh\nif [ \"$#\" != 2 ] || [ \"$1\" != doctor ] || [ \"$2\" != --json ]; then echo 'doctor does not accept any arguments' >&2; exit 1; fi\nprintf '%s\\n' '{\"accessibilityTrusted\":true,\"screenCaptureGranted\":false,\"allGranted\":false,\"platform\":\"macOS\",\"missingPermissions\":[\"screenRecording\"]}'\n").unwrap();
-            std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
-            assert_eq!(ocu_permissions(&cli).unwrap(), (true, false));
-            std::fs::remove_dir_all(dir).unwrap();
-        }
-
-        #[cfg(target_os = "macos")]
-        #[test]
-        #[ignore = "Reads installed official runtime permission diagnostics only; never requests permissions or operates the desktop"]
-        fn installed_published_runtime_permission_diagnostics() -> Result<()> {
-            let exe = discover(MacControlTool::OpenComputerUse)?;
-            let (accessibility, screen) = ocu_permissions(&exe)?;
-            println!("Official OCU permission JSON parsed: accessibility={accessibility}, screenRecording={screen}");
-            Ok(())
-        }
         #[test]
         fn disable_is_scoped_and_save_failure_restores_owned_registration() {
             let dir = std::env::temp_dir().join(format!("mac-control-save-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&dir).unwrap();
             let file = dir.join("mcp-servers.json");
-            let tool = MacControlTool::OpenComputerUse;
-            let owned = crate::open_computer_use::build_mcp_config(&crate::open_computer_use::OpenComputerUseSettings { enabled: true }, Path::new("/fixture/tool"));
+            let tool = MacControlTool::KimiCu;
+            let owned = crate::kimi_computer_use::build_mcp_config(&crate::kimi_computer_use::KimiComputerUseSettings { enabled: true }, Path::new("/fixture/tool"));
             let mut user = owned.clone(); user.id = "user".into(); user.name = "user-tool".into(); user.source_plugin = None;
             std::fs::write(&file, serde_json::to_vec(&serde_json::json!({"version":1,"servers":[owned.clone(), user.clone()]})).unwrap()).unwrap();
             let blocked = dir.join("blocked.json"); std::fs::create_dir(&blocked).unwrap();
@@ -390,7 +323,7 @@ pub async fn macos_computer_use_action(tool: MacControlTool, prepare: bool) -> R
 static INSTALL_IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Explicit user action only: installing also enables this CrewVela-managed MCP.
-/// Existing user MCP entries and the other computer-control method are retained.
+/// Existing user MCP entries are retained.
 #[tauri::command]
 pub async fn macos_computer_use_install(app: tauri::AppHandle, tool: MacControlTool, request_id: String) -> Result<MacControlStatus, String> {
     if crate::test_profile::active() { return Err("隔离测试模式禁用真实电脑控制安装".into()); }
@@ -416,7 +349,7 @@ pub async fn macos_computer_use_install(app: tauri::AppHandle, tool: MacControlT
             if std::fs::canonicalize(&discovered)? != std::fs::canonicalize(&installed_executable)? {
                 bail!("官方运行时已安装，但检测到另一执行入口；已有连接未修改，请检查本机重复安装后重新连接");
             }
-            let file = dir.join(match tool { MacControlTool::OpenComputerUse => "open-computer-use.json", MacControlTool::KimiCu => "kimi-computer-use.json" });
+            let file = dir.join("kimi-computer-use.json");
             native::save(tool, &dir, &file, true).context("运行时已安装，但 MCP 配置未完成；请在设置中启用并保存")?;
             let mut status = match native::action(tool, true) {
                 Ok(status) => status,
@@ -438,11 +371,11 @@ pub async fn macos_computer_use_install(app: tauri::AppHandle, tool: MacControlT
 mod tests {
     use super::*;
     #[test] fn supported_platforms_and_unknown_version() {
-        assert!(platform_supported(MacControlTool::OpenComputerUse, "14.0\n", false));
+        assert!(platform_supported(MacControlTool::KimiCu, "14.0\n", false));
         assert!(platform_supported(MacControlTool::KimiCu, "26.0", true));
         assert!(platform_supported(MacControlTool::KimiCu, "14.0", false));
-        assert!(!platform_supported(MacControlTool::OpenComputerUse, "13.6", true));
-        assert!(!platform_supported(MacControlTool::OpenComputerUse, "unknown", true));
+        assert!(!platform_supported(MacControlTool::KimiCu, "13.6", true));
+        assert!(!platform_supported(MacControlTool::KimiCu, "unknown", true));
     }
     #[test] fn native_headers_and_minimum_system_versions() {
         let arm = [0xcf,0xfa,0xed,0xfe,0x0c,0,0,1];
@@ -459,19 +392,16 @@ mod tests {
     }
     #[test] fn permission_results_are_strict_and_unknown_is_not_granted() {
         for (accessibility, screen) in [(false, false), (true, false), (false, true), (true, true)] {
-            let raw = serde_json::json!({"accessibilityTrusted":accessibility,"screenCaptureGranted":screen,"allGranted":accessibility && screen,"platform":"macOS","missingPermissions":[]}).to_string();
-            assert_eq!(parse_ocu_permissions(&raw).unwrap(), (accessibility, screen));
+            let raw = format!("permissions: accessibility={accessibility} screenRecording={screen}");
+            assert_eq!(parse_kimi_permissions(&raw).unwrap(), (accessibility, screen));
         }
-        for bad in [
-            r#"{"accessibilityTrusted":true,"screenCaptureGranted":"true","allGranted":true}"#,
-            r#"{"accessibilityTrusted":true,"screenCaptureGranted":false,"allGranted":true}"#,
-            r#"{"accessibilityTrusted":true,"allGranted":true}"#,
-        ] { assert!(parse_ocu_permissions(bad).is_err()); }
-        assert_eq!(parse_ocu_permissions(r#"{"kind":"doctor","schema_version":1,"ui":false,"permissions":{"accessibility":true,"screen_recording":false}}"#).unwrap(), (true, false));
-        for bad in ["", "{}", "Permissions: granted", r#"{"kind":"doctor","schema_version":2,"ui":false}"#] { assert!(parse_ocu_permissions(bad).is_err()); }
         assert_eq!(parse_kimi_permissions("permissionStatus: accessibility=false screenRecording=true\n").unwrap(), (false, true));
         assert!(parse_kimi_permissions("unrelated accessibility=true screenRecording=true").is_err());
         assert!(parse_kimi_permissions("permissions: accessibility=unknown screenRecording=true").is_err());
+    }
+    #[test] fn removed_tool_is_rejected_by_ipc_deserialization() {
+        assert!(serde_json::from_str::<MacControlTool>(r#""kimiCu""#).is_ok());
+        assert!(serde_json::from_str::<MacControlTool>(r#""openComputerUse""#).is_err());
     }
     #[test] fn bundle_metadata_handles_spaces_unicode_and_rejects_traversal() {
         let app = std::env::temp_dir().join(format!("电脑控制 {}.app", uuid::Uuid::new_v4()));
@@ -485,7 +415,7 @@ mod tests {
     }
     #[test] fn mcp_path_drift_is_detected_without_adopting_other_flags() {
         let exe = Path::new("/Applications/工具.app/Contents/MacOS/tool");
-        let mut config = crate::open_computer_use::build_mcp_config(&crate::open_computer_use::OpenComputerUseSettings { enabled: true }, exe);
+        let mut config = crate::kimi_computer_use::build_mcp_config(&crate::kimi_computer_use::KimiComputerUseSettings { enabled: true }, exe);
         config.env.insert("PATH".into(), "/opt/homebrew/bin:/usr/bin".into());
         assert!(registration_matches(&config, exe, "/opt/homebrew/bin:/usr/bin"));
         assert!(!registration_matches(&config, exe, "/usr/bin"));

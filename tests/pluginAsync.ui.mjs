@@ -11,7 +11,7 @@ try {
     if (error) item.reject(Error(error)); else item.resolve();
   }, [cmd, error]);
   await page.goto(new URL("/tests/fixtures/plugin-market-ui.html?delay-load=1", process.env.CREWVELA_UI_URL || "http://127.0.0.1:1432").href);
-  await page.getByRole("button", { name: "挑选精选", exact: true }).click();
+  await page.getByRole("button", { name: "管理精选", exact: true }).click();
   const curation = page.getByRole("dialog", { name: "挑选精选插件" });
   await curation.locator(".pm-candidate-card").first().waitFor();
   const checked = curation.locator("input:checked");
@@ -28,10 +28,10 @@ try {
   await release("plugin_market_save_selection");
   await curation.waitFor({ state: "hidden" });
   await release("plugin_market_snapshot");
-  await page.waitForFunction(() => document.querySelectorAll(".pm-card").length === 1);
+  await page.waitForFunction(() => document.querySelectorAll(".pm-directory-row").length === 1);
   await page.evaluate(() => { window.__pluginHolds = ["plugin_market_install"]; });
-  await page.getByRole("button", { name: "选择 Agent", exact: true }).click();
-  const detail = page.getByRole("dialog", { name: "插件详情与安装" });
+  await page.locator(".pm-directory-row").first().click();
+  const detail = page.getByRole("region", { name: "插件详情与安装" });
   await detail.locator(".pm-agent-options input").first().check();
   await detail.locator(".pm-trust input").check();
   const install = detail.getByRole("button", { name: "安装到 1 个 Agent", exact: true });

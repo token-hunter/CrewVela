@@ -1,4 +1,4 @@
-export type MacControlTool = "openComputerUse" | "kimiCu";
+export type MacControlTool = "kimiCu";
 export interface MacControlInstallProgress {
   tool: MacControlTool;
   requestId: string;

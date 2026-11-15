@@ -20,6 +20,15 @@
         ],
         "createdAt": "2026-11-07T03:24:23.836Z",
         "reason": "Agent review: these two unchanged HEAD rules mark insert-before and insert-after targets only during new-session runtime drag sorting via data-drop-position. Preserve functional drop feedback; this is not a decorative card accent."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/styles/multi-agent.css"
+        ],
+        "createdAt": "2026-11-15T09:21:29.226Z",
+        "reason": "Agent: existing GroupChatPanel activity buttons use accent/warn/danger to distinguish active/lurk/muted delivery states; all three declarations exist in HEAD and are semantic status indicators, not decorative card accents"
       }
     ]
   }

@@ -39,3 +39,9 @@ export function toggleMentionToken(
     .replace(/^[ \t]+|[ \t]+$/g, "");
   return { value: nextValue, selected: false };
 }
+
+export function selectMentionTokens(value: string, tokens: readonly string[], selected: boolean): string {
+  return [...new Set(tokens)].reduce((draft, token) =>
+    hasMentionToken(draft, token) === selected ? draft : toggleMentionToken(draft, token).value,
+  value);
+}

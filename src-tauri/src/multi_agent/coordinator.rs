@@ -195,9 +195,12 @@ fn run_coordinator_attempt(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Some(model) = model {
-        command.arg("--model").arg(model);
-    }
+    let mut selection = crate::model_assignments::for_runtime("claude_code", None)?;
+    if selection.model.is_none() && selection.connection_id == "local" { selection.model = model.map(str::to_owned); }
+    crate::model_assignments::configure_connection(&mut command, "claude_code", &selection)?;
+    // This transport also carries the existing internal retry model literally.
+    // User assignments are validated on save; argv escaping stays lossless here.
+    if let Some(model) = selection.model.as_deref() { command.arg("--model").arg(model); }
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;

@@ -4,46 +4,6 @@ use std::sync::Mutex;
 
 pub(super) static OPERATIONS: Mutex<()> = Mutex::new(());
 const BUILTIN: &str = "crewvela精选";
-const REVISION: &str = "dbd4588f9e1033efb41dad4bef2f7947c8993d44";
-const CATALOG: &[(&str, &str, &str, &str)] = &[
-    (
-        "frontend-design",
-        "前端设计",
-        "构建有辨识度的网页与组件，提供设计和实现方法。",
-        "设计与创作",
-    ),
-    (
-        "webapp-testing",
-        "网页测试",
-        "使用 Playwright 检查本地网页交互、截图与浏览器日志。",
-        "编程与开发",
-    ),
-    (
-        "pdf",
-        "PDF 处理",
-        "读取、合并、拆分和生成 PDF，处理表格与表单。",
-        "办公与文档",
-    ),
-    (
-        "docx",
-        "Word 文档",
-        "创建、编辑和分析 Word 文档，保留内容与格式。",
-        "办公与文档",
-    ),
-    (
-        "pptx",
-        "演示文稿",
-        "创建、调整和分析 PowerPoint 演示文稿。",
-        "办公与文档",
-    ),
-    (
-        "xlsx",
-        "电子表格",
-        "创建、编辑和分析表格，处理公式与数据。",
-        "数据与自动化",
-    ),
-];
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginTarget {
@@ -79,12 +39,18 @@ pub(super) fn builtin_view() -> MarketplaceView {
         source_kind: "builtin".into(), owner_name: "Anthropic".into(), path: String::new(),
         url: Some("https://github.com/anthropics/skills".into()), last_refreshed_at: None,
         last_error: None,
-        plugins: CATALOG.iter().map(|(name, title, description, category)| MarketPluginView {
-            name: (*name).into(), display_name: Some((*title).into()), description: (*description).into(),
-            category: Some((*category).into()), author: Some("Anthropic".into()),
-            version: Some(REVISION[..12].into()), source_display: format!("anthropics/skills / skills/{name} @ {REVISION}"),
-            installable: true, note: Some("精选 Skill 包；不包含原生插件安装。首次安装需要网络与 Git；依赖由使用者按上游说明配置。".into()),
-            compatibility: Some(super::compatibility::PluginCompatibility::builtin_skill()),
+        plugins: super::catalog::entries().iter().map(|entry| {
+            let source = super::catalog::source(entry);
+            let mut compatibility = super::compatibility::PluginCompatibility::builtin_skill();
+            compatibility.dependencies = entry.dependencies.clone();
+            compatibility.license = Some(entry.license.clone());
+            MarketPluginView {
+                name: entry.name.clone(), display_name: Some(entry.display_name.clone()), description: entry.description.clone(),
+                category: Some(entry.category.clone()), author: Some(source.author.clone()),
+                version: Some(source.revision[..12].into()), source_display: format!("{} / {} @ {}", source.label, entry.subpath, source.revision),
+                installable: true, note: Some("精选 Skill 包；不包含原生插件安装。首次安装需要网络与 Git；依赖由使用者按上游说明配置。".into()),
+                compatibility: Some(compatibility),
+            }
         }).collect(),
     }
 }
@@ -148,17 +114,16 @@ fn prepare_plugin(
         }
     }
     let cache = if market == BUILTIN {
-        if !CATALOG.iter().any(|(entry, _, _, _)| *entry == name) {
-            bail!("未知精选插件");
-        }
+        let entry = super::catalog::find(name).ok_or_else(|| anyhow!("未知精选插件"))?;
+        let source = super::catalog::source(entry);
         materialize_plugin(
             paths,
             &paths.market_root.join("crewvela-curated"),
             name,
             &PluginSourceRef::Git {
-                url: "https://github.com/anthropics/skills.git".into(),
-                subpath: Some(format!("skills/{name}")),
-                reference: Some(REVISION.into()),
+                url: source.url.clone(),
+                subpath: Some(entry.subpath.clone()),
+                reference: Some(source.revision.clone()),
             },
         )?
     } else {
@@ -214,7 +179,11 @@ fn prepare_plugin(
         name: name.into(),
         version: components
             .version
-            .or_else(|| (market == BUILTIN).then(|| REVISION[..12].into())),
+            .or_else(|| {
+                if market == BUILTIN {
+                    super::catalog::find(name).map(|entry| super::catalog::source(entry).revision[..12].into())
+                } else { None }
+            }),
         description: components.description.unwrap_or_default(),
         cache_path: cache.display().to_string(),
         skill_asset_ids: assets,

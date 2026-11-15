@@ -82,33 +82,33 @@ try {
       console.log(`BASELINE ${label} ${JSON.stringify(baseline)}`);
       compare(baseline, baseline, `${label}/电脑控制`, size);
 
-      for (const section of ["插件市场", "Skill 中心", "常规", "模型设置", "MCP", "电脑控制", "插件市场"]) {
+      for (const section of ["插件市场", "Skills", "常规", "模型设置", "MCP", "电脑控制", "插件市场"]) {
         await nav.getByRole("button", { name: section, exact: true }).click();
         await page.locator("#settings-title").filter({ hasText: section }).waitFor();
         compare(await geometry(page), baseline, `${label}/${section}`, size);
       }
 
-      await page.locator(".pm-card").first().waitFor();
-      assert.equal(await page.locator(".pm-card").count(), 6, `${label}: preview catalog loaded`);
-      await page.getByRole("button", { name: "设计与创作", exact: true }).click();
-      assert.equal(await page.locator(".pm-card").count(), 1, `${label}: category filters catalog`);
+      await page.locator(".pm-directory-row").first().waitFor();
+      assert.equal(await page.locator(".pm-directory-row").count(), 16, `${label}: preview catalog loaded`);
+      await page.getByRole("combobox", { name: "插件分类", exact: true }).selectOption("设计与创作");
+      assert.equal(await page.locator(".pm-directory-row").count(), 6, `${label}: category filters catalog`);
       compare(await geometry(page), baseline, `${label}/分类`, size);
-      await page.getByRole("button", { name: "全部", exact: true }).last().click();
-      await page.getByRole("textbox", { name: "搜索插件或使用场景" }).fill("PDF");
-      assert.equal(await page.locator(".pm-card").count(), 1, `${label}: search filters catalog`);
-      assert.match(await page.locator(".pm-card").innerText(), /PDF/);
+      await page.getByRole("combobox", { name: "插件分类", exact: true }).selectOption("全部");
+      await page.getByRole("textbox", { name: "搜索插件或使用场景" }).fill("PDF 处理");
+      assert.equal(await page.locator(".pm-directory-row").count(), 1, `${label}: search filters catalog`);
+      assert.match(await page.locator(".pm-directory-row").innerText(), /PDF/);
       compare(await geometry(page), baseline, `${label}/搜索`, size);
       await page.getByRole("textbox", { name: "搜索插件或使用场景" }).fill("");
-      await page.getByRole("button", { name: "选择 Agent", exact: true }).first().click();
-      const detail = page.getByRole("dialog", { name: "插件详情与安装" });
+      await page.locator(".pm-directory-row").first().click();
+      const detail = page.getByRole("region", { name: "插件详情与安装" });
       await detail.waitFor();
       compare(await geometry(page), baseline, `${label}/详情打开`, size);
-      await detail.getByRole("button", { name: "关闭插件详情" }).click();
-      assert.equal(await detail.count(), 0, `${label}: detail closes`);
-      compare(await geometry(page), baseline, `${label}/详情关闭`, size);
+      await page.locator(".pm-directory-row").nth(1).click();
+      await detail.getByRole("heading", { name: "MCP 开发", exact: true }).waitFor();
+      compare(await geometry(page), baseline, `${label}/详情切换`, size);
       await page.screenshot({ path: `${output}/${label}-market.png`, animations: "disabled" });
       assert.deepEqual(errors, [], `${label}: no page errors`);
-      console.log(`CHECKED ${label}: navigation, category, search, detail open/close`);
+      console.log(`CHECKED ${label}: navigation, category, search, detail selection`);
       await context.close();
     }
   }

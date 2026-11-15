@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": "anthropic-skills",
+      "label": "anthropics/skills",
+      "author": "Anthropic",
+      "url": "https://github.com/anthropics/skills.git",
+      "revision": "dbd4588f9e1033efb41dad4bef2f7947c8993d44"
+    }
+  ],
+  "plugins": [
+    {
+      "name": "frontend-design",
+      "displayName": "前端设计",
+      "description": "构建有辨识度的网页与组件，提供设计和实现方法。",
+      "category": "设计与创作",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/frontend-design",
+      "dependencies": [
+        "按上游说明审阅设计与实现要求"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "webapp-testing",
+      "displayName": "网页测试",
+      "description": "使用 Playwright 检查本地网页交互、截图与浏览器日志。",
+      "category": "编程与开发",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/webapp-testing",
+      "dependencies": [
+        "Python、Playwright 及浏览器运行时"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "pdf",
+      "displayName": "PDF 处理",
+      "description": "读取、合并、拆分和生成 PDF，处理表格与表单。",
+      "category": "办公与文档",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/pdf",
+      "dependencies": [
+        "Python 与 PDF 工具链；按所用流程安装依赖"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "docx",
+      "displayName": "Word 文档",
+      "description": "创建、编辑和分析 Word 文档，保留内容与格式。",
+      "category": "办公与文档",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/docx",
+      "dependencies": [
+        "Node.js、文档处理依赖；转换和渲染需按上游配置"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "pptx",
+      "displayName": "演示文稿",
+      "description": "创建、调整和分析 PowerPoint 演示文稿。",
+      "category": "办公与文档",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/pptx",
+      "dependencies": [
+        "Node.js、演示文稿处理依赖；渲染工具按上游配置"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "xlsx",
+      "displayName": "电子表格",
+      "description": "创建、编辑和分析表格，处理公式与数据。",
+      "category": "数据与自动化",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/xlsx",
+      "dependencies": [
+        "Python 与表格处理依赖；公式重算需按上游配置"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "algorithmic-art",
+      "displayName": "算法艺术",
+      "description": "用代码创作生成艺术，探索随机性、粒子与交互。",
+      "category": "设计与创作",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/algorithmic-art",
+      "dependencies": [
+        "浏览器及 p5.js 工作流"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "brand-guidelines",
+      "displayName": "品牌规范",
+      "description": "在内容和设计中应用 Anthropic 的品牌色彩与排版规则。",
+      "category": "设计与创作",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/brand-guidelines",
+      "dependencies": [
+        "内容包含 Anthropic 专属品牌规则，使用前审阅适用范围"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "canvas-design",
+      "displayName": "画布设计",
+      "description": "创作海报、视觉作品和静态设计，输出 PNG 或 PDF。",
+      "category": "设计与创作",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/canvas-design",
+      "dependencies": [
+        "Python 与图像、字体或 PDF 相关依赖"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "doc-coauthoring",
+      "displayName": "文档共创",
+      "description": "协作撰写技术文档、提案和决策说明，逐步完善结构与内容。",
+      "category": "办公与文档",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/doc-coauthoring",
+      "dependencies": [
+        "文本工作流；外部文件工具按具体任务配置"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "internal-comms",
+      "displayName": "内部沟通",
+      "description": "撰写进展汇报、团队更新、公告与内部沟通材料。",
+      "category": "办公与文档",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/internal-comms",
+      "dependencies": [
+        "文本工作流；需提供适合团队的上下文与模板"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "mcp-builder",
+      "displayName": "MCP 开发",
+      "description": "设计和构建连接外部服务的 MCP 服务器。",
+      "category": "编程与开发",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/mcp-builder",
+      "dependencies": [
+        "Python 或 Node.js/TypeScript；目标服务依赖及凭据按需配置"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "skill-creator",
+      "displayName": "Skill 创建",
+      "description": "创建、改进和评估 Skill，优化描述与触发方式。",
+      "category": "编程与开发",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/skill-creator",
+      "dependencies": [
+        "部分评估流程依赖特定 Agent CLI、Python 和模型调用环境"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "slack-gif-creator",
+      "displayName": "Slack GIF 制作",
+      "description": "制作适合 Slack 使用的轻量 GIF 动画。",
+      "category": "设计与创作",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/slack-gif-creator",
+      "dependencies": [
+        "Python 与 GIF 图像处理依赖"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "theme-factory",
+      "displayName": "主题工厂",
+      "description": "为幻灯片、文档和网页应用一致的字体与配色主题。",
+      "category": "设计与创作",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/theme-factory",
+      "dependencies": [
+        "具体输出格式的生成工具需另行配置"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    },
+    {
+      "name": "web-artifacts-builder",
+      "displayName": "网页作品构建",
+      "description": "使用 React 和现代前端工具构建复杂网页作品。",
+      "category": "编程与开发",
+      "sourceId": "anthropic-skills",
+      "subpath": "skills/web-artifacts-builder",
+      "dependencies": [
+        "Node.js 与前端工具链；宿主预览能力需单独核对"
+      ],
+      "license": "请审阅并保留上游许可文件"
+    }
+  ]
+}

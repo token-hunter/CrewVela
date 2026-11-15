@@ -70,7 +70,7 @@
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 286px;
+  grid-template-columns: minmax(0, 1fr);
   container-type: inline-size;
 }
 
@@ -374,75 +374,7 @@
 }
 .ma-takeover-panel > div { display: flex; justify-content: flex-end; gap: var(--space-6); }
 
-.ma-collaboration-rail {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border);
-  background: var(--bg);
-}
 
-.ma-collaboration-rail-header {
-  height: 38px;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.ma-handoff-list {
-  min-height: 0;
-  padding: 8px;
-  overflow: auto;
-  scrollbar-width: thin;
-}
-
-.ma-handoff-list article {
-  position: relative;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elev);
-}
-
-.ma-handoff-list article[role="button"] {
-  cursor: pointer;
-}
-
-.ma-handoff-list article[role="button"]:hover {
-  border-color: var(--accent);
-}
-
-.ma-handoff-list article + article { margin-top: var(--space-7); }
-.ma-handoff-list article > div { display: flex; justify-content: space-between; color: var(--text-dim); font-size: var(--text-xs); }
-.ma-handoff-list strong { margin: var(--space-5) 0 3px; display: block; font-size: var(--text-sm); }
-.ma-handoff-list pre { max-height: 130px; overflow: hidden; color: var(--text-dim); white-space: pre-wrap; font: 9px/1.45 var(--mono-font); }
-.ma-handoff-list .empty { padding: 28px 10px; text-align: center; color: var(--text-faint); font-size: var(--text-sm); }
-
-/* 协作 rail 页签（群聊 / 记录） */
-.ma-rail-tabs { gap: var(--space-6); }
-
-.ma-rail-tabs button {
-  padding: 3px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-faint);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.ma-rail-tabs button.active {
-  border-color: var(--border);
-  background: var(--bg-elev);
-  color: var(--text);
-}
-
-.ma-rail-tabs button:hover:not(.active) { color: var(--text); }
 
 /* 群聊视图 */
 .ma-group-chat {

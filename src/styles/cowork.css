@@ -108,6 +108,13 @@ body {
   transform: rotate(90deg);
 }
 
+:root[data-appearance-accent="none"] .sidebar-new-session-icon,
+:root[data-appearance-accent="none"] .sidebar-new-session-button:hover .sidebar-new-session-icon {
+  background: transparent;
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text-dim);
+}
+
 /* 快捷入口导航 */
 .unified-sidebar-nav {
   padding: 6px 8px 8px;
@@ -594,11 +601,7 @@ body {
   filter: invert(1);
 }
 
-/* 深度皮肤与全局透明：卡片和原生输入框一样处理；下拉保持不透明，保证可读 */
-:root[data-deep-skin] .ews-card {
-  border-color: var(--deep-skin-line);
-  background: var(--deep-skin-panel-head);
-}
+/* 全局透明：卡片和原生输入框一样处理；下拉保持不透明，保证可读 */
 
 :root[data-global-transparent="true"] .ews-card {
   border-color: color-mix(in srgb, var(--border-strong) 78%, transparent) !important;

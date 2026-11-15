@@ -6,13 +6,25 @@ pub enum DirectMessageRequest {
     Directed { sender: String, recipient: String },
 }
 
-/// Only the instruction is classified; quoted message content may itself discuss development.
-pub fn direct_message_request(message: &str) -> Option<DirectMessageRequest> {
+fn message_instruction(message: &str) -> Option<&str> {
     let mut instruction = message.trim();
     while instruction.starts_with('@') {
         let end = instruction.find(char::is_whitespace)?;
         instruction = instruction[end..].trim_start();
     }
+    Some(instruction)
+}
+
+pub(crate) fn self_introduction_requested(message: &str) -> bool {
+    let Some(instruction) = message_instruction(message) else { return false; };
+    let instruction = outside_quotes(instruction);
+    ["自我介绍", "介绍自己", "互相介绍", "相互介绍", "彼此介绍", "互相认识", "相互认识"]
+        .iter().any(|phrase| instruction.contains(phrase))
+}
+
+/// Only the instruction is classified; quoted message content may itself discuss development.
+pub fn direct_message_request(message: &str) -> Option<DirectMessageRequest> {
+    let instruction = message_instruction(message)?;
     let normalized = instruction.to_ascii_lowercase();
     if let Some((sender, rest)) = normalized.split_once(['给', '向', '对']) {
         let action = [
@@ -45,7 +57,11 @@ pub fn direct_message_request(message: &str) -> Option<DirectMessageRequest> {
             }) {
                 return None;
             }
-            if !is_development_instruction(&format!("{sender}{}", &rest[..position])) {
+            // A later sentence such as “收到消息后向原发送方回复” is
+            // a reply rule, not the sender/recipient clause of this request.
+            let crosses_sentence = sender.contains(['。', '；', '\n'])
+                || rest[..position].contains(['。', '；', '\n']);
+            if !crosses_sentence && !is_development_instruction(&format!("{sender}{}", &rest[..position])) {
                 let sender = sender
                     .trim()
                     .trim_start_matches("请")
@@ -62,8 +78,13 @@ pub fn direct_message_request(message: &str) -> Option<DirectMessageRequest> {
         }
     }
     (!is_development_instruction(&normalized)
-        && [
+        && (self_introduction_requested(instruction) || [
             "聊天",
+            "聊下",
+            "聊一下",
+            "聊一聊",
+            "聊聊",
+            "聊个天",
             "通信",
             "发消息",
             "问候",
@@ -72,7 +93,7 @@ pub fn direct_message_request(message: &str) -> Option<DirectMessageRequest> {
             "message",
         ]
         .iter()
-        .any(|word| normalized.contains(word)))
+        .any(|word| normalized.contains(word))))
     .then_some(DirectMessageRequest::Broadcast)
 }
 
@@ -313,6 +334,52 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn colloquial_group_chat_uses_direct_delivery_without_planning() {
+        for message in [
+            "@ClaudeCode @Codex @ZCodeCLI 你们三个聊下",
+            "@模型验收-Claude @模型验收-Codex @聊天-ZCodeCLI 你三聊个天",
+            "@ClaudeCode @Codex 聊一下",
+            "@ClaudeCode @Codex 聊一聊",
+            "@ClaudeCode @Codex 聊聊",
+            "@ClaudeCode @Codex 你们三个聊下。本轮验收；收到 PING 时，通过原会话工具向包装中原发送方回复 ACK。",
+        ] {
+            assert_eq!(direct_message_request(message), Some(DirectMessageRequest::Broadcast), "{message}");
+        }
+        for message in [
+            "@ClaudeCode @Codex 先聊下，然后开发游戏",
+            "@ClaudeCode @Codex 修复聊个天功能",
+            "@ClaudeCode @Codex 聊一下并实现接口",
+            "@ClaudeCode @Codex 开发聊天应用",
+        ] {
+            assert_eq!(direct_message_request(message), None, "{message}");
+        }
+    }
+
+    #[test]
+    fn self_introduction_uses_direct_messages_but_implementation_stays_planned() {
+        for message in [
+            "@ClaudeCode @Codex 你两自我介绍一下",
+            "@ClaudeCode @Codex 你们互相介绍一下自己",
+            "@模型验收-Claude @模型验收-Codex 请各自介绍自己",
+            "@ClaudeCode @Codex 相互介绍一下",
+            "@ClaudeCode @Codex 彼此介绍一下",
+            "@ClaudeCode @Codex 互相认识一下",
+        ] {
+            assert_eq!(direct_message_request(message), Some(DirectMessageRequest::Broadcast), "{message}");
+        }
+        for message in [
+            "@ClaudeCode @Codex 开发一个自我介绍页面",
+            "@ClaudeCode @Codex 先自我介绍，然后实现聊天应用",
+            "@ClaudeCode @Codex 做一个自我介绍生成器",
+            "@ClaudeCode @Codex 完成自我介绍功能的重构",
+        ] {
+            assert_eq!(direct_message_request(message), None, "{message}");
+        }
+        assert!(!self_introduction_requested("@自我介绍助手 @Codex 聊一下"));
+        assert!(!self_introduction_requested("@ClaudeCode @Codex 聊一下“自我介绍”这几个字"));
     }
 
     #[test]

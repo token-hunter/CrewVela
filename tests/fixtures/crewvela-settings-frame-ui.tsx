@@ -4,7 +4,6 @@ import { SettingsDialog } from "../../src/components/SettingsDialog";
 import { DEFAULT_APPEARANCE } from "../../src/appearance";
 import { DEFAULT_PET_SETTINGS } from "../../src/petSettings";
 import { DEFAULT_NOTIFICATION_SETTINGS } from "../../src/notificationSettings";
-import { DEFAULT_COMPANION_SETTINGS } from "../../src/companionSettings";
 import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
 import { BROWSER_CONTROL_PREVIEW } from "../../src/browserControlSettings";
 import { installSkillRuntimeFixture } from "./skill-runtime-first-mock";
@@ -98,8 +97,8 @@ function Fixture() {
     {open && <SettingsDialog sessions={params.get("mock") === "automation" ? [{ id:"fixture-session",kind:"terminal",agentRuntimeKind:"codex",title:"示例 Codex 会话",cwd:"/fixture/project",status:"completed" } as SessionRecord] : []} archivedSessions={archive} projects={params.get("mock") === "skills" ? [{ id: "fixture-project", name: "示例项目", path: "/fixture/project", badgeColor: "blue", createdAt: 0, updatedAt: 0 }] : []} providers={sampleProviders}
       keyStates={{}} usageByProvider={{}} appearance={appearance} resolvedAppearanceTheme={theme}
       petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS}
-      companionSettings={DEFAULT_COMPANION_SETTINGS} onAppearanceChange={setAppearance}
-      onPetSettingsChange={() => {}} onNotificationSettingsChange={() => {}} onCompanionSettingsChange={() => {}}
+      onAppearanceChange={setAppearance}
+      onPetSettingsChange={() => {}} onNotificationSettingsChange={() => {}}
       onEdit={() => {}} onNew={() => {}} onDelete={() => {}} onSetHidden={() => {}}
       onRestoreDefault={() => {}} onReorder={async () => {}} onRestoreArchivedSession={() => {}}
       onDeleteArchivedSession={() => {}} onViewArchivedTranscript={() => {}} onClose={() => setOpen(false)}

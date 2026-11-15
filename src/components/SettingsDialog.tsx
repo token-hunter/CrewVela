@@ -22,7 +22,7 @@ import { UsersIcon } from "@phosphor-icons/react/dist/csr/Users";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { MonitorIcon } from "@phosphor-icons/react/dist/csr/Monitor";
-import { StackIcon } from "@phosphor-icons/react/dist/csr/Stack";
+import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
 import { GitForkIcon } from "@phosphor-icons/react/dist/csr/GitFork";
 import { PlugIcon } from "@phosphor-icons/react/dist/csr/Plug";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
@@ -35,18 +35,17 @@ import type {
 } from "../types";
 import type { PetSettings } from "../petSettings";
 import type { NotificationSettings } from "../notificationSettings";
-import type { CompanionSettings } from "../companionSettings";
 import { formatTokens } from "../format";
 import { CollaborationSettingsPanel } from "./CollaborationSettingsPanel";
 import { SharedMemorySettingsPanel } from "./SharedMemorySettingsPanel";
 import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
+import { resolveBaseTheme } from "../appearance";
 import { QuickCommandCenter } from "./QuickCommandCenter";
 import type { QuickContext } from "../quickCommands";
 import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
 import { AutomationPanel } from "./AutomationPanel";
 import { PetSettingsPanel } from "./PetSettingsPanel";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
-import { SkinSettingsPanel } from "./SkinSettingsPanel";
 import { AutomationIcon } from "./AutomationIcon";
 import { ArchivedSessionsPanel } from "./ArchivedSessionsPanel";
 import { CaretDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
@@ -60,8 +59,10 @@ import { BrowserControlSettingsPanel } from "./BrowserControlSettingsPanel";
 import { ComputerControlSettingsPanel } from "./ComputerControlSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { ProviderQuotaCell } from "./ProviderQuotaCell";
+import { ModelAssignmentsPanel } from "./ModelAssignmentsPanel";
 
 interface Props {
+  initialModelView?: "assignments" | "connections";
   quickContext?: QuickContext;
   onSessionsChange?: (sessions: SessionRecord[]) => void;
   sessions: SessionRecord[];
@@ -75,11 +76,9 @@ interface Props {
   resolvedAppearanceTheme: AppearanceTheme;
   petSettings: PetSettings;
   notificationSettings: NotificationSettings;
-  companionSettings: CompanionSettings;
   onAppearanceChange: Dispatch<SetStateAction<AppAppearance>>;
   onPetSettingsChange: (settings: PetSettings) => void;
   onNotificationSettingsChange: (settings: NotificationSettings) => void;
-  onCompanionSettingsChange: (settings: CompanionSettings) => void;
   onEdit: (provider: ProviderConfig) => void;
   onNew: () => void;
   onDelete: (providerId: string) => void;
@@ -115,6 +114,7 @@ export type SettingsSection =
   | "archivedSessions";
 
 export function SettingsDialog({
+  initialModelView = "assignments",
   quickContext,
   onSessionsChange,
   sessions,
@@ -127,11 +127,9 @@ export function SettingsDialog({
   resolvedAppearanceTheme,
   petSettings,
   notificationSettings,
-  companionSettings,
   onAppearanceChange,
   onPetSettingsChange,
   onNotificationSettingsChange,
-  onCompanionSettingsChange,
   onEdit,
   onNew,
   onDelete,
@@ -155,11 +153,9 @@ export function SettingsDialog({
   const [orderError, setOrderError] = useState("");
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
   const [automationEditing, setAutomationEditing] = useState(false);
-  const [appearanceTab, setAppearanceTab] = useState<"appearance" | "skins">(
-    "appearance",
-  );
   const [navQuery, setNavQuery] = useState("");
   const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null);
+  const [modelView, setModelView] = useState(initialModelView);
   const blockRowDragRef = useRef(false);
 
   const settingsNavGroups = [
@@ -187,7 +183,7 @@ export function SettingsDialog({
         {
           id: "appearance" as const,
           label: "外观",
-          keywords: "外观 主题 皮肤 背景",
+          keywords: "外观 主题 背景 强调色 透明度",
           icon: <PaletteIcon size={16} weight="regular" />,
         },
         {
@@ -241,7 +237,7 @@ export function SettingsDialog({
           id: "computerControl" as const,
           label: "电脑控制",
           keywords:
-            "电脑 computer 控制 桌面 应用 窗口 点击 输入 uia 自动化 截图 kimi kimicu kimi-cu kimi-computer-use open-computer-use ocu 开源 codex",
+            "电脑 computer 控制 桌面 应用 窗口 点击 输入 uia 自动化 截图 kimi kimicu kimi-cu kimi-computer-use",
           icon: <MonitorIcon size={16} weight="regular" />,
         },
         {
@@ -252,9 +248,9 @@ export function SettingsDialog({
         },
         {
           id: "skills" as const,
-          label: "Skill 中心",
+          label: "Skills",
           keywords: "Skill 技能 中央库 分发 项目 Agent",
-          icon: <StackIcon size={16} weight="regular" />,
+          icon: <ScrollIcon size={16} weight="regular" />,
         },
         {
           id: "mcp" as const,
@@ -352,7 +348,7 @@ export function SettingsDialog({
     appearance: {
       eyebrow: "APPEARANCE",
       title: "外观",
-      description: "管理界面主题、背景和完整皮肤。",
+      description: "管理界面主题、背景、强调色与透明度。",
       note: "",
     },
     notifications: {
@@ -403,7 +399,7 @@ export function SettingsDialog({
     },
     skills: {
       eyebrow: "SKILL CENTER",
-      title: "Skill 中心",
+      title: "Skills",
       description: "统一纳管 Skill，并安全分发给多个 Runtime、项目和 Agent。",
       note: "",
     },
@@ -417,7 +413,7 @@ export function SettingsDialog({
   return (
     <Modal
       overlayClassName="dialog-overlay settings-overlay settings-native-overlay"
-      className={`settings-dialog settings-native${activeSection === "providers" ? " settings-model-focus" : ""}`}
+      className={`settings-dialog settings-native${activeSection === "providers" && modelView === "connections" ? " settings-model-focus" : ""}`}
       onClose={onClose}
       closeOnOverlayClick
       labelledBy="settings-dialog-title"
@@ -491,20 +487,20 @@ export function SettingsDialog({
             className="settings-content-inner"
             data-settings-section={activeSection}
           >
-            <div className="dialog-heading settings-heading">
+            {!(activeSection === "providers" && modelView === "assignments") && <div className="dialog-heading settings-heading">
                 <div>
-                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? "创建自动化" : activeSection === "providers" ? "模型服务" : sectionCopy.title}</h2>
+                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? "创建自动化" : activeSection === "providers" && modelView === "connections" ? "模型服务" : sectionCopy.title}</h2>
                   {activeSection !== "providers" && !(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
                 </div>
               <div className="settings-heading-actions">
-                {activeSection === "providers" && (
+                {activeSection === "providers" && modelView === "connections" && <button className="btn secondary" type="button" onClick={() => setModelView("assignments")}>返回模型分配</button>}
+                {activeSection === "providers" && modelView === "connections" && (
                   <button className="btn primary" aria-label="新建模型服务" onClick={onNew}>
                     <PlusIcon size={16} aria-hidden="true" />
                     <span>新建</span>
                   </button>
                 )}
-                {activeSection === "appearance" &&
-                  appearanceTab === "appearance" && (
+                {activeSection === "appearance" && (
                     <Switch
                       className="appearance-follow-system"
                       checked={appearance.followSystem}
@@ -519,7 +515,7 @@ export function SettingsDialog({
                       <span>
                         跟随系统
                         <small>
-                          {resolvedAppearanceTheme === "light"
+                          {resolveBaseTheme(resolvedAppearanceTheme) === "light"
                             ? "浅色"
                             : "深色"}
                         </small>
@@ -527,10 +523,10 @@ export function SettingsDialog({
                     </Switch>
                   )}
               </div>
-            </div>
+            </div>}
             {sectionCopy.note && <p className="settings-page-note">{sectionCopy.note}</p>}
 
-            {activeSection === "providers" ? (
+            {activeSection === "providers" && modelView === "assignments" ? <ModelAssignmentsPanel providers={providers} onManageConnections={() => setModelView("connections")} /> : activeSection === "providers" ? (
               <div className="settings-provider-list settings-provider-quota-list">
                 {orderError && <p role="alert">{orderError}</p>}
 
@@ -679,43 +675,7 @@ export function SettingsDialog({
               <PetSettingsPanel settings={petSettings} onChange={onPetSettingsChange} />
             ) : (
               <div className="settings-tabbed-workspace">
-                <div
-                  className="settings-section-tabs"
-                  role="tablist"
-                  aria-label="外观设置"
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={appearanceTab === "appearance"}
-                    className={appearanceTab === "appearance" ? "active" : ""}
-                    onClick={() => setAppearanceTab("appearance")}
-                  >
-                    外观
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={appearanceTab === "skins"}
-                    className={appearanceTab === "skins" ? "active" : ""}
-                    onClick={() => setAppearanceTab("skins")}
-                  >
-                    皮肤
-                  </button>
-                </div>
-                {appearanceTab === "skins" ? (
-                  <SkinSettingsPanel
-                    appearance={appearance}
-                    settings={companionSettings}
-                    onChange={onCompanionSettingsChange}
-                    onAppearanceChange={(next) => onAppearanceChange(next)}
-                  />
-                ) : (
-                  <AppearanceSettingsPanel
-                    appearance={appearance}
-                    onChange={onAppearanceChange}
-                  />
-                )}
+                <AppearanceSettingsPanel appearance={appearance} onChange={onAppearanceChange} />
               </div>
             )}
           </div>

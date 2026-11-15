@@ -243,6 +243,7 @@ export interface NewAutomation {
 export interface SessionRecord {
   /** Session-scoped model override; omitted for legacy/local-default sessions. */
   launchModel?: string | null;
+  modelAssignment?: { connectionId: string; model: string | null; source: string } | null;
   /** 一次性执行日志宿主不能接收普通聊天或 Agent 接力。 */
   runtimeCommandHost?: boolean;
   id: string;

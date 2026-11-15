@@ -1,3 +1,7 @@
+import curatedCatalog from "./data/curated-plugins.json" with { type: "json" };
+
+export const BUILTIN_CANDIDATE_COUNT = curatedCatalog.plugins.length;
+
 export interface MarketPluginView {
   name: string;
   displayName: string | null;
@@ -9,6 +13,15 @@ export interface MarketPluginView {
   installable: boolean;
   note: string | null;
   compatibility?: PluginCompatibility | null;
+}
+
+/** Link to the pinned package when provenance includes a GitHub revision. */
+export function pluginUpstreamUrl(entry: MarketPluginEntry): string | null {
+  const match = /^([\w.-]+\/[\w.-]+)\s+\/\s+([\w./-]+)\s+@\s+([a-f\d]{40})$/i.exec(entry.plugin.sourceDisplay);
+  if (match && !match[2].split("/").some(part => part === "..")) {
+    return `https://github.com/${match[1]}/tree/${match[3]}/${match[2].split("/").map(encodeURIComponent).join("/")}`;
+  }
+  return entry.market.url && /^https?:\/\//.test(entry.market.url) ? entry.market.url : null;
 }
 
 export interface PluginCompatibility {
@@ -348,16 +361,14 @@ export const PLUGIN_MARKET_PREVIEW: PluginMarketSnapshot = {
 /** Read-only preview metadata matches the bundled, pinned catalogue. */
 export const CURATED_PLUGIN_PREVIEW: PluginMarketSnapshot = {
   selectionConfigured: true,
-  selectedPluginIds: ["frontend-design", "webapp-testing", "pdf", "docx", "pptx", "xlsx"].map((name) => name + "@crewvela精选"),
+  selectedPluginIds: curatedCatalog.plugins.map(plugin => plugin.name + "@crewvela精选"),
   marketplaces: [{ id: "crewvela精选", source: "https://github.com/anthropics/skills", sourceKind: "builtin", ownerName: "Anthropic", path: "", url: "https://github.com/anthropics/skills", lastRefreshedAt: null, lastError: null,
-    plugins: [
-      ["frontend-design", "前端设计", "构建有辨识度的网页与组件，提供设计和实现方法。", "设计与创作"],
-      ["webapp-testing", "网页测试", "使用 Playwright 检查本地网页交互、截图与浏览器日志。", "编程与开发"],
-      ["pdf", "PDF 处理", "读取、合并、拆分和生成 PDF，处理表格与表单。", "办公与文档"],
-      ["docx", "Word 文档", "创建、编辑和分析 Word 文档，保留内容与格式。", "办公与文档"],
-      ["pptx", "演示文稿", "创建、调整和分析 PowerPoint 演示文稿。", "办公与文档"],
-      ["xlsx", "电子表格", "创建、编辑和分析表格，处理公式与数据。", "数据与自动化"],
-    ].map(([name, displayName, description, category]) => ({ name, displayName, description, category, author: "Anthropic", version: "dbd4588f9e10", sourceDisplay: `anthropics/skills / skills/${name} @ dbd4588f9e1033efb41dad4bef2f7947c8993d44`, installable: true, note: "精选 Skill 包" })) }],
+    plugins: curatedCatalog.plugins.map(plugin => {
+      const source = curatedCatalog.sources.find(source => source.id === plugin.sourceId)!;
+      return { name: plugin.name, displayName: plugin.displayName, description: plugin.description, category: plugin.category,
+        author: source.author, version: source.revision.slice(0, 12), sourceDisplay: `${source.label} / ${plugin.subpath} @ ${source.revision}`, installable: true, note: "精选 Skill 包；按上游说明配置依赖。",
+        compatibility: { format: "skill", status: "skill_compatible" as const, nativeCodex: false, nativeClaude: false, skillCompatible: true, components: ["1 个 Skill 包"], note: "独立 Skill 分发；不代表使用依赖已就绪", dependencies: plugin.dependencies, license: plugin.license } };
+    }) }],
   installed: ["frontend-design", "pdf", "webapp-testing"].map((name, index) => ({ id: `${name}@crewvela精选`, marketplaceId: "crewvela精选", name, version: "dbd4588f9e10", description: "只读预览示例", cachePath: "", skillAssetIds: [name], skillNames: [name], mcpServerNames: [], hasHooks: false, hasAgents: false, installedAt: 0,
     targets: [{ id: `${index === 0 ? "claude_code" : "codex"}|global|`, runtime: index === 0 ? "claude_code" : "codex", scope: "global", projectPath: null, deploymentIds: [name], status: index === 2 ? "needs_attention" : "installed", lastError: index === 2 ? "示例：Skill 文件需要检查" : null }] })),
 };

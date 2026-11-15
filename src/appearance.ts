@@ -94,7 +94,8 @@ export function resolveAppearanceTheme(
 }
 
 export function resolveBaseTheme(theme: AppearanceTheme): AppTheme {
-  return theme === "light" || theme === "sand" ? "light" : "dark";
+  // Keep the persisted aurora identifier compatible with its warm porcelain replacement.
+  return theme === "light" || theme === "sand" || theme === "aurora" ? "light" : "dark";
 }
 
 export function saveAppearance(

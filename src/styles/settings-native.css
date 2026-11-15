@@ -46,8 +46,8 @@
   animation: none;
 }
 
-/* Sand shares the light color scheme but keeps its own warm palette. */
-:root[data-theme="light"]:not([data-appearance-theme="sand"]) .settings-dialog.settings-native {
+/* Warm light themes keep their own palettes instead of the neutral white override. */
+:root[data-theme="light"]:not([data-appearance-theme="sand"]):not([data-appearance-theme="aurora"]) .settings-dialog.settings-native {
   --bg: #fff;
   --bg-elev: #fff;
   --bg-sunken: #f7f7f8;
@@ -61,6 +61,23 @@
   --warn: #986400;
   --danger: #bf3838;
   color-scheme: light;
+}
+
+:root[data-appearance-theme="aurora"] .settings-dialog.settings-native {
+  --settings-nav-bg: var(--bg-sunken);
+}
+
+:root[data-appearance-theme="purple"] .settings-dialog.settings-native {
+  --settings-canvas: var(--bg);
+  --settings-nav-bg: var(--bg-sunken);
+}
+
+:root[data-appearance-theme="purple"] .settings-native .settings-window-header {
+  background: var(--bg-sunken);
+}
+
+:root[data-appearance-theme="purple"] .settings-native .settings-nav-item.active {
+  background: var(--bg-active);
 }
 
 .settings-native .settings-window-header {

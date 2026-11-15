@@ -21,6 +21,8 @@ try {
   await page.goto(`${process.env.CREWVELA_UI_URL || "http://127.0.0.1:1420"}/?ui-preview=1`);
   await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; animation: none !important; }" });
   await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.locator(".settings-nav").getByRole("button", { name: "模型设置", exact: true }).click();
+  await page.getByRole("button", { name: "管理连接", exact: true }).click();
   const add = page.getByRole("button", { name: "新建模型服务", exact: true });
   await add.waitFor();
   for (const theme of ["light", "dark"]) {

@@ -17,6 +17,7 @@ import {
   Trash,
   Warning,
   MagnifyingGlass,
+  Check,
 } from "@phosphor-icons/react";
 import { SkillMarketPanel } from "./SkillMarketPanel";
 import { SkillUpdatesPanel } from "./SkillUpdatesPanel";
@@ -64,7 +65,6 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   unverified: { label: "未验证", tone: "muted" },
 };
 
-const cellKey = (skillId: string, runtime: string) => `${skillId}::${runtime}`;
 const UI_PREVIEW = new URLSearchParams(window.location.search).get("ui-preview") === "1";
 const previewRuntimes = [
   ["claude_code", "Claude Code", ".claude/skills"], ["codex", "Codex", ".codex/skills"],
@@ -90,8 +90,8 @@ const PREVIEW_SNAPSHOT: Snapshot = {
 export function SkillCenterPanel({ projects }: Props) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
-  const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
-  const [runtimeId, setRuntimeId] = useState("claude_code");
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
+  const [runtimeIds, setRuntimeIds] = useState<string[] | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DistributionFilter>("all");
   const [rowActionsId, setRowActionsId] = useState<string | null>(null);
@@ -135,11 +135,14 @@ export function SkillCenterPanel({ projects }: Props) {
   const scopedDeployments = useMemo(() => scopedDistribution(snapshot?.deployments ?? [], scope, effectiveProject, taskId, agentId), [snapshot, scope, effectiveProject, taskId, agentId]);
 
   const deploymentFor = (skillId: string, runtime: string) => scopedDeployments.find((item) => item.skillId === skillId && item.runtime === runtime);
-  const currentRuntime = snapshot?.runtimes.find(runtime => runtime.runtime === runtimeId) ?? snapshot?.runtimes[0];
-  const visibleAssets = distributionAssets(snapshot?.assets ?? [], scopedDeployments.filter(item => item.runtime === currentRuntime?.runtime), search, statusFilter);
-  const selectedKeys = distributionSelection(selectedCells, currentRuntime?.runtime ?? "", visibleAssets);
+  const defaultRuntime = snapshot?.runtimes.find(runtime => runtime.runtime === "claude_code") ?? snapshot?.runtimes[0];
+  const selectedRuntimes = snapshot?.runtimes.filter(runtime => (runtimeIds ?? [defaultRuntime?.runtime]).includes(runtime.runtime)) ?? [];
+  const visibleAssets = distributionAssets(snapshot?.assets ?? [], scopedDeployments, search, statusFilter, selectedRuntimes.map(runtime => runtime.runtime));
+  const selectedSkills = visibleAssets.filter(asset => selectedSkillIds.has(asset.id));
+  const selectedKeys = distributionSelection(selectedSkillIds, selectedRuntimes.map(runtime => runtime.runtime), visibleAssets);
+  const targetLabel = selectedRuntimes.map(runtime => runtime.label).join("、") || "未选择 Agent";
   const rowAsset = snapshot?.assets.find(asset => asset.id === rowActionsId);
-  useEffect(() => { setSelectedCells(new Set()); }, [currentRuntime?.runtime, scope, effectiveProject, taskId, agentId, search, statusFilter]);
+  useEffect(() => { setSelectedSkillIds(new Set()); }, [scope, effectiveProject, taskId, agentId, search, statusFilter]);
 
   const run = async (work: () => Promise<void>, success?: string) => {
     if (operationInFlight.current) return;
@@ -194,8 +197,13 @@ export function SkillCenterPanel({ projects }: Props) {
     await run(async () => { await invoke("skill_center_import", { input: { sourceType: "adopted", source: item.path } }); }, `已纳管 ${item.name}`);
   };
 
-  const toggleCell = (key: string) => setSelectedCells((current) => {
+  const toggleSkill = (key: string) => setSelectedSkillIds((current) => {
     const next = new Set(current); next.has(key) ? next.delete(key) : next.add(key); return next;
+  });
+
+  const toggleRuntime = (runtime: string) => setRuntimeIds(value => {
+    const current = value ?? selectedRuntimes.map(item => item.runtime);
+    return current.includes(runtime) ? current.filter(item => item !== runtime) : [...current, runtime];
   });
 
   const deploySelected = async () => {
@@ -207,11 +215,9 @@ export function SkillCenterPanel({ projects }: Props) {
       const [skillId, runtime] = key.split("::");
       return { skillId, runtime, scope, projectPath: effectiveProject, taskId: scope === "task" ? taskId.trim() || null : null, agentId: scope === "task" ? agentId.trim() || null : null, trustConfirmed: true };
     });
-    const untrusted = inputs
-      .map((input) => snapshot?.assets.find((asset) => asset.id === input.skillId))
-      .filter((asset): asset is SkillAsset => Boolean(asset && asset.trustState !== "trusted"));
+    const untrusted = selectedSkills.filter(asset => asset.trustState !== "trusted");
     if (untrusted.length && !window.confirm(`以下 Skill 尚未信任：\n${untrusted.map((asset) => `• ${asset.name}${asset.riskSummary.length ? `（${asset.riskSummary.join("；")}）` : ""}`).join("\n")}\n\n确认审阅来源并信任后部署？`)) return;
-    await run(async () => { await invoke("skill_center_deploy_batch", { inputs }); setSelectedCells(new Set()); }, `已完成 ${inputs.length} 个 Runtime 目标的安全分发`);
+    await run(async () => { await invoke("skill_center_deploy_batch", { inputs }); setSelectedSkillIds(new Set()); }, `已完成 ${selectedSkills.length} 个 Skill 向 ${selectedRuntimes.length} 个 Agent 的安全分发`);
   };
 
   const undeploySelected = async () => {
@@ -222,7 +228,7 @@ export function SkillCenterPanel({ projects }: Props) {
     if (!window.confirm(`撤下选中的 ${deployments.length} 个受管部署？任何存在本地修改的副本都会使整批操作取消。`)) return;
     await run(async () => {
       await invoke("skill_center_undeploy_batch", { deploymentIds: deployments.map((item) => item.id) });
-      setSelectedCells(new Set());
+      setSelectedSkillIds(new Set());
     }, `已安全撤下 ${deployments.length} 个部署`);
   };
 
@@ -280,7 +286,7 @@ export function SkillCenterPanel({ projects }: Props) {
   if (!snapshot) return <div className="skill-center-loading">{message?.tone === "error" ? <><p role="alert">{message.text}</p><button className="btn" disabled={busy} onClick={() => void run(async () => {})}>重新读取中央库</button></> : <><ArrowClockwise className="spin" /> 正在读取 Skill 中央库…</>}</div>;
 
   return (
-    <section className="skill-center skill-workspace skill-runtime-first" data-skill-view={activeTab} aria-label="Skill 中心">
+    <section className="skill-center skill-workspace skill-runtime-first" data-skill-view={activeTab} aria-label="Skills">
       <fieldset disabled={busy} style={{ display: "contents" }}>
       <header className="skill-center-toolbar">
         <div className="skill-center-tabs" role="tablist" aria-label="Skill 管理视图" onKeyDown={(event) => {
@@ -315,12 +321,12 @@ export function SkillCenterPanel({ projects }: Props) {
         if (index < 0) return;
         event.preventDefault();
         const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
-        buttons[next]?.focus(); buttons[next]?.click();
-      }}>{snapshot.runtimes.map(runtime => <button type="button" data-runtime={runtime.runtime} className={runtime.runtime === currentRuntime?.runtime ? "active" : ""} aria-pressed={runtime.runtime === currentRuntime?.runtime} key={runtime.runtime} onClick={() => setRuntimeId(runtime.runtime)}>
-        {RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind] ? <img src={RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind]} alt="" /> : <Package />}<span>{runtime.label}</span>
+        buttons[next]?.focus();
+      }}>{snapshot.runtimes.map(runtime => <button type="button" data-runtime={runtime.runtime} className={selectedRuntimes.includes(runtime) ? "active" : ""} aria-pressed={selectedRuntimes.includes(runtime)} key={runtime.runtime} onClick={() => toggleRuntime(runtime.runtime)}>
+        {RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind] ? <img src={RUNTIME_LOGOS[runtime.runtime as AgentRuntimeKind]} alt="" /> : <Package />}<span>{runtime.label}</span>{selectedRuntimes.includes(runtime) && <Check size={14} aria-hidden="true" />}
       </button>)}</div>}
       <div className={`skill-center-scopebar${activeTab === "market" || activeTab === "updates" ? " hidden" : ""}`}>
-        {activeTab === "matrix" && <strong className="skill-current-target">当前目标：{currentRuntime?.label ?? "暂无 Runtime"}</strong>}
+        {activeTab === "matrix" && <strong className="skill-current-target">当前目标：{targetLabel}</strong>}
         <label>作用域<select aria-label="作用域" value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="global">全局</option><option value="project">项目</option><option value="task">任务 / Agent</option></select></label>
         {scope === "project" && <label>项目<select value={projectPath} onChange={(event) => setProjectPath(event.target.value)}><option value="">选择项目</option>{projects.map((project) => <option key={project.id} value={project.path}>{project.name}</option>)}</select></label>}
         {scope === "task" && <><label>独立工作目录<input value={taskWorkspacePath} onChange={(event) => setTaskWorkspacePath(event.target.value)} placeholder="任务 Worktree 绝对路径" /></label><button className="btn" type="button" onClick={() => void run(async () => { const path = await open({ directory: true, title: "选择任务 Worktree" }); if (typeof path === "string") setTaskWorkspacePath(path); })}>选择目录</button><label>任务 ID<input value={taskId} onChange={(event) => setTaskId(event.target.value)} placeholder="可选" /></label><label>Agent ID<input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="可选" /></label></>}
@@ -334,25 +340,26 @@ export function SkillCenterPanel({ projects }: Props) {
 
       {activeTab === "matrix" && (
         <>
-        {currentRuntime && <details className="skill-target-details"><summary>目标详情 <small>查看 {currentRuntime.label} 的运行时路径等信息</small></summary>
-          <dl><div><dt>安装状态</dt><dd>{currentRuntime.installed ? "已检测到 Runtime" : "未检测到 Runtime，请检查安装"}</dd></div><div><dt>全局目录</dt><dd>{currentRuntime.globalRoot}</dd></div><div><dt>项目相对目录</dt><dd>{currentRuntime.projectRoot}</dd></div><div><dt>发现目录</dt><dd>{currentRuntime.discoveryRoots.join("、") || "使用默认目录"}</dd></div></dl>
+        {!!selectedRuntimes.length && <details className="skill-target-details"><summary>目标详情 <small>查看 {targetLabel} 的运行时路径等信息</small></summary>
+          {selectedRuntimes.map(runtime => <dl key={runtime.runtime}><div><dt>Agent</dt><dd>{runtime.label}</dd></div><div><dt>安装状态</dt><dd>{runtime.installed ? "已检测到 Runtime" : "未检测到 Runtime，请检查安装"}</dd></div><div><dt>全局目录</dt><dd>{runtime.globalRoot}</dd></div><div><dt>项目相对目录</dt><dd>{runtime.projectRoot}</dd></div><div><dt>发现目录</dt><dd>{runtime.discoveryRoots.join("、") || "使用默认目录"}</dd></div></dl>)}
         </details>}
         <div className="skill-center-matrix-wrap">
           <table className="skill-center-matrix skill-distribution-table">
-            <thead><tr><th><input type="checkbox" aria-label="选择当前列表全部 Skill" disabled={!visibleAssets.length || !currentRuntime} checked={!!visibleAssets.length && selectedKeys.length === visibleAssets.length} ref={input => { if (input) input.indeterminate = selectedKeys.length > 0 && selectedKeys.length < visibleAssets.length; }} onChange={event => setSelectedCells(new Set(event.target.checked && currentRuntime ? visibleAssets.map(asset => cellKey(asset.id, currentRuntime.runtime)) : []))} /></th><th>Skill 名称</th><th>信任状态</th><th>分发状态</th><th><span className="sr-only">操作</span></th></tr></thead>
+            <thead><tr><th><input type="checkbox" aria-label="选择当前列表全部 Skill" disabled={!visibleAssets.length} checked={!!visibleAssets.length && selectedSkills.length === visibleAssets.length} ref={input => { if (input) input.indeterminate = selectedSkills.length > 0 && selectedSkills.length < visibleAssets.length; }} onChange={event => setSelectedSkillIds(new Set(event.target.checked ? visibleAssets.map(asset => asset.id) : []))} /></th><th>Skill 名称</th><th>信任状态</th><th>分发状态</th><th><span className="sr-only">操作</span></th></tr></thead>
             <tbody>{visibleAssets.map((asset) => {
-              const deployment = deploymentFor(asset.id, currentRuntime?.runtime ?? "");
-              const key = cellKey(asset.id, currentRuntime?.runtime ?? "");
-              const status = deployment ? STATUS[deployment.status] ?? STATUS.unverified : null;
-              return <tr key={asset.id} className={selectedCells.has(key) ? "selected" : ""}>
-                <td><input type="checkbox" aria-label={`选择 ${asset.name}`} disabled={!currentRuntime} checked={selectedCells.has(key)} onChange={() => toggleCell(key)} /></td>
+              return <tr key={asset.id} className={selectedSkillIds.has(asset.id) ? "selected" : ""}>
+                <td><input type="checkbox" aria-label={`选择 ${asset.name}`} checked={selectedSkillIds.has(asset.id)} onChange={() => toggleSkill(asset.id)} /></td>
                 <th scope="row">
                   <button className="skill-asset-cell" title={asset.name} onClick={() => void showPreview(asset)}>
                     <span>{asset.name}</span>
                   </button>
                 </th>
                 <td><span className={`skill-trust-label ${asset.trustState === "trusted" ? "ok" : asset.trustState === "blocked" ? "danger" : "warn"}`}>{asset.trustState === "trusted" ? "已信任" : asset.trustState === "blocked" ? "已阻止" : "待审阅"}</span></td>
-                <td><span className={`skill-deploy-status ${status?.tone ?? "empty"}`} title={deployment?.lastError ?? deployment?.targetPath}>{status?.label ?? "未部署"}</span></td>
+                <td>{selectedRuntimes.length ? selectedRuntimes.map(runtime => {
+                  const deployment = deploymentFor(asset.id, runtime.runtime);
+                  const status = deployment ? STATUS[deployment.status] ?? STATUS.unverified : null;
+                  return <div key={runtime.runtime} className={`skill-deploy-status ${status?.tone ?? "empty"}`} title={deployment?.lastError ?? deployment?.targetPath}>{selectedRuntimes.length > 1 && `${runtime.label}：`}{status?.label ?? "未部署"}</div>;
+                }) : <span className="skill-deploy-status empty">未选择 Agent</span>}</td>
                 <td><button type="button" className="icon-btn" aria-label={`${asset.name} 更多操作`} onClick={() => setRowActionsId(asset.id)}><DotsThree size={20} /></button></td>
               </tr>;
             })}</tbody>
@@ -375,14 +382,14 @@ export function SkillCenterPanel({ projects }: Props) {
 
       </div>
       {activeTab === "matrix" && <footer className="skill-center-footer">
-        <div className="skill-selection-summary"><strong>已选择 {selectedKeys.length} 个 Skill</strong><small><ShieldCheck />冲突检查通过后才会写入目标。</small></div>
+        <div className="skill-selection-summary"><strong>已选择 {selectedSkills.length} 个 Skill · {selectedRuntimes.length} 个 Agent</strong><small><ShieldCheck />冲突检查通过后才会写入目标。</small></div>
         <button className="btn" disabled={busy || !selectedKeys.length} onClick={() => { setMessage(null); setShowSaveSet(true); }}>保存配置集</button>
         <button className="btn" disabled={busy || !selectedKeys.some(key => { const [skillId, runtime] = key.split("::"); return Boolean(deploymentFor(skillId, runtime)); })} onClick={() => void undeploySelected()}>撤下选中</button>
-        <button className="btn primary" disabled={busy || !selectedKeys.length} onClick={() => void deploySelected()}>部署到 {currentRuntime?.label ?? "Runtime"}</button>
+        <button className="btn primary" disabled={busy || !selectedKeys.length} onClick={() => void deploySelected()}>部署到 {selectedRuntimes.length === 1 ? targetLabel : `${selectedRuntimes.length} 个 Agent`}</button>
       </footer>}
 
       {showSaveSet && createPortal(<Modal className="skill-center-modal skill-runtime-modal" ariaLabel="保存 Skill 配置集" onClose={() => { if (!busy) setShowSaveSet(false); }}>
-        <h3>保存配置集</h3><p>将选中的 {selectedKeys.length} 个 Skill 与当前 Runtime、作用域保存为可复用组合。</p>
+        <h3>保存配置集</h3><p>将选中的 {selectedSkills.length} 个 Skill 与 {selectedRuntimes.length} 个 Agent、当前作用域保存为可复用组合。</p>
         <label>配置集名称<input value={setName} disabled={busy} onChange={event => setSetName(event.target.value)} placeholder="例如：前端开发" /></label>
         {message?.tone === "error" && <p role="alert">{message.text}</p>}
         <footer><button className="btn" disabled={busy} onClick={() => setShowSaveSet(false)}>取消</button><button className="btn primary" disabled={busy || !setName.trim() || !selectedKeys.length} onClick={() => void saveSet()}>保存</button></footer>
@@ -390,10 +397,10 @@ export function SkillCenterPanel({ projects }: Props) {
 
       {rowAsset && createPortal(<Modal className="skill-center-modal skill-runtime-modal" ariaLabel={`${rowAsset.name} 操作`} onClose={() => { if (!busy) setRowActionsId(null); }}>
         <h3>{rowAsset.name}</h3><p>{rowAsset.description || "未提供描述"}</p>
-        <dl className="skill-row-facts"><div><dt>内容版本</dt><dd>{rowAsset.contentHash}</dd></div>{(() => { const deployment = deploymentFor(rowAsset.id, currentRuntime?.runtime ?? ""); return deployment && <><div><dt>部署路径</dt><dd>{deployment.targetPath}</dd></div><div><dt>部署方式</dt><dd>{deployment.mode}</dd></div>{deployment.lastError && <p role="alert">{deployment.lastError}</p>}</>; })()}</dl>
+        <dl className="skill-row-facts"><div><dt>内容版本</dt><dd>{rowAsset.contentHash}</dd></div>{selectedRuntimes.map(runtime => { const deployment = deploymentFor(rowAsset.id, runtime.runtime); return deployment && <div key={runtime.runtime}><dt>{runtime.label}</dt><dd>{deployment.targetPath} · {deployment.mode}{deployment.lastError && <p role="alert">{deployment.lastError}</p>}</dd></div>; })}</dl>
         <button className="btn" disabled={busy} onClick={() => { setRowActionsId(null); void showPreview(rowAsset); }}><FileCode />文件预览与信任审阅</button>
         <button className="btn" disabled={busy} onClick={() => { setSelectedAssetId(rowAsset.id); setRowActionsId(null); setActiveTab("updates"); }}><ArrowClockwise />版本更新</button>
-        {(() => { const deployment = deploymentFor(rowAsset.id, currentRuntime?.runtime ?? ""); return deployment && <button className="btn danger" disabled={busy} onClick={() => { setRowActionsId(null); void removeDeployment(deployment); }}><Trash />撤下此部署</button>; })()}
+        {selectedRuntimes.map(runtime => { const deployment = deploymentFor(rowAsset.id, runtime.runtime); return deployment && <button key={runtime.runtime} className="btn danger" disabled={busy} onClick={() => { setRowActionsId(null); void removeDeployment(deployment); }}><Trash />撤下 {runtime.label} 部署</button>; })}
         <footer><button className="btn" disabled={busy} onClick={() => setRowActionsId(null)}>关闭</button></footer>
       </Modal>, document.body)}
 

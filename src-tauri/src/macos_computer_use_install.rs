@@ -10,8 +10,6 @@ const MAX_METADATA: usize = 2 * 1024 * 1024;
 const MAX_ARCHIVE: usize = 256 * 1024 * 1024;
 const MAX_EXTRACTED: u64 = 1024 * 1024 * 1024;
 const KIMI_TEAM: &str = "2J9472RW75";
-// Pinned to the publisher of the official app, not to the download transport.
-const OCU_TEAM: &str = "J9P29FA5BX";
 static INSTALL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Clone, Debug)]
@@ -40,9 +38,6 @@ fn digest(value: &str) -> Result<String> {
 fn allowed_url(url: &reqwest::Url) -> bool {
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() || url.port().is_some_and(|p| p != 443) { return false; }
     match url.host_str() {
-        Some("api.github.com") => url.path().starts_with("/repos/iFurySt/open-computer-use/"),
-        Some("github.com") => url.path().starts_with("/iFurySt/open-computer-use/releases/download/"),
-        Some("release-assets.githubusercontent.com") | Some("objects.githubusercontent.com") | Some("github-releases.githubusercontent.com") => true,
         Some("cdn.kimi.com") => url.path().starts_with("/kimi-computer-use/"),
         _ => false,
     }
@@ -50,7 +45,6 @@ fn allowed_url(url: &reqwest::Url) -> bool {
 fn official_asset_url(raw: &str, tool: MacControlTool, expected_version: &str) -> Result<String> {
     let url = reqwest::Url::parse(raw).context("官方安装包 URL 无效")?;
     let prefix = match tool {
-        MacControlTool::OpenComputerUse => format!("https://github.com/iFurySt/open-computer-use/releases/download/v{expected_version}/"),
         MacControlTool::KimiCu => format!("https://cdn.kimi.com/kimi-computer-use/{expected_version}/"),
     };
     if !allowed_url(&url) || !raw.starts_with(&prefix) || url.query().is_some() || url.fragment().is_some() || !url.path().ends_with(".zip") {
@@ -60,18 +54,6 @@ fn official_asset_url(raw: &str, tool: MacControlTool, expected_version: &str) -
 }
 fn select_release(tool: MacControlTool, metadata: &Value, silicon: bool) -> Result<Release> {
     match tool {
-        MacControlTool::OpenComputerUse => {
-            if metadata["draft"] == true || metadata["prerelease"] == true { bail!("不安装草稿或预发布运行时"); }
-            let version = version(metadata["tag_name"].as_str().context("官方发布缺少版本")?)?;
-            let expected = format!("Open-Computer-Use-{version}-macOS-universal.app.zip");
-            let candidates: Vec<_> = metadata["assets"].as_array().context("官方发布缺少资产")?.iter().filter(|asset| asset["name"] == expected).collect();
-            if candidates.len() != 1 { bail!("官方发布没有唯一的 macOS Universal 应用包"); }
-            let asset = candidates[0];
-            let size = asset["size"].as_u64().filter(|s| *s > 0 && *s <= MAX_ARCHIVE as u64).context("官方安装包大小无效")?;
-            Ok(Release { url: official_asset_url(asset["browser_download_url"].as_str().context("缺少官方包地址")?, tool, &version)?,
-                sha256: digest(asset["digest"].as_str().context("官方发布没有 SHA256，未安装")?)?, version, size: Some(size),
-                bundle_id: "com.ifuryst.opencomputeruse", app_name: "Open Computer Use.app", team_id: OCU_TEAM })
-        }
         MacControlTool::KimiCu => {
             let version = version(metadata["version"].as_str().context("Kimi 官方清单缺少版本")?)?;
             let asset = &metadata[if silicon { "app" } else { "app_x86_64" }];
@@ -262,19 +244,6 @@ impl FileLock {
     }
 }
 impl Drop for FileLock { fn drop(&mut self) { unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN); } } }
-fn publish_app(stage: &Path, destination: &Path, verify_existing: impl Fn(&Path) -> Result<()>, verify_new: impl Fn(&Path) -> Result<()>) -> Result<()> {
-    if fs::symlink_metadata(destination).is_ok_and(|meta| meta.file_type().is_symlink()) { bail!("目标应用是符号链接，已保留，不能自动替换"); }
-    let backup = destination.with_file_name(format!(".crewvela-old-{}.app", uuid::Uuid::new_v4()));
-    let existed = destination.exists();
-    if existed { verify_existing(destination).context("已有目标不是可替换的官方应用，已保留")?; fs::rename(destination, &backup).context("无法保留旧应用")?; }
-    if let Err(error) = fs::rename(stage, destination).and_then(|_| verify_new(destination).map_err(std::io::Error::other)) {
-        let _ = fs::remove_dir_all(destination);
-        if existed { fs::rename(&backup, destination).context("恢复旧应用失败；旧包仍保存在同目录隐藏备份中")?; }
-        return Err(error).context("安装未完成，旧应用已恢复");
-    }
-    if existed { fs::remove_dir_all(&backup).context("安装成功，但旧应用备份未清理")?; }
-    Ok(())
-}
 fn stage_archive(bytes: &[u8], directory: &Path) -> Result<PathBuf> {
     let app_name = validate_archive(bytes)?;
     let archive = directory.join("official-runtime.zip"); fs::write(&archive, bytes)?;
@@ -299,13 +268,13 @@ pub async fn install(tool: MacControlTool, progress: &(impl Fn(&str) -> Result<(
     let silicon = actual_silicon();
     let client = client()?;
     progress("正在获取官方版本清单")?;
-    let metadata_url = match tool { MacControlTool::OpenComputerUse => "https://api.github.com/repos/iFurySt/open-computer-use/releases/latest", MacControlTool::KimiCu => "https://cdn.kimi.com/kimi-computer-use/latest/version.json" };
+    let metadata_url = "https://cdn.kimi.com/kimi-computer-use/latest/version.json";
     let metadata: Value = serde_json::from_slice(&download(&client, metadata_url, MAX_METADATA, None, &|_| Ok(())).await?).context("官方版本清单格式无效")?;
     let release = select_release(tool, &metadata, silicon)?;
     progress(&format!("准备安装官方运行时 {}，已有应用尚未修改", release.version))?;
     let bytes = download(&client, &release.url, MAX_ARCHIVE, release.size, progress).await?;
     progress("下载完成，正在校验 SHA256")?; verify_digest(&bytes, &release)?;
-    let parent = match tool { MacControlTool::OpenComputerUse => dirs::home_dir().context("无法定位用户目录")?.join("Applications"), MacControlTool::KimiCu => PathBuf::from("/Applications") };
+    let parent = PathBuf::from("/Applications");
     fs::create_dir_all(&parent).context("无法创建应用目录，请检查安装权限")?;
     let directory = Directory(parent.join(format!(".crewvela-install-{}", uuid::Uuid::new_v4())));
     fs::create_dir(&directory.0).context("无法写入 Applications，请确认当前用户具备安装权限")?;
@@ -317,9 +286,6 @@ pub async fn install(tool: MacControlTool, progress: &(impl Fn(&str) -> Result<(
     if destination.exists() { validate_bundle(&destination, &release, silicon, false).context("已有应用身份校验未通过，已保留")?; }
     progress("校验通过，正在安装官方运行时")?;
     match tool {
-        MacControlTool::OpenComputerUse => publish_app(&app, &destination,
-            |candidate| validate_bundle(candidate, &release, silicon, false).map(|_| ()),
-            |candidate| validate_bundle(candidate, &release, silicon, true).map(|_| ()))?,
         MacControlTool::KimiCu => {
             // The verified publisher binary owns the service transaction and
             // rollback. Never emulate it with kill/bootout or a custom plist.
@@ -354,22 +320,12 @@ mod tests {
         assert!(select_release(MacControlTool::KimiCu,&manifest,true).is_err());
     }
     #[test]
-    fn ocu_selection_requires_published_exact_universal_asset_and_digest() {
-        let manifest = serde_json::json!({"tag_name":"v1.1.4","assets":[{"name":"Open-Computer-Use-1.1.4-macOS-universal.app.zip","size":123,"digest":format!("sha256:{}","a".repeat(64)),"browser_download_url":"https://github.com/iFurySt/open-computer-use/releases/download/v1.1.4/Open-Computer-Use-1.1.4-macOS-universal.app.zip"}]});
-        assert_eq!(select_release(MacControlTool::OpenComputerUse,&manifest,true).unwrap().team_id,OCU_TEAM);
-        let mut draft = manifest.clone(); draft["draft"] = Value::Bool(true);
-        assert!(select_release(MacControlTool::OpenComputerUse,&draft,true).is_err());
-        let mut missing = manifest.clone(); missing["assets"][0]["digest"] = Value::Null;
-        assert!(select_release(MacControlTool::OpenComputerUse,&missing,true).is_err());
-        let mut wrong = manifest; wrong["assets"][0]["browser_download_url"] = Value::String("https://github.com/iFurySt/open-computer-use/releases/download/v9.0.0/app.zip".into());
-        assert!(select_release(MacControlTool::OpenComputerUse,&wrong,true).is_err());
-    }
-    #[test]
     fn official_transport_rejects_cleartext_credentials_ports_and_other_repositories() {
-        for raw in ["http://cdn.kimi.com/kimi-computer-use/x", "https://cdn.kimi.com:8443/kimi-computer-use/x", "https://user@cdn.kimi.com/kimi-computer-use/x", "https://github.com/evil/project/releases/download/x", "https://evil.github.com/iFurySt/open-computer-use/releases/download/x"] {
+        for raw in ["http://cdn.kimi.com/kimi-computer-use/x", "https://cdn.kimi.com:8443/kimi-computer-use/x", "https://user@cdn.kimi.com/kimi-computer-use/x", "https://github.com/evil/project/releases/download/x", "https://evil.cdn.kimi.com/kimi-computer-use/x"] {
             assert!(!allowed_url(&reqwest::Url::parse(raw).unwrap()),"{raw}");
         }
-        assert!(allowed_url(&reqwest::Url::parse("https://release-assets.githubusercontent.com/github-production-release-asset/file").unwrap()));
+        assert!(!allowed_url(&reqwest::Url::parse("https://release-assets.githubusercontent.com/github-production-release-asset/file").unwrap()));
+        assert!(allowed_url(&reqwest::Url::parse("https://cdn.kimi.com/kimi-computer-use/latest/version.json").unwrap()));
     }
     #[test]
     fn checksum_rejects_truncation_and_modified_data() {
@@ -406,23 +362,6 @@ mod tests {
         ] { assert!(validate_archive(&zip(&entries)).is_err(), "{entries:?}"); }
     }
     #[test]
-    fn publication_restores_old_application_after_new_verification_failure() {
-        let root = temporary(); let target = root.0.join("Official.app"); let stage = root.0.join("Staged.app");
-        fs::create_dir(&target).unwrap(); fs::write(target.join("old"),b"old").unwrap();
-        fs::create_dir(&stage).unwrap(); fs::write(stage.join("new"),b"new").unwrap();
-        let result = publish_app(&stage,&target,|_|Ok(()),|_|bail!("simulated final verification failure"));
-        assert!(result.is_err()); assert_eq!(fs::read(target.join("old")).unwrap(),b"old"); assert!(!target.join("new").exists());
-    }
-    #[test]
-    fn publication_refuses_foreign_existing_apps_and_symlinks_without_touching_them() {
-        let root = temporary(); let target = root.0.join("Official.app"); let stage = root.0.join("Staged.app");
-        fs::create_dir(&target).unwrap(); fs::write(target.join("user"),b"keep").unwrap(); fs::create_dir(&stage).unwrap();
-        assert!(publish_app(&stage,&target,|_|bail!("foreign app"),|_|Ok(())).is_err());
-        assert_eq!(fs::read(target.join("user")).unwrap(),b"keep"); assert!(stage.exists());
-        let link = root.0.join("Link.app"); std::os::unix::fs::symlink(&target,&link).unwrap();
-        assert!(publish_app(&stage,&link,|_|Ok(()),|_|Ok(())).is_err()); assert!(stage.exists());
-    }
-    #[test]
     fn file_lock_rejects_concurrent_install_and_unlocks_on_drop() {
         let root = temporary(); let path = root.0.join("lock");
         let first = FileLock::acquire(&path).unwrap(); assert!(FileLock::acquire(&path).is_err()); drop(first);
@@ -432,8 +371,8 @@ mod tests {
     #[ignore = "Downloads and verifies official apps in a temporary directory; never installs or requests permissions"]
     async fn official_downloads_validate_without_installing() -> Result<()> {
         let client = client()?;
-        for tool in [MacControlTool::OpenComputerUse,MacControlTool::KimiCu] {
-            let url = match tool { MacControlTool::OpenComputerUse => "https://api.github.com/repos/iFurySt/open-computer-use/releases/latest", MacControlTool::KimiCu => "https://cdn.kimi.com/kimi-computer-use/latest/version.json" };
+        for tool in [MacControlTool::KimiCu] {
+            let url = "https://cdn.kimi.com/kimi-computer-use/latest/version.json";
             let metadata: Value = serde_json::from_slice(&download(&client,url,MAX_METADATA,None,&|_|Ok(())).await?)?;
             let release = select_release(tool,&metadata,actual_silicon())?;
             let bytes = download(&client,&release.url,MAX_ARCHIVE,release.size,&|_|Ok(())).await?;

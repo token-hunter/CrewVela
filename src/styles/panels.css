@@ -332,10 +332,6 @@
   }
 }
 
-@media (max-width: 1180px) {
-  .ma-workspace-body { grid-template-columns: minmax(0, 1fr) 240px; }
-}
-
 /* ---- 工作区页签栏 ---- */
 .workspace-tabs {
   flex: none;

@@ -8,7 +8,6 @@ import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
 import { BROWSER_CONTROL_PREVIEW } from "../../src/browserControlSettings";
 import { COMPUTER_CONTROL_PREVIEW } from "../../src/computerControlSettings";
 import { KIMI_COMPUTER_USE_PREVIEW } from "../../src/kimiComputerUseSettings";
-import { OPEN_COMPUTER_USE_PREVIEW } from "../../src/openComputerUseSettings";
 import "../../src/styles.css";
 
 // Only this fixture replaces IPC. Production components keep their real handlers.
@@ -17,11 +16,10 @@ const statuses: Record<string, any> = {
   browser_control: structuredClone(BROWSER_CONTROL_PREVIEW),
   computer_control: structuredClone(COMPUTER_CONTROL_PREVIEW),
   kimi_computer_use: structuredClone(KIMI_COMPUTER_USE_PREVIEW),
-  open_computer_use: structuredClone(OPEN_COMPUTER_USE_PREVIEW),
 };
 if (/mac/i.test(navigator.platform)) {
   const scenario = new URLSearchParams(location.search).get("scenario");
-  for (const prefix of ["open_computer_use", "kimi_computer_use"]) {
+  for (const prefix of ["kimi_computer_use"]) {
     statuses[prefix].settings = { enabled: false };
     statuses[prefix].macos = { supported: scenario !== "unsupported", installed: scenario !== "missing" && scenario !== "unsupported", executable: "/Applications/Fixture.app/Contents/MacOS/tool", mcpRegistered: false, accessibility: null, screenRecording: null, serviceRunning: null, detail: "运行时已检测到；权限尚未验证。" };
     statuses[prefix].warning = null;
@@ -45,13 +43,14 @@ const emit = (event: string, payload: any) => { for (const item of listeners.val
   if (command === "plugin:event|listen") { const id = nextCallback++; listeners.set(id, args); return id; }
   if (command === "plugin:event|unlisten") { listeners.delete(args.eventId); return; }
   if (command === "macos_computer_use_install") {
+    if (args.tool !== "kimiCu") throw Error("Unexpected computer-control tool");
     const failed = failNext; failNext = false;
     emit("macos-computer-use-install-progress", { ...args, message: "正在校验官方安装包…" });
     if (new URLSearchParams(location.search).get("installHold") === "1") await new Promise<void>(resolve => { (window as any).__computerMock.release = resolve; });
     else await new Promise(resolve => setTimeout(resolve, 300));
     if (failed) throw Error("测试：下载校验失败，已有安装未修改");
-    const status = statuses[args.tool === "kimiCu" ? "kimi_computer_use" : "open_computer_use"];
-    status.macos = { ...status.macos, installed: true, accessibility: false, screenRecording: false, serviceRunning: args.tool === "kimiCu" ? true : null, mcpRegistered: true, detail: "安装并启用完成，请在官方窗口完成系统授权，再重开 Agent 会话。" };
+    const status = statuses.kimi_computer_use;
+    status.macos = { ...status.macos, installed: true, accessibility: false, screenRecording: false, serviceRunning: true, mcpRegistered: true, detail: "安装并启用完成，请在官方窗口完成系统授权，再重开 Agent 会话。" };
     status.settings = { enabled: true }; status.installed = true; status.mcpRegistered = true;
     if (new URLSearchParams(location.search).get("installOutcome") === "partial") {
       status.settings.enabled = false; status.macos.mcpRegistered = false;
@@ -61,8 +60,9 @@ const emit = (event: string, payload: any) => { for (const item of listeners.val
   }
   if (failNext && (command.endsWith("_save") || command === "skill_center_deploy_batch" || command === "macos_computer_use_action")) { failNext = false; throw Error("测试保存失败"); }
   if (command === "macos_computer_use_action") {
-    const status = statuses[args.tool === "kimiCu" ? "kimi_computer_use" : "open_computer_use"];
-    status.macos = { ...status.macos, accessibility: args.prepare, screenRecording: args.prepare, serviceRunning: args.tool === "kimiCu" ? args.prepare : null, detail: args.prepare ? "Mock 授权已完成；请重开 Agent 会话验证。" : "待授权：辅助功能和屏幕录制尚未授予。" };
+    if (args.tool !== "kimiCu") throw Error("Unexpected computer-control tool");
+    const status = statuses.kimi_computer_use;
+    status.macos = { ...status.macos, accessibility: args.prepare, screenRecording: args.prepare, serviceRunning: args.prepare, detail: args.prepare ? "Mock 授权已完成；请重开 Agent 会话验证。" : "待授权：辅助功能和屏幕录制尚未授予。" };
     return structuredClone(status.macos);
   }
   const prefix = command.replace(/_(get|save)$/, "");
@@ -84,7 +84,7 @@ const emit = (event: string, payload: any) => { for (const item of listeners.val
   if (command === "skill_center_market_browse") return { skills: [], errors: [] };
   return [];
 } };
-const pages = { general: "常规", browser: "浏览器控制", computer: "电脑控制", skills: "Skill 中心" };
+const pages = { general: "常规", browser: "浏览器控制", computer: "电脑控制", skills: "Skills" };
 function Fixture() {
   const [mode, setMode] = useState<keyof typeof pages>((new URLSearchParams(location.search).get("page") as keyof typeof pages) || "general");
   const [log, setLog] = useState("");

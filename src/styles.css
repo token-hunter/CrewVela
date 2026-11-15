@@ -11,8 +11,7 @@
 @import "./styles/control-chat.css";
 @import "./styles/settings-page.css";
 @import "./styles/notifications.css";
-@import "./styles/skin-settings.css";
-@import "./styles/skins.css";
+@import "./styles/appearance-transparency.css";
 @import "./styles/git-workbench.css";
 @import "./styles/integrations.css";
 @import "/src/styles/provider-quota.css";

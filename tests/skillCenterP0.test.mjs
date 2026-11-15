@@ -9,9 +9,9 @@ const backend = readFileSync(new URL("../src-tauri/src/skill_center.rs", import.
 const market = readFileSync(new URL("../src/components/SkillMarketPanel.tsx", import.meta.url), "utf8");
 const lib = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
 
-test("设置的集成分组提供插件市场、Skill 中心和 MCP 独立入口", () => {
+test("设置的集成分组提供插件市场、Skills和 MCP 独立入口", () => {
   const group = settings.split('label: "集成"')[1].split('label: "数据"')[0];
-  for (const [id, label, panelName] of [["pluginMarket", "插件市场", "PluginMarketPanel"], ["skills", "Skill 中心", "SkillCenterPanel"], ["mcp", "MCP", "McpSettingsPanel"]]) {
+  for (const [id, label, panelName] of [["pluginMarket", "插件市场", "PluginMarketPanel"], ["skills", "Skills", "SkillCenterPanel"], ["mcp", "MCP", "McpSettingsPanel"]]) {
     assert.ok(group.includes(`id: "${id}"`) && group.includes(`label: "${label}"`));
     assert.match(settings, new RegExp(`activeSection === "${id}" \\? \\(\\s*<${panelName}\\b`));
   }
@@ -90,7 +90,7 @@ test("Skill 市场同时支持仓库浏览和 skills.sh 搜索安装", () => {
 });
 
 
-test("Skill 中心后台 Git 命令在 Windows 不创建可见终端", () => {
+test("Skills后台 Git 命令在 Windows 不创建可见终端", () => {
   const runtimeBackend = backend.split("#[cfg(test)]")[0];
   assert.match(runtimeBackend, /fn background_command\(program: &str\) -> Command/);
   assert.match(runtimeBackend, /CREATE_NO_WINDOW/);

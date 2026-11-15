@@ -14,13 +14,14 @@ pub use coordinator::{
     requested_agent_runtimes, explicitly_mentioned_agent_runtimes, CoordinatorCancellationToken, CoordinatorStreamUpdate,
 };
 pub(crate) use direct_message::{
-    direct_message_request, directed_message_runtimes, directed_sender_id,
+    direct_message_request, directed_message_runtimes, directed_sender_id, self_introduction_requested,
     DirectMessageParticipant, DirectMessageRequest,
 };
 pub use domain::*;
 pub(crate) use executor::interactive_runtime_prompt_blocked;
 pub(crate) use executor::interactive_runtime_prompt_busy;
 pub(crate) use executor::codex_terminal_state;
+pub(crate) use executor::codex_native_update_prompt;
 pub(crate) use executor::interactive_runtime_prompt_ready;
 pub(crate) use executor::external_command_path;
 pub use executor::{merge_integrator_delivery, AgentTerminalHost, MultiAgentSupervisor};

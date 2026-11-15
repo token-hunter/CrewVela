@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(empty.installed[0].id, installed.id);
         assert_eq!(empty.installed_catalog[0].plugin.name, "demo");
         assert_eq!(center.snapshot().unwrap().assets.len(), before_assets);
-        assert_eq!(candidates_at(&paths).unwrap().marketplaces.iter().map(|market| market.plugins.len()).sum::<usize>(), 8);
+        assert_eq!(candidates_at(&paths).unwrap().marketplaces.iter().map(|market| market.plugins.len()).sum::<usize>(), super::super::catalog::entries().len() + 2);
         drop(center);
         let checked_root = root.canonicalize().unwrap();
         assert!(checked_root.starts_with(std::env::temp_dir().canonicalize().unwrap()));

@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ArrowElbowDownLeftIcon } from "@phosphor-icons/react/dist/csr/ArrowElbowDownLeft";
 import { RobotIcon } from "@phosphor-icons/react/dist/csr/Robot";
-import { UsersThreeIcon } from "@phosphor-icons/react/dist/csr/UsersThree";
 import type { AgentRuntimeKind } from "../types";
 import { AgentAvatar } from "./AgentAvatar";
 
@@ -18,12 +17,14 @@ export interface AgentMentionOption {
   targetCount?: number;
 }
 
-export function AgentMentionMenu({ id, options, activeIndex, onHighlight, onSelect }: {
+export function AgentMentionMenu({ id, options, activeIndex, onHighlight, onSelect, onSelectAll, allSelected }: {
   id: string;
   options: readonly AgentMentionOption[];
   activeIndex: number;
   onHighlight: (index: number) => void;
   onSelect: (option: AgentMentionOption) => void;
+  onSelectAll: () => void;
+  allSelected: boolean;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -38,19 +39,19 @@ export function AgentMentionMenu({ id, options, activeIndex, onHighlight, onSele
 
   return <div className="multi-agent-mention-menu">
     <div className="multi-agent-mention-header">
-      <strong>选择通信对象</strong><span>@ 提及 Agent</span>
+      <strong>选择具体 Agent</strong>
+      <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onSelectAll}>
+        {allSelected ? "取消全选" : "全选"}
+      </button>
     </div>
     <div ref={listRef} id={id} className="multi-agent-mention-results" role="listbox" aria-label="选择协作 Agent">
-      {(["群组", "具体 Agent", "终端会话"] as const).map((section) => {
+      {(["具体 Agent"] as const).map((section) => {
         const items = options.filter((option) => option.section === section);
         if (!items.length) return null;
         return <div className="multi-agent-mention-section" role="group" aria-label={section} key={section}>
-          {section !== "群组" && <div className="multi-agent-mention-section-label">{section}</div>}
           {items.map((option) => {
             const index = options.indexOf(option);
-            const description = option.kind === "all" ? "全部项目成员"
-              : option.kind === "runtime" ? option.description.replace(/\s*·\s*\d+\s*个实例$/, "")
-                : option.description;
+            const description = option.description;
             return <button
               key={option.key} id={`${id}-option-${index}`} type="button" role="option"
               aria-selected={index === activeIndex}
@@ -61,8 +62,7 @@ export function AgentMentionMenu({ id, options, activeIndex, onHighlight, onSele
             >
               {option.runtimeKind
                 ? <AgentAvatar className="ma-mention-avatar" avatarId={option.avatarId} runtimeKind={option.runtimeKind} decorative />
-                : option.kind === "all" ? <UsersThreeIcon className="ma-mention-avatar multi-agent-mention-group-icon" aria-hidden="true" />
-                  : <RobotIcon className="ma-mention-avatar" aria-hidden="true" />}
+                : <RobotIcon className="ma-mention-avatar" aria-hidden="true" />}
               <strong className="multi-agent-mention-name">{option.token}</strong>
               <span className="multi-agent-mention-description">{description}</span>
               <em className="multi-agent-mention-count" aria-label={typeof option.targetCount === "number" ? `${option.targetCount} 个实例` : undefined}>

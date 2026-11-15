@@ -39,6 +39,7 @@ const api = {
     }
   },
   async invoke(command: string, args?: Record<string, unknown>) {
+    if (command === "model_assignments_snapshot") return { rows: [], projects: [] };
     if (command === "list_providers") return providers;
     if (command === "delete_provider") {
       if (api.rejectProviderDelete) throw Error("fixture provider delete rejected");

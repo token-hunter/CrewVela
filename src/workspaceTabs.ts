@@ -69,7 +69,7 @@ export function saveWorkspaceTabs(state: WorkspaceTabState): void {
 }
 
 export function createWorkspaceTab(existing: WorkspaceTab[]): WorkspaceTab {
-  let index = existing.length + 1;
+  let index = 1;
   const titles = new Set(existing.map((tab) => tab.title));
   while (titles.has(`工作区 ${index}`)) index += 1;
   const id =

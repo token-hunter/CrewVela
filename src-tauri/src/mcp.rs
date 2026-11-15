@@ -17,6 +17,8 @@ use serde_json::{json, Value};
 const STDIO_PROBE_TIMEOUT: Duration = Duration::from_secs(45);
 const REMOTE_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 static CONFIG_WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+// Migration marker only: this built-in adapter has been removed on all platforms.
+const RETIRED_COMPUTER_USE_SOURCE: &str = "builtin@open-computer-use";
 fn config_write_lock() -> Result<std::sync::MutexGuard<'static, ()>> {
     CONFIG_WRITES.lock().map_err(|_| anyhow!("MCP 配置写入锁已损坏"))
 }
@@ -155,8 +157,31 @@ pub(crate) fn load_at(path: &Path) -> Result<Vec<McpServerConfig>> {
     }
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("读取 MCP 配置失败: {}", path.display()))?;
-    let file: McpFile = serde_json::from_str(&raw).context("解析 mcp-servers.json 失败")?;
+    let mut file: McpFile = serde_json::from_str(&raw).context("解析 mcp-servers.json 失败")?;
+    // Also covers CLI hosts that read MCP before the desktop startup migration.
+    file.servers.retain(|server| server.source_plugin.as_deref() != Some(RETIRED_COMPUTER_USE_SOURCE));
     Ok(file.servers)
+}
+
+/// Remove only the retired CrewVela-owned registration, never a user's same-name
+/// server or an externally installed application. Fail without overwriting a
+/// malformed registry; load_at still refuses to dispatch the retired adapter.
+pub(crate) fn retire_removed_integrations_at(config_dir: &Path) -> Result<()> {
+    let _write = config_write_lock()?;
+    let path = config_dir.join("mcp-servers.json");
+    if path.exists() {
+        let raw = std::fs::read_to_string(&path).context("读取旧 MCP 配置失败")?;
+        let mut file: McpFile = serde_json::from_str(&raw).context("解析旧 MCP 配置失败")?;
+        let before = file.servers.len();
+        file.servers.retain(|server| server.source_plugin.as_deref() != Some(RETIRED_COMPUTER_USE_SOURCE));
+        if before != file.servers.len() { save_at(&path, &file.servers)?; }
+    }
+    let settings = config_dir.join("open-computer-use.json");
+    match std::fs::remove_file(&settings) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).context("清理已移除电脑控制的旧配置失败"),
+    }
 }
 
 fn save_at(path: &Path, servers: &[McpServerConfig]) -> Result<()> {
@@ -1021,6 +1046,44 @@ pub async fn probe_enabled() -> Vec<McpProbeReport> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retired_builtin_is_not_loaded_and_migration_preserves_user_and_active_servers() {
+        let dir = std::env::temp_dir().join(format!("retired-mcp-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("mcp-servers.json");
+        let mut retired = crate::kimi_computer_use::build_mcp_config(
+            &crate::kimi_computer_use::KimiComputerUseSettings { enabled: true },
+            Path::new("/fixture/retired"),
+        );
+        retired.source_plugin = Some(RETIRED_COMPUTER_USE_SOURCE.into());
+        retired.name = "open-computer-use".into();
+        let mut user = retired.clone();
+        user.id = "user".into();
+        user.source_plugin = None;
+        let active = crate::kimi_computer_use::build_mcp_config(
+            &crate::kimi_computer_use::KimiComputerUseSettings { enabled: true },
+            Path::new("/fixture/kimi"),
+        );
+        save_at(&path, &[retired, user.clone(), active.clone()]).unwrap();
+        let legacy_settings = dir.join("open-computer-use.json");
+        std::fs::write(&legacy_settings, r#"{"enabled":true}"#).unwrap();
+        // Read filtering protects CLI/session hosts even before startup cleanup.
+        assert_eq!(load_at(&path).unwrap().iter().map(|s| &s.id).collect::<Vec<_>>(), vec![&user.id, &active.id]);
+        retire_removed_integrations_at(&dir).unwrap();
+        let raw = std::fs::read(&path).unwrap();
+        let file: McpFile = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(serde_json::to_value(&file.servers).unwrap(), serde_json::to_value([&user, &active]).unwrap());
+        assert!(!legacy_settings.exists());
+        retire_removed_integrations_at(&dir).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), raw);
+        std::fs::write(&path, "invalid registry").unwrap();
+        std::fs::write(&legacy_settings, r#"{"enabled":true}"#).unwrap();
+        assert!(retire_removed_integrations_at(&dir).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid registry");
+        assert!(legacy_settings.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn stdio_probe_requires_successful_ordered_handshake() {

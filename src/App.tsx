@@ -17,7 +17,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
@@ -90,20 +90,11 @@ import {
 import { normalizeRightSidebarTab } from "./teamMessages";
 import { ToastStack, type ToastItem } from "./components/Toast";
 import { DesktopPet } from "./components/DesktopPet";
-import { SkinAtmosphere } from "./components/SkinAtmosphere";
-import { DynamicSkinLayer } from "./components/DynamicSkinLayer";
 import {
   loadPetSettings,
   savePetSettings,
   type PetSettings,
 } from "./petSettings";
-import {
-  loadCompanionSettings,
-  saveCompanionSettings,
-  type CompanionSettings,
-} from "./companionSettings";
-import { findDeepSkin } from "./deepSkins";
-import { loadCustomSkins } from "./customSkins";
 import {
   loadControlSurface,
   saveControlSurface,
@@ -663,9 +654,6 @@ export default function App() {
   >(null);
   const [appearance, setAppearance] = useState<AppAppearance>(loadAppearance);
   const [petSettings, setPetSettings] = useState<PetSettings>(loadPetSettings);
-  const [companionSettings, setCompanionSettings] = useState<CompanionSettings>(
-    loadCompanionSettings,
-  );
   const [notificationSettings, setNotificationSettings] =
     useState<NotificationSettings>(loadNotificationSettings);
   const [systemPrefersDark, setSystemPrefersDark] = useState(
@@ -691,10 +679,6 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    try { saveCompanionSettings(companionSettings); }
-    catch (reason) { showError(`陪伴设置未能保存，当前修改仅在本次使用中生效：${String(reason)}`); }
-  }, [companionSettings, showError]);
 
   useEffect(() => {
     try { saveNotificationSettings(notificationSettings); }
@@ -1038,38 +1022,10 @@ export default function App() {
       "--terminal-pane-opacity",
       `${Math.round((appearance.terminalOpacity ?? 0.65) * 100)}%`,
     );
-    const deepSkin = findDeepSkin(companionSettings.customSkinId);
-    const customSkin = loadCustomSkins().find(
-      (skin) => skin.id === companionSettings.customSkinId,
-    );
-    if (deepSkin) {
-      document.documentElement.dataset.deepSkin = deepSkin.id;
-      document.documentElement.style.setProperty(
-        "--deep-skin-background",
-        `url("${deepSkin.background}")`,
-      );
-    } else if (customSkin?.media) {
-      document.documentElement.dataset.deepSkin = customSkin.id;
-      if (customSkin.media.previewPath) {
-        document.documentElement.style.setProperty(
-          "--deep-skin-background",
-          `url("${convertFileSrc(customSkin.media.previewPath)}")`,
-        );
-      } else {
-        document.documentElement.style.setProperty(
-          "--deep-skin-background",
-          "none",
-        );
-      }
-    } else {
-      delete document.documentElement.dataset.deepSkin;
-      document.documentElement.style.removeProperty("--deep-skin-background");
-    }
     try { saveAppearance(appearance, theme); }
     catch (reason) { showError(`外观设置未能保存，当前修改仅在本次使用中生效：${String(reason)}`); }
   }, [
     appearance,
-    companionSettings.customSkinId,
     resolvedAppearanceTheme,
     theme,
     showError,
@@ -2304,11 +2260,6 @@ export default function App() {
     }
   };
 
-  const activeDeepSkin = findDeepSkin(companionSettings.customSkinId);
-  const activeCustomSkin = loadCustomSkins().find(
-    (skin) => skin.id === companionSettings.customSkinId && skin.media,
-  );
-
   // 渲染层回调（useCallback 保持引用稳定，配合 memo 组件跳过重渲染）。
   const collapseSidebar = useCallback(() => setSidebarCollapsed(true), []);
   const openGeneralSettings = useCallback(
@@ -2396,18 +2347,6 @@ export default function App() {
       className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
       style={appShellStyle}
     >
-      <DynamicSkinLayer
-        skin={activeCustomSkin}
-        motionEnabled={companionSettings.skinMotionEnabled}
-        soundEnabled={companionSettings.skinSoundEnabled}
-        soundVolume={companionSettings.skinSoundVolume}
-      />
-      <SkinAtmosphere
-        skin={activeDeepSkin}
-        motionEnabled={companionSettings.skinMotionEnabled}
-        soundEnabled={companionSettings.skinSoundEnabled}
-        soundVolume={companionSettings.skinSoundVolume}
-      />
       <MemoAppSidebar
         sessions={tabSessions}
         projects={projects}
@@ -2810,11 +2749,11 @@ export default function App() {
               resolvedAppearanceTheme={resolvedAppearanceTheme}
               petSettings={petSettings}
               notificationSettings={notificationSettings}
-              companionSettings={companionSettings}
+
               onAppearanceChange={setAppearance}
               onPetSettingsChange={setPetSettings}
               onNotificationSettingsChange={setNotificationSettings}
-              onCompanionSettingsChange={setCompanionSettings}
+
               onEdit={(provider) => setEditing(provider)}
               onNew={handleNew}
               onDelete={handleDelete}

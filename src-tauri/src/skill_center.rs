@@ -801,13 +801,26 @@ impl SkillCenter {
     /// 按来源路径反查资产 id（updated_at 新的在前）。内置功能（浏览器控制等）
     /// 用它定位自己物化的 skill 及历次版本残留。
     pub fn asset_ids_by_source_ref(&self, source_ref: &str) -> Result<Vec<String>> {
+        // Configuration-directory migrations can keep the legacy directory
+        // reachable through a Junction/symlink. Match local sources by their
+        // physical directory too, so stale owned deployments are retired before
+        // the new builtin version is installed at the same Runtime target.
+        let canonical_source = Path::new(source_ref).canonicalize().ok();
         let conn = self.conn.lock().unwrap();
-        let mut statement =
-            conn.prepare("SELECT id FROM skill_assets WHERE source_ref=?1 ORDER BY updated_at DESC")?;
-        let ids = statement
-            .query_map([source_ref], |row| row.get::<_, String>(0))?
+        let mut statement = conn.prepare(
+            "SELECT id,source_ref FROM skill_assets
+             WHERE source_ref=?1 OR source_type='local' ORDER BY updated_at DESC",
+        )?;
+        let candidates = statement
+            .query_map([source_ref], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(ids)
+        Ok(candidates.into_iter().filter_map(|(id, candidate)| {
+            let candidate = candidate?;
+            let same_source = candidate == source_ref || canonical_source.as_ref().is_some_and(|source| {
+                Path::new(&candidate).canonicalize().is_ok_and(|path| &path == source)
+            });
+            same_source.then_some(id)
+        }).collect())
     }
 
     /// 某资产的全部部署记录 id（撤下内置功能的 skill 用）。
@@ -2659,34 +2672,86 @@ mod tests {
             .remove(0);
         let project = sandbox.join("project");
         fs::create_dir_all(&project).unwrap();
-        let deployed = center
-            .deploy_batch(vec![DeploySkillInput {
+        let inputs: Vec<_> = ["claude_code", "codex"].into_iter().map(|runtime| DeploySkillInput {
                 skill_id: asset.id.clone(),
-                runtime: "claude_code".into(),
+                runtime: runtime.into(),
                 scope: "project".into(),
                 project_path: Some(project.display().to_string()),
                 task_id: None,
                 agent_id: None,
                 trust_confirmed: true,
-            }])
-            .unwrap();
-        assert_eq!(deployed.len(), 1);
-        assert!(Path::new(&deployed[0].target_path).exists());
-        center
-            .deploy_batch(vec![DeploySkillInput {
-                skill_id: asset.id,
-                runtime: "claude_code".into(),
-                scope: "project".into(),
-                project_path: Some(project.display().to_string()),
-                task_id: None,
-                agent_id: None,
-                trust_confirmed: true,
-            }])
-            .unwrap();
-        assert_eq!(center.list_deployments().unwrap().len(), 1);
-        center.undeploy_batch(vec![deployed[0].id.clone()]).unwrap();
-        assert!(!Path::new(&deployed[0].target_path).exists());
+            }).collect();
+        let deployed = center.deploy_batch(inputs.clone()).unwrap();
+        assert_eq!(deployed.len(), 2);
+        for deployment in &deployed {
+            assert_eq!(fs::read_to_string(Path::new(&deployment.target_path).join("SKILL.md")).unwrap(), "---\nname: frontend-test\ndescription: test\n---\n# Test");
+        }
+        assert!(project.join(".claude/skills/frontend-test/SKILL.md").exists());
+        assert!(project.join(".codex/skills/frontend-test/SKILL.md").exists());
+        center.deploy_batch(inputs).unwrap();
+        assert_eq!(center.list_deployments().unwrap().len(), 2);
+        center.undeploy_batch(deployed.iter().map(|item| item.id.clone()).collect()).unwrap();
+        for deployment in &deployed {
+            assert!(!Path::new(&deployment.target_path).exists());
+        }
+        assert!(Path::new(&asset.central_path).join("SKILL.md").exists());
         let _ = fs::remove_dir_all(sandbox);
+    }
+
+    #[test]
+    fn local_source_alias_retires_old_deployment_before_builtin_upgrade() {
+        let sandbox = std::env::temp_dir().join(format!("crewvela-source-alias-{}", Uuid::new_v4()));
+        let legacy = sandbox.join(crate::brand::LEGACY_NAME);
+        let alias = sandbox.join("CrewVela");
+        let source = legacy.join("computer-control-skill");
+        fs::create_dir_all(&source).unwrap();
+        #[cfg(windows)]
+        junction::create(&legacy, &alias).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&legacy, &alias).unwrap();
+        let center = SkillCenter::open_at(legacy.join("skill-center")).unwrap();
+        let import = |path: &Path| center.import(ImportSkillInput {
+            source_type: "local".into(), source: path.display().to_string(),
+            branch: None, subpath: None, revision: None,
+        }).unwrap().remove(0);
+        fs::write(source.join("SKILL.md"), "---\nname: computer-control\n---\n# Old builtin").unwrap();
+        let old = import(&source);
+        let project = sandbox.join("project");
+        fs::create_dir_all(&project).unwrap();
+        let deploy = |id: &str| DeploySkillInput {
+            skill_id: id.into(), runtime: "claude_code".into(), scope: "project".into(),
+            project_path: Some(project.display().to_string()), task_id: None,
+            agent_id: None, trust_confirmed: true,
+        };
+        let old_deployment = center.deploy_batch(vec![deploy(&old.id)]).unwrap().remove(0);
+        let current_source = alias.join("computer-control-skill");
+        fs::write(current_source.join("SKILL.md"), "---\nname: computer-control\n---\n# New builtin").unwrap();
+        let current = import(&current_source);
+        let unrelated = sandbox.join("unrelated/computer-control-skill");
+        fs::create_dir_all(&unrelated).unwrap();
+        fs::write(unrelated.join("SKILL.md"), "---\nname: computer-control\n---\n# User skill").unwrap();
+        let user_asset = import(&unrelated);
+        // The same cleanup sequence used by computer_control::sync_at must
+        // discover the legacy source through its new configuration alias.
+        for id in center.asset_ids_by_source_ref(&current_source.display().to_string()).unwrap() {
+            if id != current.id {
+                center.undeploy_batch(center.deployment_ids_for_skill(&id).unwrap()).unwrap();
+                center.delete_asset(&id).unwrap();
+            }
+        }
+        let upgraded = center.deploy_batch(vec![deploy(&current.id)])
+            .expect("the owned legacy skill must not be reported as an external conflict");
+        assert_eq!(upgraded[0].target_path, old_deployment.target_path);
+        assert!(fs::read_to_string(Path::new(&upgraded[0].target_path).join("SKILL.md")).unwrap().contains("New builtin"));
+        assert!(center.asset(&old.id).unwrap().is_none());
+        assert!(center.asset(&user_asset.id).unwrap().is_some(), "a different source with the same name must be preserved");
+        center.undeploy_batch(vec![upgraded[0].id.clone()]).unwrap();
+        drop(center);
+        #[cfg(windows)]
+        junction::delete(&alias).unwrap();
+        #[cfg(unix)]
+        fs::remove_file(&alias).unwrap();
+        fs::remove_dir_all(sandbox).unwrap();
     }
 
     #[test]
@@ -2777,7 +2842,7 @@ mod tests {
         let result = center.deploy_batch(vec![
             DeploySkillInput {
                 skill_id: clean_asset.id,
-                runtime: "claude_code".into(),
+                runtime: "codex".into(),
                 scope: "project".into(),
                 project_path: Some(project.display().to_string()),
                 task_id: None,
@@ -2796,7 +2861,7 @@ mod tests {
         ]);
         assert!(result.is_err());
         assert_eq!(fs::read_to_string(target.join("mine.txt")).unwrap(), "user");
-        assert!(!project.join(".claude/skills/clean-test").exists());
+        assert!(!project.join(".codex/skills/clean-test").exists());
         let _ = fs::remove_dir_all(sandbox);
     }
 

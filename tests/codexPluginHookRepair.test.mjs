@@ -35,7 +35,7 @@ function planned(fixture) {
   return JSON.parse(result.stdout.replace(/^\uFEFF/, ""));
 }
 
-test("Codex plugin repair changes only reviewed Windows commands and exact compatibility fields", { skip: !windows }, () => {
+test("Codex plugin repair changes reviewed commands and preserves modern content trust", { skip: !windows }, () => {
   const f = fixture();
   try {
     const beforeHooks = readFileSync(f.hooksPath);
@@ -44,18 +44,32 @@ test("Codex plugin repair changes only reviewed Windows commands and exact compa
     assert.deepEqual(readFileSync(f.hooksPath), beforeHooks);
     assert.equal(readFileSync(f.config, "utf8"), f.raw);
     assert.equal(plan.commandChanges.length, 2);
-    assert.equal(plan.removedConfigFields.length, 2);
+    assert.equal(plan.removedConfigFields.length, 0);
     const applied = run(f, ["-Apply", "-ExpectedHooksHash", plan.expectedHooksHash, "-ExpectedConfigHash", plan.expectedConfigHash]);
     assert.equal(applied.status, 0, applied.stderr);
     const manifest = JSON.parse(applied.stdout.replace(/^\uFEFF/, ""));
     const hooks = JSON.parse(readFileSync(f.hooksPath, "utf8"));
     for (const event of ["PostToolUse", "Stop"]) f.hooks.hooks[event][0].hooks[0].commandWindows = plan.commandChanges[0].after;
     assert.deepEqual(hooks, f.hooks);
-    const expectedConfig = f.raw.replace(/^trusted_content_hash = "sha256:b{64}"\r\n/gm, "");
-    assert.equal(readFileSync(f.config, "utf8"), expectedConfig);
+    assert.equal(readFileSync(f.config, "utf8"), f.raw);
     assert.deepEqual(readFileSync(path.join(manifest.backupRoot, "impeccable-hooks.json")), beforeHooks);
-    assert.equal(readFileSync(path.join(manifest.backupRoot, "config.toml"), "utf8"), f.raw);
     assert.equal(manifest.nativeTrustRequired, true);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test("old-reader content-hash compatibility requires an explicit opt-in and keeps unrelated trust", { skip: !windows }, () => {
+  const f = fixture();
+  try {
+    const preview = run(f, ["-RemoveLegacyContentHash"]);
+    assert.equal(preview.status, 0, preview.stderr);
+    const plan = JSON.parse(preview.stdout.replace(/^\uFEFF/, ""));
+    assert.equal(plan.removedConfigFields.length, 2);
+    assert.equal(readFileSync(f.config, "utf8"), f.raw);
+    const applied = run(f, ["-RemoveLegacyContentHash", "-Apply", "-ExpectedHooksHash", plan.expectedHooksHash, "-ExpectedConfigHash", plan.expectedConfigHash]);
+    assert.equal(applied.status, 0, applied.stderr);
+    const manifest = JSON.parse(applied.stdout.replace(/^\uFEFF/, ""));
+    assert.equal(readFileSync(f.config, "utf8"), f.raw.replace(/^trusted_content_hash = "sha256:b{64}"\r\n/gm, ""));
+    assert.equal(readFileSync(path.join(manifest.backupRoot, "config.toml"), "utf8"), f.raw);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 

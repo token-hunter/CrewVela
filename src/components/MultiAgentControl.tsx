@@ -40,6 +40,7 @@ import {
 import {
   hasMentionToken,
   toggleMentionToken,
+  selectMentionTokens,
 } from "../multiAgentMention";
 import {
   buildTaskProgressSummary,
@@ -1128,57 +1129,10 @@ export function MultiAgentControl({
         : null,
     [coordinatorDraft, mentionCursor, mentionMenuOpen],
   );
-  const mentionOptions = useMemo(() => {
-    const runtimeOptions: MentionOption[] = GROUP_MENTION_OPTIONS
-      .filter((option) => isRuntimeEnabled(option.runtimeKind))
-      .filter(
-        (option) =>
-          runtimeHealthByKind.get(option.runtimeKind) !== "missing" ||
-          availableSnapshot?.agents.some(
-            (agent) => agent.enabled && agent.runtimeKind === option.runtimeKind,
-          ),
-      )
-      .map((option) => {
-        const targetCount = availableSnapshot?.agents.filter(
-          (agent) => agent.enabled && agent.runtimeKind === option.runtimeKind,
-        ).length ?? 0;
-        return {
-          key: `runtime:${option.runtimeKind}`,
-          kind: "runtime" as const,
-          token: option.token,
-          description: targetCount > 0
-            ? `${option.description} · ${targetCount} 个实例`
-            : option.description,
-          section: "群组" as const,
-          runtimeKind: option.runtimeKind,
-          targetCount,
-        };
-      });
-    const allOption: MentionOption[] = availableSnapshot?.agents.some((agent) => agent.enabled)
-      ? [{
-          key: "group:all",
-          kind: "all" as const,
-          token: "@All",
-          description: `当前项目全部 Agent · ${availableSnapshot.agents.filter((agent) => agent.enabled).length} 个实例`,
-          section: "群组" as const,
-          targetCount: availableSnapshot.agents.filter((agent) => agent.enabled).length,
-        }]
-      : [];
-    const agentOptions = buildAgentMentionOptions(availableSnapshot);
-    const reservedHandles = new Set(
-      [
-        ...GROUP_MENTION_OPTIONS.map((option) => option.token),
-        "@All",
-        ...agentOptions.map((option) => option.token),
-      ].map((token) => token.slice(1).toLocaleLowerCase()),
-    );
-    return [
-      ...allOption,
-      ...runtimeOptions,
-      ...agentOptions,
-      ...buildSessionMentionOptions(availableGridSessions, reservedHandles),
-    ];
-  }, [runtimeHealthByKind, availableSnapshot, availableGridSessions, availabilityReady, runtimePreferences]);
+  const mentionOptions = useMemo(
+    () => buildAgentMentionOptions(availableSnapshot),
+    [availableSnapshot],
+  );
   const filteredMentionOptions = useMemo(
     () =>
       activeMention
@@ -1618,17 +1572,34 @@ export function MultiAgentControl({
       }
       setMentionCursor(result.value.length);
       setMentionMenuOpen(false);
-      setTargetMenuOpen(false);
-      window.requestAnimationFrame(() => {
-        coordinatorTextareaRef.current?.focus();
-        coordinatorTextareaRef.current?.setSelectionRange(
-          result.value.length,
-          result.value.length,
-        );
-      });
+
     },
     [coordinatorDraft],
   );
+
+  const allMentionTargetsSelected = mentionOptions.length > 0
+    && mentionOptions.every((option) => hasMentionToken(coordinatorDraft, option.token));
+  const toggleAllMentionTargets = useCallback((fromMention = false) => {
+    const mention = fromMention ? activeMentionAt(coordinatorDraft, mentionCursor) : null;
+    const draft = mention
+      ? `${coordinatorDraft.slice(0, mention.start)}${coordinatorDraft.slice(mention.end)}`
+      : coordinatorDraft;
+    const selected = !mentionOptions.every((option) => hasMentionToken(draft, option.token));
+    const next = selectMentionTokens(draft, mentionOptions.map((option) => option.token), selected);
+    const tokens = new Set(mentionOptions.map((option) => option.token.toLocaleLowerCase()));
+    setCoordinatorDraft(next);
+    setMentionBindings((items) => [
+      ...items.filter((item) => !tokens.has(item.token.toLocaleLowerCase())),
+      ...(selected ? mentionOptions.map((option) => ({ token: option.token, agentId: option.agentId! })) : []),
+    ]);
+    setMentionCursor(next.length);
+    setMentionMenuOpen(false);
+    if (fromMention) window.requestAnimationFrame(() => {
+      coordinatorTextareaRef.current?.focus();
+      coordinatorTextareaRef.current?.setSelectionRange(next.length, next.length);
+    });
+  }, [coordinatorDraft, mentionCursor, mentionOptions]);
+
 
   useEffect(() => {
     if (busy) {
@@ -2734,6 +2705,8 @@ export function MultiAgentControl({
                 activeIndex={Math.min(mentionOptionIndex, filteredMentionOptions.length - 1)}
                 onHighlight={setMentionOptionIndex}
                 onSelect={insertMention}
+                onSelectAll={() => toggleAllMentionTargets(true)}
+                allSelected={allMentionTargetsSelected}
               />
             )}
             <div className="multi-agent-composer-footer">
@@ -2848,7 +2821,7 @@ export function MultiAgentControl({
                 >
                   <header>
                     <strong>快捷指令与协作目标</strong>
-                    <small>执行常用操作，或选择群组和具体 Agent</small>
+                    <small>选择具体 Agent，可多选</small>
                   </header>
                   <div className="multi-agent-quick-command-section">
                     <span>快捷指令</span>
@@ -2868,14 +2841,24 @@ export function MultiAgentControl({
                       清除对话记录
                     </button>
                   </div>
-                  {(["群组", "具体 Agent"] as const).map((section) => {
+                  {(["具体 Agent"] as const).map((section) => {
                     const sectionOptions = mentionOptions.filter(
                       (option) => option.section === section,
                     );
                     if (!sectionOptions.length) return null;
                     return (
                       <div className="multi-agent-target-section" key={section}>
-                        <span>{section}</span>
+                        <div className="multi-agent-target-selection-header">
+                          <span>{section}</span>
+                          <button type="button" disabled={busy} onClick={() => toggleAllMentionTargets()}>
+                            {allMentionTargetsSelected ? "取消全选" : "全选"}
+                          </button>
+                          <button type="button" onClick={() => {
+                            setTargetMenuOpen(false);
+                            coordinatorTextareaRef.current?.focus();
+                          }}>完成</button>
+                        </div>
+                        <div role="listbox" aria-label="具体 Agent" aria-multiselectable="true">
                         {sectionOptions.map((option) => {
                           const selected = hasMentionToken(
                             coordinatorDraft,
@@ -2902,14 +2885,13 @@ export function MultiAgentControl({
                                 <strong>{option.token}</strong>
                                 <small>{option.description}</small>
                               </span>
-                              {selected ? (
-                                <CheckIcon size={14} weight="bold" />
-                              ) : typeof option.targetCount === "number" ? (
-                                <em>{option.targetCount}</em>
-                              ) : null}
+                              <span className="multi-agent-target-checkbox" aria-hidden="true">
+                                {selected && <CheckIcon size={12} weight="bold" />}
+                              </span>
                             </button>
                           );
                         })}
+                        </div>
                       </div>
                     );
                   })}

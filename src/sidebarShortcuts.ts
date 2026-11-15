@@ -20,7 +20,7 @@ export const SIDEBAR_SHORTCUT_OPTIONS: SidebarShortcutOption[] = [
   { id: "browserControl", label: "浏览器控制", group: "集成" },
   { id: "computerControl", label: "电脑控制", group: "集成" },
   { id: "pluginMarket", label: "插件市场", group: "集成" },
-  { id: "skills", label: "Skill 中心", group: "集成" },
+  { id: "skills", label: "Skills", group: "集成" },
   { id: "mcp", label: "MCP", group: "集成" },
   { id: "archivedSessions", label: "归档会话", group: "数据" },
 ];

@@ -6,7 +6,6 @@ import { SettingsDialog } from "../../src/components/SettingsDialog";
 import { DEFAULT_APPEARANCE } from "../../src/appearance";
 import { DEFAULT_PET_SETTINGS } from "../../src/petSettings";
 import { DEFAULT_NOTIFICATION_SETTINGS } from "../../src/notificationSettings";
-import { DEFAULT_COMPANION_SETTINGS } from "../../src/companionSettings";
 import type { SessionRecord } from "../../src/types";
 import "../../src/styles.css";
 const params = new URLSearchParams(location.search);
@@ -44,8 +43,8 @@ function Fixture() {
     <button onClick={() => setOpen(true)}>打开快捷指令</button>
     <button onClick={() => setSettings(true)}>打开设置</button>
     {settings && <SettingsDialog sessions={rows} archivedSessions={[]} projects={[]} providers={[]} keyStates={{}} usageByProvider={{}}
-      appearance={{ ...DEFAULT_APPEARANCE, theme }} resolvedAppearanceTheme={theme} petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS} companionSettings={DEFAULT_COMPANION_SETTINGS}
-      onAppearanceChange={() => {}} onPetSettingsChange={() => {}} onNotificationSettingsChange={() => {}} onCompanionSettingsChange={() => {}}
+      appearance={{ ...DEFAULT_APPEARANCE, theme }} resolvedAppearanceTheme={theme} petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS}
+      onAppearanceChange={() => {}} onPetSettingsChange={() => {}} onNotificationSettingsChange={() => {}}
       onEdit={() => {}} onNew={() => {}} onDelete={() => {}} onSetHidden={() => {}} onRestoreDefault={() => {}} onReorder={async () => {}} onRestoreArchivedSession={() => {}} onDeleteArchivedSession={() => {}} onViewArchivedTranscript={() => {}}
       quickContext={context} onSessionsChange={setRows} initialSection="quickCommands" onClose={() => setSettings(false)} />}
     {open && <QuickCommandCenter sessions={rows} providers={[]} context={context} onClose={() => setOpen(false)} onSessionsChange={setRows} onOpenSettings={() => { setOpen(false); setSettings(true); }} />}

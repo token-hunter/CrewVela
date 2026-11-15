@@ -9,7 +9,21 @@ import "../../src/styles.css";
 
 const mode = new URLSearchParams(location.search).get("mode") || "multi";
 const projects = ["A", "B", "C"].map(id => ({ id, name: `Project-${id}`, goal: `Goal-${id}`, rootPath: "C:/fixture", defaultBranch: "main", status: "active", createdAt: 1, updatedAt: 1 }));
-const snapshot = (id: string) => ({ project: projects.find(item => item.id === id)!, agents: [{ id: `${id}-agent`, projectId: id, name: `${id}-agent`, runtimeKind: "claude_code", role: "worker", enabled: true, description: "", capabilities: [], persona: "efficient", personaCustom: "", model: null, createdAt: 1, updatedAt: 1 }], tasks: [{ id: `${id}-task`, projectId: id, title: `${id}-task`, status: mode === "support" ? "running" : "in_review", stage: 0, assigneeAgentId: `${id}-agent`, acceptanceCriteria: "", description: "", updatedAt: 1 }], messages: [], runs: [], events: [], agentSessions: [], runtimeEvents: [], memories: [], runLogs: [], artifacts: [], dependencies: [], approvals: [], instructions: [], reviewDecisions: [] });
+const baseSnapshot = (id: string) => ({ project: projects.find(item => item.id === id)!, agents: [{ id: `${id}-agent`, projectId: id, name: `${id}-agent`, runtimeKind: "claude_code", role: "worker", enabled: true, description: "", capabilities: [], persona: "efficient", personaCustom: "", model: null, createdAt: 1, updatedAt: 1 }], tasks: [{ id: `${id}-task`, projectId: id, title: `${id}-task`, status: mode === "support" ? "running" : "in_review", stage: 0, assigneeAgentId: `${id}-agent`, acceptanceCriteria: "", description: "", updatedAt: 1 }], messages: [], runs: [], events: [], agentSessions: [], runtimeEvents: [], memories: [], runLogs: [], artifacts: [], dependencies: [], approvals: [], instructions: [], reviewDecisions: [] });
+const snapshot = (id: string) => {
+  const value = baseSnapshot(id);
+  if (mode !== "member-selection") return value;
+  return { ...value, tasks: [], messages: calls.filter(item => item.command === "ma_send_direct_message" && item.args.input.projectId === id).flatMap((item, index) => [
+    { id: `user-${index}`, createdAt: index + 1, senderType: "user", body: item.args.input.message },
+    { id: `reply-${index}`, createdAt: index + 1, senderType: "coordinator", body: "fixture direct queued" },
+  ]), agents: [
+    { ...value.agents[0], id: `${id}-claude`, name: "架构师", runtimeKind: "claude_code" },
+    { ...value.agents[0], id: `${id}-codex`, name: "开发员", runtimeKind: "codex" },
+    { ...value.agents[0], id: `${id}-reviewer`, name: "审查员", runtimeKind: "codex", role: "reviewer" },
+    { ...value.agents[0], id: `${id}-disabled`, name: "禁用成员", enabled: false },
+    { ...value.agents[0], id: `${id}-pi`, name: "禁用运行时", runtimeKind: "pi" },
+  ] };
+};
 const health = { cliPath: "fixture", cliPathExists: true, replyEvidence: "fixture", runtimes: [], messages: [], handoffs: [], sessions: ["source", "target"].map(id => ({ id, title: id, runtime: "claude_code", cwd: "C:/fixture", ptyId: 1, status: "running", processRunning: true, ready: true, reason: "fixture", error: null, waitingReason: null, interactiveHandoff: true, identityEnvironment: "fixture", bridge: { configured: false, error: null } })) };
 const plan = { intent: "plan_project", reply: "fixture plan", projectName: "New project", goal: "Fixture goal", rootPath: "C:/fixture", targetTaskId: null, targetAgentId: null, agents: [], tasks: [], requestedRuntimes: [], requiresConfirmation: true };
 localStorage.clear();
@@ -23,9 +37,10 @@ const mock = {
   invoke(command: string, args: any) {
     calls.push({ command, args });
     if (deferred.has(command) || (command === "ma_snapshot" && args.projectId === "B" && mock.holdB)) return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
+    if (command === "ma_send_direct_message") return Promise.resolve({ reply: "fixture direct queued", deliveryTaskIds: [] });
     if (command === "ma_list_projects") return Promise.resolve(projects);
     if (command === "ma_snapshot") return Promise.resolve(snapshot(args.projectId));
-    if (command === "get_runtime_preferences") return Promise.resolve({ disabledRuntimes: [] });
+    if (command === "get_runtime_preferences") return Promise.resolve({ disabledRuntimes: mode === "member-selection" ? ["pi"] : [] });
     if (["ma_probe_runtimes", "ma_check_runtime_updates"].includes(command)) return Promise.resolve(["claude_code", "zcode_cli"].map(kind => ({ kind, installed: true, error: null, version: "1.0", capabilities: [] })));
     if (command === "skill_center_snapshot") return Promise.resolve({ skillSets: [] });
     if (command === "collaboration_health") return Promise.resolve(health);

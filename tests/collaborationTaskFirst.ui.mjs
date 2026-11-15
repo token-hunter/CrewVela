@@ -37,8 +37,8 @@ try {
   await page.getByRole('button', { name: '关闭详情', exact: true }).click();
   await page.locator('.collab-activity-disclosure > summary').click();
   await page.getByRole('button', { name: '查看全部活动', exact: true }).click();
-  await page.getByRole('heading', { name: '全部活动', exact: true }).waitFor();
-  await page.getByRole('button', { name: '关闭详情', exact: true }).click();
+  assert.equal(await page.getByRole('tab', { name: '协作记录', exact: true }).getAttribute('aria-selected'), 'true');
+  await page.getByRole('tab', { name: '概览', exact: true }).click();
   await page.getByRole('button', { name: '查看诊断 →', exact: true }).click();
   assert.equal(await page.getByRole('tab', { name: /协作诊断/ }).getAttribute('aria-selected'), 'true');
   for (const theme of ['dark', 'light']) {

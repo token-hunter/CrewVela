@@ -1,0 +1,44 @@
+import assert from "node:assert/strict";
+import { chromium } from "playwright";
+import { mkdirSync } from "node:fs";
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.setDefaultTimeout(10000);
+  const errors = []; const mediaRequests = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("request", request => { if (request.url().includes("retired-skin")) mediaRequests.push(request.url()); });
+  await page.addInitScript(() => {
+    localStorage.setItem("crewvela-companion-settings-v1", JSON.stringify({ customSkinId: "retired-skin", skinMotionEnabled: true, skinSoundEnabled: true, skinSoundVolume: 100 }));
+    localStorage.setItem("crewvela-custom-skins-v1", JSON.stringify([{ id: "retired-skin", appearance: { theme: "ocean", accent: "cyan" }, media: { kind: "video", videoPath: "https://example.invalid/retired-skin.mp4", audioPath: "https://example.invalid/retired-skin.mp3" } }]));
+  });
+  await page.goto(`${process.env.CREWVELA_UI_URL || "http://127.0.0.1:1436"}/tests/fixtures/app-session-async-ui.html`);
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.locator(".settings-nav").getByRole("button", { name: "外观", exact: true }).click();
+  assert.equal(await page.getByRole("tab", { name: "皮肤", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "导入皮肤", exact: true }).count(), 0);
+  assert.equal(await page.locator(".appearance-theme-grid > button").count(), 6);
+  await page.locator('.appearance-theme-grid > button').filter({ hasText: "暖沙" }).click();
+  await page.getByRole("radio", { name: "无强调色", exact: true }).click();
+  await page.locator(".appearance-terminal-toggle > i").click();
+  await page.waitForFunction(() => document.documentElement.dataset.globalTransparent === "true");
+  const opacity = page.locator('.appearance-terminal-opacity input[type="range"]');
+  await opacity.press("Home");
+  await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--terminal-pane-opacity") === "0%");
+  await opacity.press("End");
+  await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--terminal-pane-opacity") === "90%");
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("crewvela-appearance")).accent), "none");
+  await page.locator(".appearance-terminal-toggle > i").click();
+  await page.waitForFunction(() => document.documentElement.dataset.globalTransparent === "false");
+  mkdirSync("output/playwright", { recursive: true });
+  await page.locator(".settings-content").evaluate(element => { element.scrollTop = 0; });
+  await page.screenshot({ path: "output/playwright/appearance-without-skins.png", fullPage: true });
+  await page.locator(".settings-nav").getByRole("button", { name: "陪伴", exact: true }).click();
+  await page.locator(".pet-settings-panel").waitFor();
+  await page.getByRole("button", { name: "关闭设置", exact: true }).click();
+  assert.equal(await page.locator(".dynamic-skin-layer, .skin-atmosphere, video, audio").count(), 0);
+  assert.equal(await page.evaluate(() => document.documentElement.hasAttribute("data-deep-skin")), false);
+  assert.deepEqual(mediaRequests, []);
+  assert.deepEqual(errors, []);
+  console.log("PASS: skin UI removed, legacy skin media stays inactive, appearance persistence/transparency works and pet panel remains available");
+} finally { await browser.close(); }

@@ -239,18 +239,20 @@
 }
 
 :root[data-appearance-theme="purple"] {
+  /* 石墨黑：保留旧主题标识，使原暮紫配置直接使用新的中性黑灰配色。 */
   color-scheme: dark;
-  --bg: #1b1822;
-  --bg-elev: #25202e;
-  --bg-sunken: #141119;
-  --bg-hover: #30293b;
-  --border: #42384e;
-  --border-strong: #756581;
-  --text: #e2dce7;
-  --text-dim: #a397ab;
-  --text-faint: #756a7d;
-  --terminal-bg: #0e0b12;
-  --terminal-shell: #18131e;
+  --bg: #202123;
+  --bg-elev: #282a2d;
+  --bg-sunken: #191a1c;
+  --bg-hover: #35383c;
+  --bg-active: #35383c;
+  --border: #414449;
+  --border-strong: #676b72;
+  --text: #e7e8e9;
+  --text-dim: #a8acb2;
+  --text-faint: #8c929b;
+  --terminal-bg: #161719;
+  --terminal-shell: #191a1c;
 }
 
 :root[data-appearance-theme="sand"] {
@@ -271,18 +273,20 @@
 }
 
 :root[data-appearance-theme="aurora"] {
-  color-scheme: dark;
-  --bg: #111c1c;
-  --bg-elev: #182827;
-  --bg-sunken: #0b1414;
-  --bg-hover: #203533;
-  --border: #304a47;
-  --border-strong: #58746f;
-  --text: #d7e5e2;
-  --text-dim: #91aaa5;
-  --text-faint: #657e79;
-  --terminal-bg: #071110;
-  --terminal-shell: #0e1d1b;
+  /* 暖瓷白：沿用旧 aurora 配置标识，改为暖灰白的浅色主题。 */
+  color-scheme: light;
+  --bg: #f5f1ed;
+  --bg-elev: #fdfaf7;
+  --bg-sunken: #ebe5e0;
+  --bg-hover: #ede6e0;
+  --border: #d9d1ca;
+  --border-strong: #a99c91;
+  --text: #39322e;
+  --text-dim: #6c625b;
+  --text-faint: #70645c;
+  --terminal-bg: #fdfaf7;
+  --terminal-shell: #ebe5e0;
+  --overlay: rgba(70, 55, 44, 0.24);
 }
 
 /* 陶土：Claude 品牌色。主按钮沿用 Claude 的中性实心按钮，陶土用于发送、焦点与强调。 */

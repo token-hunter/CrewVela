@@ -18,11 +18,11 @@ interface Props {
 
 const THEME_OPTIONS: Array<{ id: AppearanceTheme; label: string }> = [
   { id: "dark", label: "深色" },
-  { id: "light", label: "浅色" },
   { id: "ocean", label: "深海" },
-  { id: "purple", label: "暮紫" },
+  { id: "purple", label: "石墨黑" },
+  { id: "light", label: "浅色" },
   { id: "sand", label: "暖沙" },
-  { id: "aurora", label: "极光" },
+  { id: "aurora", label: "暖瓷白" },
 ];
 
 const BACKGROUND_OPTIONS: Array<{
@@ -134,7 +134,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
         >
           <span>
             <strong>全局透明模式</strong>
-            <small>让皮肤场景透过整个界面显示，文字、图标和边框保持清晰。</small>
+            <small>调节界面各区域的背景透明度，文字、图标和边框保持清晰。</small>
           </span>
         </Switch>
 

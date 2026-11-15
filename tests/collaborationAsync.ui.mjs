@@ -5,7 +5,7 @@ import { mkdirSync } from "node:fs";
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
-  await page.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "Win32" })); // 电脑控制段落断言 Windows 内置控制的三个后端命令；macOS 形态由 macosCore.ui.mjs 覆盖
+  await page.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "Win32" })); // 电脑控制段落断言 Windows 内置控制的两个后端命令；macOS 形态由 macosCore.ui.mjs 覆盖
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   const url = new URL("/tests/fixtures/collaboration-async-ui.html", process.env.CREWVELA_UI_URL || "http://127.0.0.1:1432");
   const release = (command, error) => page.evaluate(([command, error]) => window.collabMock.release(command, error), [command, error]);
@@ -148,19 +148,19 @@ try {
   const localControl = page.getByRole("switch").nth(0);
   await localControl.waitFor();
   assert.equal(await localControl.isDisabled(), true);
-  await release("computer_control_get"); await release("kimi_computer_use_get", "fixture kimi read failed"); await release("open_computer_use_get");
+  await release("computer_control_get"); await release("kimi_computer_use_get", "fixture kimi read failed");
   await page.getByText(/fixture kimi read failed/).waitFor();
   assert.equal(await localControl.isDisabled(), true);
   await page.getByRole("button", { name: "重新读取设置", exact: true }).click();
   await page.waitForFunction(() => window.collabMock.pending.some(item => item.command === "computer_control_get"));
-  for (const command of ["computer_control_get", "kimi_computer_use_get", "open_computer_use_get"]) await release(command);
+  for (const command of ["computer_control_get", "kimi_computer_use_get"]) await release(command);
   await page.waitForFunction(() => !document.querySelector("input[role=switch]").matches(":disabled"));
-  for (let i = 0; i < 3; i++) await page.locator(".browser-control-toggle").nth(i).click();
+  for (let i = 0; i < 2; i++) await page.locator(".browser-control-toggle").nth(i).click();
   const saveComputer = page.getByRole("button", { name: "保存并应用", exact: true });
   await saveComputer.evaluate(button => { button.click(); button.click(); });
   await release("kimi_computer_use_save", "fixture kimi save failed");
   assert.equal(await localControl.isDisabled(), true, "one early rejection must not unlock while other saves are pending");
-  await release("computer_control_save"); await release("open_computer_use_save");
+  await release("computer_control_save");
   await page.getByText(/部分设置未保存.*fixture kimi save failed/).waitFor();
   assert.equal(await page.getByRole("switch").nth(1).isChecked(), true);
   await saveComputer.click();

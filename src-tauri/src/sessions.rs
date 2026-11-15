@@ -168,6 +168,22 @@ fn enrich_stop_event_summary(event: &mut serde_json::Value) {
     }
 }
 
+fn claude_pasted_transcript_text(text: &str) -> &str {
+    // Claude CLI records bracketed paste with an outer transport tag, while
+    // hook/transcript paths may retain different surrounding whitespace.
+    // Remove exactly one matched outer
+    // wrapper; keep the prompt itself intact for stale-turn identity checks.
+    let text = text.trim();
+    let Some((id, body)) = text.strip_prefix("<pasted_content id=\"")
+        .and_then(|rest| rest.split_once("\">")) else { return text; };
+    if id.is_empty() || id.len() > 64
+        || !id.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+    { return text; }
+    body.strip_suffix(&format!("</pasted_content id=\"{id}\">"))
+        .or_else(|| body.strip_suffix("</pasted_content>"))
+        .map(str::trim).unwrap_or(text)
+}
+
 fn last_message_from_transcript(path: &std::path::Path, role: &str) -> Option<String> {
     const MAX_TRANSCRIPT_TAIL: u64 = 2 * 1024 * 1024;
     let mut file = fs::File::open(path).ok()?;
@@ -199,6 +215,7 @@ fn last_message_from_transcript(path: &std::path::Path, role: &str) -> Option<St
                 .collect::<Vec<_>>()
                 .join("\n")
         };
+        let text = if role == "user" { claude_pasted_transcript_text(&text).to_owned() } else { text };
         (!text.is_empty()).then_some(text)
     })
 }
@@ -350,6 +367,8 @@ pub enum ApprovalPolicy {
 pub struct SessionRecord {
     #[serde(default)]
     pub launch_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_assignment: Option<crate::model_assignments::ResolvedSelection>,
     pub id: String,
     pub claude_session_id: String,
     #[serde(default)]
@@ -597,6 +616,7 @@ struct AgentTurnCompletion {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RuntimePromptBlocker {
     Busy,
+    Update,
     Dialog,
 }
 
@@ -689,7 +709,7 @@ impl SessionManager {
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_millis();
         let record = SessionRecord {
-            launch_model: None,
+            launch_model: None, model_assignment: None,
             id: id.clone(),
             claude_session_id: id,
             kind: SessionKind::Claude,
@@ -734,7 +754,7 @@ impl SessionManager {
         let now = now_millis();
         let shell_name = input.shell.display_name();
         let record = SessionRecord {
-            launch_model: None,
+            launch_model: None, model_assignment: None,
             id: id.clone(),
             claude_session_id: String::new(),
             kind: SessionKind::Terminal,
@@ -822,7 +842,7 @@ impl SessionManager {
         };
         let now = now_millis();
         let record = SessionRecord {
-            launch_model: None,
+            launch_model: None, model_assignment: None,
             id,
             claude_session_id: String::new(),
             kind: SessionKind::Terminal,
@@ -903,7 +923,7 @@ impl SessionManager {
             _ => input.runtime_kind.clone(),
         };
         let record = SessionRecord {
-            launch_model: None,
+            launch_model: None, model_assignment: None,
             id,
             claude_session_id: String::new(),
             kind: SessionKind::Terminal,
@@ -1062,9 +1082,18 @@ impl SessionManager {
         let mut candidate = data.clone();
         let record = candidate.sessions.iter_mut().find(|s| s.id == id).ok_or_else(|| anyhow!("未找到会话: {id}"))?;
         record.launch_model = model;
+        record.model_assignment = None;
         let updated = record.clone();
         self.persist_candidate(&mut data, candidate)?;
         Ok(updated)
+    }
+
+    pub fn record_model_assignment(&self, id: &str, selection: crate::model_assignments::ResolvedSelection) -> Result<()> {
+        let mut data = self.data.lock().unwrap();
+        let mut candidate = data.clone();
+        let record = candidate.sessions.iter_mut().find(|session| session.id == id).context("会话不存在")?;
+        record.model_assignment = Some(selection);
+        self.persist_candidate(&mut data, candidate)
     }
 
     pub fn get(&self, id: &str) -> Option<SessionRecord> {
@@ -2121,6 +2150,7 @@ impl SessionManager {
                 session.status = SessionStatus::Running;
                 if session.multi_agent_agent_id.is_some() {
                     if let Some(prompt) = event.get("prompt").and_then(serde_json::Value::as_str) {
+                        let prompt = claude_pasted_transcript_text(prompt);
                         self.active_agent_prompts
                             .lock()
                             .unwrap()
@@ -2552,8 +2582,9 @@ impl SessionManager {
                     buffer.clear();
                     return false;
                 }
-                // Native TUI state arrives after completion hooks, including
-                // the final "Running hooks" redraw. It dismisses only busy.
+                // Native idle follows startup/update initialization and turn
+                // hooks, even when the TUI does not repaint its composer.
+                // It cannot dismiss login/permission dialogs or a later blocker.
                 if (!blocked || busy)
                     && !crate::multi_agent::interactive_runtime_prompt_blocked(&buffer[end..])
                     && blockers.get(id) != Some(&RuntimePromptBlocker::Dialog) {
@@ -2566,7 +2597,9 @@ impl SessionManager {
             }
         }
         if blocked {
-            let blocker = if busy {
+            let blocker = if is_codex && crate::multi_agent::codex_native_update_prompt(buffer) {
+                RuntimePromptBlocker::Update
+            } else if busy {
                 RuntimePromptBlocker::Busy
             } else {
                 RuntimePromptBlocker::Dialog
@@ -2574,13 +2607,19 @@ impl SessionManager {
             buffer.clear();
             let mut readiness = self.ready_for_prompt.lock().unwrap();
             self.runtime_prompt_blockers.lock().unwrap().entry(id.to_string())
-                .and_modify(|previous| { if blocker == RuntimePromptBlocker::Dialog { *previous = blocker; } })
+                .and_modify(|previous| {
+                    if blocker == RuntimePromptBlocker::Dialog
+                        || (*previous == RuntimePromptBlocker::Busy && blocker == RuntimePromptBlocker::Update)
+                    { *previous = blocker; }
+                })
                 .or_insert(blocker);
             readiness.remove(id);
             return false;
         }
         if !is_ready(buffer) {
-            let replaces_screen = ["\x1b[2J", "\x1b[H", "\x1b[1;1H"].iter().any(|marker| data.contains(marker));
+            // Cursor-home is also emitted by partial footer redraws after a
+            // completed Codex tool turn; it does not erase the idle screen.
+            let replaces_screen = ["\x1b[J", "\x1b[0J", "\x1b[2J"].iter().any(|marker| data.contains(marker));
             if !completed_codex || replaces_screen {
                 self.ready_for_prompt.lock().unwrap().remove(id);
             }
@@ -4643,6 +4682,33 @@ mod tests {
     }
 
     #[test]
+    fn codex_update_skip_releases_on_fresh_native_idle_without_retyping() {
+        let (path, events_dir) = test_paths("codex-update-idle");
+        let manager = SessionManager::open_at(path.clone(), events_dir).unwrap();
+        let record = manager.create_runtime(NewRuntimeSession {
+            runtime_kind: "codex".into(), cwd: ".".into(), project_id: None,
+        }).unwrap();
+        manager.attach_runtime(&record.id, 61).unwrap();
+        let observe = |output: &str| manager.observe_runtime_prompt_output_with_blocker(
+            &record.id, output,
+            |text| crate::multi_agent::interactive_runtime_prompt_ready(crate::multi_agent::AgentRuntimeKind::Codex, text),
+            crate::multi_agent::interactive_runtime_prompt_blocked,
+        );
+        // The 0.167 TUI paints incrementally, and need not redraw its composer
+        // after initialization. An idle marker before the dialog cannot open it.
+        assert!(!observe("\x1b]7501;state=idle:app=codex\x1b\\\nUpdat available\n1. Update now\n2.Skip\nenter continue · esc skip"));
+        assert!(manager.runtime_prompt_is_blocked(&record.id));
+        assert!(!observe("\x1b]7501;state=working:app=codex\x1b\\"));
+        assert!(observe("\x1b]7501;state=idle:app=codex\x1b\\"), "fresh post-update idle must release the queued prompt without manual Enter");
+        assert!(manager.is_ready_for_prompt(&record.id));
+        // Login/approval dialogs remain protected even if native idle arrives.
+        assert!(!observe("Permission required\nAllow once\nenter to confirm"));
+        assert!(!observe("\x1b]7501;state=idle:app=codex\x1b\\"));
+        assert!(!manager.is_ready_for_prompt(&record.id));
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn codex_ready_frame_is_revoked_by_busy_dialogs_and_unknown_new_screens() {
         let (path, events_dir) = test_paths("codex-ready-new-state");
         let manager = SessionManager::open_at(path.clone(), events_dir).unwrap();
@@ -4919,6 +4985,45 @@ mod tests {
         assert_eq!(running.title, "手动标题");
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn pasted_transcript_unwraps_only_a_complete_matched_outer_tag() {
+        for text in ["<pasted_content id=\"08a7\">\nhello\n</pasted_content id=\"08a7\">", "<pasted_content id=\"08a7\">hello</pasted_content>"] {
+            assert_eq!(claude_pasted_transcript_text(text), "hello");
+        }
+        for text in ["prefix <pasted_content id=\"08a7\">hello</pasted_content>", "<pasted_content id=\"08a7\">hello</pasted_content id=\"other\">", "<pasted_content id=\"08a7\">hello", "<pasted_content id=\"08a7\">hello</pasted_content> suffix"] {
+            assert_eq!(claude_pasted_transcript_text(text), text);
+        }
+    }
+
+    #[test]
+    fn claude_pasted_transcript_stop_releases_next_message_and_rejects_stale_turn() {
+        let (path, events) = test_paths("claude-pasted-stop");
+        let manager = SessionManager::open_at(path.clone(), events).unwrap();
+        let session = manager.create_agent(NewAgentSession {
+            avatar_id: None, project_id: "project".into(), agent_id: "agent".into(),
+            runtime_kind: "claude_code".into(), agent_name: "Claude".into(), cwd: path.parent().unwrap().display().to_string(),
+        }).unwrap();
+        manager.attach_runtime(&session.id, 19).unwrap();
+        let prompt = "[CrewVela 多 Agent 协作消息]\n仅回复 READY";
+        let transcript = path.parent().unwrap().join("native-claude.jsonl");
+        let pasted_prompt = format!("\n\n<pasted_content id=\"08a7\">\n{prompt}\n</pasted_content id=\"08a7\">\n\n");
+        fs::write(&transcript, serde_json::json!({"type":"user","message":{"content":pasted_prompt}}).to_string()).unwrap();
+        manager.apply_hook_value(&serde_json::json!({APP_SESSION_ID_FIELD:session.id,"session_id":"native-claude","hook_event_name":"SessionStart"})).unwrap().expect("bind native identity before the turn");
+        let submit = |prompt: &str| serde_json::json!({APP_SESSION_ID_FIELD:session.id,"session_id":"native-claude", "hook_event_name":"UserPromptSubmit","prompt":prompt});
+        manager.apply_hook_value(&submit(&pasted_prompt)).unwrap().expect("real submit must be accepted");
+        let mut stop = serde_json::json!({APP_SESSION_ID_FIELD:session.id,"session_id":"native-claude", "hook_event_name":"Stop","transcript_path":transcript,"last_assistant_message":"READY"});
+        enrich_stop_event_summary(&mut stop);
+        manager.apply_hook_value(&stop).unwrap();
+        assert!(manager.is_ready_for_prompt(&session.id), "native paste wrapper must not strand the next queued message");
+        assert_eq!(manager.agent_turn_revision(&session.id), 1);
+        manager.apply_hook_value(&submit("newer turn")).unwrap();
+        manager.apply_hook_value(&stop).unwrap();
+        assert!(!manager.is_ready_for_prompt(&session.id), "an old stop must not complete the newer turn");
+        assert_eq!(manager.agent_turn_revision(&session.id), 1);
+        drop(manager);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]

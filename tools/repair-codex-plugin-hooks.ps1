@@ -2,14 +2,17 @@ param(
     [string]$PluginRoot = (Join-Path $env:USERPROFILE '.codex/plugins/cache/openai-curated-remote/impeccable/4.3.1'),
     [string]$ConfigPath = (Join-Path $env:USERPROFILE '.codex/config.toml'),
     [switch]$Apply,
+    [switch]$RemoveLegacyContentHash,
     [string]$ExpectedHooksHash = '',
     [string]$ExpectedConfigHash = ''
 )
 
 # Repairs only the reviewed Impeccable 4.3.1 Windows hooks. Default is a dry run.
 # No model, download, plugin disable, or trust bypass occurs here. After Apply,
-# trust the two reviewed currentHash values using Codex's native hooks/list ->
-# config/batchWrite -> hooks/list flow, preserving every enabled choice.
+# trust the two reviewed currentHash values using native hooks/list with cwds
+# (full plugin fingerprints), config/batchWrite on hooks.state, then hooks/list.
+# Preserve current Codex content approvals. RemoveLegacyContentHash is only for
+# older readers such as 0.162.1 that reject that field; never use it on 0.167+.
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $PluginRoot = [IO.Path]::GetFullPath($PluginRoot)
@@ -70,6 +73,7 @@ $rawConfig = [IO.File]::ReadAllText($ConfigPath)
 $nextConfig = $rawConfig
 $removed = @()
 foreach ($eventLabel in @('post_tool_use', 'stop')) {
+    if (-not $RemoveLegacyContentHash) { continue }
     $key = "impeccable@openai-curated-remote:hooks/hooks.json:${eventLabel}:0:0"
     $quotedKey = [regex]::Escape($key)
     $sectionPattern = '(?ms)(^\[hooks\.state\.["'']' + $quotedKey + '["'']\]\r?\n)(.*?)(?=^\[|\z)'

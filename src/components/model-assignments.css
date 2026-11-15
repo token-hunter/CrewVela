@@ -1,0 +1,41 @@
+.model-assignments { container-type: inline-size; min-width: 0; color: var(--text); font: 14px/1.6 var(--display-font); }
+.model-assignments button, .model-assignments input, .model-assignments select { font: inherit; }
+.model-assignments button { cursor: pointer; }
+.model-assignments button:disabled { opacity: .45; cursor: default; }
+.model-assignments :is(input,select,button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.model-assignment-connections { display: flex; gap: 12px; align-items: center; justify-content: flex-end; color: var(--text-dim); font-size: 13px; }
+.model-assignment-connections button { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 0; color: var(--text); padding: 2px 0; }
+.model-assignment-toolbar { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.model-assignments :is(select,input) { min-width: 0; background: transparent; color: var(--text); border: 1px solid var(--border-strong); border-radius: 6px; padding: 9px 11px; }
+.model-assignment-toolbar > select { flex: 0 1 180px; }
+.model-assignment-toolbar nav { display: flex; flex: 1; align-items: center; min-width: max-content; gap: 0; border: 1px solid var(--border); border-radius: 6px; padding: 3px; }
+.model-assignment-toolbar nav button { flex: 1; white-space: nowrap; padding: 7px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--text-dim); font-size: 13px; }
+.model-assignment-toolbar nav button.active { color: var(--text); background: var(--bg-active); }
+.model-assignment-search { display: flex; align-items: center; flex: 1; gap: 8px; min-width: 180px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-dim); }
+.model-assignment-search input { width: 100%; min-width: 0; background: transparent; border: 0; padding: 0; outline: 0; }
+.model-assignment-priority { display: flex; gap: 10px; align-items: center; color: var(--text-dim); font-size: 13px; margin: 16px 0 20px; }
+.model-assignment-help { color: var(--text-dim); font-size: 12px; margin: -8px 0 16px; }.model-assignment-help summary { cursor: pointer; }.model-assignment-help p { line-height: 1.8; }
+.model-assignment-table-wrap { overflow: auto; border-top: 1px solid var(--border); max-height: var(--model-table-height, max(320px, calc(100vh - 440px))); scrollbar-width: thin; }
+.model-assignments table { width: 100%; min-width: 790px; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+.model-assignments thead { position: sticky; top: 0; z-index: 1; background: var(--bg-elev); }
+.model-assignments th { text-align: left; font-weight: 500; color: var(--text-dim); padding: 12px 10px; border-bottom: 1px solid var(--border); }
+.model-assignments th:nth-child(1) { width: 22%; }.model-assignments th:nth-child(2) { width: 16%; }.model-assignments th:nth-child(3) { width: 21%; }.model-assignments th:nth-child(4) { width: 21%; }.model-assignments th:nth-child(5) { width: 14%; }.model-assignments th:nth-child(6) { width: 6%; }
+.model-assignments td { padding: 13px 10px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.model-assignment-group th { width: auto !important; padding: 22px 10px 8px; color: var(--text); font-weight: 600; border-bottom: 0; }
+.model-assignments tr.selected td { background: var(--bg-hover); }
+.model-assignment-object { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; padding: 0; background: transparent; color: inherit; }
+.model-assignment-object strong { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.model-assignment-object img { width: 25px; height: 25px; flex: none; object-fit: contain; }
+.model-assignment-edit { padding: 3px 0; border: 0; background: transparent; color: var(--text-dim); font-size: 12px !important; white-space: nowrap; }
+.model-assignments td :is(input,select) { width: 100%; padding: 6px 8px; font-size: 13px; }
+.model-assignment-selection { border-top: 1px solid var(--border); margin-top: 22px; padding: 16px 0; }
+.model-assignment-selection strong { font-weight: 600; }.model-assignment-selection p { margin: 5px 0 0; color: var(--text-dim); font-size: 13px; }
+.model-assignment-footer { display: flex; gap: 16px; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 18px; margin-top: 10px; }
+.model-assignment-footer > span { font-size: 12px; color: var(--text-dim); }.model-assignment-footer > div { display: flex; gap: 10px; flex: none; }
+.model-assignment-footer button { border: 1px solid var(--border-strong); border-radius: 6px; padding: 9px 16px; background: transparent; color: var(--text); }
+.model-assignment-footer button.primary { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 600; }
+.model-assignment-error, .model-assignment-info { padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; line-height: 1.7; }
+.model-assignment-error { border-color: var(--warn); }.model-assignment-error button { display: block; margin-top: 8px; background: transparent; border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: 4px 8px; }
+.model-assignment-empty { padding: 30px 0; text-align: center; color: var(--text-dim); }
+@container (max-width: 900px) { .model-assignment-toolbar { gap: 10px; }.model-assignment-toolbar nav { order: 2; flex-basis: 100%; }.model-assignment-toolbar > select { flex: 1; }.model-assignment-footer { flex-wrap: wrap; }.model-assignment-footer > div { margin-left: auto; } }
+@container (max-width: 500px) { .model-assignment-priority { gap: 5px; font-size: 11px; }.model-assignment-toolbar nav button { padding: 6px 8px; font-size: 12px; }.model-assignment-footer > div { flex-wrap: wrap; } }

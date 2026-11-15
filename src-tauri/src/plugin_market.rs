@@ -14,6 +14,7 @@ use serde_json::Value;
 use crate::mcp;
 use crate::skill_center::{ImportSkillInput, SkillCenter};
 mod targets;
+mod catalog;
 mod native;
 mod curation;
 mod compatibility;

@@ -20,7 +20,7 @@ use super::{
     WakeupRequest, WorkspaceMode,
 };
 
-const SCHEMA_VERSION: i64 = 8;
+const SCHEMA_VERSION: i64 = 9;
 const MESSAGE_TASK_ACCEPTANCE: &str = "阅读并回应当前会话消息。回复使用 CREWVELA_CLI send；可调用 sessions 查找会话。不得修改项目文件、重跑原任务或提交业务审核结论。";
 
 #[derive(Clone)]
@@ -185,6 +185,43 @@ impl MultiAgentStore {
             now,
         )?;
         get_agent_with(&connection, &id)
+    }
+
+    pub fn model_connection(&self, agent_id: &str, runtime: AgentRuntimeKind) -> Result<Option<Option<String>>> {
+        let connection = self.connection.lock().unwrap();
+        Ok(connection.query_row("SELECT connection_id FROM ma_model_connections WHERE agent_id=?1 AND runtime_kind=?2",
+            params![agent_id, runtime.as_str()], |row| row.get(0)).optional()?)
+    }
+
+    pub fn model_assignment_context(&self, project_id: &str) -> Result<(Vec<AgentProfile>, Vec<AgentSessionRecord>)> {
+        let connection = self.connection.lock().unwrap();
+        ensure_project_exists(&connection, project_id)?;
+        Ok((list_agents_with(&connection, project_id)?, list_agent_sessions_with(&connection, project_id)?))
+    }
+
+    /// Only model fields change; unrelated profile edits and task/session identity survive.
+    pub fn update_model_assignment(&self, project_id: &str, agent_id: &str, runtime: AgentRuntimeKind,
+        expected_model: Option<&str>, expected_connection: Option<Option<String>>, model: Option<&str>, connection_id: Option<&str>) -> Result<()> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_agent_in_project(&tx, agent_id, project_id)?;
+        let current = get_agent_with(&tx, agent_id)?;
+        let stored: Option<Option<String>> = tx.query_row("SELECT connection_id FROM ma_model_connections WHERE agent_id=?1 AND runtime_kind=?2",
+            params![agent_id, runtime.as_str()], |row| row.get(0)).optional()?;
+        if current.runtime_kind != runtime || current.model.as_deref() != expected_model || stored != expected_connection {
+            return Err(anyhow!("成员模型配置已被其他操作修改，请重新读取后重试"));
+        }
+        let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_runs WHERE agent_id=?1 AND status IN ('queued','starting','running','waiting_input','waiting_approval'))", [agent_id], |row| row.get(0))?;
+        if active { return Err(anyhow!("成员有待执行或运行中的任务，请先等待完成或停止")); }
+        tx.execute("UPDATE ma_agents SET model=?1,updated_at=?2 WHERE id=?3", params![model, now_millis(), agent_id])?;
+        if model.is_none() && connection_id.is_none() {
+            tx.execute("DELETE FROM ma_model_connections WHERE agent_id=?1", [agent_id])?;
+        } else {
+            tx.execute("INSERT INTO ma_model_connections(agent_id,runtime_kind,connection_id) VALUES(?1,?2,?3) ON CONFLICT(agent_id) DO UPDATE SET runtime_kind=excluded.runtime_kind,connection_id=excluded.connection_id",
+                params![agent_id, runtime.as_str(), connection_id])?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// 保存成员配置，不重建成员，也不改写已有任务、运行及会话关联。
@@ -3372,6 +3409,7 @@ fn ensure_no_handoff(connection: &Connection, project_id: &str) -> Result<()> {
 }
 
 fn migrate(connection: &Connection) -> Result<()> {
+    connection.execute_batch("CREATE TABLE IF NOT EXISTS ma_model_connections (agent_id TEXT PRIMARY KEY REFERENCES ma_agents(id) ON DELETE CASCADE, runtime_kind TEXT NOT NULL, connection_id TEXT);")?;
     connection.execute_batch("CREATE TABLE IF NOT EXISTS ma_handoff_locks(project_id TEXT PRIMARY KEY, handoff_id TEXT NOT NULL);")?;
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS ma_meta (

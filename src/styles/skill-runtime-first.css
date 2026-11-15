@@ -1,4 +1,4 @@
-/* Runtime-first distribution: one target, one readable list, persistent actions. */
+/* Runtime distribution: multiple targets, one readable list, persistent actions. */
 .settings-dialog.settings-native .settings-content:has([data-skill-view="matrix"]) { overflow: hidden; }
 .settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner:has([data-skill-view="matrix"]) {
   display: flex; flex-direction: column; height: 100%; min-height: 0; padding-bottom: 0;
