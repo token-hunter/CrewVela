@@ -1053,6 +1053,58 @@ fn ma_send_message(
 }
 
 #[tauri::command]
+fn ma_conversation_snapshot(project_id: String, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
+    state.conversation_snapshot(&project_id).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_conversation_send(input: multi_agent::ConversationSendInput,
+    state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
+    pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
+    admission: State<'_, runtime_admission::RuntimeAdmission>,
+) -> Result<multi_agent::ConversationSnapshot, String> {
+    let _admission = admission.admit().map_err(to_err)?;
+    let project_id = input.project_id.clone();
+    supervisor.send(state.inner().clone(), input,
+        multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone()).map_err(to_err)?;
+    state.conversation_snapshot(&project_id).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_conversation_interrupt(input: multi_agent::ConversationInterruptInput,
+    state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
+) -> Result<multi_agent::ConversationSnapshot, String> {
+    let project_id = input.project_id.clone();
+    supervisor.interrupt(state.inner(), input).map_err(to_err)?;
+    state.conversation_snapshot(&project_id).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_conversation_control(project_id: String, action: String,
+    state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
+) -> Result<multi_agent::ConversationSnapshot, String> {
+    supervisor.control(state.inner(), &project_id, &action).map_err(to_err)?;
+    state.conversation_snapshot(&project_id).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_conversation_execute_plan(input: multi_agent::ConversationExecutePlanInput,
+    state: State<'_, MultiAgentStore>, supervisor: State<'_, MultiAgentSupervisor>,
+    pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
+    admission: State<'_, runtime_admission::RuntimeAdmission>,
+) -> Result<multi_agent::ConversationSnapshot, String> {
+    let _admission = admission.admit().map_err(to_err)?;
+    state.apply_conversation_plan(&input).map_err(to_err)?;
+    if state.claim_conversation_plan_start(&input).map_err(to_err)? {
+        let result = supervisor.start(state.inner().clone(), input.project_id.clone(),
+            multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone());
+        state.finish_conversation_plan_start(&input, result.as_ref().err().map(ToString::to_string).as_deref()).map_err(to_err)?;
+        result.map_err(to_err)?;
+    }
+    state.conversation_snapshot(&input.project_id).map_err(to_err)
+}
+
+#[tauri::command]
 async fn workspace_list_directory(
     root: String,
     relative_path: String,
@@ -2133,103 +2185,15 @@ fn validate_coordinator_plan(plan: &CoordinatorPlan) -> Result<(), String> {
             return Err(format!("任务依赖存在循环：{}", task.key));
         }
     }
-    let agents_by_key = plan
-        .agents
-        .iter()
-        .map(|agent| (agent.key.as_str(), agent))
-        .collect::<HashMap<_, _>>();
-    let review_task_keys = plan
-        .tasks
-        .iter()
-        .filter(|task| {
-            agents_by_key
-                .get(task.assignee_key.as_str())
-                .is_some_and(|agent| agent.role == multi_agent::AgentRole::Reviewer)
-        })
-        .map(|task| task.key.as_str())
-        .collect::<HashSet<_>>();
-    let implementation_tasks = plan
-        .tasks
-        .iter()
-        .filter(|task| {
-            task.workspace_mode != multi_agent::WorkspaceMode::ReadOnly
-                && !task
-                    .depends_on
-                    .iter()
-                    .any(|dependency| review_task_keys.contains(dependency.as_str()))
-                && agents_by_key
-                    .get(task.assignee_key.as_str())
-                    .is_some_and(|agent| agent.role == multi_agent::AgentRole::Worker)
-        })
-        .collect::<Vec<_>>();
-    let implementation_runtimes = implementation_tasks
-        .iter()
-        .filter_map(|task| agents_by_key.get(task.assignee_key.as_str()))
-        .map(|agent| agent.runtime_kind.as_str())
-        .collect::<HashSet<_>>();
-    if implementation_tasks.len() >= 2 && implementation_runtimes.len() >= 2 {
-        let review_tasks = plan
-            .tasks
-            .iter()
-            .filter(|task| {
-                agents_by_key
-                    .get(task.assignee_key.as_str())
-                    .is_some_and(|agent| agent.role == multi_agent::AgentRole::Reviewer)
-            })
-            .collect::<Vec<_>>();
-        for implementation in &implementation_tasks {
-            if implementation.workspace_mode != multi_agent::WorkspaceMode::Worktree {
-                return Err(format!(
-                    "并行实现任务“{}”必须使用独立 Worktree，才能生成可审计并可安全集成的提交",
-                    implementation.title
-                ));
-            }
-            let implementation_runtime = agents_by_key
-                .get(implementation.assignee_key.as_str())
-                .expect("validated assignee")
-                .runtime_kind;
-            let cross_reviewed = review_tasks.iter().any(|review| {
-                review.workspace_mode == multi_agent::WorkspaceMode::ReadOnly
-                    && review.depends_on.contains(&implementation.key)
-                    && agents_by_key
-                        .get(review.assignee_key.as_str())
-                        .is_some_and(|reviewer| reviewer.runtime_kind != implementation_runtime)
-            });
-            if !cross_reviewed {
-                return Err(format!(
-                    "并行实现任务“{}”缺少由不同 Runtime 执行的独立只读 Review 任务",
-                    implementation.title
-                ));
-            }
-        }
-        let integration_tasks = plan
-            .tasks
-            .iter()
-            .filter(|task| {
-                agents_by_key
-                    .get(task.assignee_key.as_str())
-                    .is_some_and(|agent| agent.role == multi_agent::AgentRole::Integrator)
-            })
-            .collect::<Vec<_>>();
-        if integration_tasks.is_empty()
-            || review_tasks.iter().any(|review| {
-                !integration_tasks
-                    .iter()
-                    .any(|integration| integration.depends_on.contains(&review.key))
-            })
-        {
-            return Err(
-                "多 Runtime 并行实现必须由最终集成任务依赖全部交叉 Review 任务".to_string(),
-            );
-        }
-        if integration_tasks
-            .iter()
-            .any(|task| task.workspace_mode != multi_agent::WorkspaceMode::Worktree)
-        {
-            return Err("最终集成任务必须使用独立 Worktree".to_string());
-        }
-    }
-    Ok(())
+    multi_agent::validate_parallel_review_graph(
+        &plan.agents.iter().map(|agent| multi_agent::ReviewGraphAgent {
+            key: &agent.key, runtime_kind: agent.runtime_kind, role: agent.role,
+        }).collect::<Vec<_>>(),
+        &plan.tasks.iter().map(|task| multi_agent::ReviewGraphTask {
+            key: &task.key, title: &task.title, assignee_key: &task.assignee_key,
+            depends_on: &task.depends_on, workspace_mode: task.workspace_mode,
+        }).collect::<Vec<_>>(),
+    )
 }
 
 fn coordinator_dependency_cycle(
@@ -4908,7 +4872,7 @@ fn set_agent_activity(
 /// 时间型自动化出列执行。pty_poll_all 主循环会调用；另外由独立的
 /// automation_tick 心跳驱动——没有终端会话时主轮询不跑，调度器不会停摆。
 fn busy_automation_ids(automations: &AutomationManager, sessions: &SessionManager, queue: &SessionActionQueue, store: Option<&MultiAgentStore>) -> HashSet<String> {
-    automations.list().into_iter().filter(|item| item.active_session_ids.iter().any(|id| {
+    automations.list().into_iter().filter(|item| item.recent_runs.iter().any(|r| automation::is_active_stage(r.stage.as_deref().unwrap_or("unconfirmed"))) || item.active_session_ids.iter().any(|id| {
         if queue.has_pending_work(id) { return true; }
         let Some(session) = sessions.get(id) else { return false; };
         if matches!(session.status, SessionStatus::Pending | SessionStatus::Waiting) || (session.status == SessionStatus::Running && !sessions.is_ready_for_prompt(id)) { return true; }
@@ -4927,9 +4891,10 @@ fn dispatch_due_automations(
     multi_agent_store: &MultiAgentStore,
 ) -> Result<(), String> {
     let now = automation::now_millis();
+    automation_state.reconcile(action_queue, session_state, multi_agent_store, now).map_err(to_err)?;
     let mut report_error = None;
     let busy = busy_automation_ids(automation_state, session_state, action_queue, Some(multi_agent_store));
-    for (automation_id, action) in automation_state.collect_due_with_busy(now, &busy).map_err(to_err)? {
+    for (automation_id, execution_id, action) in automation_state.collect_due_with_busy(now, &busy).map_err(to_err)? {
         let mut targets = Vec::new();
         let (ok, detail) = execute_automation_action_tracked(
             &action,
@@ -4938,8 +4903,9 @@ fn dispatch_due_automations(
             action_queue,
             Some(multi_agent_store),
             &mut targets,
+            Some((automation_state, &execution_id)),
         );
-        if let Err(error) = automation_state.report_dispatch_result(&automation_id, ok, detail, now, targets) {
+        if let Err(error) = automation_state.finish_dispatch(&automation_id, &execution_id, ok, detail, now) {
             report_error.get_or_insert_with(|| to_err(error));
         }
     }
@@ -4993,6 +4959,7 @@ fn automation_tick(
     )?;
     action_queue.flush_ready(&session_state, &pty_state);
     action_queue.flush_pending_submits(&session_state, &pty_state);
+    automation_state.reconcile(&action_queue, &session_state, &multi_agent_store, automation::now_millis()).map_err(to_err)?;
     Ok(())
 }
 
@@ -5033,7 +5000,7 @@ fn dispatch_session_event_automations(
             }
         };
         pending.retain(|transition| transition.to != status);
-        for (automation_id, action) in actions {
+        for (automation_id, execution_id, action) in actions {
             let mut targets = Vec::new();
             let (ok, detail) = execute_automation_action_tracked(
                 &action,
@@ -5042,8 +5009,9 @@ fn dispatch_session_event_automations(
                 action_queue,
                 multi_agent_store,
                 &mut targets,
+                Some((automation_state, &execution_id)),
             );
-            if let Err(error) = automation_state.report_dispatch_result(&automation_id, ok, detail, now, targets) {
+            if let Err(error) = automation_state.finish_dispatch(&automation_id, &execution_id, ok, detail, now) {
                 report_error.get_or_insert_with(|| to_err(error));
             }
         }
@@ -5089,7 +5057,7 @@ fn process_polled_session_exits(
 
 #[cfg(test)]
 fn execute_automation_action(action: &AutomationAction, pty: &PtyManager, sessions: &SessionManager, queue: &SessionActionQueue, store: Option<&MultiAgentStore>) -> (bool, String) {
-    execute_automation_action_tracked(action, pty, sessions, queue, store, &mut Vec::new())
+    execute_automation_action_tracked(action, pty, sessions, queue, store, &mut Vec::new(), None)
 }
 
 fn execute_automation_action_tracked(
@@ -5099,7 +5067,25 @@ fn execute_automation_action_tracked(
     action_queue: &SessionActionQueue,
     multi_agent_store: Option<&MultiAgentStore>,
     targets: &mut Vec<String>,
+    execution: Option<(&AutomationManager, &str)>,
 ) -> (bool, String) {
+    let enqueue = |deliveries: Vec<(String, QueuedMessage)>| -> Result<(), String> {
+        let mut tracked = Vec::new();
+        for (session_id, mut message) in deliveries {
+            if let Some((manager, run_id)) = execution {
+                message.id = format!("automation-{run_id}-{}", message.id);
+                let session = session_state.get(&session_id).ok_or("目标会话已删除")?;
+                let project_id = session.multi_agent_project_id.clone().filter(|_| session.runtime_command_host);
+                manager.register_target(run_id, automation::AutomationTarget {
+                    session_id: session_id.clone(), message_id: message.id.clone(),
+                    task_id: project_id.as_ref().map(|_| format!("cli-message-{}", message.id)),
+                    project_id, run_id: None, stage: "queued".into(), detail: "等待投递".into(),
+                }).map_err(to_err)?;
+            }
+            tracked.push((session_id, message));
+        }
+        action_queue.enqueue_messages_durable(tracked).map_err(to_err)
+    };
     fn target_agent_session(
         project_id: &str,
         agent_id: &str,
@@ -5171,7 +5157,7 @@ fn execute_automation_action_tracked(
                 let _guard = lifecycle.lock().unwrap();
                 match open_runtime_session(&record, pty_state, session_state) {
                     Ok(started) => {
-                        action_queue.enqueue_messages_durable(vec![(started.id.clone(), QueuedMessage::new(prompt.clone(), None))])
+                        enqueue(vec![(started.id.clone(), QueuedMessage::new(prompt.clone(), None))])
                             .map_err(|e| format!("会话已启动但任务排队失败，会话保留：{e:#}"))?;
                         Ok(started)
                     }
@@ -5198,7 +5184,7 @@ fn execute_automation_action_tracked(
                 if !automation_runtime::message_candidate(&target, Some(*runtime_kind)) { return Err("目标会话已归档或 Agent 类型变化".into()); }
                 if project_id.is_none() && !automation_runtime::live_candidate(&target, *runtime_kind) { return Err("目标会话已停止或异常，请先恢复会话".into()); }
                 targets.push(target.id.clone());
-                action_queue.enqueue_messages_durable(vec![(target.id, QueuedMessage::new(body.clone(), None))]).map_err(to_err)
+                enqueue(vec![(target.id, QueuedMessage::new(body.clone(), None))])
             })();
             match result { Ok(()) => (true, "任务已排队；不代表已投递或任务完成".into()), Err(error) => (false, error) }
         }
@@ -5208,7 +5194,7 @@ fn execute_automation_action_tracked(
             if rows.is_empty() { return (false, "所选 Agent 没有运行中的会话".into()); }
             let ids = rows.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
             let deliveries = ids.iter().map(|id| (id.clone(), QueuedMessage::new(body.clone(), None))).collect();
-            match action_queue.enqueue_messages_durable(deliveries) {
+            match enqueue(deliveries) {
                 Ok(()) => { *targets = ids; (true, format!("已向 {} 个 {} 会话排队；未确认任务完成", targets.len(), runtime_kind.as_str())) },
                 Err(error) => (false, to_err(error)),
             }
@@ -5226,7 +5212,7 @@ fn execute_automation_action_tracked(
             match target_agent_session(project_id, agent_id, store, session_state, pty_state, None) {
                 Ok(session) => {
                     targets.push(session.id.clone());
-                    if let Err(error) = action_queue.enqueue_messages_durable(vec![(session.id.clone(), QueuedMessage::new(prompt.clone(), None))]) { return (false, to_err(error)); }
+                    if let Err(error) = enqueue(vec![(session.id.clone(), QueuedMessage::new(prompt.clone(), None))]) { return (false, to_err(error)); }
                     (
                         true,
                         format!("已启动项目 Agent「{}」并排队 Prompt", session.title),
@@ -5264,7 +5250,7 @@ fn execute_automation_action_tracked(
                     session_state,
                     action_queue,
                 )?;
-                if let Err(error) = action_queue.enqueue_messages_durable(vec![(started.id.clone(), QueuedMessage::new(prompt.clone(), None))]) { targets.push(started.id.clone()); return Err(format!("会话已启动但任务排队失败：{error:#}")); }
+                if let Err(error) = enqueue(vec![(started.id.clone(), QueuedMessage::new(prompt.clone(), None))]) { targets.push(started.id.clone()); return Err(format!("会话已启动但任务排队失败：{error:#}")); }
                 Ok(started)
             })();
             match result {
@@ -5284,7 +5270,7 @@ fn execute_automation_action_tracked(
             match target_agent_session(project_id, agent_id, store, session_state, pty_state, None) {
                 Ok(session) => {
                     targets.push(session.id.clone());
-                    match action_queue.enqueue_messages_durable(vec![(session.id.clone(), QueuedMessage::new(body.clone(), None))]) {
+                    match enqueue(vec![(session.id.clone(), QueuedMessage::new(body.clone(), None))]) {
                         Ok(()) => (true, format!("已排队发给 Agent「{}」", session.title)),
                         Err(error) => (false, format!("{error:#}")),
                     }
@@ -5303,7 +5289,7 @@ fn execute_automation_action_tracked(
                 if let Err(error) = ensure_session_message_target(&target) {
                     return (false, error);
                 }
-                match action_queue.enqueue_messages_durable(vec![(session_id.clone(), QueuedMessage::new(body.clone(), None))]) {
+                match enqueue(vec![(session_id.clone(), QueuedMessage::new(body.clone(), None))]) {
                     Ok(()) => (true, format!("已排队发给「{}」", target.title)),
                     Err(error) => (false, format!("{error:#}")),
                 }
@@ -5315,17 +5301,56 @@ fn execute_automation_action_tracked(
             }
         },
         AutomationAction::Broadcast { body } => {
-            match action_queue.enqueue_broadcast(body, &session_state.list()) {
-                Ok(receipt) => { targets.extend(receipt.targets.iter().map(|t| t.session_id.clone())); (true, format!("已排队广播给 {} 个 Claude Code Provider 会话；不代表任务完成", receipt.target_count)) },
-                Err(error) => (false, error.to_string()),
+            let ids = session_state.list().iter().filter(|s| s.kind == SessionKind::Claude && s.pty_id.is_some() && runtime_preferences::ensure_session_available(s).is_ok()).map(|s| s.id.clone()).collect::<Vec<_>>();
+            if ids.is_empty() { return (false, "没有运行中的 Claude Code 会话".into()); }
+            match enqueue(ids.iter().map(|id| (id.clone(), QueuedMessage::with_kind(body.clone(), None, control::MessageKind::Broadcast))).collect()) {
+                Ok(()) => { *targets = ids; (true, format!("已排队广播给 {} 个 Claude Code 会话；不代表任务完成", targets.len())) },
+                Err(error) => (false, error),
             }
         }
     }
 }
 
+#[tauri::command(async)]
+fn run_automation_now(id: String, request_id: String, retry_of: Option<String>,
+    pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, queue: State<'_, SessionActionQueue>,
+    state: State<'_, AutomationManager>, store: State<'_, MultiAgentStore>, admission: State<'_, runtime_admission::RuntimeAdmission>,
+) -> Result<Vec<Automation>, String> {
+    let _admission = admission.admit().map_err(to_err)?;
+    state.reconcile(&queue, &sessions, &store, automation::now_millis()).map_err(to_err)?;
+    if let Some((run_id, action)) = state.begin_manual(&id, &request_id, retry_of.as_deref(), automation::now_millis()).map_err(to_err)? {
+        let mut targets = Vec::new();
+        let (ok, detail) = execute_automation_action_tracked(&action, &pty, &sessions, &queue, Some(&store), &mut targets, Some((&state, &run_id)));
+        state.finish_dispatch(&id, &run_id, ok, detail, automation::now_millis()).map_err(to_err)?;
+    }
+    Ok(state.list())
+}
+
+#[tauri::command(async)]
+fn stop_automation_run(id: String, run_id: String, state: State<'_, AutomationManager>, queue: State<'_, SessionActionQueue>, store: State<'_, MultiAgentStore>, supervisor: State<'_, MultiAgentSupervisor>) -> Result<Vec<Automation>, String> {
+    if state.cancel_queued_run(&id, &run_id, &queue).is_err() {
+        let run = state.list().into_iter().find(|a| a.id == id).and_then(|a| a.recent_runs.into_iter().find(|r| r.id == run_id)).ok_or("执行不存在")?;
+        if run.targets.is_empty() || !automation::is_active_stage(run.stage.as_deref().unwrap_or("unconfirmed")) { return Err("本轮没有可停止的活动任务".into()); }
+        if store.cancel_queued_automation_tasks(&run.targets).is_ok() {
+            state.mark_cancelled(&id,&run_id).map_err(to_err)?;
+        } else {
+            supervisor.stop_automation_runs(&store, &run.targets).map_err(to_err)?;
+            state.mark_stopping(&id, &run_id).map_err(to_err)?;
+        }
+    }
+    Ok(state.list())
+}
+
 #[tauri::command]
 fn list_automations(state: State<'_, AutomationManager>) -> Vec<Automation> {
     state.list()
+}
+
+#[tauri::command(async)]
+fn acknowledge_automation_run(id:String,run_id:String,confirmed:bool,state:State<'_,AutomationManager>,queue:State<'_,SessionActionQueue>,store:State<'_,MultiAgentStore>) -> Result<Vec<Automation>,String> {
+    if !confirmed {return Err("请先检查原会话，确认原任务不再执行".into());}
+    state.acknowledge_unknown(&id,&run_id,&queue,&store).map_err(to_err)?;
+    Ok(state.list())
 }
 
 #[tauri::command]
@@ -5681,14 +5706,15 @@ fn flush_cli_messages_with_scheduler(
         ) else {
             continue;
         };
+        action_queue.with_delivery_lock(|| -> Result<(), String> {
         let Some(message) = action_queue.peek_deliverable(&target.id) else {
-            continue;
+            return Ok(());
         };
         if message.kind == control::MessageKind::Chat
             && message.from.is_some()
             && action_queue.activity(&target.id) == control::AgentActivity::Muted
         {
-            continue;
+            return Ok(());
         }
         if multi_agent_store
             .enqueue_cli_message_task(
@@ -5702,6 +5728,8 @@ fn flush_cli_messages_with_scheduler(
             action_queue.commit_delivered_message(&target.id, &message.id);
             start(project_id)?;
         }
+            Ok(())
+        })?;
     }
     // 已入任务表但当前 Agent 忙碌/调度器正在退出时，下轮仍会重试唤醒。
     let projects = session_state
@@ -5975,6 +6003,7 @@ pub fn run() {
             if !test_profile::active() { browser_control::refresh_installed_skill(app.handle()); }
             app.manage(UsageTracker::default());
             app.manage(MultiAgentSupervisor::default());
+            app.manage(multi_agent::ConversationSupervisor::default());
             let session_manager = SessionManager::new()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             let native_acp = NativeAcpSessions::open_at(config_dir.join("deepseek-harness-sessions.json"))
@@ -6019,6 +6048,8 @@ pub fn run() {
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             multi_agent_store
                 .recover_interrupted_runs_at_startup()
+                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+            multi_agent_store.recover_conversations_at_startup()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             if !test_profile::active() {
             let collaboration_bridge = CollaborationBridge::start(multi_agent_store.clone())
@@ -6191,6 +6222,11 @@ pub fn run() {
             ma_activity_events,
             ma_runtime_events,
             ma_send_message,
+            ma_conversation_snapshot,
+            ma_conversation_send,
+            ma_conversation_interrupt,
+            ma_conversation_control,
+            ma_conversation_execute_plan,
             ma_send_direct_message,
             ma_publish_artifact,
             ma_request_approval,
@@ -6298,6 +6334,9 @@ pub fn run() {
             list_delivery_records,
             list_communication_evidence,
             list_automations,
+            run_automation_now,
+            stop_automation_run,
+            acknowledge_automation_run,
             create_automation,
             set_automation_enabled,
             delete_automation,
@@ -6355,6 +6394,9 @@ fn shutdown_all_sessions<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
             Err(error) => return report_shutdown_failure(app, format!("等待会话启动结束失败，未退出应用：{error:#}")),
         }
     } else { None };
+    if let (Some(supervisor), Some(store)) = (app.try_state::<multi_agent::ConversationSupervisor>(), app.try_state::<MultiAgentStore>()) {
+        if let Err(error) = supervisor.stop_all(&store) { return report_shutdown_failure(app, format!("讨论停止未确认，未退出应用：{error:#}")); }
+    }
     let shutdown_guard = if let Some(supervisor) = app.try_state::<MultiAgentSupervisor>() {
         match supervisor.begin_shutdown() {
             Ok(guard) => Some(guard),
@@ -7019,7 +7061,7 @@ mod tests {
         }
         let action = AutomationAction::BroadcastAgent { runtime_kind:AgentRuntimeKind::CodexChat, body:"exact message".into() };
         let mut targets=Vec::new();
-        let (ok, detail) = execute_automation_action_tracked(&action, &ptys, &sessions, &queue, None, &mut targets);
+        let (ok, detail) = execute_automation_action_tracked(&action, &ptys, &sessions, &queue, None, &mut targets, None);
         assert!(ok, "{detail}"); assert_eq!(targets, vec![records[0].id.clone()]);
         assert_eq!(queue.peek_next(&records[0].id).unwrap().body, "exact message");
         assert!(queue.peek_next(&records[1].id).is_none() && queue.peek_next(&records[2].id).is_none());
@@ -7051,7 +7093,7 @@ mod tests {
             let agent = store.create_agent(CreateAgentInput {avatar_id:None,project_id:project.id.clone(),name:kind.as_str().into(),runtime_kind:kind,role:multi_agent::AgentRole::Worker,description:String::new(),persona:Default::default(),persona_custom:String::new(),model:None,permission_profile:multi_agent::PermissionProfile::Default,max_concurrency:1}).unwrap();
             let action = AutomationAction::SendAgent { runtime_kind:kind, session_id:String::new(),body:"native project task".into(),project_id:Some(project.id.clone()),agent_id:Some(agent.id) };
             let mut targets=Vec::new();
-            let (ok,detail) = execute_automation_action_tracked(&action,&ptys,&sessions,&queue,Some(&store),&mut targets);
+            let (ok,detail) = execute_automation_action_tracked(&action,&ptys,&sessions,&queue,Some(&store),&mut targets,None);
             assert!(ok,"{detail}"); assert_eq!(targets.len(),1);
             let target=sessions.get(&targets[0]).unwrap();
             assert!(target.runtime_command_host && target.pty_id.is_none());

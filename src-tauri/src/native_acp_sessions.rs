@@ -1839,6 +1839,11 @@ impl NativeAcpSessions {
         } else {
             0
         };
+        if let Some(store) = app.try_state::<crate::multi_agent::MultiAgentStore>() {
+            if let Err(error) = store.record_conversation_native_event(session_id, sequence, kind, &data) {
+                eprintln!("[crewvela] 公共会话原生事件持久化失败：{error:#}");
+            }
+        }
         let _ = app.emit(self.flavor.event_name(), HarnessEvent {
             session_id: session_id.to_string(),
             sequence,

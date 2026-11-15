@@ -207,13 +207,29 @@ export type AutomationAction =
   | { kind: "broadcast"; body: string };
 
 export interface AutomationRun {
-  stage?: "queued" | "failed" | "skipped" | null;
+  id?: string;
+  origin?: string;
+  retryOf?: string | null;
+  updatedAt?: number;
+  targets?: AutomationTarget[];
+  stage?: "dispatching" | "queued" | "submitted" | "received" | "running" | "waiting" | "stopping" | "completed" | "failed" | "cancelled" | "unconfirmed" | "acknowledged" | "skipped" | null;
   at: number;
   ok: boolean;
   detail: string;
 }
 
+export interface AutomationTarget {
+  sessionId: string;
+  messageId: string;
+  projectId: string | null;
+  taskId: string | null;
+  runId: string | null;
+  stage: string;
+  detail: string;
+}
+
 export interface Automation {
+  requestReceipts?: Record<string, string>;
   overlapPolicy?: "skip" | "allow";
   activeSessionIds?: string[];
   id: string;
@@ -899,6 +915,102 @@ export interface CollaborationMessage {
   targetAgentId: string | null;
   body: string;
   createdAt: number;
+}
+
+/** A project owns one public team conversation. Private session history is never imported. */
+export type ConversationMode = "discussion" | "execution_plan";
+export type ConversationPhase = "opinions" | "responses" | "summary";
+export type ConversationStatus = "queued" | "running" | "waiting_approval" | "stopping" | "completed" | "failed" | "cancelled" | "paused" | "unconfirmed" | "needs_decision";
+export interface CollaborationConversation {
+  id: string;
+  projectId: string;
+  createdAt: number;
+}
+export interface ConversationMessage {
+  id: string;
+  /** Present on human messages; server id is separate and stable across retries. */
+  clientMessageId?: string | null;
+  projectId: string;
+  conversationId: string;
+  roundId: string | null;
+  replyToMessageId: string | null;
+  taskId: string | null;
+  runId: string | null;
+  agentId: string | null;
+  senderType: "user" | "agent" | "system";
+  kind: "message" | "reply" | "status" | "plan";
+  phase: ConversationPhase | null;
+  body: string;
+  status: ConversationStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface ConversationRound {
+  id: string;
+  projectId: string;
+  conversationId: string;
+  userMessageId: string;
+  participantAgentIds: string[];
+  mode: ConversationMode;
+  status: ConversationStatus;
+  phase: ConversationPhase;
+  maxRounds: number;
+  currentRound: number;
+  deadlineAt: number;
+  stopReason: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface ConversationPlannedTask {
+  key: string;
+  title: string;
+  description: string;
+  acceptanceCriteria: string;
+  verificationCommand: string | null;
+  assigneeAgentId: string;
+  reviewerAgentId: string | null;
+  workspaceMode: "read_only" | "worktree";
+  writePaths: string[];
+  dependsOn: string[];
+}
+export interface ConversationExecutionPlan {
+  id: string;
+  projectId: string;
+  roundId: string;
+  messageId: string;
+  summary: string;
+  tasks: ConversationPlannedTask[];
+  status: "pending" | "applied" | "superseded";
+  taskIds: string[];
+  createdAt: number;
+}
+export interface ConversationSnapshot {
+  conversation: CollaborationConversation;
+  messages: ConversationMessage[];
+  rounds: ConversationRound[];
+  executionPlans: ConversationExecutionPlan[];
+  supportedDiscussionRuntimes: AgentRuntimeKind[];
+}
+export interface ConversationSendInput {
+  projectId: string;
+  clientMessageId: string;
+  body: string;
+  participantAgentIds: string[];
+  mode: ConversationMode;
+  /** Response passes after everyone's initial view; defaults to 1, hard maximum 3. */
+  maxRounds?: number;
+  /** Whole discussion deadline, including queue and approvals; defaults to 600. */
+  maxDurationSeconds?: number;
+}
+export interface ConversationInterruptInput {
+  projectId: string;
+  clientMessageId: string;
+  body: string;
+}
+export interface ConversationExecutePlanInput {
+  projectId: string;
+  planId: string;
+  clientRequestId: string;
 }
 
 export interface ArtifactRecord {

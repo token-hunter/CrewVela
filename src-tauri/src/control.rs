@@ -291,6 +291,8 @@ pub struct DeliveryRecord {
 }
 
 pub struct SessionActionQueue {
+    /// After restart, uncertain automation mail must never be replayed automatically.
+    held_automation_messages: Mutex<HashSet<String>>,
     delivery_lock: Mutex<()>,
     persistence_lock: Mutex<()>,
     items: Mutex<HashMap<String, VecDeque<QueuedMessage>>>,
@@ -378,6 +380,7 @@ impl SessionActionQueue {
     #[cfg(test)]
     pub fn new() -> Self {
         Self {
+            held_automation_messages: Mutex::new(HashSet::new()),
             delivery_lock: Mutex::new(()),
             persistence_lock: Mutex::new(()),
             items: Mutex::new(HashMap::new()),
@@ -420,6 +423,7 @@ impl SessionActionQueue {
             }
         };
         Ok(Self {
+            held_automation_messages: Mutex::new(file.items.values().flatten().filter(|m| m.id.starts_with("automation-")).map(|m| m.id.clone()).collect()),
             delivery_lock: Mutex::new(()),
             persistence_lock: Mutex::new(()),
             items: Mutex::new(file.items),
@@ -564,13 +568,41 @@ impl SessionActionQueue {
     /// 静音只挂起 Agent Chat，人工插话可越过它；Agent Chat 之间顺序不变。
     pub(crate) fn peek_deliverable(&self, session_id: &str) -> Option<QueuedMessage> {
         let muted = self.activity(session_id) == AgentActivity::Muted;
+        let held = self.held_automation_messages.lock().unwrap().clone();
         self.items
             .lock()
             .unwrap()
             .get(session_id)?
             .iter()
-            .find(|message| !muted || message.kind != MessageKind::Chat || message.from.is_none())
+            .find(|message| !held.contains(&message.id) && (!muted || message.kind != MessageKind::Chat || message.from.is_none()))
             .cloned()
+    }
+
+    pub(crate) fn with_delivery_lock<T>(&self, action: impl FnOnce() -> T) -> T {
+        let _delivery = self.delivery_lock.lock().unwrap(); action()
+    }
+
+    pub(crate) fn contains_message(&self, session: &str, id: &str) -> bool {
+        self.items.lock().unwrap().get(session).is_some_and(|q| q.iter().any(|m| m.id==id))
+    }
+
+    pub(crate) fn cancel_automation_messages(&self, targets: &[(String, String)]) -> Result<()> {
+        let _delivery = self.delivery_lock.lock().unwrap();
+        let _persistence = self.persistence_lock.lock().unwrap();
+        let pending = self.pending_submits.lock().unwrap();
+        let mut items = self.items.lock().unwrap();
+        for (session, id) in targets {
+            if !id.starts_with("automation-") || pending.get(session).is_some_and(|p| p.message_id == *id)
+                || !items.get(session).is_some_and(|q| q.iter().any(|m| m.id == *id)) {
+                anyhow::bail!("部分消息已写入、接收或缺少回执，不能安全撤销本轮；请打开原会话停止，后续计划可单独暂停");
+            }
+        }
+        let mut next = items.clone();
+        for (session, id) in targets { if let Some(q) = next.get_mut(session) { q.retain(|m| m.id != *id); } }
+        if let Some(path) = &self.mailbox_path {
+            write_mailbox_file(path, &MailboxFile { version:1, items:next.clone(), handoff_ids:self.handoff_ids.lock().unwrap().clone(), processed_outbox_ids:self.processed_outbox_ids.lock().unwrap().clone(), human_message_receipts:self.human_message_receipts.lock().unwrap().clone() })?;
+        }
+        *items = next; Ok(())
     }
 
     pub(crate) fn commit_delivered_message(&self, session_id: &str, message_id: &str) -> bool {
@@ -1432,6 +1464,7 @@ impl SessionActionQueue {
             let paste = format!("\x1b[200~{safe_text}\x1b[201~");
             match write(pty_id, paste.as_bytes()) {
                 Ok(()) => {
+                    session_state.bind_automation_message(&session.id, &message.id, &safe_text);
                     self.pending_submits
                         .lock()
                         .unwrap()
@@ -1509,7 +1542,7 @@ impl SessionActionQueue {
                     "fromLabel": message.from.as_ref().map(|origin| &origin.label),
                     "kind": message.kind,
                     "body": message.body,
-                    "stage": "queued", "error": error}));
+                    "stage": "queued", "held": self.held_automation_messages.lock().unwrap().contains(&message.id), "error": error}));
             }
         }
         result

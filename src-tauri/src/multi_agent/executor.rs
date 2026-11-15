@@ -1091,6 +1091,7 @@ fn project_runtime_leases(
 
 #[derive(Clone, Default)]
 pub struct MultiAgentSupervisor {
+    run_stops: Arc<Mutex<HashMap<String, (String, Arc<AtomicBool>)>>>,
     projects: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     message_projects: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     shutting_down: Arc<AtomicBool>,
@@ -1178,6 +1179,7 @@ impl MultiAgentSupervisor {
                 terminal_host,
                 collaboration_bridge,
                 false,
+                supervisor.run_stops.clone(),
             );
             }
             supervisor
@@ -1232,6 +1234,7 @@ impl MultiAgentSupervisor {
                 terminal_host,
                 collaboration_bridge,
                 true,
+                supervisor.run_stops.clone(),
             );
             supervisor
                 .message_projects
@@ -1253,6 +1256,9 @@ impl MultiAgentSupervisor {
             store.set_project_status(project_id, ProjectStatus::Paused)?;
             if let Some(flag) = messages.get(project_id) { flag.store(true, Ordering::Release); }
             if let Some(flag) = projects.get(project_id) { flag.store(true, Ordering::Release); }
+            for (owner,flag) in self.run_stops.lock().unwrap().values() {
+                if owner==project_id { flag.store(true,Ordering::Release); }
+            }
         }
         let started = Instant::now();
         while started.elapsed() < SUPERVISOR_STOP_TIMEOUT
@@ -1303,6 +1309,25 @@ impl MultiAgentSupervisor {
             message: format!("已取消项目和 {count} 个未完成任务"),
         })
     }
+
+    /// Exact automation message Runs only. Never pauses a project or kills another member's work.
+    pub fn stop_automation_runs(&self, store: &MultiAgentStore, targets: &[crate::automation::AutomationTarget]) -> Result<()> {
+        let flags = self.run_stops.lock().unwrap();
+        let mut selected = Vec::new();
+        for target in targets {
+            let project = target.project_id.as_ref().context("本轮不是受管理的项目任务，请打开原会话停止")?;
+            let task_id = target.task_id.as_ref().context("缺少任务身份")?;
+            if task_id != &format!("cli-message-{}", target.message_id) || !target.message_id.starts_with("automation-") { anyhow::bail!("自动化任务身份不匹配"); }
+            let snapshot = store.snapshot(project)?;
+            let run = snapshot.runs.iter().filter(|r| &r.task_id == task_id).max_by_key(|r| (r.attempt, r.created_at)).context("消息尚未启动，稍后重试撤销或打开原会话核对")?;
+            if run.session_locator.as_ref().is_some_and(|l| l["stopUnverified"] == true) { anyhow::bail!("原进程停止未确认，请打开原会话核对"); }
+            let (owner,flag)=flags.get(&run.id).context("本轮已结束或没有活动执行句柄，请刷新结果")?;
+            if owner!=project {anyhow::bail!("执行句柄的项目身份已变化");}
+            selected.push(flag.clone());
+        }
+        for flag in selected { flag.store(true, Ordering::Release); }
+        Ok(())
+    }
 }
 
 fn schedule_until_idle(
@@ -1312,11 +1337,13 @@ fn schedule_until_idle(
     terminal_host: AgentTerminalHost,
     collaboration_bridge: CollaborationBridge,
     message_only: bool,
+    run_stops: Arc<Mutex<HashMap<String, (String, Arc<AtomicBool>)>>>,
 ) -> Result<()> {
     #[derive(Debug)]
     struct ActiveRun {
         agent_id: String,
         exclusive_write: bool,
+        stop: Arc<AtomicBool>,
     }
 
     #[derive(Debug)]
@@ -1332,6 +1359,7 @@ fn schedule_until_idle(
                 store.project(project_id)?.status,
                 ProjectStatus::Paused | ProjectStatus::Cancelled
             );
+        if stopping { for active in active_runs.values() { active.stop.store(true, Ordering::Release); } }
         if stopping && active_runs.is_empty() {
             return Ok(());
         }
@@ -1397,16 +1425,22 @@ fn schedule_until_idle(
             };
             let agent = store.agent_profile(&agent.id)?;
             scheduled_any = true;
+            let run_cancelled = Arc::new(AtomicBool::new(cancelled.load(Ordering::Acquire)));
+            run_stops.lock().unwrap().insert(run.id.clone(), (project_id.to_owned(),run_cancelled.clone()));
+            // If pause won before registration, inherit it here; if it wins after,
+            // pause sees this registered child flag and stops it directly.
+            if cancelled.load(Ordering::Acquire) {run_cancelled.store(true,Ordering::Release);}
             active_runs.insert(
                 run.id.clone(),
                 ActiveRun {
                     agent_id: agent.id.clone(),
                     exclusive_write: needs_exclusive_write,
+                    stop: run_cancelled.clone(),
                 },
             );
             let store = store.clone();
             let project = project.clone();
-            let run_cancelled = cancelled.clone();
+            let run_stops = run_stops.clone();
             let terminal_host = terminal_host.clone();
             let collaboration_bridge = collaboration_bridge.clone();
             let completion_tx = completion_tx.clone();
@@ -1433,6 +1467,7 @@ fn schedule_until_idle(
                     );
                 }
                 let _ = store.finish_wakeup(&wakeup.id, succeeded);
+                run_stops.lock().unwrap().remove(&run_id);
                 let _ = completion_tx.send(RunCompletion { run_id });
             });
         }
@@ -1483,6 +1518,31 @@ fn now_millis_for_scheduler() -> i64 {
         .as_millis() as i64
 }
 
+#[cfg(test)]
+mod automation_stop_tests {
+    use super::*;
+    #[test]
+    fn automation_stop_targets_one_run_and_refuses_ambiguous_batches() {
+        let root=std::env::temp_dir().join(format!("automation-stop-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let store=MultiAgentStore::open_at(root.join("store.db")).unwrap();
+        let project=store.create_project(super::super::CreateProjectInput{name:"exact stop".into(),goal:"scope".into(),root_path:root.display().to_string(),default_branch:"main".into()}).unwrap();
+        let agent=store.create_agent(serde_json::from_value(serde_json::json!({"projectId":project.id,"name":"member","runtimeKind":"codex","role":"worker"})).unwrap()).unwrap();
+        store.enqueue_cli_message_task(&project.id,&agent.id,"automation-one","exact").unwrap();
+        let run=store.claim_task(ClaimTaskInput{task_id:"cli-message-automation-one".into(),agent_id:agent.id,lease_seconds:60}).unwrap();
+        let supervisor=MultiAgentSupervisor::default();let own=Arc::new(AtomicBool::new(false));let other=Arc::new(AtomicBool::new(false));
+        supervisor.run_stops.lock().unwrap().insert(run.id.clone(),(project.id.clone(),own.clone()));
+        supervisor.run_stops.lock().unwrap().insert("unrelated".into(),("another-project".into(),other.clone()));
+        let target=crate::automation::AutomationTarget{session_id:"original".into(),message_id:"automation-one".into(),project_id:Some(project.id.clone()),task_id:Some(run.task_id.clone()),run_id:Some(run.id.clone()),stage:"running".into(),detail:String::new()};
+        let mut wrong=target.clone();wrong.message_id="other".into();
+        assert!(supervisor.stop_automation_runs(&store,&[target.clone(),wrong]).is_err());assert!(!own.load(Ordering::Acquire));
+        supervisor.stop_automation_runs(&store,&[target.clone()]).unwrap();assert!(own.load(Ordering::Acquire));assert!(!other.load(Ordering::Acquire));
+        assert_eq!(store.project(&project.id).unwrap().status,ProjectStatus::Active);
+        assert!(store.cancel_queued_automation_tasks(&[target]).is_err(),"claimed task cannot be cancelled without stopping its Run");
+        drop(store);std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
 struct RunHeartbeatGuard {
     stop: mpsc::Sender<()>,
     handle: Option<JoinHandle<()>>,
@@ -1531,6 +1591,7 @@ fn validate_readonly_runtime(mode: WorkspaceMode, runtime: AgentRuntimeKind) -> 
 }
 
 fn execution_workspace_mode(task: &MultiAgentTask, runtime: AgentRuntimeKind) -> WorkspaceMode {
+    if super::conversation::is_conversation_task(&task.id) { return WorkspaceMode::ReadOnly; }
     // A mailbox turn runs in an empty, application-owned message directory; it
     // does not review the business workspace. Preserve enforced read-only mode
     // where available, but do not require unsupported review permissions just
@@ -1587,7 +1648,7 @@ fn is_isolated_message_workspace(
         && !cwd.starts_with(&project) && !project.starts_with(&cwd)
 }
 
-fn execute_run(
+pub(super) fn execute_run(
     store: &MultiAgentStore,
     project: MultiAgentProject,
     task: MultiAgentTask,
@@ -1608,7 +1669,8 @@ fn execute_run(
     agent.model = None;
     let mut task = task;
     task.workspace_mode = execution_workspace_mode(&task, agent.runtime_kind);
-    if let Err(error) = validate_readonly_runtime(task.workspace_mode, agent.runtime_kind) {
+    let discussion = super::conversation::is_conversation_task(&task.id);
+    if let Err(error) = if discussion && agent.runtime_kind == AgentRuntimeKind::Pi { Ok(()) } else { validate_readonly_runtime(task.workspace_mode, agent.runtime_kind) } {
         store.fail_run_permanently(&run_id, &error.to_string(), None)?;
         return Err(error);
     }
@@ -1657,6 +1719,7 @@ fn execute_run(
         } else {
             None
         };
+    let conversation_scope_baseline = if !message_turn && is_git_worktree(&cwd) { Some(git_head(&cwd)?) } else { None };
     let _ = store.append_run_log(&run_id, "system", &format!("工作目录：{}", cwd.display()));
     if message_turn && task.workspace_mode == WorkspaceMode::SharedWrite {
         let _ = store.append_run_log(&run_id, "system", "使用独立可写消息工作区并保留成员原权限；此 Runtime 不提供强制只读边界，禁止修改业务文件");
@@ -1689,15 +1752,15 @@ fn execute_run(
         error: None,
         session_locator: Some(serde_json::json!({"cwd": cwd, "adapter": agent.runtime_kind})),
     })?;
-    let user_instructions = store.claim_agent_instructions(&project.id, &agent.id, &task.id)?;
-    let shared_memories = store.search_memory_for_agent(SearchMemoryInput {
+    let user_instructions = if discussion { Vec::new() } else { store.claim_agent_instructions(&project.id, &agent.id, &task.id)? };
+    let shared_memories = if discussion { Vec::new() } else { store.search_memory_for_agent(SearchMemoryInput {
         project_id: project.id.clone(),
         query: String::new(),
         namespace: None,
         current_run_id: Some(run_id.clone()),
         limit: 12,
-    }, &agent.id)?;
-    let collaboration_messages = store.scoped_messages(&project.id, &task.id, &agent.id, 50)?;
+    }, &agent.id)? };
+    let collaboration_messages = if discussion { Vec::new() } else { store.scoped_messages(&project.id, &task.id, &agent.id, 50)? };
     let request = RuntimeRequest {
         run_id: run_id.clone(),
         cwd: cwd.clone(),
@@ -1717,6 +1780,12 @@ fn execute_run(
     debug_assert_eq!(adapter.kind(), agent.runtime_kind);
     match adapter.execute(&request, cancelled) {
         Ok(result) => {
+            if discussion {
+                store.append_runtime_event(super::AppendRuntimeEventInput {
+                    run_id: run_id.clone(), event_type: "output".into(),
+                    payload: serde_json::json!({"stream":"assistant","content":result.summary}),
+                })?;
+            }
             let _ = store.append_run_log(&run_id, "system", "Agent 执行结束，开始验收与保存交付物");
             let acceptance_verified = match verify_task_acceptance(
                 &request.task,
@@ -1737,6 +1806,10 @@ fn execute_run(
             let content_hash = if message_turn {
                 None
             } else {
+                if let Err(error) = verify_conversation_workspace_scope(store, &request.task.id, &cwd, conversation_scope_baseline.as_deref()) {
+                    store.fail_run_permanently(&run_id, &error.to_string(), Some(result.session_locator))?;
+                    return Err(error);
+                }
                 match checkpoint_task_workspace(&request, &cwd, read_only_baseline_head.as_deref())
                 {
                     Ok(hash) => hash,
@@ -1848,6 +1921,18 @@ fn workspace_can_resume(
         WorkspaceMode::Worktree => is_git_worktree(&root) && path != root && is_git_worktree(path),
         WorkspaceMode::ReadOnly => false,
     }
+}
+
+pub(super) fn verify_conversation_workspace_scope(store: &MultiAgentStore, task_id: &str, cwd: &std::path::Path, baseline: Option<&str>) -> Result<()> {
+    if !task_id.starts_with("conversation-task-") { return Ok(()); }
+    let Some(baseline) = baseline else { return Err(anyhow!("执行计划需要可核验的 Git 工作区，不允许降级为共享目录")); };
+    let mut paths = Vec::new();
+    for arguments in [vec!["diff", "--relative", "--no-renames", "--name-only", "-z", baseline, "--"], vec!["ls-files", "--others", "--exclude-standard", "-z"]] {
+        let output = hidden_command("git").arg("-C").arg(cwd).args(arguments).output().context("读取任务目录范围失败")?;
+        if !output.status.success() { return Err(anyhow!("读取任务实际变更失败：{}", String::from_utf8_lossy(&output.stderr))); }
+        paths.extend(output.stdout.split(|b| *b == 0).filter(|p| !p.is_empty()).map(|p| String::from_utf8_lossy(p).into_owned()));
+    }
+    store.verify_conversation_write_scope(task_id, &paths)
 }
 
 fn checkpoint_task_workspace(
@@ -2384,6 +2469,7 @@ fn task_requires_session_cli(task: &MultiAgentTask) -> bool {
 }
 
 fn request_requires_session_cli(request: &RuntimeRequest) -> Result<bool> {
+    if super::conversation::is_conversation_task(&request.task.id) { return Ok(false); }
     Ok(task_requires_session_cli(&request.task)
         || request
             .store
@@ -2623,7 +2709,19 @@ fn execute_preferred_acp(
         } else {
             None
         };
-    let mcp_url = format!("{}/mcp", request.collaboration.endpoint);
+    let discussion = super::conversation::is_conversation_task(&request.task.id);
+    let mcp_url = if discussion { String::new() } else { format!("{}/mcp", request.collaboration.endpoint) };
+    let event_store = request.store.clone();
+    let event_run = request.run_id.clone();
+    let update_handler: Option<Box<dyn FnMut(&serde_json::Value) + Send>> = if discussion { Some(Box::new(move |update| {
+        if update.get("sessionUpdate").and_then(serde_json::Value::as_str) == Some("agent_message_chunk") {
+            if let Some(text) = update.pointer("/content/text").and_then(serde_json::Value::as_str) {
+                if let Err(error) = event_store.append_runtime_event(super::AppendRuntimeEventInput {run_id:event_run.clone(),event_type:"assistant_delta".into(),payload:serde_json::json!({"text":text})}) {
+                    eprintln!("[crewvela] 公共讨论回复持久化失败：{error:#}");
+                }
+            }
+        }
+    })) } else { None };
     request.store.mark_acp_execution(&request.run_id)?;
     let outcome = execute_managed_acp(
         kind,
@@ -2640,6 +2738,7 @@ fn execute_preferred_acp(
         cancelled,
         None,
         permission_handler,
+        update_handler,
     );
     let outcome = match outcome {
         Ok(outcome) => outcome,
@@ -2693,6 +2792,7 @@ fn execute_preferred_acp(
             }))
         }
         ManagedAcpOutcome::Unavailable(reason) => {
+            if discussion { return Err(anyhow!("只读讨论 ACP 未就绪，不降级为权限不同的执行路径：{reason}")); }
             if kind == ManagedAcpKind::DeepSeekHarness {
                 request.terminal_host.sessions.mark_agent_activity(
                     &session.id,
@@ -3075,6 +3175,7 @@ fn claude_agent_mcp_config(
 }
 
 fn configure_collaboration_mcp(command: &mut Command, request: &RuntimeRequest) -> Result<()> {
+    if super::conversation::is_conversation_task(&request.task.id) { return Ok(()); }
     let mcp_url = format!("{}/mcp", request.collaboration.endpoint);
     match request.agent.runtime_kind {
         AgentRuntimeKind::ClaudeCode => {
@@ -3138,7 +3239,9 @@ fn configure_codex_base(command: &mut Command, request: &RuntimeRequest) -> Resu
     if !(needs_cli && request.task.workspace_mode == WorkspaceMode::ReadOnly) {
         command.arg("-C").arg(external_command_path(&request.cwd));
     }
-    let settings = if request.task.id.starts_with("cli-message-") {
+    let settings = if super::conversation::is_conversation_task(&request.task.id) {
+        CodexPermissionSettings::ReadOnly
+    } else if request.task.id.starts_with("cli-message-") {
         CodexPermissionSettings::Sandboxed {
             approval: "on-request",
         }
@@ -3481,6 +3584,11 @@ impl AgentRuntimeAdapter for PiAdapter {
             std::fs::File::create(&session)?;
         }
         let mut command = runtime_command(self.kind())?;
+        if super::conversation::is_conversation_task(&request.task.id) {
+            command.args(["--no-tools", "--no-extensions", "--no-mcp", "--no-context-files", "--no-skills", "--no-prompt-templates"]);
+            command.args(["--print", "--mode", "json", "--session"]).arg(&session);
+            return execute_command(self.kind(), command, Some(render_task_prompt(request)), request, cancelled);
+        }
         configure_collaboration_mcp(&mut command, request)?;
         command.arg("--session").arg(&session);
         command.current_dir(external_command_path(&request.cwd));
@@ -3677,7 +3785,9 @@ fn execute_command(
             runtime_failure_message(kind, &stdout, "")
         ));
     }
-    let summary = normalize_output(kind, &stdout);
+    let summary = if kind == AgentRuntimeKind::Pi && super::conversation::is_conversation_task(&request.task.id) {
+        conversation_pi_output(&stdout)?
+    } else { normalize_output(kind, &stdout) };
     if summary.trim().is_empty() {
         return Err(anyhow!("{} 未返回可用结果", request.agent.name));
     }
@@ -4333,6 +4443,7 @@ fn session_cli_prompt(project_id: &str) -> String {
 }
 
 fn render_task_prompt(request: &RuntimeRequest) -> String {
+    if super::conversation::is_conversation_task(&request.task.id) { return request.task.description.clone(); }
     if request.task.id.starts_with("cli-message-") {
         return format!("你正在处理 CrewVela 的一条会话消息，原业务任务及其状态保持不变。\n隔离消息工作目录：{}\n原项目目录（仅作背景参考）：{}\n\n{}\n\n只处理这条消息，不重跑业务任务，不创建、修改、删除或提交业务文件。需要回复时运行 CREWVELA_CLI 指向的程序的 sessions 和 send --to 子命令，按消息中的来源会话 ID 定向回复。只能运行上述 CLI 发送回复，由 CLI 自身写入通信队列；Agent 不得手工创建 outbox 或回复文件。不要仅为确认收到而反复回信，不主动创建新的往返循环。无需提交代码交付或审核决策，最后简要说明处理结果。",
             request.cwd.display(), request.project.root_path, format!("{}\n\n{}", request.task.description, session_cli_prompt(&request.project.id)));
@@ -4456,6 +4567,25 @@ fn render_task_prompt(request: &RuntimeRequest) -> String {
         collaboration = collaboration,
         review_contract = review_contract,
     )
+}
+
+pub(super) fn conversation_pi_output(raw: &str) -> Result<String> {
+    let mut replies = Vec::new();
+    for line in raw.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else { continue; };
+        if event.get("type").and_then(serde_json::Value::as_str) != Some("message_end") { continue; }
+        let Some(message) = event.get("message").filter(|m|m.get("role").and_then(serde_json::Value::as_str)==Some("assistant")) else { continue; };
+        if matches!(message.get("stopReason").and_then(serde_json::Value::as_str),Some("error"|"aborted")) {
+            return Err(anyhow!("Pi 讨论回复失败：{}",message.get("errorMessage").and_then(serde_json::Value::as_str).unwrap_or("本轮中止")));
+        }
+        if let Some(content) = message.get("content").and_then(serde_json::Value::as_array) {
+            let text = content.iter().filter(|block|block.get("type").and_then(serde_json::Value::as_str)==Some("text"))
+                .filter_map(|block|block.get("text").and_then(serde_json::Value::as_str)).collect::<Vec<_>>().join("");
+            if !text.trim().is_empty() { replies.push(text); }
+        }
+    }
+    if replies.is_empty() { return Err(anyhow!("Pi 未返回可核验的 assistant message_end，公共会话不会显示终端日志或用户提示词作为回复")); }
+    Ok(replies.join("\n"))
 }
 
 fn normalize_output(kind: AgentRuntimeKind, raw: &str) -> String {
@@ -5099,7 +5229,7 @@ fn git_repository_layout(root: &std::path::Path) -> Result<(PathBuf, PathBuf)> {
         .to_path_buf();
     Ok((repository_root, project_relative))
 }
-fn is_git_worktree(root: &std::path::Path) -> bool {
+pub(super) fn is_git_worktree(root: &std::path::Path) -> bool {
     hidden_command("git")
         .arg("-C")
         .arg(root)

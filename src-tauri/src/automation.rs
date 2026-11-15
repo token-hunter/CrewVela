@@ -12,11 +12,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
+mod execution;
+#[cfg(test)]
+mod execution_tests;
 
 pub const MAX_RECENT_RUNS: usize = 20;
 pub const MAX_BODY_CHARS: usize = 32_000;
 const DEFAULT_MAX_CONSECUTIVE_FAILURES: u32 = 3;
-const AUTOMATION_FILE_VERSION: u32 = 3;
+const AUTOMATION_FILE_VERSION: u32 = 4;
 
 pub fn now_millis() -> u64 {
     SystemTime::now()
@@ -28,6 +31,9 @@ pub fn now_millis() -> u64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Automation {
+    /// Manual request receipts outlive the visible history, preventing replay after trimming.
+    #[serde(default)]
+    pub request_receipts: std::collections::HashMap<String, String>,
     pub id: String,
     pub name: String,
     pub enabled: bool,
@@ -123,10 +129,58 @@ pub enum AutomationAction {
 #[serde(rename_all = "camelCase")]
 pub struct AutomationRun {
     #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub origin: String,
+    #[serde(default)]
+    pub retry_of: Option<String>,
+    #[serde(default)]
+    pub targets: Vec<AutomationTarget>,
+    #[serde(default)]
+    pub updated_at: u64,
+    #[serde(default)]
     pub stage: Option<String>,
     pub at: u64,
     pub ok: bool,
     pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationTarget {
+    pub session_id: String,
+    pub message_id: String,
+    pub project_id: Option<String>,
+    pub task_id: Option<String>,
+    pub run_id: Option<String>,
+    pub stage: String,
+    pub detail: String,
+}
+
+pub fn is_active_stage(stage: &str) -> bool {
+    matches!(stage, "dispatching" | "queued" | "submitted" | "received" | "running" | "waiting" | "stopping" | "unconfirmed")
+}
+
+fn new_run(now: u64, origin: &str, retry_of: Option<String>) -> AutomationRun {
+    AutomationRun { id: uuid::Uuid::new_v4().to_string(), origin: origin.into(), retry_of,
+        targets: Vec::new(), updated_at: now, stage: Some("dispatching".into()), at: now, ok: true,
+        detail: "执行已登记，正在准备派发".into() }
+}
+
+fn trim_history(item: &mut Automation) {
+    // Active and uncertain executions must remain inspectable even after many skipped ticks.
+    while item.recent_runs.len() > MAX_RECENT_RUNS {
+        let Some(index) = item.recent_runs.iter().position(|r| !is_active_stage(r.stage.as_deref().unwrap_or("unconfirmed"))) else { break; };
+        item.recent_runs.remove(index);
+    }
+}
+
+fn settle_failure(item: &mut Automation, ok: bool) {
+    if ok { item.consecutive_failures = 0; }
+    else {
+        item.consecutive_failures += 1;
+        if item.consecutive_failures >= item.max_consecutive_failures { item.enabled = false; item.next_run_at = None; }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -396,8 +450,11 @@ fn migrate_legacy_cron_schedules(items: &mut [Automation], now: u64) {
 }
 
 fn append_skipped(item: &mut Automation, now: u64) {
-    item.recent_runs.push(AutomationRun { at: now, ok: true, stage: Some("skipped".into()), detail: "上一轮尚未完成，本轮已跳过；未启动或排队新任务".into() });
-    if item.recent_runs.len() > MAX_RECENT_RUNS { item.recent_runs.remove(0); }
+    let mut run = new_run(now, "schedule", None);
+    run.stage = Some("skipped".into());
+    run.detail = "上一轮尚未完成，本轮已跳过；未启动或排队新任务".into();
+    item.recent_runs.push(run);
+    trim_history(item);
 }
 
 impl AutomationManager {
@@ -434,12 +491,26 @@ impl AutomationManager {
             }
         };
         if migrate { migrate_legacy_cron_schedules(&mut items, now); }
+        let mut recovered = false;
+        for item in &mut items {
+            for run in &mut item.recent_runs {
+                if run.id.is_empty() { run.id = uuid::Uuid::new_v4().to_string(); recovered = true; }
+                if run.updated_at == 0 { run.updated_at = run.at; recovered = true; }
+                if run.stage.is_none() && !run.ok {
+                    run.stage=Some("failed".into()); recovered=true;
+                } else if run.stage.as_deref().is_none_or(is_active_stage) {
+                    run.stage = Some("unconfirmed".into());
+                    run.detail = "应用已重启或旧记录缺少执行回执，结果未确认；不会自动重发".into();
+                    recovered = true;
+                }
+            }
+        }
         let manager = Self {
             items: Mutex::new(items),
             path: Some(path),
             dispatching: Mutex::new(std::collections::HashSet::new()),
         };
-        if migrate { manager.persist(&manager.items.lock().unwrap())?; }
+        if migrate || recovered { manager.persist(&manager.items.lock().unwrap())?; }
         Ok(manager)
     }
 
@@ -553,6 +624,7 @@ impl AutomationManager {
     pub fn create(&self, input: NewAutomation, now: u64) -> Result<Automation> {
         Self::validate(&input, now)?;
         let automation = Automation {
+            request_receipts: Default::default(),
             id: uuid::Uuid::new_v4().to_string(),
             name: input.name.trim().to_string(),
             enabled: true,
@@ -613,6 +685,9 @@ impl AutomationManager {
         let mut items = self.items.lock().unwrap();
         let mut snapshot = items.clone();
         let before = snapshot.len();
+        if snapshot.iter().find(|item| item.id == id).is_some_and(|item| item.recent_runs.iter().any(|r| is_active_stage(r.stage.as_deref().unwrap_or("unconfirmed")))) {
+            return Err(anyhow!("仍有执行中或结果未确认的记录，请先核对或停止本轮，再删除计划"));
+        }
         snapshot.retain(|item| item.id != id);
         if snapshot.len() == before {
             return Err(anyhow!("未找到自动化任务: {id}"));
@@ -623,10 +698,10 @@ impl AutomationManager {
     }
 
     /// 到点任务出列：标记已触发并推进调度，返回待执行动作。错过的时间不补跑。
-    pub fn collect_due(&self, now: u64) -> Result<Vec<(String, AutomationAction)>> {
+    pub fn collect_due(&self, now: u64) -> Result<Vec<(String, String, AutomationAction)>> {
         self.collect_due_with_busy(now, &std::collections::HashSet::new())
     }
-    pub fn collect_due_with_busy(&self, now: u64, busy: &std::collections::HashSet<String>) -> Result<Vec<(String, AutomationAction)>> {
+    pub fn collect_due_with_busy(&self, now: u64, busy: &std::collections::HashSet<String>) -> Result<Vec<(String, String, AutomationAction)>> {
         let mut due = Vec::new();
         let mut items = self.items.lock().unwrap();
         let mut snapshot = items.clone();
@@ -639,7 +714,7 @@ impl AutomationManager {
                 continue;
             }
             changed = true;
-            if item.overlap_policy == OverlapPolicy::Skip && (busy.contains(&item.id) || self.dispatching.lock().unwrap().contains(&item.id)) {
+            if item.recent_runs.iter().filter(|r| is_active_stage(r.stage.as_deref().unwrap_or("unconfirmed"))).count() >= MAX_RECENT_RUNS || (item.overlap_policy == OverlapPolicy::Skip && (busy.contains(&item.id) || self.dispatching.lock().unwrap().contains(&item.id))) {
                 item.next_run_at = advance_after_run(&item.trigger, now, item.run_count, item.max_runs);
                 append_skipped(item, now);
                 continue;
@@ -647,13 +722,15 @@ impl AutomationManager {
             item.run_count += 1;
             item.last_run_at = Some(now);
             item.next_run_at = advance_after_run(&item.trigger, now, item.run_count, item.max_runs);
-            due.push((item.id.clone(), item.action.clone()));
+            let run = new_run(now, "schedule", None);
+            due.push((item.id.clone(), run.id.clone(), item.action.clone()));
+            item.recent_runs.push(run); trim_history(item);
         }
         if changed {
             self.persist(&snapshot)?;
             *items = snapshot;
         }
-        self.dispatching.lock().unwrap().extend(due.iter().map(|(id, _)| id.clone()));
+        self.dispatching.lock().unwrap().extend(due.iter().map(|(id, _, _)| id.clone()));
         Ok(due)
     }
 
@@ -663,10 +740,10 @@ impl AutomationManager {
         &self,
         event: SessionEventKind,
         now: u64,
-    ) -> Result<Vec<(String, AutomationAction)>> {
+    ) -> Result<Vec<(String, String, AutomationAction)>> {
         self.collect_event_filtered(event, now, &[], &std::collections::HashSet::new())
     }
-    pub fn collect_event_filtered(&self, event: SessionEventKind, now: u64, sources: &[crate::sessions::SessionRecord], busy: &std::collections::HashSet<String>) -> Result<Vec<(String, AutomationAction)>> {
+    pub fn collect_event_filtered(&self, event: SessionEventKind, now: u64, sources: &[crate::sessions::SessionRecord], busy: &std::collections::HashSet<String>) -> Result<Vec<(String, String, AutomationAction)>> {
         let mut changed = false;
         let mut fired = Vec::new();
         let mut items = self.items.lock().unwrap();
@@ -685,22 +762,24 @@ impl AutomationManager {
                 continue;
             }
             changed = true;
-            if item.overlap_policy == OverlapPolicy::Skip && (busy.contains(&item.id) || self.dispatching.lock().unwrap().contains(&item.id)) { append_skipped(item, now); continue; }
+            if item.recent_runs.iter().filter(|r| is_active_stage(r.stage.as_deref().unwrap_or("unconfirmed"))).count() >= MAX_RECENT_RUNS || (item.overlap_policy == OverlapPolicy::Skip && (busy.contains(&item.id) || self.dispatching.lock().unwrap().contains(&item.id))) { append_skipped(item, now); continue; }
             item.run_count += 1;
             item.last_run_at = Some(now);
-            fired.push((item.id.clone(), item.action.clone()));
+            let run = new_run(now, "event", None);
+            fired.push((item.id.clone(), run.id.clone(), item.action.clone()));
+            item.recent_runs.push(run); trim_history(item);
         }
         if changed {
             self.persist(&snapshot)?;
             *items = snapshot;
         }
-        self.dispatching.lock().unwrap().extend(fired.iter().map(|(id, _)| id.clone()));
+        self.dispatching.lock().unwrap().extend(fired.iter().map(|(id, _, _)| id.clone()));
         Ok(fired)
     }
 
     /// 执行完成后回报结果：写历史（封顶 20 条），连续失败达阈值自动熔断停用。
     pub fn report_result(&self, id: &str, ok: bool, detail: String, now: u64) -> Result<()> {
-        self.report_dispatch_result(id, ok, detail, now, Vec::new())
+        self.report_legacy_result(id, ok, detail, now)
     }
     pub fn report_dispatch_result(&self, id: &str, ok: bool, detail: String, now: u64, targets: Vec<String>) -> Result<()> {
         let mut items = self.items.lock().unwrap();
@@ -709,25 +788,12 @@ impl AutomationManager {
             return Ok(());
         };
         item.active_session_ids = targets;
-        item.recent_runs.push(AutomationRun {
-            stage: Some(if ok { "queued" } else { "failed" }.into()),
-            at: now,
-            ok,
-            detail,
-        });
-        if item.recent_runs.len() > MAX_RECENT_RUNS {
-            let overflow = item.recent_runs.len() - MAX_RECENT_RUNS;
-            item.recent_runs.drain(..overflow);
-        }
-        if ok {
-            item.consecutive_failures = 0;
-        } else {
-            item.consecutive_failures += 1;
-            if item.consecutive_failures >= item.max_consecutive_failures {
-                item.enabled = false;
-                item.next_run_at = None;
-            }
-        }
+        let mut run = new_run(now, "legacy", None);
+        run.stage = Some(if ok { "queued" } else { "failed" }.into());
+        run.ok = ok; run.detail = detail;
+        item.recent_runs.push(run);
+        trim_history(item);
+        if !ok { settle_failure(item, false); }
         self.persist(&snapshot)?;
         *items = snapshot;
         self.dispatching.lock().unwrap().remove(id);
@@ -1556,7 +1622,10 @@ mod tests {
             let deleted_id = original.id.clone();
             scope.spawn(move || {
                 edit_barrier.wait();
-                edit_manager.delete(&deleted_id).unwrap();
+                if let Err(error) = edit_manager.delete(&deleted_id) {
+                    assert!(error.to_string().contains("执行中或结果未确认"));
+                    assert!(edit_manager.list().iter().find(|a| a.id == deleted_id).unwrap().recent_runs.iter().any(|r| is_active_stage(r.stage.as_deref().unwrap())));
+                }
                 for index in 0..100 {
                     edit_manager
                         .create(
@@ -1579,7 +1648,9 @@ mod tests {
         drop(manager);
         let reopened = AutomationManager::open_at(path).unwrap().list();
         assert_eq!(reopened.len(), in_memory.len());
-        assert!(!reopened.iter().any(|item| item.id == original.id));
+        if let Some(original) = reopened.iter().find(|item| item.id == original.id) {
+            assert_eq!(original.recent_runs[0].stage.as_deref(), Some("unconfirmed"));
+        }
         assert_eq!(
             reopened.iter().map(|item| &item.id).collect::<Vec<_>>(),
             in_memory.iter().map(|item| &item.id).collect::<Vec<_>>()

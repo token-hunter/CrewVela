@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import type { AppTheme, ProviderConfig, SessionRecord } from "../types";
 import { ControlSidebar } from "./ControlSidebar";
 const THEME_STORAGE_KEY = "crewvela-theme";
@@ -89,6 +90,9 @@ export function ControlWindow() {
         onClose={closeWindow}
         onDock={dockWindow}
         onSessionsChange={handleSessionsChange}
+        onOpenSession={async sessionId => { await emit("crewvela-conversation-open-session", { sessionId }); }}
+        onOpenProjectSettings={projectId => { void emit("crewvela-conversation-open-settings", { projectId }).catch(reason => setError(`打开协作设置失败：${String(reason)}`)); }}
+        onOpenMultiAgentWorkspace={projectId => { void emit("multi-agent-workspace-open", { projectId }).catch(reason => setError(`打开协作工作台失败：${String(reason)}`)); }}
       />
     </main>
   );

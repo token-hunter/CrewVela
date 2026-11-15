@@ -1712,15 +1712,16 @@ pub(crate) fn execute_managed_acp(
     cancelled: &AtomicBool,
     model: Option<&str>,
     permission_handler: Option<ManagedPermissionHandler>,
+    update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
 ) -> Result<ManagedAcpOutcome> {
     let process_id = Arc::new(AtomicU32::new(0));
     // 保留配置中启用的 http 类型用户 server 一并交给 Agent；
     // 读取失败不阻塞：协作桥本身仍然是必需的控制面。
-    let mut mcp_servers = vec![managed_mcp_server(mcp_url, token)];
-    match crate::mcp::enabled_acp_servers() {
+    let mut mcp_servers = if mcp_url.is_empty() { Vec::new() } else { vec![managed_mcp_server(mcp_url, token)] };
+    if !mcp_url.is_empty() { match crate::mcp::enabled_acp_servers() {
         Ok(user_servers) => mcp_servers.extend(user_servers),
         Err(error) => eprintln!("[crewvela] 读取用户 MCP 配置失败：{error:#}"),
-    }
+    } }
     let mut connection = match AcpConnection::spawn_for_with_cli_identity(
         kind,
         cwd,
@@ -1748,6 +1749,7 @@ pub(crate) fn execute_managed_acp(
     };
     let outcome = (|| -> Result<ManagedAcpOutcome> {
     connection.permission_handler = permission_handler;
+    if let Some(handler) = update_handler { connection.set_update_handler(handler); }
     if kind == ManagedAcpKind::DeepSeekHarness {
         if let Some(model) = model.filter(|model| !model.trim().is_empty()) {
             let value = resolve_deepseek_model(&connection.config_options, model)?;

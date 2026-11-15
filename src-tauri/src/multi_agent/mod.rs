@@ -1,9 +1,11 @@
 mod bridge;
 mod coordinator;
+pub(crate) mod conversation;
 mod direct_message;
 mod domain;
 mod executor;
 mod governance;
+mod plan_validation;
 mod runtime;
 mod store;
 pub(crate) mod zcode;
@@ -18,6 +20,10 @@ pub(crate) use direct_message::{
     DirectMessageParticipant, DirectMessageRequest,
 };
 pub use domain::*;
+pub use conversation::{CollaborationConversation, ConversationMessage, ConversationRound,
+    ConversationPlannedTask, ConversationExecutionPlan, ConversationSnapshot,
+    ConversationSendInput, ConversationInterruptInput, ConversationExecutePlanInput,
+    ConversationSupervisor};
 pub(crate) use executor::interactive_runtime_prompt_blocked;
 pub(crate) use executor::interactive_runtime_prompt_busy;
 pub(crate) use executor::codex_terminal_state;
@@ -28,6 +34,7 @@ pub(crate) use executor::strip_terminal_control_sequences;
 pub(crate) use executor::external_command_path;
 pub use executor::{merge_integrator_delivery, AgentTerminalHost, MultiAgentSupervisor};
 pub use governance::CollaborationGovernance;
+pub(crate) use plan_validation::{validate_parallel_review_graph, ReviewGraphAgent, ReviewGraphTask};
 pub mod templates;
 pub(crate) use runtime::capabilities_for_runtime;
 pub(crate) use runtime::{version_number, version_is_newer};

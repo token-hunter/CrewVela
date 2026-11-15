@@ -40,6 +40,7 @@ const mock = {
     if (command === "ma_send_direct_message") return Promise.resolve({ reply: "fixture direct queued", deliveryTaskIds: [] });
     if (command === "ma_list_projects") return Promise.resolve(projects);
     if (command === "ma_snapshot") return Promise.resolve(snapshot(args.projectId));
+    if (command === "ma_conversation_snapshot") return Promise.resolve({conversation:{id:`conversation-${args.projectId}`,projectId:args.projectId,createdAt:1},messages:[],rounds:[],executionPlans:[],supportedDiscussionRuntimes:["claude_code","codex","pi"]});
     if (command === "get_runtime_preferences") return Promise.resolve({ disabledRuntimes: mode === "member-selection" ? ["pi"] : [] });
     if (["ma_probe_runtimes", "ma_check_runtime_updates"].includes(command)) return Promise.resolve(["claude_code", "zcode_cli"].map(kind => ({ kind, installed: true, error: null, version: "1.0", capabilities: [] })));
     if (command === "skill_center_snapshot") return Promise.resolve({ skillSets: [] });
@@ -65,6 +66,6 @@ function Fixture() {
   if (mode === "sidebar") return <ControlSidebar open providers={[]} sessions={[]} defaultCwd="C:/fixture" onClose={() => {}} onSessionsChange={() => {}} />;
   if (mode === "settings") return <CollaborationSettingsPanel onClose={() => {}} />;
   if (mode === "support") return <><button onClick={() => setRequest({ nonce: Date.now(), taskId: `${projectId}-task` })}>打开交接</button><CollaborationSupportPanel snapshot={snapshot(projectId) as any} enabledRuntimes={["claude_code"]} onChanged={() => {}} onHealthChange={() => {}} onHandoffClose={() => setRequest(null)} request={request} view="diagnostics" /></>;
-  return <MultiAgentControl defaultCwd="C:/fixture" onQuickCommand={async message => await mock.invoke("fixture_quick", { message })} onQuickBroadcast={async message => await mock.invoke("fixture_broadcast", { message })} quickLiveSessionCount={1} />;
+  return <MultiAgentControl defaultCwd="C:/fixture" />;
 }
 createRoot(document.getElementById("root")!).render(<Fixture />);

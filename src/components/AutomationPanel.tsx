@@ -1,3 +1,5 @@
+import { activeRun, currentRun, matchesRunFilter, planState, runStage, RUN_LABELS, type RunFilter } from "../automationExecution";
+import "../styles/automation-execution.css";
 import { buildAutomationAction, eventAutomationTrigger, automationSessions, automationProjectRuntime, AUTOMATION_LABELS, type AutomationFormAction } from "../automationForm";
 import { TERMINAL_RUNTIMES } from "../runtimeTaxonomy";
 import { open as openDirectory } from "@tauri-apps/plugin-dialog";
@@ -11,13 +13,13 @@ import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
 import { FileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
-import { ListBulletsIcon } from "@phosphor-icons/react/dist/csr/ListBullets";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import type {
   Automation,
   AutomationAction,
+  AutomationRun,
   AutomationTrigger,
   NewAutomation,
   ProviderConfig,
@@ -71,6 +73,23 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
   const [busy, setBusy] = useState(false);
   const mutationInFlight = useRef(false);
   const listSequence = useRef(0);
+  const [filter, setFilter] = useState<RunFilter>("all");
+  const [selectedHistory, setSelectedHistory] = useState<string | null>(null);
+  const [confirmUnknownId, setConfirmUnknownId] = useState<string | null>(null);
+  const manualRequests = useRef(new Map<string, string>());
+  const openSession = (sessionId: string) => window.dispatchEvent(new CustomEvent("crewvela-automation-open-session", { detail: { sessionId } }));
+  const runAction = async (item: Automation, run?: AutomationRun, stop = false, acknowledge = false) => {
+    if (mutationInFlight.current) return;
+    mutationInFlight.current = true; listSequence.current += 1; setBusy(true); setError(null);
+    const key = `${item.id}:${run?.id ?? "manual"}`;
+    const requestId = manualRequests.current.get(key) ?? crypto.randomUUID();
+    manualRequests.current.set(key, requestId);
+    try {
+      const rows = await invoke<Automation[]>(acknowledge ? "acknowledge_automation_run" : stop ? "stop_automation_run" : "run_automation_now", acknowledge ? { id: item.id, runId: run?.id, confirmed: true } : stop ? { id: item.id, runId: run?.id } : { id: item.id, requestId, retryOf: run?.id ?? null });
+      listSequence.current += 1; setAutomations(rows); manualRequests.current.delete(key); setConfirmUnknownId(null);
+    } catch (reason) { setError(String(reason)); }
+    finally { mutationInFlight.current = false; setBusy(false); }
+  };
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
@@ -129,7 +148,10 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
     const sequence = ++listSequence.current;
     try {
       const latest = await invoke<Automation[]>("list_automations");
-      if (sequence === listSequence.current) setAutomations(latest);
+      if (sequence === listSequence.current) {
+        setAutomations(latest);
+        for (const [key,id] of manualRequests.current) if (latest.some(a => a.requestReceipts?.[id])) manualRequests.current.delete(key);
+      }
     } catch (reason) {
       if (sequence === listSequence.current) setError(String(reason));
     }
@@ -522,72 +544,35 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
               </fieldset>
             )}
 
-            {!formOpen && <section className="automation-list-section">
-              <h3><ListBulletsIcon size={18} aria-hidden="true" />自动化任务</h3>
+            {!formOpen && <section className="automation-list-section automation-executions">
+              <nav className="automation-filters" aria-label="执行状态筛选">
+                {([["all", "全部"], ["active", "进行中"], ["completed", "已完成"], ["failed", "失败"], ["attention", "待处理"]] as const).map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}<span>{automations.filter(a => matchesRunFilter(a, key)).length}</span></button>)}
+                <button className="automation-refresh" disabled={busy} onClick={() => void refresh()}>刷新</button>
+              </nav>
               <div className="automation-list">
-                {automations.length === 0 && (
-                  <p className="automation-empty">还没有自动化任务。</p>
-                )}
-                {automations.map((automation) => (
-              <article
-                key={automation.id}
-                className={`automation-card${automation.enabled ? "" : " disabled"}`}
-              >
-                <header>
-                  <Switch
-                    className="automation-toggle"
-                    checked={automation.enabled}
-                    disabled={busy}
-                    onChange={() => void toggle(automation)}
-                    withKnob={false}
-                  >
-                    <strong>{automation.name}</strong>
-                  </Switch>
-                  {confirmDeleteId === automation.id ? (
-                    <button
-                      className="btn danger-solid automation-delete"
-                      disabled={busy}
-                      onClick={() => void remove(automation.id)}
-                    >
-                      确认删除
-                    </button>
-                  ) : (
-                    <button
-                      className="btn-icon automation-delete"
-                      disabled={busy}
-                      aria-label={`删除 ${automation.name}`}
-                      title="删除"
-                      onClick={() => setConfirmDeleteId(automation.id)}
-                    >
-                      <TrashIcon size={15} />
-                    </button>
-                  )}
-                </header>
-                <p className="automation-card-line">{triggerText(automation.trigger)}</p>
-                <p className="automation-card-line">{actionText(automation.action)}</p>
-                <p className="automation-card-meta">
-                  下次执行：{nextRunText(automation)} · 已触发 {automation.runCount}
-                  {automation.maxRuns ? `/${automation.maxRuns}` : ""} 次
-                  {automation.consecutiveFailures > 0 &&
-                    ` · 连续失败 ${automation.consecutiveFailures}`}
-                </p>
-                {automation.recentRuns.length > 0 && (
-                  <details className="automation-runs">
-                    <summary>执行记录（{automation.recentRuns.length}）</summary>
-                    <ul>
-                      {[...automation.recentRuns].reverse().slice(0, 5).map((run, index) => (
-                        <li key={index} className={run.ok ? "ok" : "fail"}>
-                          <span>{run.stage === "skipped" ? "已跳过" : run.ok ? "已派发" : "失败"}</span>
-                          <time>{formatDateTime(run.at)}</time>
-                          <span>{run.detail}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </article>
-                ))}
+                {!automations.some(a => matchesRunFilter(a, filter)) && <p className="automation-empty">{automations.length ? "此筛选下没有任务。" : "还没有自动化任务。"}</p>}
+                {automations.filter(a => matchesRunFilter(a, filter)).map(item => {
+                  const run = currentRun(item); const stage = runStage(run); const active = item.recentRuns.some(activeRun);
+                  return <article key={item.id} className={`automation-card execution-${stage}${item.enabled ? "" : " plan-paused"}`}>
+                    <header><div className="automation-card-title"><ClockIcon size={21} /><div><h3>{item.name}</h3><p title={actionText(item.action)}>{actionText(item.action)}</p></div></div>
+                      <Switch className="automation-toggle" label={`${item.enabled ? "暂停后续计划" : "开启计划"} ${item.name}`} checked={item.enabled} disabled={busy} onChange={() => void toggle(item)}><span>{planState(item)}</span></Switch>
+                    </header>
+                    <p className="automation-card-schedule"><ClockIcon size={15} />{triggerText(item.trigger)} · 下次：{nextRunText(item)}</p>
+                    <div className="automation-run-status"><span className={`automation-status status-${stage}`}>{RUN_LABELS[stage] ?? "结果未确认"}</span><span>{run ? run.detail : "到点后执行，也可手动运行一次"}</span></div>
+                    <footer><div className="automation-card-buttons">
+                      {run?.targets?.some(t => sessions.some(s => s.id === t.sessionId)) && <button className="btn" onClick={() => openSession(run.targets!.find(t => sessions.some(s => s.id === t.sessionId))!.sessionId)}>打开会话</button>}
+                      {active && run?.id && <button className="btn" disabled={busy || stage === "dispatching"} onClick={() => void runAction(item, run, true)}>停止本轮</button>}
+                      {stage === "unconfirmed" && run?.id && <button className="btn" disabled={busy} onClick={() => setConfirmUnknownId(run.id!)}>已核对原会话</button>}
+                      {!active && <button className="btn automation-primary" disabled={busy} onClick={() => void runAction(item, stage === "failed" || stage === "cancelled" ? run : undefined)}>{stage === "failed" || stage === "cancelled" ? "失败重试" : "立即执行"}</button>}
+                      <button className="btn" aria-expanded={selectedHistory === item.id} onClick={() => setSelectedHistory(selectedHistory === item.id ? null : item.id)}>执行记录 {item.recentRuns.length}</button>
+                    </div><span>计划触发 {item.runCount}{item.maxRuns ? `/${item.maxRuns}` : ""} 次</span></footer>
+                    {confirmUnknownId === run?.id && <div className="automation-state-note" role="group" aria-label="确认核对"><p>请先检查原会话，确认原任务不再执行。此操作仅解除待核对状态，不代表成功，不会重发任务。</p><button className="btn" disabled={busy} onClick={() => void runAction(item,run,false,true)}>确认原任务不再执行</button><button className="btn" onClick={() => setConfirmUnknownId(null)}>取消</button></div>}
+                    <div className="automation-card-secondary">{item.consecutiveFailures > 0 && <span>连续失败 {item.consecutiveFailures} 次</span>}<button className="btn-icon" disabled={busy || active} title={active ? "先核对或停止本轮" : "删除计划"} aria-label={`删除 ${item.name}`} onClick={() => setConfirmDeleteId(item.id)}><TrashIcon size={14} /></button>{confirmDeleteId === item.id && <><button className="btn danger-solid" disabled={busy} onClick={() => void remove(item.id)}>确认删除</button><button className="btn" onClick={() => setConfirmDeleteId(null)}>取消</button></>}</div>
+                  </article>;
+                })}
               </div>
+              <p className="automation-state-note">暂停计划只影响后续触发。已入队不代表已完成；停止本轮仅在能核对具体消息时执行，已进入共享会话的任务需在原会话停止。</p>
+              {automations.filter(a => a.id === selectedHistory).map(item => <section className="automation-execution-history" key={item.id} aria-label={`执行记录 ${item.name}`}><h3>执行记录 · {item.name}</h3>{!item.recentRuns.length && <p>尚无执行记录。</p>}{[...item.recentRuns].reverse().map((run, index) => <details key={run.id ?? index}><summary><span className={`automation-status status-${runStage(run)}`}>{RUN_LABELS[runStage(run)] ?? "结果未确认"}</span><time>{formatDateTime(run.at)}</time><span>{({manual:"手动执行",retry:"重试",event:"事件触发",schedule:"计划触发"} as Record<string,string>)[run.origin ?? ""] ?? "历史记录"}</span><span>{run.detail}</span></summary><p>执行编号：{run.id ?? "旧记录未提供"}{run.retryOf && ` · 重试自 ${run.retryOf}`}</p>{run.targets?.map(target => <div className="automation-target-receipt" key={target.messageId}><strong>{RUN_LABELS[target.stage] ?? "结果未确认"}</strong><span>{target.detail}</span><code>消息 {target.messageId}</code><code>任务 {target.taskId ?? "无项目任务"} · Run {target.runId ?? "未取得"}</code>{sessions.some(s => s.id === target.sessionId) && <button className="btn" onClick={() => openSession(target.sessionId)}>打开会话</button>}</div>)}</details>)}</section>)}
             </section>}
           </div>
 

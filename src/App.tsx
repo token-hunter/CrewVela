@@ -613,11 +613,19 @@ export default function App() {
   // 定时自动化心跳：pty_poll_all 只在有多终端会话时被调用，调度器挂在
   // 它上面会在零会话时停摆；这里常驻轻量 tick 驱动时间型自动化。
   useEffect(() => {
+    if (UI_PREVIEW || testProfile) return;
+    let pending = false, lastFailure = "";
     const timer = window.setInterval(() => {
-      void invoke("automation_tick").catch(() => {});
+      if (pending) return;
+      pending = true;
+      void invoke("automation_tick").then(() => { lastFailure = ""; }).catch(error => {
+        const message = String(error);
+        if (message !== lastFailure) showError(`自动化调度失败：${message}`);
+        lastFailure = message;
+      }).finally(() => { pending = false; });
     }, 5000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [showError, testProfile]);
 
 
   useEffect(() => {
@@ -1218,6 +1226,28 @@ export default function App() {
       setLoadingSessionId(current => current === id ? null : current);
     }
   }, [isRuntimeEnabled, refreshSessions, sessions, sidebarTerminalIds, showError, switchRecords, visitedNativeSessions]);
+
+  useEffect(() => {
+    if (UI_PREVIEW) return;
+    let disposed = false;
+    const openAutomationSession = (event: Event) => {
+      const id = (event as CustomEvent<{ sessionId: string }>).detail?.sessionId;
+      if (id) { setSettingsOpen(false); void selectSession(id); }
+    };
+    window.addEventListener("crewvela-automation-open-session", openAutomationSession);
+    const subscriptions = [
+      listen<{ sessionId: string }>("crewvela-conversation-open-session", event => {
+        if (!disposed && event.payload?.sessionId) void selectSession(event.payload.sessionId);
+      }),
+      listen<{ projectId?: string }>("crewvela-conversation-open-settings", event => {
+        if (disposed) return;
+        openSettingsSection("collaboration");
+        setCollaborationInitialProjectId(event.payload?.projectId);
+      }),
+    ];
+    for (const subscription of subscriptions) void subscription.catch(error => { if (!disposed) showError(`协作窗口事件监听失败：${String(error)}`); });
+    return () => { disposed = true; window.removeEventListener("crewvela-automation-open-session", openAutomationSession); for (const subscription of subscriptions) void subscription.then(unlisten => unlisten()).catch(error => console.error("释放协作窗口监听失败：", error)); };
+  }, [openSettingsSection, selectSession, showError]);
 
   const renameSession = useCallback(async (session: SessionRecord) => {
     const title = window.prompt("会话标题", session.title)?.trim();
@@ -2459,6 +2489,8 @@ export default function App() {
                         initialSurface={tab === "multi_agent" ? controlSurface : "multi_agent"}
                         onSurfaceChange={tab === "multi_agent" ? handleControlSurfaceChange : undefined}
                         onOpenMultiAgentWorkspace={setMultiAgentWorkspaceProjectId}
+                        onOpenSession={selectSession}
+                        onOpenProjectSettings={projectId => { openSettingsSection("collaboration"); setCollaborationInitialProjectId(projectId); }}
                       />
                       </div>
                     ))}

@@ -46,6 +46,7 @@ impl MultiAgentStore {
             "PRAGMA foreign_keys = ON;\nPRAGMA journal_mode = WAL;\nPRAGMA synchronous = NORMAL;",
         )?;
         migrate(&connection)?;
+        super::conversation::migrate(&connection)?;
         connection.execute(
             "UPDATE ma_agents SET enabled = 0 WHERE runtime_kind NOT IN ('claude_code','codex','kimi_code','pi','opencode','deepseek_harness','zcode','zcode_cli') AND enabled != 0",
             [],
@@ -474,8 +475,10 @@ impl MultiAgentStore {
         let task = get_task_with(&tx, &input.task_id)?;
         ensure_no_handoff(&tx, &task.project_id)?;
         let project_status = self.get_project_with(&tx, &task.project_id)?.status;
-        let message_only = task.id.starts_with("cli-message-")
-            && matches!(project_status, ProjectStatus::Draft | ProjectStatus::Completed);
+        let message_only = (task.id.starts_with("cli-message-")
+            && matches!(project_status, ProjectStatus::Draft | ProjectStatus::Completed))
+            || (super::conversation::is_conversation_task(&task.id)
+                && project_status == ProjectStatus::Paused);
         if project_status != ProjectStatus::Active && !message_only {
             return Err(anyhow!("项目未处于运行状态，不能领取任务"));
         }
@@ -969,7 +972,10 @@ impl MultiAgentStore {
                 now,
             ],
         )?;
-        runtime_event_by_seq(&connection, connection.last_insert_rowid())
+        let event = runtime_event_by_seq(&connection, connection.last_insert_rowid())?;
+        drop(connection);
+        self.record_conversation_runtime_event(&event)?;
+        Ok(event)
     }
 
     pub fn heartbeat_run(&self, input: HeartbeatRunInput) -> Result<HeartbeatReceipt> {
@@ -1992,6 +1998,7 @@ impl MultiAgentStore {
              FROM ma_tasks t
              JOIN ma_agents a ON a.id = t.assignee_agent_id
              WHERE t.project_id = ?1 AND t.status IN ('ready','changes_requested') AND a.enabled = 1
+               AND NOT EXISTS (SELECT 1 FROM ma_conversation_turns ct WHERE ct.task_id=t.id)
                AND NOT EXISTS (
                    SELECT 1 FROM ma_runs message_run WHERE message_run.agent_id = a.id
                      AND message_run.task_id LIKE 'cli-message-%'
@@ -2976,6 +2983,28 @@ impl MultiAgentStore {
         )?;
         tx.commit()?;
         get_task_with(&connection, task_id)
+    }
+
+    /// Atomically cancel only exact automation message tasks that have never started.
+    pub fn cancel_queued_automation_tasks(&self, targets: &[crate::automation::AutomationTarget]) -> Result<()> {
+        let mut connection=self.connection.lock().unwrap();
+        let tx=connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        for target in targets {
+            if !target.message_id.starts_with("automation-") { anyhow::bail!("不是自动化消息任务"); }
+            let id=format!("cli-message-{}",target.message_id);
+            if target.task_id.as_ref()!=Some(&id) { anyhow::bail!("任务身份不匹配"); }
+            let task=get_task_with(&tx,&id)?;
+            if Some(&task.project_id)!=target.project_id.as_ref() || !matches!(task.status,TaskStatus::Ready|TaskStatus::Blocked|TaskStatus::Draft|TaskStatus::ChangesRequested) { anyhow::bail!("本轮任务已经启动，需按具体 Run 停止"); }
+            let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_runs WHERE task_id=?1 AND status IN ('queued','starting','running','waiting_input','waiting_approval'))",[&id],|r|r.get(0))?;
+            if active { anyhow::bail!("本轮存在活动 Run，拒绝只改任务状态"); }
+        }
+        for target in targets {
+            let id=target.task_id.as_ref().unwrap();
+            tx.execute("UPDATE ma_tasks SET status='cancelled',updated_at=?2 WHERE id=?1",params![id,now_millis()])?;
+            tx.execute("UPDATE ma_wakeups SET status='cancelled',finished_at=?2 WHERE task_id=?1 AND status='queued'",params![id,now_millis()])?;
+            append_event(&tx,target.project_id.as_ref().unwrap(),"task",id,"automation.cancelled","user",None,serde_json::json!({"messageId":target.message_id}),now_millis())?;
+        }
+        tx.commit()?;Ok(())
     }
 
     pub fn cancel_project_tasks(&self, project_id: &str) -> Result<usize> {

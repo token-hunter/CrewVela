@@ -1,24 +1,14 @@
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import test from "node:test";
-import { readStyles } from "./helpers/loadStyles.mjs";
-
-const styles = readStyles();
-const control = readFileSync(
-  new URL("../src/components/MultiAgentControl.tsx", import.meta.url),
-  "utf8",
-);
-
-test("清空确认在消息区域独立展示，保留可访问确认和取消", () => {
-  assert.match(styles, /\.multi-agent-clear-confirm\s*\{[^}]*max-width:\s*100%/s);
-  assert.match(control, /role="alertdialog"/);
-  assert.match(control, /aria-label="确认清空对话记录/);
-  assert.match(control, /清空对话？/);
-  assert.match(styles, /\.clear-confirm-actions button\.danger\s*\{[^}]*background:\s*var\(--danger\)/s);
-  const confirmIndex = control.indexOf('{clearConversationConfirmOpen &&');
-  const coordinatorIndex = control.indexOf('className={`multi-agent-coordinator');
-  const composerIndex = control.indexOf('className="multi-agent-composer"');
-  assert.ok(confirmIndex > coordinatorIndex && confirmIndex < composerIndex, "确认位于消息区域，不受输入栏窄目标控件挤压");
-  assert.match(control.slice(confirmIndex, composerIndex), /onClick=\{clearCoordinatorConversation\}/);
-  assert.match(control.slice(confirmIndex, composerIndex), /setClearConversationConfirmOpen\(false\)/);
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const control=readFileSync(new URL('../src/components/MultiAgentControl.tsx',import.meta.url),'utf8');
+test('共享会话历史由后端提供，移除只清本地的假清空入口',()=>{
+ assert.doesNotMatch(control,/clearConversationConfirmOpen|清空对话|localStorage\.clear/);
+ assert.match(control,/ma_conversation_snapshot/);
+ assert.match(control,/查看更早的/);
+});
+test('待执行分工公开命令与写入范围，只有显式执行按钮启动工程任务',()=>{
+ assert.match(control,/task\.verificationCommand/); assert.match(control,/task\.writePaths/);
+ assert.match(control,/按此分工执行/); assert.match(control,/ma_conversation_execute_plan/);
+ assert.match(control,/clientRequestId/);
 });

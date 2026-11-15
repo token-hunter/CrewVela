@@ -304,6 +304,9 @@ fn dispatch(
     scope: &RunScope,
     command: CollaborationCommand,
 ) -> Result<serde_json::Value> {
+    if super::conversation::is_conversation_task(&scope.task_id) {
+        return Err(anyhow!("公共讨论不允许调用任务、私有消息、共享记忆或外部通信工具；请直接回复本轮"));
+    }
     let profile = store.agent_profile(&scope.agent_id)?;
     if !profile.enabled {
         return Err(anyhow!("该 Agent 已禁用，不能使用协作功能"));

@@ -51,12 +51,13 @@ if (params.get("mock") === "general") {
   } };
 }
 if (params.get("mock") === "automation") {
-  let entries: any[] = [];
+  let entries: any[] = structuredClone((window as any).__automationSeed ?? []);
   let failed = params.get("fail") === "1";
   (window as any).__automationCalls = [];
   (window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(command: string, args: any) {
     (window as any).__automationCalls.push({ command, args });
     if (command === "list_automations") return structuredClone(entries);
+    if (command === "get_runtime_preferences") return { disabledRuntimes: [] };
     if (command === "ma_probe_runtimes") return ["codex", "claude_code", "pi", "deepseek_harness"].map(kind => ({ kind, installed:true, error:null, executable:"/fixture/cli", version:"fixture" }));
     if (command === "ma_list_projects") return [{id:"fixture-project",name:"示例项目",rootPath:"/fixture/project"}];
     if (command === "ma_snapshot") return {agents:[{id:"fixture-member",projectId:"fixture-project",name:"审查成员",runtimeKind:"codex",enabled:true}]};

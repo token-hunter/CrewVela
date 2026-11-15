@@ -584,6 +584,7 @@ pub struct SessionManager {
     summarized_sessions: Arc<Mutex<HashSet<String>>>,
     summary_requests: Arc<Mutex<Vec<SummaryRequest>>>,
     agent_turns: Arc<Mutex<HashMap<String, AgentTurnCompletion>>>,
+    automation_turns: Arc<Mutex<HashMap<String, AutomationTurnEvidence>>>,
     active_agent_prompts: Arc<Mutex<HashMap<String, String>>>,
     transitions: Arc<Mutex<Vec<SessionTransition>>>,
     native_turn_outcomes: Arc<Mutex<HashMap<String, VecDeque<String>>>>,
@@ -607,6 +608,15 @@ struct AgentTurnCompletion {
     revision: u64,
     summary: String,
     prompt: String,
+}
+
+#[derive(Clone)]
+struct AutomationTurnEvidence {
+    session_id: String,
+    prompt: String,
+    bound_at: u64,
+    stage: String,
+    detail: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -712,6 +722,7 @@ impl SessionManager {
             summarized_sessions: Arc::new(Mutex::new(generated_titles)),
             summary_requests: Arc::new(Mutex::new(Vec::new())),
             agent_turns: Arc::new(Mutex::new(HashMap::new())),
+            automation_turns: Arc::new(Mutex::new(HashMap::new())),
             active_agent_prompts: Arc::new(Mutex::new(HashMap::new())),
             transitions: Arc::new(Mutex::new(Vec::new())),
             native_turn_outcomes: Arc::new(Mutex::new(HashMap::new())),
@@ -2134,6 +2145,7 @@ impl SessionManager {
             }
         });
 
+        self.observe_automation_hook(&session.id, event_name, event);
         let ready_for_prompt = match event_name {
             "SessionStart" => {
                 active_background_sessions.remove(&session.id);
@@ -2723,6 +2735,40 @@ impl SessionManager {
             .unwrap()
             .get(id)
             .map_or(0, |turn| turn.revision)
+    }
+
+    /// Opt-in binding is made only after a specific message was written to its original PTY.
+    /// No synthetic UserPromptSubmit/Stop event is generated here.
+    pub(crate) fn bind_automation_message(&self, session: &str, message: &str, prompt: &str) {
+        if !message.starts_with("automation-") { return; }
+        let mut turns = self.automation_turns.lock().unwrap();
+        for previous in turns.values_mut().filter(|t| t.session_id == session && matches!(t.stage.as_str(), "submitted" | "running")) {
+            previous.stage = "unconfirmed".into(); previous.detail = "原会话已收到后续输入，上一轮结果未确认".into();
+        }
+        if turns.len() >= 1000 { turns.retain(|_, t| matches!(t.stage.as_str(), "submitted" | "running")); }
+        turns.entry(message.into()).or_insert_with(|| AutomationTurnEvidence { session_id:session.into(), prompt:prompt.into(), bound_at:now_nanos(), stage:"submitted".into(), detail:"文本已写入，等待 CLI 回执".into() });
+    }
+
+    fn observe_automation_hook(&self, session: &str, name: &str, event: &serde_json::Value) {
+        let Some(at) = event["_crewvela_queued_at"].as_u64() else { return; };
+        let prompt = if name == "UserPromptSubmit" {
+            event["prompt"].as_str().map(|p| claude_pasted_transcript_text(p).to_string())
+        } else { event_prompt(event) };
+        let mut turns = self.automation_turns.lock().unwrap();
+        for turn in turns.values_mut().filter(|t| t.session_id == session && t.bound_at < at && matches!(t.stage.as_str(), "submitted" | "running")) {
+            if name == "UserPromptSubmit" {
+                if prompt.as_deref() == Some(turn.prompt.as_str()) && turn.stage == "submitted" {
+                    turn.stage = "running".into(); turn.detail = "CLI 已确认收到本轮消息，正在执行".into();
+                } else { turn.stage = "unconfirmed".into(); turn.detail = "原会话出现其他输入，无法继续归属本轮结果".into(); }
+            } else if name == "Stop" && !has_background_tasks(event) && turn.stage == "running" && prompt.as_deref() == Some(turn.prompt.as_str()) {
+                turn.stage = "completed".into(); turn.detail = "已收到与本消息及实际提交回执关联的 CLI 回复结束事件".into();
+            }
+            // A completion with no matching start/prompt is deliberately not accepted.
+        }
+    }
+
+    pub(crate) fn automation_message_evidence(&self, message: &str) -> Option<(String, String)> {
+        self.automation_turns.lock().unwrap().get(message).map(|t| (t.stage.clone(), t.detail.clone()))
     }
 
     pub fn agent_turn_summary_after(

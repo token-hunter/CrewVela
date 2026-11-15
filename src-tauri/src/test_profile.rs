@@ -209,7 +209,7 @@ pub(crate) fn allowed_command(command: &str) -> bool {
         "list_sessions" | "list_archived_sessions" | "session_snapshot" | "session_switch_list" |
         "session_usages" | "session_telemetry" | "list_agent_activity" | "list_approval_cards" |
         "list_projects" | "create_project" | "update_project" | "delete_project" | "list_launch_presets" |
-        "ma_list_projects" | "ma_snapshot" | "ma_list_interventions" | "ma_activity_events" | "ma_runtime_events" |
+        "ma_list_projects" | "ma_snapshot" | "ma_conversation_snapshot" | "ma_list_interventions" | "ma_activity_events" | "ma_runtime_events" |
         "general_settings_get" | "general_settings_save" | "list_automations" |
         "notification_history_list" | "notification_history_append" | "notification_history_mark_all_read" | "notification_history_clear" |
         "is_control_window_open" | "take_control_dock_request"
@@ -351,10 +351,10 @@ mod tests {
     }
     #[test]
     fn external_account_history_tools_and_unknown_commands_are_blocked() {
-        for command in ["cid_list_accounts","cid_init_accounts","launch_multi","launch_terminal","launch_runtime_session","resume_session","ai_memory_status","ai_memory_quick_start","ai_memory_recover_update","skill_center_snapshot","plugin_market_snapshot","automation_tick","check_codex_quota_updates","send_session_message","unknown_command"] {
+        for command in ["cid_list_accounts","cid_init_accounts","launch_multi","launch_terminal","launch_runtime_session","resume_session","ai_memory_status","ai_memory_quick_start","ai_memory_recover_update","skill_center_snapshot","plugin_market_snapshot","automation_tick","run_automation_now","stop_automation_run","acknowledge_automation_run","check_codex_quota_updates","send_session_message","ma_conversation_send","ma_conversation_interrupt","ma_conversation_control","ma_conversation_execute_plan","unknown_command"] {
             assert!(!allowed_command(command),"{command}");
         }
-        for command in ["test_profile_info","list_sessions","list_projects","list_providers","get_key_state","general_settings_get","session_snapshot"] { assert!(allowed_command(command)); }
+        for command in ["test_profile_info","list_sessions","list_projects","list_providers","get_key_state","general_settings_get","session_snapshot","ma_conversation_snapshot"] { assert!(allowed_command(command)); }
     }
     #[test]
     fn isolated_backend_initializes_real_empty_stores_without_real_credentials() {

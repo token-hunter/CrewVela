@@ -73,7 +73,7 @@ test("Esc 关闭后相同光标的 selection 事件不会重新打开候选", ()
   const exports = {};
   vm.runInNewContext(ts.transpileModule(`exports.select = ${callback.getText(file)};`, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
     exports, mentionCursor: 1, setMentionCursor: (value) => changes.push(["cursor", value]),
-    setMentionMenuOpen: (value) => changes.push(["open", value]), activeMentionAt: () => ({}),
+    setMentionOpen: (value) => changes.push(["open", value]), activeMentionAt: () => ({}),
   });
   exports.select({ currentTarget: { selectionStart: 1, value: "@" } });
   assert.deepEqual(changes, []);
