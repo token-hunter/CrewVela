@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from "react";
-import { ArrowDown, ArrowUp, DotsSixVertical } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, DotsSixVertical, X } from "@phosphor-icons/react";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
 import { COLLABORATION_RUNTIMES, runtimeCategory, isRetiredRuntime, type RuntimeCategory } from "../runtimeTaxonomy";
@@ -7,6 +7,8 @@ import type { AgentRuntimeKind } from "../types";
 import type { RuntimeDropPosition } from "../runtimePreferences";
 import { Modal } from "./ui/Modal";
 import "../styles/runtime-management.css";
+import { RuntimeInstallWizard } from "./RuntimeInstallWizard";
+import { supportsRuntimeInstallation } from "../runtimeInstallation";
 
 export function RuntimeManagementDialog({ order, onReorder, orderError, onClose }: {
   order: AgentRuntimeKind[];
@@ -16,6 +18,7 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
 }) {
   const availability = useRuntimeAvailability();
   const [pending, setPending] = useState<AgentRuntimeKind | null>(null);
+  const [installing, setInstalling] = useState<AgentRuntimeKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState<AgentRuntimeKind | null>(null);
   const [dropTarget, setDropTarget] = useState<{ kind: AgentRuntimeKind; position: RuntimeDropPosition } | null>(null);
@@ -93,13 +96,15 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
       <small>{pending === kind ? "保存中…" : availability.ready ? availability.isRuntimeEnabled(kind) ? "已启用" : "已禁用" : "加载中…"}</small>
       <input type="checkbox" aria-label={`启用 ${RUNTIME_LABELS[kind]}`} checked={availability.ready && availability.isRuntimeEnabled(kind)} disabled={!availability.ready || pending !== null} onChange={(event) => void toggle(kind, event.target.checked)} />
     </label>
+    {supportsRuntimeInstallation(kind) && <button type="button" className="btn secondary collab-runtime-install-entry" onClick={() => setInstalling(kind)}>安装与版本</button>}
     <div className="collab-runtime-order-actions" role="group" aria-label={`调整 ${RUNTIME_LABELS[kind]} 顺序`}>
       <button type="button" aria-label={`上移 ${RUNTIME_LABELS[kind]}`} title="上移" disabled={index === 0} onClick={() => onReorder(kind, group[index - 1], "before")}><ArrowUp size={14} aria-hidden="true" /></button>
       <button type="button" aria-label={`下移 ${RUNTIME_LABELS[kind]}`} title="下移" disabled={index === group.length - 1} onClick={() => onReorder(kind, group[index + 1], "after")}><ArrowDown size={14} aria-hidden="true" /></button>
     </div>
   </div>;
-  return <Modal className="collab-runtime-management" ariaLabel="管理 Runtime" onClose={onClose}>
-    <header><h3>管理 Runtime</h3><button type="button" className="btn secondary" onClick={onClose}>关闭</button></header>
+  return <Modal className={`collab-runtime-management${installing ? " runtime-installation-modal" : ""}`} ariaLabel="管理 Runtime" onClose={onClose}>
+    <header><h3>管理 Runtime</h3><button type="button" className="btn secondary" aria-label="关闭" onClick={onClose}>{installing ? <X size={21} /> : "关闭"}</button></header>
+    {installing ? <RuntimeInstallWizard key={installing} kind={installing} onBack={() => setInstalling(null)} /> : <>
     {(error || availability.error) && <p role="alert" className="collaboration-settings-error">{error || availability.error}</p>}
     {orderError && <p role="alert" className="collaboration-settings-error">{orderError}</p>}
     {!availability.ready && <button type="button" className="btn secondary" onClick={() => void availability.refresh()}>重新加载配置</button>}
@@ -111,5 +116,6 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
       {managed.filter((kind) => runtimeCategory(kind) === category).map(renderItem)}
     </section>)}
     </div>
+    </>}
   </Modal>;
 }

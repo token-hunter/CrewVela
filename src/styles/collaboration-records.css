@@ -26,9 +26,3 @@
   .collab-records-kind { display: none; }
   .collab-records-body { margin-left: 0; }
 }
-
-.collab-records-breadcrumb { color: var(--text-dim); font-size: 12px; margin: 0 0 20px; }
-.collaboration-settings-panel.collab-records-view .collab-guide-actions,
-.collaboration-settings-panel.collab-records-view .collab-project-actions,
-.collaboration-settings-panel.collab-records-view .collab-project-state,
-.collaboration-settings-panel.collab-records-view .collab-project-counts { display: none; }

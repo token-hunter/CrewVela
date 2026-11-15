@@ -9,11 +9,11 @@ test("Agent 新建默认沿用本地配置，不写模型和 Provider", () => {
   assert.deepEqual(build({runtime}), {kind:"run_agent",runtimeKind:runtime,providerId:null,model:null,cwd:base.cwd,prompt:base.prompt});
  }
 });
-test("仅支持能力内的 Provider 和模型覆盖，原生聊天不能冒充新建 CLI", () => {
- assert.equal(build({runtime:"claude_code",source:"provider",providerId:"provider",model:"custom-model"}).model,"custom-model");
- assert.throws(()=>build({source:"provider",providerId:"provider"}), /Provider/);
- assert.throws(()=>build({runtime:"pi",model:"custom-model"}), /本地默认/);
- for (const model of ["name&echo", "name%PATH%", "name with spaces", "--flag"]) assert.throws(()=>build({model}),/模型标识无效/);
+test("旧 Provider 和模型覆盖被忽略，原生聊天不能冒充新建 CLI", () => {
+ for (const runtime of ["claude_code","codex","pi"]) {
+  const action=build({runtime,source:"provider",providerId:"retired",model:"stale-model"});
+  assert.equal(action.providerId,null); assert.equal(action.model,null);
+ }
  assert.throws(()=>build({runtime:"codex_chat"}), /已有会话/);
  assert.throws(()=>build({cwd:""}), /工作目录/);
  assert.throws(()=>build({prompt:" "}), /执行任务/);

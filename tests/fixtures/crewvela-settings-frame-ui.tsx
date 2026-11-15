@@ -26,7 +26,7 @@ if (params.get("mock") === "browser") {
     if (command === "browser_control_save") {
       await new Promise(resolve => setTimeout(resolve, 800));
       if (failNext) { failNext = false; throw Error("回归测试：写入失败"); }
-      browser = { ...browser, settings: args.settings, resolvedBrowser: args.settings.browser === "msedge" ? "Edge（/fixture/msedge）" : args.settings.browser === "custom" ? args.settings.customPath : "Chrome（/fixture/chrome）" };
+      browser = { ...browser, settings: args.settings, resolvedBrowser: args.settings.browser === "custom" ? args.settings.customPath : "Chrome（/fixture/chrome）" };
       return structuredClone(browser);
     }
     if (command === "plugin:event|listen") return 1;
@@ -102,7 +102,7 @@ function Fixture() {
       onEdit={() => {}} onNew={() => {}} onDelete={() => {}} onSetHidden={() => {}}
       onRestoreDefault={() => {}} onReorder={async () => {}} onRestoreArchivedSession={() => {}}
       onDeleteArchivedSession={() => {}} onViewArchivedTranscript={() => {}} onClose={() => setOpen(false)}
-      initialSection={params.get("section") === "automation" ? "automation" : params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : params.get("section") === "skills" ? "skills" : "generalSettings"} />}
+      initialSection={params.get("section") === "mcp" ? ("mcp" as any) : params.get("section") === "automation" ? "automation" : params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : params.get("section") === "skills" ? "skills" : "generalSettings"} />}
   </>;
 }
 

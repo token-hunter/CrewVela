@@ -85,7 +85,7 @@ pub enum SessionEventKind {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AutomationAction {
     #[serde(rename_all = "camelCase")]
-    RunAgent { runtime_kind: crate::multi_agent::AgentRuntimeKind, provider_id: Option<String>, model: Option<String>, cwd: String, prompt: String },
+    RunAgent { runtime_kind: crate::multi_agent::AgentRuntimeKind, #[serde(skip)] provider_id: Option<String>, #[serde(skip)] model: Option<String>, cwd: String, prompt: String },
     #[serde(rename_all = "camelCase")]
     SendAgent { runtime_kind: crate::multi_agent::AgentRuntimeKind, session_id: String, body: String, project_id: Option<String>, agent_id: Option<String> },
     #[serde(rename_all = "camelCase")]

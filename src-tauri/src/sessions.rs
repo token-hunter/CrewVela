@@ -365,10 +365,6 @@ pub enum ApprovalPolicy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRecord {
-    #[serde(default)]
-    pub launch_model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model_assignment: Option<crate::model_assignments::ResolvedSelection>,
     pub id: String,
     pub claude_session_id: String,
     #[serde(default)]
@@ -577,7 +573,7 @@ pub struct SessionManager {
     event_ingest_lock: Arc<Mutex<()>>,
     data: Arc<Mutex<SessionsFile>>,
     ready_for_prompt: Arc<Mutex<HashSet<String>>>,
-    runtime_prompt_buffers: Arc<Mutex<HashMap<String, String>>>,
+    runtime_prompt_buffers: Arc<Mutex<HashMap<String, RuntimePromptBuffer>>>,
     /// TUI dialogs/busy frames are independent of hook-level SessionStatus.
     /// Dispatch consumes readiness but must not erase a still-visible blocker.
     runtime_prompt_blockers: Arc<Mutex<HashMap<String, RuntimePromptBlocker>>>,
@@ -618,6 +614,24 @@ enum RuntimePromptBlocker {
     Busy,
     Update,
     Dialog,
+}
+
+#[derive(Default)]
+struct RuntimePromptBuffer {
+    raw: String,
+    zcode_screen: Option<vt100::Parser>,
+    awaiting_composer_change: bool,
+}
+
+impl From<&str> for RuntimePromptBuffer {
+    fn from(raw: &str) -> Self { Self { raw: raw.into(), ..Default::default() } }
+}
+
+impl RuntimePromptBuffer {
+    fn zcode_screen(&mut self) -> &mut vt100::Parser {
+        self.zcode_screen.get_or_insert_with(|| vt100::Parser::new(
+            std::num::NonZeroU16::new(24).unwrap(), std::num::NonZeroU16::new(80).unwrap(), 0))
+    }
 }
 
 /// 首轮对话结束后待生成的 AI 摘要标题请求。
@@ -709,7 +723,7 @@ impl SessionManager {
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_millis();
         let record = SessionRecord {
-            launch_model: None, model_assignment: None,
+
             id: id.clone(),
             claude_session_id: id,
             kind: SessionKind::Claude,
@@ -754,7 +768,7 @@ impl SessionManager {
         let now = now_millis();
         let shell_name = input.shell.display_name();
         let record = SessionRecord {
-            launch_model: None, model_assignment: None,
+
             id: id.clone(),
             claude_session_id: String::new(),
             kind: SessionKind::Terminal,
@@ -842,7 +856,7 @@ impl SessionManager {
         };
         let now = now_millis();
         let record = SessionRecord {
-            launch_model: None, model_assignment: None,
+
             id,
             claude_session_id: String::new(),
             kind: SessionKind::Terminal,
@@ -923,7 +937,7 @@ impl SessionManager {
             _ => input.runtime_kind.clone(),
         };
         let record = SessionRecord {
-            launch_model: None, model_assignment: None,
+
             id,
             claude_session_id: String::new(),
             kind: SessionKind::Terminal,
@@ -1076,26 +1090,6 @@ impl SessionManager {
             app_session_id.to_string(),
         ])
     }
-
-    pub fn set_launch_model(&self, id: &str, model: Option<String>) -> Result<SessionRecord> {
-        let mut data = self.data.lock().unwrap();
-        let mut candidate = data.clone();
-        let record = candidate.sessions.iter_mut().find(|s| s.id == id).ok_or_else(|| anyhow!("未找到会话: {id}"))?;
-        record.launch_model = model;
-        record.model_assignment = None;
-        let updated = record.clone();
-        self.persist_candidate(&mut data, candidate)?;
-        Ok(updated)
-    }
-
-    pub fn record_model_assignment(&self, id: &str, selection: crate::model_assignments::ResolvedSelection) -> Result<()> {
-        let mut data = self.data.lock().unwrap();
-        let mut candidate = data.clone();
-        let record = candidate.sessions.iter_mut().find(|session| session.id == id).context("会话不存在")?;
-        record.model_assignment = Some(selection);
-        self.persist_candidate(&mut data, candidate)
-    }
-
     pub fn get(&self, id: &str) -> Option<SessionRecord> {
         self.data
             .lock()
@@ -2554,6 +2548,26 @@ impl SessionManager {
         if data.is_empty() {
             return false;
         }
+        if self.get(id).is_some_and(|session| session.agent_runtime_kind.as_deref() == Some("zcode_cli")) {
+            // OpenTUI repaints cells out of reading order. Inspect the visible
+            // screen, not concatenated historical help/permission text.
+            let mut buffers = self.runtime_prompt_buffers.lock().unwrap();
+            let state = buffers.entry(id.to_string()).or_default();
+            state.zcode_screen().process(data.as_bytes());
+            let screen = state.zcode_screen().screen().contents();
+            let blocked = is_blocked(&screen);
+            let ready = !blocked && is_ready(&screen);
+            if !ready { state.awaiting_composer_change = false; }
+            let ready = ready && !state.awaiting_composer_change;
+            drop(buffers);
+            if ready { return self.mark_runtime_prompt_ready(id); }
+            self.ready_for_prompt.lock().unwrap().remove(id);
+            if blocked {
+                self.runtime_prompt_blockers.lock().unwrap().insert(id.to_string(),
+                    if crate::multi_agent::interactive_runtime_prompt_busy(&screen) { RuntimePromptBlocker::Busy } else { RuntimePromptBlocker::Dialog });
+            }
+            return false;
+        }
         // Completion is authoritative for Codex's finished turn. Subsequent
         // cursor/footer fragments need not redraw its entire input composer.
         // Explicit blockers and unknown replacement screens still revoke it.
@@ -2561,7 +2575,7 @@ impl SessionManager {
         let is_codex = session.as_ref().is_some_and(|session| session.agent_runtime_kind.as_deref() == Some("codex"));
         let completed_codex = is_codex && session.is_some_and(|session| session.status == SessionStatus::Completed);
         let mut buffers = self.runtime_prompt_buffers.lock().unwrap();
-        let buffer = buffers.entry(id.to_string()).or_default();
+        let buffer = &mut buffers.entry(id.to_string()).or_default().raw;
         buffer.push_str(data);
         if buffer.len() > 32_768 {
             let mut start = buffer.len() - 32_768;
@@ -2637,7 +2651,21 @@ impl SessionManager {
 
     pub fn mark_prompt_dispatched(&self, id: &str) {
         self.ready_for_prompt.lock().unwrap().remove(id);
-        self.runtime_prompt_buffers.lock().unwrap().remove(id);
+        let mut buffers = self.runtime_prompt_buffers.lock().unwrap();
+        if let Some(state) = buffers.get_mut(id).filter(|state| state.zcode_screen.is_some()) {
+            // Keep the terminal's cell state for incremental redraws, but an
+            // unchanged idle screen cannot authorize a second paste.
+            state.awaiting_composer_change = crate::multi_agent::interactive_runtime_prompt_ready(
+                crate::multi_agent::AgentRuntimeKind::ZCodeCli, &state.zcode_screen().screen().contents());
+        } else {
+            buffers.remove(id);
+        }
+    }
+
+    pub(crate) fn resize_runtime_prompt(&self, id: &str, rows: u16, cols: u16) {
+        if !self.get(id).is_some_and(|session| session.agent_runtime_kind.as_deref() == Some("zcode_cli")) { return; }
+        let (Some(rows), Some(cols)) = (std::num::NonZeroU16::new(rows.min(512)), std::num::NonZeroU16::new(cols.min(512))) else { return; };
+        self.runtime_prompt_buffers.lock().unwrap().entry(id.to_string()).or_default().zcode_screen().set_size(rows, cols);
     }
 
     pub fn set_runtime_command_host(&self, id: &str, enabled: bool) -> Result<()> {
@@ -4616,6 +4644,43 @@ mod tests {
             Some("model authentication failed")
         );
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn zcode_prompt_tracks_visible_cells_across_dispatch_resize_and_out_of_order_redraws() {
+        let (path, events_dir) = test_paths("zcode-visible-composer");
+        let manager = SessionManager::open_at(path.clone(), events_dir).unwrap();
+        let session = manager.create_runtime(NewRuntimeSession { runtime_kind: "zcode_cli".into(), cwd: ".".into(), project_id: None }).unwrap();
+        manager.attach_runtime(&session.id, 14).unwrap();
+        manager.resize_runtime_prompt(&session.id, 12, 80);
+        let observe = |raw: &str| manager.observe_runtime_prompt_output_with_blocker(&session.id, raw,
+            |text| crate::multi_agent::interactive_runtime_prompt_ready(crate::multi_agent::AgentRuntimeKind::ZCodeCli, text),
+            crate::multi_agent::interactive_runtime_prompt_blocked);
+        assert!(observe("\x1b[2J\x1b[10;1HType a prompt"));
+        manager.mark_prompt_dispatched(&session.id);
+        assert!(!observe("\x1b[1;1HZCODE"), "an unchanged idle composer cannot authorize another paste");
+        assert!(!observe("\x1b[10;1H\x1b[2K/help"));
+        manager.mark_prompt_dispatched(&session.id);
+        assert!(observe("\x1b[10;1H\x1b[2KType a prompt"));
+        // OpenTUI can redraw history AFTER the lower input pane. Byte order
+        // differs from the screen's reading order; help is not a live dialog.
+        observe("\x1b[2;1HSlash command help: permission required, enter to confirm");
+        assert!(manager.is_ready_for_prompt(&session.id));
+        manager.resize_runtime_prompt(&session.id, 14, 60);
+        observe("\x1b[1;1HZCODE");
+        assert!(manager.is_ready_for_prompt(&session.id));
+        assert!(!observe("\x1b[10;1H\x1b[2KType to queue input\x1b[11;1Hesc to interrupt"));
+        assert!(!observe("\x1b[2J\x1b[HPermission required: Allow once"));
+        assert!(!observe("\x1b[?25h"));
+        assert!(!observe("\x1b[2J\x1b[10;1HType a "));
+        assert!(observe("prompt"));
+        // Overwriting the placeholder while typing must revoke readiness.
+        assert!(!observe("\x1b[10;1H\x1b[2Kuser draft"));
+        assert!(observe("\x1b[10;1H\x1b[2KType a prompt"));
+        manager.mark_stopped(&session.id).unwrap();
+        assert!(!manager.runtime_prompt_buffers.lock().unwrap().contains_key(&session.id));
+        drop(manager);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]

@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 
-use crate::launcher::{build_env, resolve_claude, CLEAR_VARS};
+use crate::launcher::resolve_claude;
 use crate::providers::ProviderConfig;
 use crate::sessions::TerminalShell;
 use crate::workspace_trust::WorkspaceTrustDetector;
@@ -129,7 +129,7 @@ pub(crate) fn build_interactive_settings_json(
     ))
     .expect("内部 settings JSON 必须有效");
     let settings = settings.as_object_mut().expect("settings 必须是对象");
-    // MCP 管理页的 server 并入 mcpServers；provider settings 已有的同名
+    // 已启用的 MCP server 并入 mcpServers；provider settings 已有的同名
     // server 视为更专家的手工配置，不覆盖。
     if let Some(mcp_servers) = mcp_servers.filter(|mcp| !mcp.is_empty()) {
         let slot = settings
@@ -168,7 +168,7 @@ pub struct PtyOpenOptions<'a> {
     /// 隔离会话——worktree 是 app 自己从用户已选 repo checkout 的目录，
     /// 信任级别与用户选定目录等价，不该再卡一次人工确认）。
     pub auto_confirm_trust: bool,
-    /// MCP 管理页启用的 server，注入 --settings 的 mcpServers 块。
+    /// 旧配置和内置功能中已启用的 server，注入 --settings 的 mcpServers 块。
     pub mcp_servers: Option<&'a serde_json::Map<String, serde_json::Value>>,
 }
 
@@ -346,8 +346,8 @@ impl PtyManager {
     /// 启动一个 claude session，返回其 id。
     pub fn open(&self, options: PtyOpenOptions<'_>) -> Result<u32> {
         let PtyOpenOptions {
-            provider,
-            key,
+            provider: _,
+            key: _,
             cwd,
             yolo,
             auto_mode,
@@ -364,7 +364,7 @@ impl PtyManager {
         // 凭 CREWVELA_CLI 找到本程序，用 `send` 子命令与其他会话互发消息。
         // 放进 env map 后 build_settings_json 会把它带进 --settings（最高优先级），
         // 进程 env 也带一份，双保险。
-        let mut env = build_env(provider, key);
+        let mut env = std::collections::HashMap::new();
         env.insert("CREWVELA_SESSION_ID".into(), app_session_id.to_string());
         if let Ok(executable) = std::env::current_exe() {
             env.insert("CREWVELA_CLI".into(), executable.display().to_string());
@@ -388,9 +388,6 @@ impl PtyManager {
         };
         cmd.cwd(work_dir);
 
-        for v in CLEAR_VARS {
-            cmd.env_remove(*v);
-        }
         for (k, v) in &env {
             cmd.env(k, v);
         }
@@ -398,16 +395,12 @@ impl PtyManager {
             cmd.arg(arg);
         }
 
-        // user settings.json 的 env 块优先级高于 spawn env，会把所有 provider 强制成
-        // settings 里的模型。用 --settings 传 per-provider env 覆盖（--settings env 优先级最高，
-        // 实测能覆盖 user settings env）。这样保留 user 的 hooks/permissions，只覆盖 env。
-        // 同时对 ANTHROPIC_DEFAULT_*_MODEL 同步覆盖 _MODEL_NAME（claude 档位 UI 用它显示），
-        // 否则 user settings 的 _NAME（如 glm-5.2）会残留，档位看起来还是旧模型。
+        // Add communication identity/hooks only. Native account, model and provider settings remain inherited.
         let settings_json = build_interactive_settings_json(
             &env,
             hook_command,
             status_line_command,
-            &provider.meta.settings,
+            &serde_json::Map::new(),
             mcp_servers,
         );
         cmd.arg("--settings");
@@ -1742,7 +1735,7 @@ mod tests {
             "filesystem".to_string(),
             serde_json::json!({ "command": "npx", "args": ["-y", "server-filesystem"] }),
         );
-        // provider settings 手工配置的同名 server 不被 MCP 管理页覆盖。
+        // provider settings 手工配置的同名 server 不被应用 MCP 注册表覆盖。
         let provider_settings = serde_json::json!({
             "mcpServers": {
                 "filesystem": { "command": "hand-tuned" },

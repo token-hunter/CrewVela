@@ -13,15 +13,11 @@ export const SIDEBAR_SHORTCUT_OPTIONS: SidebarShortcutOption[] = [
   { id: "notifications", label: "通知", group: "通用" },
   { id: "appearance", label: "外观", group: "通用" },
   { id: "companionship", label: "陪伴", group: "通用" },
-  { id: "providers", label: "模型设置", group: "智能体" },
   { id: "collaboration", label: "协作中心", group: "智能体" },
   { id: "sharedMemory", label: "共享记忆", group: "智能体" },
   { id: "automation", label: "自动化", group: "智能体" },
   { id: "browserControl", label: "浏览器控制", group: "集成" },
-  { id: "computerControl", label: "电脑控制", group: "集成" },
-  { id: "pluginMarket", label: "插件市场", group: "集成" },
   { id: "skills", label: "Skills", group: "集成" },
-  { id: "mcp", label: "MCP", group: "集成" },
   { id: "archivedSessions", label: "归档会话", group: "数据" },
 ];
 

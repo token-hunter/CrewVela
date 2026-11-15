@@ -1,7 +1,7 @@
 /** 浏览器控制设置：与 src-tauri/src/browser_control.rs 的
  * BrowserControlSettings/BrowserControlStatus 保持 serde camelCase 同构。 */
 
-export type BrowserChannelId = "auto" | "chrome" | "msedge" | "custom";
+export type BrowserChannelId = "auto" | "chrome" | "custom";
 
 export interface BrowserControlSettings {
   enabled: boolean;
@@ -25,9 +25,8 @@ export const BROWSER_CHANNEL_OPTIONS: Array<{
   label: string;
   hint: string;
 }> = [
-  { id: "auto", label: "自动探测", hint: "优先 Chrome，其次 Edge" },
+  { id: "auto", label: "自动探测", hint: "自动查找已安装的 Chrome" },
   { id: "chrome", label: "Chrome", hint: "使用系统安装的 Chrome" },
-  { id: "msedge", label: "Edge", hint: "使用系统安装的 Edge" },
   { id: "custom", label: "自定义路径", hint: "指定浏览器可执行文件的绝对路径" },
 ];
 

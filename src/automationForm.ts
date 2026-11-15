@@ -32,10 +32,7 @@ export function buildAutomationAction(form: AutomationFormAction, enabled: (kind
   if (form.mode === "new") {
     if (!TERMINAL_RUNTIMES.includes(form.runtime)) throw Error("该 Agent 请使用已有会话或项目成员");
     if (!form.cwd.trim()) throw Error("请选择工作目录");
-    if (form.source === "provider" && (form.runtime !== "claude_code" || !providers.some(p => p.id === form.providerId && !p.hidden))) throw Error("请选择 Claude Code 可用的 Provider");
-    if (form.model.trim() && !["claude_code", "codex"].includes(form.runtime)) throw Error("该 Agent 暂只支持本地默认模型");
-    if (form.model.trim() && (!/^[A-Za-z0-9_./:@+\[\]-]+$/.test(form.model.trim()) || form.model.trim().startsWith("-") || form.model.trim().length > 200)) throw Error("模型标识无效，请填写模型 ID，不要填写命令或空格");
-    return { kind: "run_agent", runtimeKind: form.runtime, providerId: form.source === "provider" ? form.providerId : null, model: form.model.trim() || null, cwd: form.cwd.trim(), prompt: body };
+    return { kind: "run_agent", runtimeKind: form.runtime, providerId: null, model: null, cwd: form.cwd.trim(), prompt: body };
   }
   if (form.mode === "broadcast") return { kind: "broadcast_agent", runtimeKind: form.runtime, body };
   if (form.mode === "member") {

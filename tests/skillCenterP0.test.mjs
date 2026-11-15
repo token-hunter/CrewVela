@@ -9,9 +9,9 @@ const backend = readFileSync(new URL("../src-tauri/src/skill_center.rs", import.
 const market = readFileSync(new URL("../src/components/SkillMarketPanel.tsx", import.meta.url), "utf8");
 const lib = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
 
-test("设置的集成分组提供插件市场、Skills和 MCP 独立入口", () => {
+test("设置的集成分组保留 Skills 独立入口与内置 MCP 基础", () => {
   const group = settings.split('label: "集成"')[1].split('label: "数据"')[0];
-  for (const [id, label, panelName] of [["pluginMarket", "插件市场", "PluginMarketPanel"], ["skills", "Skills", "SkillCenterPanel"], ["mcp", "MCP", "McpSettingsPanel"]]) {
+  for (const [id, label, panelName] of [["skills", "Skills", "SkillCenterPanel"]]) {
     assert.ok(group.includes(`id: "${id}"`) && group.includes(`label: "${label}"`));
     assert.match(settings, new RegExp(`activeSection === "${id}" \\? \\(\\s*<${panelName}\\b`));
   }

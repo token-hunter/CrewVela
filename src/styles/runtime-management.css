@@ -3,8 +3,8 @@
   max-height: 85vh;
   overflow: auto;
   padding: 24px;
-  background: var(--bg-panel, #222);
-  color: var(--text-primary, #ddd);
+  background: var(--bg-elev, #222);
+  color: var(--text, #ddd);
   border: 1px solid var(--border, #484848);
   border-radius: 10px;
 }
@@ -58,7 +58,7 @@
 .collab-runtime-order-actions button:disabled { opacity: 0.3; cursor: default; }
 .collab-runtime-management-list img { width: 24px; height: 24px; object-fit: contain; }
 .collab-runtime-management-list span { flex: 1; }
-.collab-runtime-management-list small { color: var(--text-secondary, #aaa); }
+.collab-runtime-management-list small { color: var(--text-dim, #aaa); }
 .collab-runtime-management-list .collab-runtime-scope { display: block; margin-top: 4px; font-size: 12px; }
 .collab-runtime-management-list input { accent-color: var(--accent, #a78bfa); }
 .collab-runtime-management-empty { align-self: center; color: var(--text-secondary, #aaa); }

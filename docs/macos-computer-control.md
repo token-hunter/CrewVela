@@ -1,3 +1,5 @@
+> 历史说明：大改分支已在 Beta 精简中移除此功能，本文保留为旧版本设计记录，不代表当前能力。
+
 # macOS 电脑控制安装与授权
 
 CrewVela 在 macOS 14+ 通过 KimiCU 的 stdio MCP 提供电脑控制。Windows 保留内置 PowerShell 电脑控制与 KimiCU；内置控制暂未适配 macOS。

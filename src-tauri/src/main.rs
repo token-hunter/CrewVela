@@ -102,19 +102,6 @@ fn main() {
             }
             return;
         }
-        Some("--computer-control-mcp") => {
-            let Some(runtime_ps1) = args.next() else {
-                eprintln!("缺少 --computer-control-mcp 运行时脚本路径");
-                std::process::exit(2);
-            };
-            if args.next().is_some() {
-                eprintln!("--computer-control-mcp 不接受额外参数");
-                std::process::exit(2);
-            }
-            std::process::exit(crewvela_lib::computer_control_mcp::run_stdio(
-                std::path::PathBuf::from(runtime_ps1),
-            ));
-        }
         _ if may_start_gui(
             first.as_deref(),
             std::env::var_os("CREWVELA_SESSION_ID").is_some() && !crewvela_lib::test_profile::active(),

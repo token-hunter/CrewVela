@@ -4,7 +4,6 @@ import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
 import { runtimeCategory } from "../runtimeTaxonomy";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import type { AgentRuntimeKind, SessionDirectory, ProviderConfig } from "../types";
-import { PROVIDER_LOGOS, providerTone } from "../providerLogos";
 import {
   NEW_SESSION_CHAT_ORDER_STORAGE_KEY,
   NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY,
@@ -38,11 +37,7 @@ export const CHAT_AGENTS = NEW_SESSION_AGENTS.filter(
 interface Props {
   project?: SessionDirectory | null;
   /** 从空工作区选了 Claude Code 时直接进入 Provider 步骤。 */
-  initialStep?: "agent" | "provider";
   onRuntimeSelect?: (runtime: Exclude<AgentRuntimeKind, "claude_code" | "oh_my_pi" | "minimax_code" | "unsupported">) => void;
-  providers: ProviderConfig[];
-  keyStates: Record<string, boolean>;
-  onSelect: (providerId: string) => void;
   onLocalClaudeSelect: () => void;
   onOpenSettings: () => void;
   onClose: () => void;
@@ -50,17 +45,12 @@ interface Props {
 
 export function NewSessionDialog({
   project,
-  initialStep = "agent",
   onRuntimeSelect,
-  providers,
-  keyStates,
-  onSelect,
   onLocalClaudeSelect,
   onOpenSettings,
   onClose,
 }: Props) {
   const { isRuntimeEnabled, ready, error } = useRuntimeAvailability();
-  const [chooseAgent, setChooseAgent] = useState(initialStep !== "provider");
   const [draggedRuntime, setDraggedRuntime] = useState<NewSessionAgent | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     category: "terminal" | "chat";
@@ -100,7 +90,7 @@ export function NewSessionDialog({
   const selectRuntime = (runtime: NewSessionAgent) => {
     if (Date.now() < suppressClickUntilRef.current) return;
     if (!isRuntimeEnabled(runtime)) return;
-    if (runtime === "claude_code") setChooseAgent(false);
+    if (runtime === "claude_code") onLocalClaudeSelect();
     else onRuntimeSelect?.(runtime);
   };
 
@@ -121,15 +111,15 @@ export function NewSessionDialog({
         <div className="dialog-heading">
           <div>
             <span className="eyebrow">NEW TASK</span>
-            <h2 id="new-session-title">{chooseAgent ? "选择 Agent" : "选择 Provider"}</h2>
-            <p>{chooseAgent ? (project ? `在「${project.name}」中创建会话，使用已选工作目录。` : "选择本次会话使用的 Agent，下一步选择工作目录。") : "选择模型服务或本地配置，继续创建 CLI 会话。"}</p>
+            <h2 id="new-session-title">选择 Agent</h2>
+            <p>{project ? `在「${project.name}」中创建会话，使用已选工作目录。` : "选择本次会话使用的 Agent，使用本地 CLI 配置。"}</p>
           </div>
           <button className="dialog-close" aria-label="关闭" onClick={onClose}>
             ×
           </button>
         </div>
 
-        {chooseAgent ? <div className="provider-picker project-agent-picker">
+        <div className="provider-picker project-agent-picker">
           {!ready && <p role="status">{error ? `Agent 配置加载失败：${error}` : "正在加载 Agent 配置…"}</p>}
           {ready && agents.length === 0 && <p role="status">没有已启用的独立 Agent，请先在设置中启用。</p>}
           {groups.map(({ category, title, order, error: orderError }) => {
@@ -235,72 +225,13 @@ export function NewSessionDialog({
                       <DotsSixVertical size={16} weight="bold" aria-hidden="true" />
                     </span>
                     <span className="provider-choice-icon has-logo"><img src={RUNTIME_LOGOS[runtime]} data-runtime={runtime} alt="" aria-hidden="true" /></span>
-                    <span className="provider-choice-copy"><strong>{RUNTIME_LABELS[runtime]}</strong><small>{runtime === "claude_code" ? "下一步选择 Provider、数量和目录" : runtime === "claude_chat" ? "本机 Claude Code CLI 账号 · ACP 原生聊天" : runtime === "codex_chat" ? "本机 Codex CLI 账号 · ACP 原生聊天" : runtime === "kimi_chat" ? "本机 Kimi Code CLI 账号 · ACP 原生聊天" : runtime === "opencode_chat" ? "本机 OpenCode CLI 账号 · ACP 原生聊天" : runtime === "pi_chat" ? "本机 pi CLI 账号 · 原生 RPC 聊天" : project ? "使用项目目录创建会话" : "选择工作目录创建会话"}</small></span>
+                    <span className="provider-choice-copy"><strong>{RUNTIME_LABELS[runtime]}</strong><small>{runtime === "claude_code" ? "使用本地 CLI 账号、服务和默认模型" : runtime === "claude_chat" ? "本机 Claude Code CLI 账号 · ACP 原生聊天" : runtime === "codex_chat" ? "本机 Codex CLI 账号 · ACP 原生聊天" : runtime === "kimi_chat" ? "本机 Kimi Code CLI 账号 · ACP 原生聊天" : runtime === "opencode_chat" ? "本机 OpenCode CLI 账号 · ACP 原生聊天" : runtime === "pi_chat" ? "本机 pi CLI 账号 · 原生 RPC 聊天" : project ? "使用项目目录创建会话" : "选择工作目录创建会话"}</small></span>
                     <span className="provider-choice-arrow" aria-hidden="true">→</span>
                   </div>;
                 })}
               </div>
             </section>;
           })}
-        </div> : <div className="provider-picker">
-          {!ready && <p role="status">{error ? `Agent 配置加载失败：${error}` : "正在加载 Agent 配置…"}</p>}
-          {ready && !isRuntimeEnabled("claude_code") && <p role="status">Claude Code 未启用，请先在设置中启用。</p>}
-
-          {isRuntimeEnabled("claude_code") && <button
-            type="button"
-            className="provider-choice local-claude-choice"
-            onClick={onLocalClaudeSelect}
-          >
-            <span className="provider-choice-icon has-logo"><img src={RUNTIME_LOGOS.claude_code} alt="" aria-hidden="true" /></span>
-            <span className="provider-choice-copy">
-              <strong>使用本地 Claude Code 配置</strong>
-              <small>沿用本机账号、服务地址和默认模型</small>
-            </span>
-            <span className="provider-choice-arrow" aria-hidden="true">→</span>
-          </button>}
-
-          {providers.filter(() => isRuntimeEnabled("claude_code")).map((provider) => {
-            const hasKey = keyStates[provider.id] ?? false;
-            const ready = hasKey && provider.baseUrl.length > 0;
-            const tone = providerTone(provider);
-            const logo = PROVIDER_LOGOS[tone];
-            return (
-              <button
-                key={provider.id}
-                className="provider-choice"
-                onClick={() => onSelect(provider.id)}
-              >
-                <span
-                  className={`provider-choice-icon${logo ? " has-logo" : ""}`}
-                  data-provider-tone={tone}
-                >
-                  {logo ? (
-                    <img src={logo} alt="" aria-hidden="true" />
-                  ) : (
-                    (provider.name || provider.id).slice(0, 1).toUpperCase()
-                  )}
-                </span>
-                <span className="provider-choice-copy">
-                  <strong>{provider.name || provider.id}</strong>
-                  <small>{provider.baseUrl || "尚未配置 API 端点"}</small>
-                </span>
-                <span className={`readiness ${ready ? "ready" : "needs-config"}`}>
-                  {ready ? "可用" : "需配置"}
-                </span>
-                <span className="provider-choice-arrow" aria-hidden="true">
-                  →
-                </span>
-              </button>
-            );
-          })}
-        </div>}
-
-        <div className="dialog-footer">
-          <span>{chooseAgent ? "Agent 启用状态可在设置中管理" : "Provider 配置与密钥可在设置中管理"}</span>
-          {!chooseAgent && <button className="btn" onClick={() => setChooseAgent(true)}>返回选择 Agent</button>}
-          <button className="btn" onClick={onOpenSettings}>
-            打开设置
-          </button>
         </div>
     </Modal>
   );

@@ -9,8 +9,8 @@ const settingsSource = readFileSync(
 );
 const stylesSource = readStyles();
 
-test("所有设置页共用固定窗口与分类导航，模型页只调整内容", () => {
-  assert.match(settingsSource, /className=\{`settings-dialog settings-native\$\{activeSection === "providers" && modelView === "connections" \? " settings-model-focus" : ""\}`\}/);
+test("所有保留设置页共用固定窗口与分类导航", () => {
+  assert.match(settingsSource, /className="settings-dialog settings-native"/);
   assert.match(settingsSource, /labelledBy="settings-dialog-title"/);
   assert.match(settingsSource, /className="settings-window-header"/);
   assert.match(stylesSource, /width: min\(1280px, calc\(100vw - 64px\)\)/);
@@ -33,11 +33,7 @@ test("统一设置提供固定关闭入口、搜索和分组导航", () => {
     "设置分组应按 通用/智能体/集成/数据 顺序排列",
   );
   assert.doesNotMatch(settingsSource, /label: "体验"/);
-  assert.equal(
-    settingsSource.match(/(?:label|title): "模型设置"/g)?.length,
-    2,
-    "模型入口和页面标题应统一命名为模型设置",
-  );
+  assert.doesNotMatch(settingsSource, /(?:label|title): "(?:模型设置|电脑控制|插件市场)"/);
   assert.doesNotMatch(settingsSource, /模型服务管理/);
 });
 

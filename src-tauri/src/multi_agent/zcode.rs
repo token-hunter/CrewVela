@@ -868,6 +868,34 @@ impl<'a> Client<'a> {
             )?;
             return Ok(true);
         }
+        if method == "interaction/requestCredentialCipher" {
+            // The native contract is process-scoped and has no sessionId. It
+            // may run before session/create; do not loosen the checks below.
+            let params = &frame["params"];
+            let valid = params.as_object().is_some_and(|object| object.len() == 3)
+                && params["requestId"].as_str().is_some_and(|id| id.len() == 36 && uuid::Uuid::parse_str(id).is_ok())
+                && matches!(params["operation"].as_str(), Some("encrypt" | "decrypt"))
+                && params["value"].as_str().is_some_and(|value|
+                    value.chars().count() <= 1_398_232 && (params["operation"] != "encrypt" || value.len() <= 1_048_576));
+            if !valid {
+                self.send(&json!({"id":id,"error":{"code":-32602,"message":"凭据请求格式无效"}}))?;
+                return Ok(true);
+            }
+            let unavailable = || json!({"requestId":params["requestId"],"result":{"ok":false,"error":{
+                "code":"CREDENTIAL_SECURE_STORAGE_UNAVAILABLE",
+                "message":"ZCode Desktop 安全凭据存储不可用，请在原生 ZCode Desktop 检查登录后恢复会话"
+            }}});
+            let result = match &self.account_host {
+                Some(host) => match host.credential_cipher(params) {
+                    Ok(result) => result,
+                    Err(error) if error.downcast_ref::<crate::acp::UnverifiedStop>().is_some() => return Err(error),
+                    Err(_) => unavailable(),
+                },
+                None => unavailable(),
+            };
+            self.send(&json!({"id":id,"result":result}))?;
+            return Ok(true);
+        }
         let requested = frame.pointer("/params/sessionId").and_then(Value::as_str);
         let trusted = (requested == self.session.as_deref() && self.session.is_some())
             || requested.is_some_and(|id| self.side_sessions.iter().any(|side| side == id));
@@ -3157,6 +3185,82 @@ mod tests {
         })().catch(error=>{console.error(error);process.exitCode=1;});
     "#;
 
+    #[test]
+    fn workspace_credential_cipher_unavailable_does_not_disconnect() {
+        let mut command = Command::new(which::which("node").unwrap());
+        command.args(["-e", r#"
+            const rl=require('node:readline').createInterface({input:process.stdin});
+            const assert=require('node:assert/strict');
+            let original;
+            rl.on('line',line=>{
+                const frame=JSON.parse(line);
+                if(frame.method==='fixture/open') {
+                    original=frame.id;
+                    console.log(JSON.stringify({id:'credential-rpc',method:'interaction/requestCredentialCipher',params:{requestId:'1db0b641-d36f-4a55-83ce-962fc4bb96c0',operation:'decrypt',value:'enc:v2:os:fixture'}}));
+                } else {
+                    assert.equal(frame.id,'credential-rpc');
+                    assert.equal(frame.error,undefined);
+                    assert.equal(frame.result.requestId,'1db0b641-d36f-4a55-83ce-962fc4bb96c0');
+                    assert.equal(frame.result.result.ok,false);
+                    assert.equal(frame.result.result.error.code,'CREDENTIAL_SECURE_STORAGE_UNAVAILABLE');
+                    console.log(JSON.stringify({id:original,result:{connected:true}}));
+                }
+            });
+        "#]);
+        let mut progress = || Ok(());
+        let mut client = Client::spawn_with_account_host(command, Path::new(env!("CARGO_MANIFEST_DIR")), &mut progress, None).unwrap();
+        assert!(client.session.is_none(), "workspace cipher may be requested before session creation");
+        let result = client.request("fixture/open", json!({}), &AtomicBool::new(false), &mut |_, _| panic!("cipher request must never approve a tool"));
+        assert_eq!(result.unwrap()["connected"], true);
+        client.cleanup_checked().unwrap();
+    }
+
+    #[test]
+    fn workspace_credential_cipher_roundtrips_through_private_host_before_session_creation() {
+        let root = std::env::temp_dir().join(format!("zcode-cipher-rpc-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let builtin = root.join("builtin.json");
+        std::fs::write(&builtin, r#"{"revision":1,"config":{"providerConfigRules":{"providerRules":[]}}}"#).unwrap();
+        let mut command = Command::new(which::which("node").unwrap());
+        command.env("ZCODE_DATA_BASE_DIR", &root)
+            .env("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", &builtin)
+            .env("ZCODE_CREDENTIAL_SECRET", "synthetic-cipher-test-secret")
+            .env_remove("ZCODE_CREDENTIAL_SECRET_FILE")
+            .args(["-e", r#"
+                const assert=require('node:assert/strict');
+                const emit=frame=>console.log(JSON.stringify(frame));
+                const requestId='1db0b641-d36f-4a55-83ce-962fc4bb96c0';
+                const secret='  synthetic private fixture 中文\n ';
+                let original,stage=0;
+                require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
+                    const frame=JSON.parse(line);
+                    if(frame.method==='fixture/open'){
+                        original=frame.id;
+                        emit({id:'cipher-encrypt',method:'interaction/requestCredentialCipher',params:{requestId,operation:'encrypt',value:secret}});
+                    }else{
+                        assert.equal(frame.error,undefined);assert.equal(frame.result.requestId,requestId);
+                        assert.equal(frame.result.result.ok,true);
+                        if(stage++===0){
+                            const value=frame.result.result.value;assert.ok(value.startsWith('enc:v2:env:'));
+                            emit({id:'cipher-decrypt',method:'interaction/requestCredentialCipher',params:{requestId,operation:'decrypt',value}});
+                        }else{
+                            assert.equal(frame.result.result.value,secret);
+                            emit({id:original,result:{privateRoundtrip:true}});
+                        }
+                    }
+                });
+            "#]);
+        let mut progress = || Ok(());
+        let mut client = Client::spawn(command, &root, &mut progress).unwrap();
+        assert!(client.session.is_none());
+        let result = client.request("fixture/open", json!({}), &AtomicBool::new(false), &mut |_, _| panic!("cipher must not approve tools"));
+        let cleanup = client.cleanup_checked();
+        drop(client);
+        std::fs::remove_dir_all(root).unwrap();
+        assert_eq!(result.unwrap()["privateRoundtrip"], true);
+        cleanup.unwrap();
+    }
+
     fn side_rpc_connection<'a>(scenario: &str, progress: &'a mut dyn FnMut() -> Result<()>) -> DesktopConnection<'a> {
         let mut command = Command::new(which::which("node").unwrap());
         command.args(["-e", SIDE_RPC_FIXTURE]).env("SIDE_RPC_SCENARIO", scenario);
@@ -3579,6 +3683,20 @@ mod tests {
             }
         }
     }
+    #[test]
+    #[ignore = "需要已安装并已初始化安全凭据的 ZCode Desktop；仅对合成文本做私有加解密，不调用模型或写入凭据"]
+    fn zcode_installed_cipher_uses_native_secure_storage_without_model_call() {
+        let command = launch(&executable().unwrap()).unwrap();
+        let host = account_host::AccountHost::prepare(&command).unwrap().expect("native desktop account host");
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let encrypted = host.credential_cipher(&json!({"requestId":request_id,"operation":"encrypt","value":"synthetic-native-cipher-probe"})).unwrap();
+        assert_eq!(encrypted["result"]["ok"], true, "native secure storage must be available (no response values logged)");
+        let decrypted = host.credential_cipher(&json!({"requestId":request_id,"operation":"decrypt","value":encrypted["result"]["value"]})).unwrap();
+        assert_eq!(decrypted["result"]["ok"], true);
+        assert!(decrypted["result"]["value"] == "synthetic-native-cipher-probe", "native private roundtrip did not preserve synthetic input");
+        println!("ZCODE_NATIVE_CIPHER_OK no_model_request=true no_credential_write=true");
+    }
+
     #[test]
     #[ignore = "需要已安装的 ZCode Desktop；隔离存储，验证空草稿跨进程恢复，不调用模型"]
     fn zcode_installed_empty_draft_cross_process_restore() {

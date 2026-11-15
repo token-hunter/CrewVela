@@ -54,23 +54,7 @@ export function useSessionData({
     for (const key of Object.keys(requests.current) as (keyof typeof requests.current)[]) ++requests.current[key];
   }, []);
 
-  const refreshProviders = useCallback(async () => {
-    const request = ++requests.current.providers;
-    try {
-      const list = await invoke<ProviderConfig[]>("list_providers");
-      if (request !== requests.current.providers) return;
-      setProviders(list);
-      const states: Record<string, boolean> = {};
-      await Promise.all(
-        list.map(async (p) => {
-          states[p.id] = await invoke<boolean>("get_key_state", { id: p.id });
-        }),
-      );
-      if (request === requests.current.providers) setKeyStates(states);
-    } catch (e) {
-      console.error("加载 providers 失败:", e);
-    }
-  }, [setKeyStates, setProviders]);
+  const refreshProviders = useCallback(async () => { setProviders([]); setKeyStates({}); }, [setProviders, setKeyStates]);
 
   const refreshSessions = useCallback(async () => {
     const request = ++requests.current.sessions;

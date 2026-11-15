@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import * as taxonomy from "../src/runtimeTaxonomy.ts";
+import * as installation from "../src/runtimeInstallation.ts";
 import { reorderRuntimeOrder, persistRuntimeOrder, loadRuntimeOrder } from "../src/runtimePreferences.ts";
 
 const labels = { claude_code: "Claude Code", codex: "Codex", kimi_code: "Kimi Code", zcode: "ZCode Desktop", codex_chat: "Codex Chat" };
@@ -24,7 +25,9 @@ function harness() {
         useRef(value) { const index = hookIndex++; return hooks[index] ??= { current: value }; },
       };
       if (id === "react/jsx-runtime") return { jsx, jsxs: jsx };
-      if (id === "@phosphor-icons/react") return { ArrowUp: "up-icon", ArrowDown: "down-icon", DotsSixVertical: "drag-icon" };
+      if (id === "@phosphor-icons/react") return { ArrowUp: "up-icon", ArrowDown: "down-icon", DotsSixVertical: "drag-icon", X: "close-icon" };
+      if (id === "./RuntimeInstallWizard") return { RuntimeInstallWizard: "runtime-installer" };
+      if (id === "../runtimeInstallation") return installation;
       if (id === "../runtimeAvailability") return { useRuntimeAvailability: () => ({ ready: true, error: null, isRuntimeEnabled: (kind) => !disabled.has(kind), setRuntimeEnabled: async (...args) => toggles.push(args) }) };
       if (id === "../runtimeLogos") return { RUNTIME_LABELS: labels, RUNTIME_LOGOS: {} };
       if (id === "../runtimeTaxonomy") return taxonomy;
@@ -83,6 +86,21 @@ test("排序保存错误在管理弹窗内展示，按钮不嵌套在开关标�
   for (const label of nodes(tree).filter((node) => node.type === "label")) {
     assert.equal(nodes(label.props.children).some((node) => node.type === "button"), false);
   }
+});
+
+test("安装与版本入口只为首批 CLI 提供，进入和返回不改变 Runtime 开关或排序", () => {
+  const h = harness(); const order = ["claude_code", "codex", "kimi_code"];
+  const props = { order, onReorder() { assert.fail("opening installation must not reorder runtimes"); } };
+  let tree = h.render(props);
+  const entries = nodes(tree).filter(node => node.type === "button" && node.props.className?.includes("collab-runtime-install-entry"));
+  assert.equal(entries.length, 2);
+  entries[1].props.onClick(); tree = h.render(props);
+  const installer = nodes(tree).find(node => node.type === "runtime-installer");
+  assert.equal(installer.props.kind, "codex");
+  assert.deepEqual(h.toggles, []);
+  installer.props.onBack(); tree = h.render(props);
+  assert.ok(button(tree, "上移 Codex"));
+  assert.deepEqual(order, ["claude_code", "codex", "kimi_code"]);
 });
 
 function row(tree, kind) {

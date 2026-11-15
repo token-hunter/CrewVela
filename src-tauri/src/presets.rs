@@ -88,9 +88,6 @@ fn create_at(path: &std::path::Path, input: NewPreset) -> Result<LaunchPreset> {
     if name.chars().count() > 40 {
         return Err(anyhow!("预设名称不能超过 40 个字符"));
     }
-    if crate::providers::get(&input.provider_id)?.is_none() {
-        return Err(anyhow!("未找到 provider: {}", input.provider_id));
-    }
     if input.yolo && input.auto_mode {
         return Err(anyhow!("Auto 模式与 YOLO 模式不能同时启用"));
     }
@@ -116,7 +113,7 @@ fn create_at(path: &std::path::Path, input: NewPreset) -> Result<LaunchPreset> {
     let preset = LaunchPreset {
         id: uuid::Uuid::new_v4().to_string(),
         name: name.to_string(),
-        provider_id: input.provider_id,
+        provider_id: "local".into(),
         cwds,
         yolo: input.yolo,
         auto_mode: input.auto_mode,
@@ -230,16 +227,7 @@ mod tests {
     fn create_rejects_invalid_input() {
         let (root, store) = test_store("reject");
         assert!(create_at(&store, new_preset("  ")).is_err());
-        assert!(create_at(
-            &store,
-            NewPreset {
-                provider_id: "not-exists".to_string(),
-                ..new_preset("x")
-            }
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("未找到 provider"));
+        assert_eq!(create_at(&store, NewPreset { provider_id:"retired-provider".into(), ..new_preset("local") }).unwrap().provider_id,"local");
         assert!(create_at(
             &store,
             NewPreset {

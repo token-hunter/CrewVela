@@ -21,7 +21,26 @@ try {
   await runtimeToggle.click();
   assert.equal(await page.locator('.collab-runtime-chip summary').first().isVisible(), true);
   await page.getByRole('button', { name: '检查更新', exact: true }).waitFor();
+  for (const tab of [/^团队/, /^项目档案$/, /^协作记录$/, /^协作诊断/, /^概览$/]) {
+    await page.getByRole('tab', { name: tab }).click();
+    assert.equal(await page.getByRole('region', { name: '协作 Runtime', exact: true }).isVisible(), true, `${tab}: shared Runtime controls must remain visible`);
+    assert.equal(await runtimeToggle.getAttribute('aria-expanded'), 'true', `${tab}: switching tabs must preserve Runtime expansion`);
+    assert.equal(await page.locator('.collab-runtime-chip summary').first().isVisible(), true);
+    for (const selector of ['.collab-guide-actions', '.collab-project-actions', '.collab-project-state', '.collab-project-counts']) {
+      assert.equal(await page.locator(selector).isVisible(), true, `${tab}: ${selector} must remain visible`);
+    }
+  }
+  await page.getByRole('tab', { name: '协作记录', exact: true }).click();
+  await page.getByRole('button', { name: '管理 Runtime', exact: true }).click();
+  await page.getByRole('heading', { name: '管理 Runtime', exact: true }).waitFor();
+  await page.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.getByRole('tab', { name: '概览', exact: true }).click();
   await runtimeToggle.click();
+  await page.getByRole('tab', { name: '协作记录', exact: true }).click();
+  assert.equal(await runtimeToggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator('.collab-runtime-content').isVisible(), false);
+  assert.equal(await page.getByRole('button', { name: '管理 Runtime', exact: true }).isVisible(), true);
+  await page.getByRole('tab', { name: '概览', exact: true }).click();
   assert.equal(await page.locator('.collab-activity-disclosure').getAttribute('open'), null);
   await page.getByRole('group', { name: '任务筛选' }).getByRole('button', { name: '执行中', exact: true }).click();
   assert.equal(await page.locator('.collab-task-row').count(), 1);
@@ -54,6 +73,14 @@ try {
       assert.equal(geometry.overflow, false, `${theme} ${size.width}: content must not overflow`);
       assert.equal(geometry.fullWidth, true);
       assert.equal(await page.getByRole('button', { name: '关闭设置', exact: true }).isVisible(), true);
+      await page.getByRole('tab', { name: '协作记录', exact: true }).click();
+      await runtimeToggle.click();
+      assert.equal(await page.getByRole('button', { name: '管理 Runtime', exact: true }).isVisible(), true);
+      assert.equal(await page.locator('.collab-runtime-chip summary').first().isVisible(), true);
+      assert.equal(await page.locator('.settings-content').evaluate(el => el.scrollWidth > el.clientWidth + 1), false, `${theme} ${size.width}: records with Runtime must not overflow`);
+      if (process.env.CREWVELA_UI_SCREENSHOTS) {
+        await page.screenshot({ path: `${process.env.CREWVELA_UI_SCREENSHOTS}/records-${theme}-${size.width}.png` });
+      }
     }
   }
   await page.goto(`${base}/tests/fixtures/collaboration-member-dialog-ui.html?state=runtime-update-failed`);
@@ -63,5 +90,5 @@ try {
   await page.locator('.collab-runtime-toggle').click();
   await page.getByRole('alert').filter({ hasText: /Codex.*回归测试：升级失败/ }).waitFor();
   assert.equal(await page.locator('.collab-runtime-content').isVisible(), false);
-  console.log('PASS: task-first disclosures, controls, filters, details, responsive geometry and visible upgrade failures');
+  console.log('PASS: shared controls across all five tabs, preserved Runtime expansion, records management dialog, filters, details, responsive geometry and visible upgrade failures');
 } finally { await browser.close(); }

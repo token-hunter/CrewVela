@@ -16,7 +16,6 @@ import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
 import { MonitorIcon } from "@phosphor-icons/react/dist/csr/Monitor";
 import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
-import { PlugsIcon } from "@phosphor-icons/react/dist/csr/Plugs";
 import { PackageIcon } from "@phosphor-icons/react/dist/csr/Package";
 import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
@@ -58,15 +57,11 @@ const SIDEBAR_SHORTCUT_ICONS: Record<string, () => ReactNode> = {
   notifications: () => <BellIcon size={17} />,
   appearance: () => <PaletteIcon size={17} />,
   companionship: () => <HeartIcon size={17} />,
-  providers: () => <CubeIcon size={17} />,
   collaboration: () => <UsersIcon size={17} />,
   sharedMemory: () => <BrainIcon size={17} />,
   automation: () => <AutomationIcon size={17} />,
   browserControl: () => <GlobeIcon size={17} />,
-  computerControl: () => <MonitorIcon size={17} />,
-  pluginMarket: () => <PackageIcon size={17} />,
   skills: () => <ScrollIcon size={17} weight="regular" />,
-  mcp: () => <PlugsIcon size={17} />,
   archivedSessions: () => <ArchiveIcon size={17} />,
 };
 
@@ -108,7 +103,6 @@ interface Props {
   ) => void;
   onAddProject: () => void;
   presets: LaunchPreset[];
-  providers: ProviderConfig[];
   onLaunchPreset: (preset: LaunchPreset) => void;
   onDeletePreset: (preset: LaunchPreset) => void;
   onNewSessionInProject: (project: Project) => void;
@@ -459,7 +453,7 @@ export function AppSidebar(props: Props) {
                   <div className="rail-new-presets">
                     <div className="rail-new-presets-head">预设</div>
                     {props.presets.filter(() => isRuntimeEnabled("claude_code")).map((preset) => {
-                      const providerName = props.providers.find((provider) => provider.id === preset.providerId)?.name ?? preset.providerId;
+                      const providerName = "Claude Code（本地配置）";
                       return (
                         <div className="rail-new-preset" key={preset.id} role="none">
                           <button

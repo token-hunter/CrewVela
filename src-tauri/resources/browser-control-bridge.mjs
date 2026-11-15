@@ -32,7 +32,7 @@ export function stripLaunchOnlyArgs(args) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (LAUNCH_ONLY_FLAGS_WITH_VALUE.has(arg)) {
-      // "--browser msedge"（值分体）与 "--browser=msedge"（值连体）两种形态。
+      // "--browser chrome"（值分体）与 "--browser=chrome"（值连体）两种形态。
       if (!arg.includes("=")) i++;
       continue;
     }

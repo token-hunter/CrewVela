@@ -19,16 +19,10 @@ function harness() {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-test("provider refresh ignores a late older list and its stale key states", async () => {
-  const h = harness();
-  const old = h.api.refreshProviders(), latest = h.api.refreshProviders();
-  const lists = h.pending.filter(item => item.command === "list_providers");
-  lists[1].resolve([{ id: "latest" }]); await tick();
-  h.pending.find(item => item.command === "get_key_state" && item.args.id === "latest").resolve(true); await latest;
-  lists[0].resolve([{ id: "old" }]); await tick();
-  h.pending.find(item => item.command === "get_key_state" && item.args.id === "old")?.resolve(false); await old;
-  assert.deepEqual(h.state.Providers, [{ id: "latest" }]);
-  assert.deepEqual(h.state.KeyStates, { latest: true });
+test("不再加载模型服务或读取应用凭据", async () => {
+ const h = harness(); await h.api.refreshProviders();
+ assert.deepEqual(h.pending, []);
+ assert.deepEqual(h.state.Providers, []); assert.deepEqual(h.state.KeyStates, {});
 });
 
 for (const [method, commands, fields] of [["refreshSessions", ["list_sessions", "list_archived_sessions"], ["Sessions", "ArchivedSessions"]], ["refreshProjects", ["list_projects"], ["Projects"]], ["refreshPresets", ["list_launch_presets"], ["Presets"]]]) {

@@ -2,7 +2,6 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { GeneralSettingsPanel } from "../../src/components/GeneralSettingsPanel";
 import { BrowserControlSettingsPanel } from "../../src/components/BrowserControlSettingsPanel";
-import { ComputerControlSettingsPanel } from "../../src/components/ComputerControlSettingsPanel";
 import { SkillCenterPanel } from "../../src/components/SkillCenterPanel";
 import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
 import { BROWSER_CONTROL_PREVIEW } from "../../src/browserControlSettings";
@@ -98,7 +97,7 @@ function Fixture() {
   </div><div className="settings-overlay"><div className="settings-dialog settings-workspace-dialog" style={{ position: "fixed", inset: "48px 0 0", width: "100%", height: "calc(100% - 48px)", minWidth: 0 }}>
     <aside className="settings-nav"><div className="settings-brand">设置</div><nav className="settings-nav-list">{Object.entries(pages).map(([id, label]) => <button className={`settings-nav-item${id === mode ? " active" : ""}`} key={id} onClick={() => setMode(id as keyof typeof pages)}>{label}</button>)}</nav></aside>
     <div className="settings-content"><div className="settings-content-inner"><div className="settings-heading"><h2>{pages[mode]}</h2></div>
-      {mode === "general" ? <GeneralSettingsPanel /> : mode === "browser" ? <BrowserControlSettingsPanel /> : mode === "computer" ? <ComputerControlSettingsPanel /> : <SkillCenterPanel projects={[{ id: "fixture", name: "回归项目", path: "C:/fixture" } as any]} />}
+      {mode === "general" ? <GeneralSettingsPanel /> : mode === "browser" ? <BrowserControlSettingsPanel /> : mode === "computer" ? <div>此测试入口已退役</div> : <SkillCenterPanel projects={[{ id: "fixture", name: "回归项目", path: "C:/fixture" } as any]} />}
     </div></div>
   </div></div></>;
 }

@@ -61,7 +61,6 @@ import { HandoffSourceView } from "./components/HandoffSourceView";
 import "./styles/test-profile.css";
 import { RUNTIME_LABELS } from "./runtimeLogos";
 import { MultiAgentWorkspace } from "./components/MultiAgentWorkspace";
-import { ProviderEditor } from "./components/ProviderEditor";
 import { CountPrompt } from "./components/CountPrompt";
 import { hasOpenModal } from "./components/ui/Modal";
 import { MultiDirPrompt } from "./components/MultiDirPrompt";
@@ -216,58 +215,7 @@ function loadRightSidebarTab(): RightSidebarTab {
   return "start";
 }
 
-const PREVIEW_PROVIDERS: ProviderConfig[] = [
-  {
-    id: "kimi-k2",
-    name: "Kimi K3",
-    baseUrl: "https://api.kimi.com/coding/",
-    authTokenRef: "KIMI_API_KEY",
-    env: {},
-    timeoutMs: null,
-    disableNonessentialTraffic: false,
-    builtin: true,
-  },
-  {
-    id: "glm-5.2",
-    name: "GLM-5.2",
-    baseUrl: "https://open.bigmodel.cn/api/anthropic",
-    authTokenRef: "GLM_API_KEY",
-    env: {},
-    timeoutMs: null,
-    disableNonessentialTraffic: false,
-    builtin: true,
-  },
-  {
-    id: "deepseek-v4",
-    name: "DeepSeek-V4",
-    baseUrl: "https://api.deepseek.com/anthropic",
-    authTokenRef: "DEEPSEEK_API_KEY",
-    env: {},
-    timeoutMs: null,
-    disableNonessentialTraffic: false,
-    builtin: true,
-  },
-  {
-    id: "minimax-m3",
-    name: "MiniMax-M3",
-    baseUrl: "https://api.minimaxi.com/anthropic",
-    authTokenRef: "MINIMAX_API_KEY",
-    env: {},
-    timeoutMs: null,
-    disableNonessentialTraffic: false,
-    builtin: true,
-  },
-  {
-    id: "custom-preview",
-    name: "自定义",
-    baseUrl: "",
-    authTokenRef: "",
-    env: {},
-    timeoutMs: null,
-    disableNonessentialTraffic: false,
-    builtin: false,
-  },
-];
+const PREVIEW_PROVIDERS: ProviderConfig[] = [{id:"local",name:"Claude Code",baseUrl:"",authTokenRef:"",env:{},timeoutMs:null,disableNonessentialTraffic:false,builtin:true}];
 
 const PREVIEW_KEY_STATES: Record<string, boolean> = {
   "kimi-k2": true,
@@ -403,7 +351,6 @@ export default function App() {
   const [providers, setProviders] = useState<ProviderConfig[]>(
     UI_PREVIEW ? PREVIEW_PROVIDERS : [],
   );
-  const [editing, setEditing] = useState<ProviderConfig | null>(null);
   const [keyStates, setKeyStates] = useState<Record<string, boolean>>(
     UI_PREVIEW ? PREVIEW_KEY_STATES : {},
   );
@@ -482,10 +429,6 @@ export default function App() {
     useState<SessionTypeFilter>("all");
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   // 空工作区选了 Claude Code 时，弹窗直接从 Provider 步骤开始；弹窗关闭即复位。
-  const [newSessionAtProvider, setNewSessionAtProvider] = useState(false);
-  useEffect(() => {
-    if (!newSessionOpen) setNewSessionAtProvider(false);
-  }, [newSessionOpen]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [guideRequest, setGuideRequest] = useState<(CommunicationGuideRequest & { scope: CommunicationScope; nonce: number }) | null>(null);
   const guideNonce = useRef(0);
@@ -649,9 +592,6 @@ export default function App() {
       void unlisten.then((dispose) => dispose?.()).catch(error => console.error("释放协作工作区监听失败:", error));
     };
   }, [showError]);
-  const [pendingLaunchProviderId, setPendingLaunchProviderId] = useState<
-    string | null
-  >(null);
   const [appearance, setAppearance] = useState<AppAppearance>(loadAppearance);
   const [petSettings, setPetSettings] = useState<PetSettings>(loadPetSettings);
   const [notificationSettings, setNotificationSettings] =
@@ -1067,23 +1007,7 @@ export default function App() {
   }, [controlOpen, selectedSessionId]);
 
   const handleLaunch = (id: string) => {
-    const p = providers.find((x) => x.id === id);
-    if (!p) return;
-    if (p.hidden) {
-      showError("该模型已隐藏，请先在模型设置中重新显示。");
-      return;
-    }
-    if (!(keyStates[id] ?? false)) {
-      setPendingLaunchProviderId(id);
-      setEditing(p);
-      return;
-    }
-    if (!p.baseUrl) {
-      setPendingLaunchProviderId(id);
-      setEditing(p); // custom 未配置
-      return;
-    }
-    setPendingLaunchProviderId(null);
+    const p: ProviderConfig = { ...PREVIEW_PROVIDERS[0], id: "local", name: "Claude Code", baseUrl: "", env: {}, hidden: false };
     setCountPromptFor(p);
   };
 
@@ -1152,13 +1076,6 @@ export default function App() {
 
   const handleLaunchPreset = useCallback(async (preset: LaunchPreset) => {
     if (!isRuntimeEnabled("claude_code")) { showError("Claude Code 未启用或配置尚未加载"); return; }
-    const provider = providers.find((item) => item.id === preset.providerId);
-    if (provider?.hidden) {
-      showError(
-        `预设「${preset.name}」使用的模型已隐藏，请先在模型设置中重新显示。`,
-      );
-      return;
-    }
     try {
       const launched = await invoke<SessionRecord[]>("launch_multi", {
         providerId: preset.providerId,
@@ -1238,86 +1155,6 @@ export default function App() {
       showError(`删除项目失败：${String(error)}`);
     }
   }, [refreshProjects, refreshSessions, showError]);
-
-  const handleNew = () => {
-    setEditing({
-      id: "",
-      name: "",
-      baseUrl: "",
-      authTokenRef: "",
-      env: {},
-      timeoutMs: null,
-      disableNonessentialTraffic: false,
-      builtin: false,
-    });
-  };
-
-  const handleSave = async (p: ProviderConfig, key?: string) => {
-    const continueLaunch = pendingLaunchProviderId === p.id;
-    await invoke("save_provider", { provider: p, key: key ?? null });
-    setPendingLaunchProviderId(null);
-    setEditing(null);
-    await refreshProviders();
-    if (continueLaunch) setCountPromptFor(p);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!window.confirm(`删除 provider“${id}”？`)) return;
-    try {
-      await invoke("delete_provider", { id });
-      await refreshProviders();
-    } catch (error) {
-      showError(`删除模型服务失败：${String(error)}`);
-    }
-  };
-
-  const handleProviderHidden = async (id: string, hidden: boolean) => {
-    try {
-      await invoke("set_provider_hidden", { id, hidden });
-      await refreshProviders();
-    } catch (error) {
-      showError(`${hidden ? "隐藏" : "显示"}模型失败：${String(error)}`);
-    }
-  };
-
-  const handleRestoreBuiltinProvider = async (id: string) => {
-    if (!window.confirm("恢复该内置模型的默认配置？API Key 将保留。")) return;
-    try {
-      await invoke("restore_builtin_provider", { id });
-      await refreshProviders();
-    } catch (error) {
-      showError(`恢复默认失败：${String(error)}`);
-    }
-  };
-  const providerReorderInFlight = useRef(false);
-  const handleProviderReorder = async (providerIds: string[]) => {
-    if (providerReorderInFlight.current) return;
-    const previousIds = providers.map(provider => provider.id);
-    const providerById = new Map(
-      providers.map((provider) => [provider.id, provider]),
-    );
-    const reordered = providerIds
-      .map((providerId) => providerById.get(providerId))
-      .filter((provider): provider is ProviderConfig => provider !== undefined);
-    if (reordered.length !== providers.length || new Set(providerIds).size !== providers.length) return;
-
-    providerReorderInFlight.current = true;
-    setProviders(reordered);
-    try {
-      await invoke("reorder_providers", { providerIds });
-    } catch (error) {
-      setProviders(current => {
-        const currentById = new Map(current.map(provider => [provider.id, provider]));
-        const restored = previousIds.map(id => currentById.get(id)).filter((provider): provider is ProviderConfig => !!provider);
-        const previousSet = new Set(previousIds);
-        return [...restored, ...current.filter(provider => !previousSet.has(provider.id))];
-      });
-      console.error("保存 Provider 顺序失败:", error);
-      showError(`保存 Provider 顺序失败：${String(error)}`);
-    } finally {
-      providerReorderInFlight.current = false;
-    }
-  };
 
   const selectableProviders = providers.filter((provider) => !provider.hidden);
 
@@ -2266,8 +2103,8 @@ export default function App() {
     () => openSettingsSection("generalSettings"),
     [openSettingsSection],
   );
-  const openProviderSettings = useCallback(
-    () => openSettingsSection("providers"),
+  const openRuntimeSettings = useCallback(
+    () => openSettingsSection("generalSettings"),
     [openSettingsSection],
   );
   const openAttentionSession = useCallback((session: SessionRecord, kind: AttentionKind) => {
@@ -2380,7 +2217,6 @@ export default function App() {
         onNewRuntimeSession={launchRuntime}
         onAddProject={openAddProjectDialog}
         presets={presets}
-        providers={providers}
         onLaunchPreset={launchPreset}
         onDeletePreset={deletePreset}
         onNewSessionInProject={handleNewSessionInProject}
@@ -2534,13 +2370,7 @@ export default function App() {
                     onDirectoryChange={(directory) => setEmptyDirectories(current => ({ ...current, [workspace.activeTabId]: directory }))}
                     onLaunch={(runtime, project) => {
                       if (!isRuntimeEnabled(runtime)) return;
-                      if (runtime === "claude_code") {
-                        // Claude Code 还要选 Provider：直接进弹窗的 Provider 步骤，并带上勾选的项目目录。
-                        setLaunchProject(project);
-                        setNewSessionAtProvider(true);
-                        setNewSessionOpen(true);
-                        return;
-                      }
+                      if (runtime === "claude_code") { void launchRuntimeSession("claude_code", project ?? undefined); return; }
                       startAgentSession(runtime, project ?? undefined);
                     }}
                   />
@@ -2614,11 +2444,11 @@ export default function App() {
                     {[...mountedRightSidebarTabs].filter(tab => sidebarTabKind(tab) === "multi_agent").map(tab => (
                       <div key={tab} className={`right-sidebar-panel${activeRightSidebarTab === tab ? " active" : ""}`}>
                         <MemoControlSidebar
+                        providers={[]}
                         open
                         active={!guideRequest && activeRightSidebarTab === tab && (tab !== "multi_agent" || !controlDetached)}
                         variant="docked"
-                        providers={selectableProviders}
-                        sessions={sessions}
+                                        sessions={sessions}
                         defaultCwd={activeWorkspaceRoot}
                         quickContext={{ workspaceSessionIds: tabSessions.map(s => s.id), projectId: selectedSession?.projectId ?? null, cwd: activeWorkspaceRoot }}
                         onOpenQuickSettings={() => openSettingsSection("quickCommands")}
@@ -2635,11 +2465,11 @@ export default function App() {
                     {[...mountedRightSidebarTabs].filter(tab => sidebarTabKind(tab) === "git").map(tab => (
                       <div key={tab} className={`right-sidebar-panel${activeRightSidebarTab === tab ? " active" : ""}`}>
                         <MemoGitSourceControlPanel
+                        providers={[]}
                         variant="sidebar"
                         sessions={sessions}
                         projects={projects}
-                        providers={selectableProviders}
-                        keyStates={keyStates}
+                                        keyStates={keyStates}
                         onClose={closeRightSidebar}
                         preview={UI_PREVIEW}
                       />
@@ -2672,35 +2502,15 @@ export default function App() {
             sessions={sessions}
             onPositionChange={updatePetPosition}
           />
-          {editing && (
-            <ProviderEditor
-              provider={editing}
-              providers={providers}
-              hasKey={keyStates[editing.id] ?? false}
-              onSave={handleSave}
-              onClose={() => {
-                setPendingLaunchProviderId(null);
-                setLaunchProject(null);
-                setEditing(null);
-              }}
-            />
-          )}
           {newSessionOpen && (
             <NewSessionDialog
               project={launchProject}
-              initialStep={newSessionAtProvider ? "provider" : "agent"}
               onRuntimeSelect={(runtime) => {
                 const project = launchProject ?? undefined;
                 if (!isRuntimeEnabled(runtime)) return;
                 setNewSessionOpen(false);
                 setLaunchProject(null);
                 startAgentSession(runtime, project);
-              }}
-              providers={selectableProviders}
-              keyStates={keyStates}
-              onSelect={(providerId) => {
-                setNewSessionOpen(false);
-                handleLaunch(providerId);
               }}
               onLocalClaudeSelect={() => {
                 const project = launchProject ?? undefined;
@@ -2712,7 +2522,7 @@ export default function App() {
               onOpenSettings={() => {
                 setNewSessionOpen(false);
                 setLaunchProject(null);
-                openProviderSettings();
+                openRuntimeSettings();
               }}
               onClose={() => {
                 setNewSessionOpen(false);
@@ -2742,9 +2552,6 @@ export default function App() {
               sessions={sessions}
               archivedSessions={archivedSessions}
               projects={projects}
-              providers={providers}
-              keyStates={keyStates}
-              usageByProvider={usageByProvider}
               appearance={appearance}
               resolvedAppearanceTheme={resolvedAppearanceTheme}
               petSettings={petSettings}
@@ -2753,13 +2560,6 @@ export default function App() {
               onAppearanceChange={setAppearance}
               onPetSettingsChange={setPetSettings}
               onNotificationSettingsChange={setNotificationSettings}
-
-              onEdit={(provider) => setEditing(provider)}
-              onNew={handleNew}
-              onDelete={handleDelete}
-              onSetHidden={handleProviderHidden}
-              onRestoreDefault={handleRestoreBuiltinProvider}
-              onReorder={handleProviderReorder}
               onRestoreArchivedSession={restoreArchivedSession}
               onDeleteArchivedSession={deleteArchivedSession}
               onViewArchivedTranscript={(session) => {

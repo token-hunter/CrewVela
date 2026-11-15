@@ -1,6 +1,5 @@
-// MCP（Model Context Protocol）服务器管理：配置持久化、连通性探测、
-// 以及把启用的 server 注入交互式 claude 会话的 --settings mcpServers。
-// 参考 ZCode 的 MCP 管理：卡片列表（传输类型/状态/工具数/开关）+ stdio/sse/http 三类接入。
+// MCP 运行时基础：保留旧配置读取、内置服务注册、连通性探测和工具注入。
+// 通用管理界面已移除；浏览器与共享记忆由各自功能维护，用户 CLI 配置保持独立。
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
@@ -31,16 +30,6 @@ pub enum McpTransport {
     Http,
 }
 
-impl McpTransport {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Stdio => "STDIO",
-            Self::Sse => "SSE",
-            Self::Http => "HTTP",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
@@ -68,28 +57,6 @@ pub struct McpServerConfig {
 
 fn default_true() -> bool {
     true
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpUpsertInput {
-    pub id: Option<String>,
-    pub name: String,
-    pub transport: McpTransport,
-    #[serde(default)]
-    pub command: Option<String>,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub env: BTreeMap<String, String>,
-    #[serde(default)]
-    pub url: Option<String>,
-    #[serde(default)]
-    pub headers: BTreeMap<String, String>,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default)]
-    pub source_plugin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -130,25 +97,13 @@ fn mcp_path() -> Result<PathBuf> {
 }
 
 pub fn load() -> Result<Vec<McpServerConfig>> {
-    let mut servers = load_at(&mcp_path()?)?;
-    if let Ok(executable) = std::env::current_exe() {
-        refresh_owned_launcher_commands(&mut servers, &executable);
-    }
-    Ok(servers)
+    load_at(&mcp_path()?)
 }
 
 // Built-in launcher commands follow the running binary after a portable move or
 // rename. Keep custom servers, arguments and the user's enabled state intact.
-fn refresh_owned_launcher_commands(servers: &mut [McpServerConfig], executable: &Path) {
-    for server in servers {
-        let previous = server.command.as_deref().and_then(|command| Path::new(command).file_name()).and_then(|name| name.to_str());
-        if server.source_plugin.as_deref() == Some(crate::computer_control::BUILTIN_SOURCE_KEY)
-            && server.transport == McpTransport::Stdio
-            && server.args.first().is_some_and(|arg| arg == "--computer-control-mcp")
-            && previous.is_some_and(crate::brand::is_launcher_name) {
-            server.command = Some(executable.display().to_string());
-        }
-    }
+fn retired_owned_source(source: Option<&str>) -> bool {
+ matches!(source, Some("builtin@computer-control" | "builtin@kimi-computer-use" | "builtin@open-computer-use"))
 }
 
 pub(crate) fn load_at(path: &Path) -> Result<Vec<McpServerConfig>> {
@@ -159,7 +114,19 @@ pub(crate) fn load_at(path: &Path) -> Result<Vec<McpServerConfig>> {
         .with_context(|| format!("读取 MCP 配置失败: {}", path.display()))?;
     let mut file: McpFile = serde_json::from_str(&raw).context("解析 mcp-servers.json 失败")?;
     // Also covers CLI hosts that read MCP before the desktop startup migration.
-    file.servers.retain(|server| server.source_plugin.as_deref() != Some(RETIRED_COMPUTER_USE_SOURCE));
+    file.servers.retain(|server| !retired_owned_source(server.source_plugin.as_deref()));
+    // Retire only CrewVela's former Edge channel. User-managed MCP arguments
+    // and generic custom executable paths keep their original meaning.
+    for server in file.servers.iter_mut().filter(|server|
+        server.source_plugin.as_deref() == Some(crate::browser_control::BUILTIN_SOURCE_KEY)) {
+        for index in 0..server.args.len() {
+            if server.args[index] == "--browser=msedge" {
+                server.args[index] = "--browser=chrome".into();
+            } else if index > 0 && server.args[index - 1] == "--browser" && server.args[index] == "msedge" {
+                server.args[index] = "chrome".into();
+            }
+        }
+    }
     Ok(file.servers)
 }
 
@@ -173,7 +140,7 @@ pub(crate) fn retire_removed_integrations_at(config_dir: &Path) -> Result<()> {
         let raw = std::fs::read_to_string(&path).context("读取旧 MCP 配置失败")?;
         let mut file: McpFile = serde_json::from_str(&raw).context("解析旧 MCP 配置失败")?;
         let before = file.servers.len();
-        file.servers.retain(|server| server.source_plugin.as_deref() != Some(RETIRED_COMPUTER_USE_SOURCE));
+        file.servers.retain(|server| !retired_owned_source(server.source_plugin.as_deref()));
         if before != file.servers.len() { save_at(&path, &file.servers)?; }
     }
     let settings = config_dir.join("open-computer-use.json");
@@ -197,146 +164,6 @@ fn save_at(path: &Path, servers: &[McpServerConfig]) -> Result<()> {
     std::fs::write(&temp, bytes)?;
     std::fs::rename(&temp, path)?;
     Ok(())
-}
-
-fn validate(input: &McpUpsertInput, existing: &[McpServerConfig]) -> Result<McpServerConfig> {
-    let name = input.name.trim();
-    if name.is_empty() {
-        bail!("服务器名称不能为空");
-    }
-    if name.chars().count() > 64 {
-        bail!("服务器名称不能超过 64 个字符");
-    }
-    if existing
-        .iter()
-        .any(|server| server.name == name && server.id != input.id.clone().unwrap_or_default())
-    {
-        bail!("已存在同名 MCP 服务器：{name}");
-    }
-    match input.transport {
-        McpTransport::Stdio => {
-            if !input
-                .command
-                .as_deref()
-                .is_some_and(|command| !command.trim().is_empty())
-            {
-                bail!("STDIO 服务器必须填写启动命令");
-            }
-            if input.url.as_deref().is_some_and(|url| !url.trim().is_empty()) {
-                bail!("STDIO 服务器不需要填写 URL");
-            }
-        }
-        McpTransport::Http | McpTransport::Sse => {
-            let url = input
-                .url
-                .as_deref()
-                .map(str::trim)
-                .filter(|url| !url.is_empty())
-                .ok_or_else(|| anyhow!("{} 服务器必须填写 URL", input.transport.label()))?;
-            if !url.starts_with("http://") && !url.starts_with("https://") {
-                bail!("URL 必须以 http:// 或 https:// 开头");
-            }
-            if input
-                .command
-                .as_deref()
-                .is_some_and(|command| !command.trim().is_empty())
-            {
-                bail!("远程服务器不需要填写启动命令");
-            }
-        }
-    }
-    for (key, value) in &input.env {
-        if key.trim().is_empty() {
-            bail!("环境变量的名称不能为空");
-        }
-        if value.contains('\n') {
-            bail!("环境变量的值不能包含换行");
-        }
-    }
-    for (key, value) in &input.headers {
-        if key.trim().is_empty() {
-            bail!("请求头的名称不能为空");
-        }
-        if value.contains('\n') {
-            bail!("请求头的值不能包含换行");
-        }
-    }
-
-    let now = now_millis();
-    Ok(McpServerConfig {
-        id: input.id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-        name: name.to_string(),
-        transport: input.transport,
-        command: input
-            .command
-            .as_deref()
-            .map(str::trim)
-            .filter(|command| !command.is_empty())
-            .map(str::to_string),
-        args: input.args.clone(),
-        env: input.env.clone(),
-        url: input
-            .url
-            .as_deref()
-            .map(str::trim)
-            .filter(|url| !url.is_empty())
-            .map(str::to_string),
-        headers: input.headers.clone(),
-        enabled: input.enabled,
-        source_plugin: input.source_plugin.clone(),
-        created_at: now,
-        updated_at: now,
-    })
-}
-
-pub fn upsert(input: McpUpsertInput) -> Result<McpServerConfig> {
-    let _write = config_write_lock()?;
-    let path = mcp_path()?;
-    let mut servers = load_at(&path)?;
-    let mut validated = validate(&input, &servers)?;
-    let saved = match servers
-        .iter_mut()
-        .find(|server| server.id == validated.id)
-    {
-        Some(existing) => {
-            validated.created_at = existing.created_at;
-            *existing = validated.clone();
-            existing.clone()
-        }
-        None => {
-            servers.push(validated.clone());
-            validated
-        }
-    };
-    save_at(&path, &servers)?;
-    Ok(saved)
-}
-
-pub fn delete(id: &str) -> Result<()> {
-    let _write = config_write_lock()?;
-    let path = mcp_path()?;
-    let mut servers = load_at(&path)?;
-    let before = servers.len();
-    servers.retain(|server| server.id != id);
-    if servers.len() == before {
-        bail!("未找到 MCP 服务器: {id}");
-    }
-    save_at(&path, &servers)
-}
-
-pub fn set_enabled(id: &str, enabled: bool) -> Result<McpServerConfig> {
-    let _write = config_write_lock()?;
-    let path = mcp_path()?;
-    let mut servers = load_at(&path)?;
-    let server = servers
-        .iter_mut()
-        .find(|server| server.id == id)
-        .ok_or_else(|| anyhow!("未找到 MCP 服务器: {id}"))?;
-    server.enabled = enabled;
-    server.updated_at = now_millis();
-    let updated = server.clone();
-    save_at(&path, &servers)?;
-    Ok(updated)
 }
 
 /// 转成 claude settings.json 的 mcpServers 单项格式。
@@ -1013,76 +840,59 @@ async fn probe_http(client: &reqwest::Client, url: &str, mut headers: reqwest::h
     result
 }
 
-/// 探测全部启用的 server：stdio 走阻塞线程池，远程并发走异步。
-pub async fn probe_enabled() -> Vec<McpProbeReport> {
-    let Ok(servers) = load() else {
-        return Vec::new();
-    };
-    let mut reports = Vec::new();
-    let mut stdio_handles = Vec::new();
-    for server in servers.into_iter().filter(|server| server.enabled) {
-        if server.transport == McpTransport::Stdio {
-            stdio_handles.push(tauri::async_runtime::spawn_blocking(move || {
-                probe_stdio(&server)
-            }));
-        } else {
-            reports.push(probe_remote(&server).await);
-        }
-    }
-    for handle in stdio_handles {
-        match handle.await {
-            Ok(report) => reports.push(report),
-            Err(error) => reports.push(probe_report(
-                "unknown",
-                false,
-                Vec::new(),
-                Some(format!("探测线程异常：{error}")),
-            )),
-        }
-    }
-    reports
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn retired_builtin_is_not_loaded_and_migration_preserves_user_and_active_servers() {
-        let dir = std::env::temp_dir().join(format!("retired-mcp-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("mcp-servers.json");
-        let mut retired = crate::kimi_computer_use::build_mcp_config(
-            &crate::kimi_computer_use::KimiComputerUseSettings { enabled: true },
-            Path::new("/fixture/retired"),
-        );
-        retired.source_plugin = Some(RETIRED_COMPUTER_USE_SOURCE.into());
-        retired.name = "open-computer-use".into();
-        let mut user = retired.clone();
-        user.id = "user".into();
-        user.source_plugin = None;
-        let active = crate::kimi_computer_use::build_mcp_config(
-            &crate::kimi_computer_use::KimiComputerUseSettings { enabled: true },
-            Path::new("/fixture/kimi"),
-        );
-        save_at(&path, &[retired, user.clone(), active.clone()]).unwrap();
-        let legacy_settings = dir.join("open-computer-use.json");
-        std::fs::write(&legacy_settings, r#"{"enabled":true}"#).unwrap();
-        // Read filtering protects CLI/session hosts even before startup cleanup.
-        assert_eq!(load_at(&path).unwrap().iter().map(|s| &s.id).collect::<Vec<_>>(), vec![&user.id, &active.id]);
-        retire_removed_integrations_at(&dir).unwrap();
-        let raw = std::fs::read(&path).unwrap();
-        let file: McpFile = serde_json::from_slice(&raw).unwrap();
-        assert_eq!(serde_json::to_value(&file.servers).unwrap(), serde_json::to_value([&user, &active]).unwrap());
-        assert!(!legacy_settings.exists());
-        retire_removed_integrations_at(&dir).unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), raw);
-        std::fs::write(&path, "invalid registry").unwrap();
-        std::fs::write(&legacy_settings, r#"{"enabled":true}"#).unwrap();
-        assert!(retire_removed_integrations_at(&dir).is_err());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid registry");
-        assert!(legacy_settings.exists());
-        std::fs::remove_dir_all(&dir).unwrap();
+    fn removing_management_preserves_registry_bytes_settings_and_injected_tools() {
+        let path = tmp_path("management-removal");
+        let mut server = input("user-browser-tools", McpTransport::Stdio);
+        server.command = Some("user-tool-command".into());
+        server.args = vec!["".into(), " text with spaces ".into()];
+        server.env.insert("FIXTURE_TOKEN".into(), "synthetic-value".into());
+        let mut disabled = input("disabled-memory", McpTransport::Http);
+        disabled.url = Some("https://fixture.invalid/mcp".into());
+        disabled.enabled = false;
+        disabled.headers.insert("Authorization".into(), "Bearer fixture".into());
+        let expected = vec![server, disabled];
+        save_at(&path, &expected).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let loaded = load_at(&path).unwrap();
+        assert_eq!(serde_json::to_value(&loaded).unwrap(), serde_json::to_value(&expected).unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), before, "loading must not rewrite saved MCP configuration");
+        let claude = claude_settings_entry(&loaded[0]);
+        assert_eq!(claude["args"], json!(["", " text with spaces "]));
+        assert_eq!(claude["env"]["FIXTURE_TOKEN"], "synthetic-value");
+        let acp = acp_server_entry(&loaded[0]).unwrap();
+        assert_eq!(acp["name"], "user-browser-tools");
+        assert_eq!(acp["args"], claude["args"]);
+        assert!(!loaded[1].enabled);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn retired_edge_args_migrate_only_for_owned_browser_servers() {
+        let path = std::env::temp_dir().join(format!("browser-channel-migration-{}.json", uuid::Uuid::new_v4()));
+        let mut server_input = input("browser-control", McpTransport::Stdio);
+        server_input.command = Some("node".into());
+        let mut owned = server_input.clone();
+        owned.source_plugin = Some(crate::browser_control::BUILTIN_SOURCE_KEY.into());
+        owned.args = vec!["bridge.mjs".into(), "--".into(), "--browser".into(), "msedge".into(), "--isolated".into()];
+        let mut joined = owned.clone();
+        joined.id = "joined".into();
+        joined.args = vec!["--browser=msedge".into(), "--headless".into()];
+        let mut custom = owned.clone();
+        custom.id = "user-owned".into();
+        custom.source_plugin = None;
+        let original = custom.args.clone();
+        save_at(&path, &[owned, joined, custom]).unwrap();
+        let loaded = load_at(&path).unwrap();
+        assert_eq!(loaded[0].args, vec!["bridge.mjs", "--", "--browser", "chrome", "--isolated"]);
+        assert_eq!(loaded[1].args, vec!["--browser=chrome", "--headless"]);
+        assert_eq!(loaded[2].args, original);
+        assert!(loaded.iter().all(|server| server.enabled));
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -1090,7 +900,7 @@ mod tests {
         for failure in [true, false] {
             let mut server_input = input("probe-fixture", McpTransport::Stdio);
             server_input.command = Some(which::which("node").unwrap().display().to_string());
-            let mut server = validate(&server_input, &[]).unwrap();
+            let mut server = server_input.clone();
             server.args = vec!["-e".into(), format!(r#"const rl=require('node:readline').createInterface({{input:process.stdin}});
 let initialized=false;
 rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stringify(v));
@@ -1210,7 +1020,7 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         });
         let mut server_input = input("http-fixture", McpTransport::Http);
         server_input.url = Some(format!("http://{address}/mcp"));
-        let server = validate(&server_input, &[]).unwrap();
+        let server = server_input.clone();
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         let report = runtime.block_on(async { tokio::time::timeout(Duration::from_secs(4), probe_remote(&server)).await.unwrap() });
         assert!(report.ok, "{report:?}"); assert_eq!(report.tools[0].name, "stream-tool");
@@ -1240,7 +1050,7 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         let mut value = input("literal-args", McpTransport::Stdio);
         value.command = Some("node".into());
         value.args = vec!["".into(), "  literal value  ".into(), " ".into()];
-        assert_eq!(validate(&value, &[]).unwrap().args, value.args);
+        assert_eq!(claude_settings_entry(&value)["args"], json!(value.args));
     }
 
     #[test]
@@ -1259,9 +1069,9 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         ))
     }
 
-    fn input(name: &str, transport: McpTransport) -> McpUpsertInput {
-        McpUpsertInput {
-            id: None,
+    fn input(name: &str, transport: McpTransport) -> McpServerConfig {
+        McpServerConfig {
+            id: uuid::Uuid::new_v4().to_string(),
             name: name.into(),
             transport,
             command: None,
@@ -1271,43 +1081,20 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
             headers: BTreeMap::new(),
             enabled: true,
             source_plugin: None,
+            created_at: now_millis(),
+            updated_at: now_millis(),
         }
     }
 
     #[test]
-    fn renamed_launcher_refreshes_only_owned_computer_control_commands() {
-        let path = tmp_path("renamed-launcher");
-        let mut request = input("computer-control", McpTransport::Stdio);
-        request.command = Some(format!("C:/old/{}.exe", crate::brand::LEGACY_NAME));
-        request.args = vec!["--computer-control-mcp".into(), "C:/runtime with spaces/runtime.ps1".into()];
-        request.source_plugin = Some(crate::computer_control::BUILTIN_SOURCE_KEY.into());
-        request.enabled = false;
-        let owned = validate(&request, &[]).unwrap();
-        let mut custom = owned.clone(); custom.source_plugin = None;
-        let mut wrapper = owned.clone(); wrapper.command = Some("custom-wrapper.exe".into());
-        let mut other_action = owned.clone(); other_action.args[0] = "--other-action".into();
-        let original = vec![owned, custom, wrapper, other_action];
-        save_at(&path, &original).unwrap();
-        let bytes = std::fs::read(&path).unwrap();
-        let mut loaded = load_at(&path).unwrap();
-        refresh_owned_launcher_commands(&mut loaded, Path::new("C:/portable/CrewVela.exe"));
-        let mut expected = original.clone();
-        expected[0].command = Some("C:/portable/CrewVela.exe".into());
-        assert_eq!(serde_json::to_value(&loaded).unwrap(), serde_json::to_value(expected).unwrap());
-        assert!(!loaded[0].enabled, "renaming must not enable a disabled service");
-        assert_eq!(std::fs::read(&path).unwrap(), bytes, "runtime path refresh must not rewrite user configuration");
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn upsert_validates_and_roundtrips_through_disk() {
+    fn registry_roundtrips_existing_server_through_disk() {
         let path = tmp_path("roundtrip");
         let mut server = input("filesystem", McpTransport::Stdio);
         server.command = Some("npx".into());
         server.args = vec!("-y".into(), "@modelcontextprotocol/server-filesystem".into(), "/tmp".into());
         let saved = {
             let mut servers = Vec::new();
-            let validated = validate(&server, &servers).unwrap();
+            let validated = server.clone();
             servers.push(validated.clone());
             save_at(&path, &servers).unwrap();
             validated
@@ -1320,41 +1107,12 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
     }
 
     #[test]
-    fn stdio_requires_command_and_remote_requires_url() {
-        let mut server = input("no-command", McpTransport::Stdio);
-        assert!(validate(&server, &[]).is_err());
-        server.command = Some("npx".into());
-        server.url = Some("http://x".into());
-        assert!(validate(&server, &[]).is_err());
-
-        let mut remote = input("no-url", McpTransport::Http);
-        assert!(validate(&remote, &[]).is_err());
-        remote.url = Some("ftp://bad".into());
-        assert!(validate(&remote, &[]).is_err());
-        remote.url = Some("https://example.com/mcp".into());
-        remote.command = Some("npx".into());
-        assert!(validate(&remote, &[]).is_err());
-    }
-
-    #[test]
-    fn duplicate_names_are_rejected_across_servers() {
-        let first = {
-            let mut server = input("fs", McpTransport::Stdio);
-            server.command = Some("npx".into());
-            validate(&server, &[]).unwrap()
-        };
-        let mut second = input("fs", McpTransport::Http);
-        second.url = Some("https://example.com".into());
-        assert!(validate(&second, &[first]).is_err());
-    }
-
-    #[test]
     fn claude_settings_entry_matches_transport_shape() {
         let mut stdio = input("fs", McpTransport::Stdio);
         stdio.command = Some("npx".into());
         stdio.args = vec!("-y".into(), "server".into());
         stdio.env.insert("API_KEY".into(), "secret".into());
-        let entry = claude_settings_entry(&validate(&stdio, &[]).unwrap());
+        let entry = claude_settings_entry(&stdio.clone());
         assert_eq!(entry["command"], "npx");
         assert_eq!(entry["args"][0], "-y");
         assert_eq!(entry["env"]["API_KEY"], "secret");
@@ -1363,14 +1121,14 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         let mut http = input("kb", McpTransport::Http);
         http.url = Some("https://example.com/mcp".into());
         http.headers.insert("Authorization".into(), "Bearer x".into());
-        let entry = claude_settings_entry(&validate(&http, &[]).unwrap());
+        let entry = claude_settings_entry(&http.clone());
         assert_eq!(entry["type"], "http");
         assert_eq!(entry["url"], "https://example.com/mcp");
         assert_eq!(entry["headers"]["Authorization"], "Bearer x");
 
         let mut sse = input("legacy", McpTransport::Sse);
         sse.url = Some("https://example.com/sse".into());
-        let entry = claude_settings_entry(&validate(&sse, &[]).unwrap());
+        let entry = claude_settings_entry(&sse.clone());
         assert_eq!(entry["type"], "sse");
         assert!(entry.get("headers").is_none());
     }
@@ -1380,11 +1138,11 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         let mut servers = Vec::new();
         let mut enabled = input("on", McpTransport::Http);
         enabled.url = Some("https://example.com/mcp".into());
-        servers.push(validate(&enabled, &[]).unwrap());
+        servers.push(enabled.clone());
         let mut disabled = input("off", McpTransport::Http);
         disabled.url = Some("https://example.com/other".into());
         disabled.enabled = false;
-        servers.push(validate(&disabled, &[]).unwrap());
+        servers.push(disabled.clone());
 
         let path = tmp_path("map");
         save_at(&path, &servers).unwrap();
@@ -1410,14 +1168,14 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         browser.command = Some(r"C:\Tools\node.exe".into());
         browser.args = vec![r"C:\mcp\cli.js".into(), "--isolated".into()];
         browser.env.insert("API_KEY".into(), "b c".into());
-        servers.push(validate(&browser, &[]).unwrap());
+        servers.push(browser.clone());
         let mut off = input("off", McpTransport::Stdio);
         off.command = Some("node".into());
         off.enabled = false;
-        servers.push(validate(&off, &[]).unwrap());
+        servers.push(off.clone());
         let mut remote = input("remote", McpTransport::Http);
         remote.url = Some("https://example.com/mcp".into());
-        servers.push(validate(&remote, &[]).unwrap());
+        servers.push(remote.clone());
 
         let path = tmp_path("codex");
         save_at(&path, &servers).unwrap();
@@ -1464,7 +1222,7 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
     fn probe_stdio_reports_spawn_failure() {
         let mut server = input("ghost", McpTransport::Stdio);
         server.command = Some("definitely-missing-binary-crewvela".into());
-        let report = probe_stdio(&validate(&server, &[]).unwrap());
+        let report = probe_stdio(&server.clone());
         assert!(!report.ok);
         assert!(report.error.unwrap().contains("启动"));
     }
@@ -1474,7 +1232,7 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         let mut http = input("kb", McpTransport::Http);
         http.url = Some("https://example.com/mcp".into());
         http.headers.insert("Authorization".into(), "Bearer x".into());
-        let entry = acp_server_entry(&validate(&http, &[]).unwrap()).expect("http 应转换");
+        let entry = acp_server_entry(&http.clone()).expect("http 应转换");
         assert_eq!(entry["type"], "http");
         assert_eq!(entry["name"], "kb");
         assert_eq!(entry["url"], "https://example.com/mcp");
@@ -1486,7 +1244,7 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         stdio.command = Some("npx".into());
         stdio.args = vec!("-y".into(), "mcp-fetch".into());
         stdio.env.insert("API_KEY".into(), "secret".into());
-        let entry = acp_server_entry(&validate(&stdio, &[]).unwrap()).expect("stdio 应转换");
+        let entry = acp_server_entry(&stdio.clone()).expect("stdio 应转换");
         assert!(entry.get("type").is_none(), "stdio 形态不带 type 字段");
         assert_eq!(entry["name"], "fs");
         assert_eq!(entry["command"], "npx");
@@ -1497,7 +1255,7 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         // SSE：ACP 只协商 http 能力，继续走 claude 链路。
         let mut sse = input("legacy", McpTransport::Sse);
         sse.url = Some("https://example.com/sse".into());
-        assert!(acp_server_entry(&validate(&sse, &[]).unwrap()).is_none());
+        assert!(acp_server_entry(&sse.clone()).is_none());
     }
 
     #[test]
@@ -1508,7 +1266,7 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
         let mut stdio = input("browser-control", McpTransport::Stdio);
         stdio.command = Some("node".into());
         stdio.args = vec!["bridge.mjs".into()];
-        let entry = acp_server_entry(&validate(&stdio, &[]).unwrap()).expect("stdio 应转换");
+        let entry = acp_server_entry(&stdio.clone()).expect("stdio 应转换");
         assert_eq!(entry["args"].as_array().map(Vec::len), Some(1));
         assert_eq!(entry["env"].as_array().map(Vec::len), Some(0), "env 空也必须是显式空数组");
     }
@@ -1555,14 +1313,9 @@ rl.on('line',line=>{{const q=JSON.parse(line);const out=v=>console.log(JSON.stri
 
         // 卸载：只清本插件的，不动用户手配。
         let mut with_user = load_at(&path).unwrap();
-        with_user.push(validate(
-            &{
-                let mut i = input("mine", McpTransport::Http);
-                i.url = Some("https://mine.example.com".into());
-                i
-            },
-            &[],
-        ).unwrap());
+        let mut user = input("mine", McpTransport::Http);
+        user.url = Some("https://mine.example.com".into());
+        with_user.push(user);
         save_at(&path, &with_user).unwrap();
         assert_eq!(remove_plugin_servers_at(&path, "demo@market").unwrap(), 2);
         let after = load_at(&path).unwrap();

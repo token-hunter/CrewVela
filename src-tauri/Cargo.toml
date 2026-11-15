@@ -27,6 +27,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 socket2 = "0.6"
 tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "time"] }
 portable-pty = "0.8"
+# ZCode OpenTUI redraws require the current screen, not concatenated history.
+vt100 = "=0.18.1"
 # PNG 编码：把剪贴板位图（RGBA）写成 .png 临时文件供 claude 读取
 png = "0.17"
 # keyring 3.x 默认不含平台后端，必须显式启用；否则会回退到内存 mock，存了也读不到

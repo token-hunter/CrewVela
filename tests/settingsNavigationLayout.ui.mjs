@@ -76,13 +76,13 @@ try {
       await page.goto(`${base}/?ui-preview=1`);
       await page.getByRole("button", { name: "设置", exact: true }).click();
       const nav = page.locator(".settings-nav");
-      await nav.getByRole("button", { name: "电脑控制", exact: true }).click();
-      await page.getByRole("heading", { name: "电脑控制", exact: true }).waitFor();
+      await nav.getByRole("button", { name: exact: true }).click();
+      await page.getByRole("heading", { name: exact: true }).waitFor();
       const baseline = await geometry(page);
       console.log(`BASELINE ${label} ${JSON.stringify(baseline)}`);
       compare(baseline, baseline, `${label}/电脑控制`, size);
 
-      for (const section of ["插件市场", "Skills", "常规", "模型设置", "MCP", "电脑控制", "插件市场"]) {
+      for (const section of ["Skills", "常规", "MCP", "插件市场"]) {
         await nav.getByRole("button", { name: section, exact: true }).click();
         await page.locator("#settings-title").filter({ hasText: section }).waitFor();
         compare(await geometry(page), baseline, `${label}/${section}`, size);

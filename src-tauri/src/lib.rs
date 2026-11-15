@@ -5,6 +5,7 @@ mod ai_memory_access;
 mod approvals;
 mod automation;
 mod automation_runtime;
+mod runtime_installation;
 mod browser_control;
 mod browser_panel;
 #[cfg(target_os = "macos")]
@@ -27,13 +28,10 @@ mod communication_acceptance_tests;
 mod runtime_communication_acceptance_tests;
 #[cfg(test)]
 mod zcode_communication_acceptance_tests;
-mod computer_control;
-pub mod computer_control_mcp;
 mod control;
 pub mod general_settings;
 mod git_source_control;
 mod keep_awake;
-mod kimi_computer_use;
 mod kimi_title_summary;
 mod launcher;
 mod mcp;
@@ -45,19 +43,13 @@ mod native_session_titles;
 mod native_zcode_sessions;
 mod harness_control;
 mod notification_history;
-mod macos_computer_use;
-#[cfg(target_os = "macos")]
-mod macos_computer_use_install;
-mod plugin_market;
 mod presets;
 mod projects;
 mod prompt_optimizer;
-mod provider_network;
-mod provider_quota;
 mod providers;
 mod pty;
+mod retired_integrations;
 mod runtime_preferences;
-mod model_assignments;
 mod runtime_dependencies;
 mod runtime_admission;
 mod secrets;
@@ -277,12 +269,11 @@ fn summarize_title_request(request: &sessions::SummaryRequest) -> anyhow::Result
             }
             return Err(anyhow::anyhow!("原生标题任务尚未生成有效标题；保留当前名称"));
         }
-        return title_summary::summarize_runtime(kind, &request.prompt, request.model.as_deref());
+        return title_summary::summarize_runtime(kind, &request.prompt, None);
     }
     let provider = providers::get(&request.provider_id)?
         .ok_or_else(|| anyhow::anyhow!("未找到 provider: {}", request.provider_id))?;
-    let key = secrets::get(&provider.auth_token_ref)?
-        .ok_or_else(|| anyhow::anyhow!("未设置 {} 的 API key", request.provider_id))?;
+    let key = String::new();
     title_summary::summarize_title(&provider, &key, &request.prompt)
 }
 
@@ -501,73 +492,9 @@ fn focus_main_from_notification(app: AppHandle) -> Result<(), String> {
 
 // ---- provider 配置 ----
 
-#[tauri::command]
-fn list_providers() -> Result<Vec<ProviderConfig>, String> {
-    providers::load().map(|f| f.providers).map_err(to_err)
-}
-
-#[tauri::command(async)]
-fn model_assignments_snapshot(store: State<'_, MultiAgentStore>, sessions: State<'_, SessionManager>) -> Result<model_assignments::Snapshot, String> {
-    model_assignments::snapshot(&store, &sessions).map_err(to_err)
-}
-
-#[tauri::command(async)]
-fn model_assignments_save(input: model_assignments::SaveInput, store: State<'_, MultiAgentStore>, sessions: State<'_, SessionManager>) -> Result<model_assignments::Snapshot, String> {
-    model_assignments::save(input, &store, &sessions).map_err(to_err)
-}
-
-#[tauri::command]
-fn get_provider(id: String) -> Result<Option<ProviderConfig>, String> {
-    providers::get(&id).map_err(to_err)
-}
-
 // Provider config and keychain mutations form one operation. In particular,
 // deletion must not race a save that introduces another reference to its key.
 static PROVIDER_MUTATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn lock_provider_mutations() -> Result<std::sync::MutexGuard<'static, ()>, String> {
-    PROVIDER_MUTATION_LOCK.lock().map_err(|_| "模型服务保存锁不可用".to_string())
-}
-
-#[tauri::command]
-fn save_provider(provider: ProviderConfig, key: Option<String>) -> Result<(), String> {
-    let _guard = lock_provider_mutations()?;
-    let provider = providers::normalize_provider(provider).map_err(to_err)?;
-    let normalized_key = key
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-
-    let Some(key) = normalized_key else {
-        let has_existing_key = secrets::get(&provider.auth_token_ref)
-            .map_err(to_err)?
-            .is_some();
-        if !has_existing_key {
-            return Err("请填写 API Key 后再保存模型服务".into());
-        }
-        return providers::upsert(provider).map_err(to_err);
-    };
-
-    let account = provider.auth_token_ref.trim().to_string();
-    let previous_key = secrets::get(&account).map_err(to_err)?;
-    secrets::set(&account, &key).map_err(to_err)?;
-
-    if let Err(error) = providers::upsert(provider) {
-        let rollback = match previous_key {
-            Some(previous) => secrets::set(&account, &previous),
-            None => secrets::delete(&account),
-        };
-        if let Err(rollback_error) = rollback {
-            return Err(format!(
-                "保存模型服务失败: {error:#}；恢复原凭据失败: {rollback_error:#}"
-            ));
-        }
-        return Err(to_err(error));
-    }
-
-    Ok(())
-}
-
-
 #[tauri::command]
 async fn notification_history_list(
     state: State<'_, NotificationHistoryStore>,
@@ -637,68 +564,6 @@ fn send_windows_unpacked_notification(
         Ok(false)
     }
 }
-#[tauri::command]
-fn delete_provider(id: String) -> Result<(), String> {
-    let _guard = lock_provider_mutations()?;
-    providers::delete(&id).map_err(to_err)
-}
-
-#[tauri::command]
-fn set_provider_hidden(id: String, hidden: bool) -> Result<(), String> {
-    let _guard = lock_provider_mutations()?;
-    providers::set_hidden(&id, hidden).map_err(to_err)
-}
-
-#[tauri::command]
-fn restore_builtin_provider(id: String) -> Result<(), String> {
-    let _guard = lock_provider_mutations()?;
-    providers::restore_builtin(&id).map_err(to_err)
-}
-
-#[tauri::command]
-fn reorder_providers(provider_ids: Vec<String>) -> Result<(), String> {
-    let _guard = lock_provider_mutations()?;
-    providers::reorder(&provider_ids).map_err(to_err)
-}
-
-#[tauri::command]
-async fn test_provider_endpoints(
-    provider: ProviderConfig,
-    timeout_secs: Option<u64>,
-) -> Result<Vec<provider_network::EndpointProbe>, String> {
-    let provider = providers::normalize_provider(provider).map_err(to_err)?;
-    provider_network::test_endpoints(&provider, timeout_secs).await
-}
-
-#[tauri::command]
-async fn fetch_provider_models(
-    provider: ProviderConfig,
-    key: Option<String>,
-) -> Result<Vec<provider_network::FetchedModel>, String> {
-    let provider = providers::normalize_provider(provider).map_err(to_err)?;
-    let key = match key
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-    {
-        Some(value) => value,
-        None => secrets::get(&provider.auth_token_ref)
-            .map_err(to_err)?
-            .ok_or_else(|| "请先填写 API Key".to_string())?,
-    };
-    provider_network::fetch_models(&provider, &key).await
-}
-
-#[tauri::command]
-async fn get_provider_quota(
-    id: String,
-    force: Option<bool>,
-) -> Result<provider_quota::ProviderQuota, String> {
-    let provider = providers::get(&id)
-        .map_err(to_err)?
-        .ok_or_else(|| "模型服务不存在".to_string())?;
-    Ok(provider_quota::get(&provider, force.unwrap_or(false)).await)
-}
-
 // ---- 项目（会话分组） ----
 
 #[tauri::command]
@@ -764,34 +629,6 @@ fn delete_launch_preset(id: String) -> Result<(), String> {
 }
 
 // ---- API key（keychain） ----
-
-fn account_for(id: &str) -> Result<String, String> {
-    let p = providers::get(id)
-        .map_err(to_err)?
-        .ok_or_else(|| format!("未找到 provider: {id}"))?;
-    Ok(p.auth_token_ref)
-}
-
-#[tauri::command]
-fn set_key(id: String, key: String) -> Result<(), String> {
-    let _guard = lock_provider_mutations()?;
-    let account = account_for(&id)?;
-    secrets::set(&account, &key).map_err(to_err)
-}
-
-#[tauri::command]
-fn get_key_state(id: String) -> Result<bool, String> {
-    let account = account_for(&id)?;
-    Ok(secrets::get(&account).map_err(to_err)?.is_some())
-}
-
-#[tauri::command]
-fn delete_key(id: String) -> Result<(), String> {
-    let _guard = lock_provider_mutations()?;
-    let account = account_for(&id)?;
-    secrets::delete(&account).map_err(to_err)
-}
-
 // ---- claude 路径 ----
 
 #[tauri::command]
@@ -934,10 +771,36 @@ async fn ma_check_runtime_updates() -> Result<Vec<RuntimeProbe>, String> {
 
 #[tauri::command]
 async fn ma_upgrade_runtime(kind: AgentRuntimeKind) -> Result<RuntimeUpgradeReceipt, String> {
+    if cfg!(windows) && matches!(kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex) {
+        let started = runtime_installation::start(kind)?;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            let job = runtime_installation::status(kind).filter(|job| job.id == started.id).ok_or("安装状态丢失")?;
+            match job.phase.as_str() {
+                "ready" => {
+                    let runtime = tauri::async_runtime::spawn_blocking(move || probe_all_runtimes().into_iter().find(|probe| probe.kind == kind)).await.map_err(to_err)?.ok_or("Runtime 检测结果缺失")?;
+                    return Ok(RuntimeUpgradeReceipt { kind, output: job.message, runtime });
+                }
+                "failed" | "cancelled" => return Err(job.error.unwrap_or(job.message)),
+                _ => {}
+            }
+        }
+    }
     tauri::async_runtime::spawn_blocking(move || upgrade_runtime(kind))
         .await
         .map_err(to_err)?
 }
+
+#[tauri::command]
+async fn runtime_install_environment(kind: AgentRuntimeKind) -> Result<runtime_installation::Environment, String> { runtime_installation::environment(kind).await }
+#[tauri::command]
+fn runtime_install_start(kind: AgentRuntimeKind) -> Result<runtime_installation::InstallJob, String> { runtime_installation::start(kind) }
+#[tauri::command]
+fn runtime_install_status(kind: AgentRuntimeKind) -> Option<runtime_installation::InstallJob> { runtime_installation::status(kind) }
+#[tauri::command]
+fn runtime_install_cancel(id: String) -> Result<(), String> { runtime_installation::cancel(&id) }
+#[tauri::command]
+fn runtime_open_login(kind: AgentRuntimeKind) -> Result<(), String> { runtime_installation::open_login(kind) }
 
 #[tauri::command]
 fn ma_list_projects(state: State<'_, MultiAgentStore>) -> Result<Vec<MultiAgentProject>, String> {
@@ -1257,113 +1120,7 @@ fn workspace_reveal_path(root: String, relative_path: String) -> Result<(), Stri
     tauri_plugin_opener::reveal_item_in_dir(path).map_err(to_err)
 }
 
-// ---- MCP 服务器管理 ----
-
-#[tauri::command]
-fn mcp_list_servers() -> Result<Vec<mcp::McpServerConfig>, String> {
-    mcp::load().map_err(to_err)
-}
-
-#[tauri::command]
-fn mcp_save_server(input: mcp::McpUpsertInput) -> Result<mcp::McpServerConfig, String> {
-    mcp::upsert(input).map_err(to_err)
-}
-
-#[tauri::command]
-fn mcp_delete_server(id: String) -> Result<(), String> {
-    mcp::delete(&id).map_err(to_err)
-}
-
-#[tauri::command]
-fn mcp_set_server_enabled(id: String, enabled: bool) -> Result<mcp::McpServerConfig, String> {
-    mcp::set_enabled(&id, enabled).map_err(to_err)
-}
-
-#[tauri::command]
-async fn mcp_probe_servers() -> Result<Vec<mcp::McpProbeReport>, String> {
-    Ok(mcp::probe_enabled().await)
-}
-
 // ---- 插件市场 ----
-
-#[tauri::command]
-fn plugin_market_snapshot(center: State<'_, SkillCenter>) -> Result<plugin_market::PluginMarketSnapshot, String> {
-    plugin_market::snapshot_with_targets(&center).map_err(to_err)
-}
-
-#[tauri::command]
-async fn plugin_market_candidates() -> Result<plugin_market::PluginCandidateSnapshot, String> {
-    tauri::async_runtime::spawn_blocking(plugin_market::candidate_snapshot).await.map_err(to_err)?.map_err(to_err)
-}
-
-#[tauri::command]
-async fn plugin_market_add_official() -> Result<plugin_market::MarketplaceView, String> {
-    tauri::async_runtime::spawn_blocking(plugin_market::add_official).await.map_err(to_err)?.map_err(to_err)
-}
-
-#[tauri::command]
-async fn plugin_market_save_selection(plugin_ids: Vec<String>, app: AppHandle) -> Result<plugin_market::PluginMarketSnapshot, String> {
-    tauri::async_runtime::spawn_blocking(move || plugin_market::save_selection(&app.state::<SkillCenter>(), plugin_ids)).await.map_err(to_err)?.map_err(to_err)
-}
-
-#[tauri::command]
-async fn plugin_market_add(source: String) -> Result<plugin_market::MarketplaceView, String> {
-    tauri::async_runtime::spawn_blocking(move || plugin_market::add_marketplace(&source))
-        .await
-        .map_err(to_err)?
-        .map_err(to_err)
-}
-
-#[tauri::command]
-async fn plugin_market_refresh(id: String) -> Result<plugin_market::MarketplaceView, String> {
-    tauri::async_runtime::spawn_blocking(move || plugin_market::refresh_marketplace(&id))
-        .await
-        .map_err(to_err)?
-        .map_err(to_err)
-}
-
-#[tauri::command]
-async fn plugin_market_remove(id: String, app: AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let center = app.state::<SkillCenter>();
-        plugin_market::remove_marketplace(&center, &id)
-    })
-    .await
-    .map_err(to_err)?
-    .map_err(to_err)
-}
-
-#[tauri::command]
-async fn plugin_market_install(
-    input: plugin_market::PluginInstallInput,
-    app: AppHandle,
-) -> Result<plugin_market::InstalledPlugin, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let center = app.state::<SkillCenter>();
-        plugin_market::install_targets(&center, input)
-    })
-    .await
-    .map_err(to_err)?
-    .map_err(to_err)
-}
-
-#[tauri::command]
-async fn plugin_market_remove_target(installed_id: String, target_id: String, app: AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        plugin_market::remove_target(&app.state::<SkillCenter>(), &installed_id, &target_id)
-    }).await.map_err(to_err)?.map_err(to_err)
-}
-
-#[tauri::command]
-async fn plugin_market_uninstall(installed_id: String, app: AppHandle) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let center = app.state::<SkillCenter>();
-        plugin_market::uninstall_plugin(&center, &installed_id)
-    })
-    .await
-    .map_err(to_err)?
-    .map_err(to_err)
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2653,9 +2410,6 @@ fn open_session(
     pty_state: &PtyManager,
     session_state: &SessionManager,
 ) -> Result<SessionRecord, String> {
-    let mut effective_provider = provider.clone();
-    if let Some(model) = &record.launch_model { effective_provider.env.insert("ANTHROPIC_MODEL".into(), model.clone()); }
-    let provider = &effective_provider;
     let _admission = pty_state.admit_start().map_err(to_err)?;
     runtime_preferences::ensure_session_available(record).map_err(to_err)?;
     session_switch::ensure_can_start(&record.id).map_err(to_err)?;
@@ -2677,11 +2431,7 @@ fn open_session(
     // "No conversation found with session ID" 退出。退化为 --session-id
     // 全新启动：同一 session id，等价于把会话重新拉起来。
     let resume = resume && crate::usage::transcript_path(record).is_some_and(|path| path.exists());
-    session_state.record_model_assignment(&record.id, model_assignments::ResolvedSelection {
-        connection_id: provider.id.clone(), model: provider.env.get("ANTHROPIC_MODEL").cloned(),
-        source: if record.launch_model.is_some() { "session" } else { "session_connection" }.into(),
-    }).map_err(to_err)?;
-    // MCP 管理页启用的 server 注入本次会话；配置读取失败不阻塞会话启动。
+    // 保留配置中启用的 MCP server 注入本次会话；配置读取失败不阻塞会话启动。
     let mcp_servers = crate::mcp::enabled_claude_map().unwrap_or_else(|error| {
         eprintln!("[crewvela] 读取 MCP 配置失败：{error:#}");
         serde_json::Map::new()
@@ -3161,15 +2911,8 @@ async fn git_generate_commit_message(
     provider_id: String,
     instruction: String,
 ) -> Result<String, String> {
-    let provider = providers::load()
-        .map_err(to_err)?
-        .providers
-        .into_iter()
-        .find(|provider| provider.id == provider_id)
-        .ok_or_else(|| format!("未找到模型服务：{provider_id}"))?;
-    let key = secrets::get(&provider.auth_token_ref)
-        .map_err(to_err)?
-        .ok_or_else(|| format!("模型服务 {} 尚未配置 API Key", provider.name))?;
+    let provider = providers::local_cli();
+    let key = String::new();
     tauri::async_runtime::spawn_blocking(move || {
         git_source_control::generate_commit_message(
             std::path::Path::new(&cwd),
@@ -3279,7 +3022,7 @@ fn configure_runtime_communication(
         pty::configure_codex_cli_identity(command, &record.id).map_err(to_err)?;
         let notify = session_state.agent_turn_hook_command(&record.id).map_err(to_err)?;
         command.arg("-c").arg(format!("notify={}", serde_json::to_string(&notify).map_err(to_err)?));
-        // MCP 管理页启用的 stdio server（浏览器控制等）注入 codex 会话；
+        // 保留配置中启用的 stdio server（浏览器控制等）注入 codex 会话；
         // 读取失败在 mcp 侧静默返回空列表，不阻塞会话启动。
         for override_value in crate::mcp::codex_cli_mcp_overrides() {
             command.arg("-c").arg(override_value);
@@ -3318,7 +3061,7 @@ fn open_runtime_session_checked(
     session_state: &SessionManager,
     yolo: bool,
     switch_id: Option<&str>,
-    member_store: Option<&MultiAgentStore>,
+    _member_store: Option<&MultiAgentStore>,
 ) -> Result<SessionRecord, String> {
     let _admission = pty_state.admit_start().map_err(to_err)?;
     let yolo = session_switch::check_runtime_start(&record.id, yolo, switch_id).map_err(to_err)?;
@@ -3352,13 +3095,6 @@ fn open_runtime_session_checked(
         .configure_runtime_resume(&mut command, record)
         .map_err(to_err)?;
     configure_runtime_communication(kind, &mut command, record, session_state)?;
-    let selection = match member_store {
-        Some(store) => model_assignments::for_session(record, store),
-        None => model_assignments::for_runtime(kind.as_str(), record.launch_model.as_deref()),
-    }.map_err(to_err)?;
-    model_assignments::configure_connection(&mut command, kind.as_str(), &selection).map_err(to_err)?;
-    model_assignments::configure_model(&mut command, kind.as_str(), selection.model.as_deref()).map_err(to_err)?;
-    session_state.record_model_assignment(&record.id, selection).map_err(to_err)?;
     session_switch::configure_target(&mut command, record).map_err(to_err)?;
     if yolo {
         configure_yolo_runtime_command(kind, &mut command, record, session_state)?;
@@ -3485,10 +3221,7 @@ fn launch_multi(
     let provider = providers::get(&provider_id)
         .map_err(to_err)?
         .ok_or_else(|| format!("未找到 provider: {provider_id}"))?;
-    launcher::validate_provider(&provider)?;
-    let key = secrets::get(&provider.auth_token_ref)
-        .map_err(to_err)?
-        .ok_or_else(|| format!("未设置 {provider_id} 的 API key，请先录入"))?;
+    let key = String::new();
     let mut sessions = Vec::new();
     for i in 0..count {
         let cwd = launcher::pick_cwd(&cwds, i as usize)
@@ -4645,10 +4378,7 @@ async fn resume_session(
         let provider = providers::get(&record.provider_id)
             .map_err(to_err)?
             .ok_or_else(|| format!("未找到 provider: {}", record.provider_id))?;
-        launcher::validate_provider(&provider)?;
-        let key = secrets::get(&provider.auth_token_ref)
-            .map_err(to_err)?
-            .ok_or_else(|| format!("未设置 {} 的 API key，请先录入", record.provider_id))?;
+        let key = String::new();
         match open_session(&record, &provider, &key, true, &pty_state, &session_state) {
             Ok(started) => Ok(started),
             Err(error) => {
@@ -5435,22 +5165,7 @@ fn execute_automation_action_tracked(
                 automation_runtime::validate_launch(*runtime_kind, provider_id.as_deref(), model.as_deref(), cwd).map_err(to_err)?;
                 runtime_kind.ensure_available().map_err(to_err)?;
                 if !std::path::Path::new(cwd).is_dir() { return Err("工作目录不存在或不是目录".into()); }
-                if let Some(provider_id) = provider_id {
-                    let mut provider = providers::get(provider_id).map_err(to_err)?.ok_or_else(|| format!("未找到 Provider: {provider_id}"))?;
-                    launcher::validate_provider(&provider)?;
-                    if let Some(model) = model { provider.env.insert("ANTHROPIC_MODEL".into(), model.clone()); }
-                    let key = secrets::get(&provider.auth_token_ref).map_err(to_err)?.ok_or_else(|| "该 Provider 尚未配置凭据".to_string())?;
-                    let started = launch_one_session(&provider, &key, cwd.clone(), false, false, false, None, None, pty_state, session_state, action_queue)?;
-                    targets.push(started.id.clone());
-                    let started = session_state.set_launch_model(&started.id, model.clone()).map_err(|error| format!("会话已启动，任务未排队；保存模型设置失败：{error:#}"))?;
-                    action_queue.enqueue_messages_durable(vec![(started.id.clone(), QueuedMessage::new(prompt.clone(), None))]).map_err(|error| format!("会话已启动但任务排队失败，会话保留：{error:#}"))?;
-                    return Ok(started);
-                }
                 let record = session_state.create_runtime(NewRuntimeSession { runtime_kind: runtime_kind.as_str().into(), cwd: cwd.clone(), project_id: None }).map_err(to_err)?;
-                let record = match session_state.set_launch_model(&record.id, model.clone()) {
-                    Ok(record) => record,
-                    Err(error) => { let detail = to_err(error); let _ = session_state.mark_error(&record.id, detail.clone()); return Err(detail); }
-                };
                 targets.push(record.id.clone());
                 let lifecycle = session_state.lifecycle_lock(&record.id);
                 let _guard = lifecycle.lock().unwrap();
@@ -5530,10 +5245,7 @@ fn execute_automation_action_tracked(
                 let provider = providers::get(provider_id)
                     .map_err(to_err)?
                     .ok_or_else(|| format!("未找到 provider: {provider_id}"))?;
-                launcher::validate_provider(&provider)?;
-                let key = secrets::get(&provider.auth_token_ref)
-                    .map_err(to_err)?
-                    .ok_or_else(|| format!("未设置 {provider_id} 的 API key，请先录入"))?;
+                let key = String::new();
                 let cwd = cwd
                     .clone()
                     .filter(|value| !value.trim().is_empty())
@@ -5822,9 +5534,7 @@ fn open_direct_collaboration_session(
         let provider = providers::get(&record.provider_id)
             .map_err(to_err)?
             .ok_or_else(|| format!("未找到 provider: {}", record.provider_id))?;
-        let key = secrets::get(&provider.auth_token_ref)
-            .map_err(to_err)?
-            .ok_or_else(|| format!("未设置 {} 的 API key，请先录入", record.provider_id))?;
+        let key = String::new();
         return open_session(
             &record,
             &provider,
@@ -6111,8 +5821,13 @@ fn pty_resize(
     rows: u16,
     cols: u16,
     state: State<'_, PtyManager>,
+    sessions: State<'_, SessionManager>,
 ) -> Result<(), String> {
-    state.resize(session_id, rows, cols).map_err(to_err)
+    state.resize(session_id, rows, cols).map_err(to_err)?;
+    if let Some(session) = sessions.list().into_iter().find(|session| session.pty_id == Some(session_id)) {
+        sessions.resize_runtime_prompt(&session.id, rows, cols);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -6256,6 +5971,7 @@ pub fn run() {
                 SkillCenter::new()
                     .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?,
             );
+            for warning in retired_integrations::retire_owned_skills(&config_dir, &app.state::<SkillCenter>()).map_err(|e| -> Box<dyn std::error::Error> { e.into() })? { eprintln!("[crewvela] {warning}"); }
             if !test_profile::active() { browser_control::refresh_installed_skill(app.handle()); }
             app.manage(UsageTracker::default());
             app.manage(MultiAgentSupervisor::default());
@@ -6389,10 +6105,6 @@ pub fn run() {
             git_merge_abort,
             git_remote,
             git_generate_commit_message,
-            list_providers,
-            model_assignments_snapshot,
-            model_assignments_save,
-            get_provider_quota,
             notification_history_list,
             notification_history_append,
             notification_history_import,
@@ -6405,40 +6117,11 @@ pub fn run() {
             workspace_open_path,
             workspace_write_text,
             workspace_reveal_path,
-            mcp_list_servers,
-            mcp_save_server,
-            mcp_delete_server,
-            mcp_set_server_enabled,
-            mcp_probe_servers,
             browser_control::browser_control_get,
             browser_control::browser_control_save,
-            computer_control::computer_control_get,
-            computer_control::computer_control_save,
-            kimi_computer_use::kimi_computer_use_get,
-            kimi_computer_use::kimi_computer_use_save,
-            macos_computer_use::macos_computer_use_action,
-            macos_computer_use::macos_computer_use_install,
             general_settings::general_settings_get,
             general_settings::general_settings_save,
-            plugin_market_snapshot,
-            plugin_market_candidates,
-            plugin_market_add_official,
-            plugin_market_save_selection,
-            plugin_market_add,
-            plugin_market_refresh,
-            plugin_market_remove,
-            plugin_market_install,
-            plugin_market_remove_target,
-            plugin_market_uninstall,
             send_windows_unpacked_notification,
-            get_provider,
-            save_provider,
-            delete_provider,
-            set_provider_hidden,
-            restore_builtin_provider,
-            reorder_providers,
-            test_provider_endpoints,
-            fetch_provider_models,
             list_projects,
             create_project,
             update_project,
@@ -6446,9 +6129,6 @@ pub fn run() {
             list_launch_presets,
             create_launch_preset,
             delete_launch_preset,
-            set_key,
-            get_key_state,
-            delete_key,
             codex_quota_monitor_status,
             list_codex_quota_notifications,
             check_codex_quota_updates,
@@ -6469,6 +6149,11 @@ pub fn run() {
             ma_probe_runtimes,
             ma_check_runtime_updates,
             ma_upgrade_runtime,
+            runtime_install_environment,
+            runtime_install_start,
+            runtime_install_status,
+            runtime_install_cancel,
+            runtime_open_login,
             ma_list_projects,
             ma_list_interventions,
             ma_resolve_intervention,
@@ -7349,10 +7034,9 @@ mod tests {
         let (ok,detail) = execute_automation_action(&stopped, &ptys, &sessions, &queue, None);
         assert!(!ok && detail.contains("恢复"), "{detail}");
         assert_eq!(queue.peek_next(&records[0].id).unwrap().body, "exact message");
-        sessions.set_launch_model(&records[0].id,Some("literal-model".into())).unwrap();
         drop(queue); drop(sessions);
         let reopened = SessionManager::open_at(root.join("sessions.json"),root.join("events")).unwrap();
-        assert_eq!(reopened.get(&records[0].id).unwrap().launch_model.as_deref(), Some("literal-model"));
+        assert!(reopened.get(&records[0].id).is_some());
         drop(reopened); std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -7852,6 +7536,59 @@ mod tests {
             runtime_kind: "minimax_code".into(), cwd: ".".into(), project_id: None,
         }).unwrap_err().to_string().contains("已移除"));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "launches installed ZCode CLI and executes only local /help; no model request"]
+    fn real_zcode_automation_executes_local_help_after_startup() {
+        let root = std::env::temp_dir().join(format!("crewvela-zcode-automation-live-{}", uuid::Uuid::new_v4()));
+        let sessions = SessionManager::open_at(root.join("sessions.json"), root.join("events")).unwrap();
+        let queue = SessionActionQueue::open_at(root.join("mailbox.json"), root.join("outbox")).unwrap();
+        let ptys = PtyManager::new();
+        let action = AutomationAction::RunAgent { runtime_kind: AgentRuntimeKind::ZCodeCli, provider_id: None, model: None, cwd: root.display().to_string(), prompt: "/help".into() };
+        let (ok, _) = execute_automation_action(&action, &ptys, &sessions, &queue, None);
+        assert!(ok, "native ZCode automation startup failed");
+        let record = sessions.list().into_iter().next().unwrap();
+        let id = record.pty_id.unwrap();
+        ptys.resize(id, 50, 180).unwrap();
+        sessions.resize_runtime_prompt(&record.id, 50, 180);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(50);
+        let mut received_help = false;
+        let mut received_followup = false;
+        let mut was_ready = false;
+        while ptys.is_running(id) && std::time::Instant::now() < deadline {
+            let chunks = ptys.poll_all();
+            mark_interactive_runtime_prompts(&chunks, &sessions);
+            was_ready |= sessions.is_ready_for_prompt(&record.id);
+            queue.flush_ready(&sessions, &ptys);
+            queue.flush_pending_submits(&sessions, &ptys);
+            let output = multi_agent::strip_terminal_control_sequences(&String::from_utf8_lossy(&ptys.transcript_tail(id, 256 * 1024).unwrap()));
+            // This text is returned by the CLI's local slash-command handler,
+            // so seeing it proves more than writing Enter or draining a queue.
+            if !received_help && output.contains("for details.") && output.contains("/help") && !queue.has_pending_work(&record.id) {
+                received_help = true;
+                queue.enqueue_messages_durable(vec![(record.id.clone(), QueuedMessage::new("/help crewvela-local-probe".into(), None))]).unwrap();
+            }
+            if received_help && output.contains("Unknown slash command: /crewvela-local-probe.") && !queue.has_pending_work(&record.id) {
+                received_followup = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        eprintln!("ZCode native verification: ready={was_ready}, help_response={received_help}, followup_response={received_followup}, pending={}", queue.has_pending_work(&record.id));
+        ptys.kill_all().unwrap();
+        drop(ptys); drop(queue); drop(sessions);
+        // ConPTY's reader can briefly retain the working-directory handle.
+        let cleanup_deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            match std::fs::remove_dir_all(&root) {
+                Ok(()) => break,
+                Err(_) if std::time::Instant::now() < cleanup_deadline => std::thread::sleep(std::time::Duration::from_millis(50)),
+                Err(error) => panic!("native test cleanup failed: {error}"),
+            }
+        }
+        assert!(received_help && received_followup, "ZCode automation must return both local command responses in the same session");
     }
 
     #[cfg(windows)]

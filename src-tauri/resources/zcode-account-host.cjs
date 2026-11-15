@@ -4,7 +4,7 @@
 // accountProviderRequestAuthService and codingPlanProviderAvailability.
 const {readFile,readdir,stat} = require('node:fs/promises');
 const {createRequire} = require('node:module');
-const {createHash,createDecipheriv} = require('node:crypto');
+const {createHash,createDecipheriv,createCipheriv,randomBytes} = require('node:crypto');
 const {homedir,userInfo,platform} = require('node:os');
 const {join,resolve,dirname} = require('node:path');
 const sha = value => createHash('sha256').update(value).digest('hex');
@@ -100,7 +100,44 @@ async function openCredentials(input,file,record,context){
       values.set(name,Buffer.concat([cipher.update(body),cipher.final()]).toString('utf8'));
     }catch{errors.add(name);}
   }
-  return name=>{if(errors.has(name))throw secureStorageError();return(values.get(name)||'').trim();};
+  return (name,trim=true)=>{if(errors.has(name))throw secureStorageError();const value=values.get(name)||'';return trim?value.trim():value;};
+}
+
+// This native protocol request belongs to the spawned Agent process, before a
+// session exists. Read only that process's existing credential key; never
+// initialize/migrate a key or expose key material to renderer IPC or logs.
+async function credentialCipher(input,createKeyStore){
+  const request=input.request;
+  const requestId=typeof request?.requestId==='string'?request.requestId:'';
+  const failure=(code,message)=>({requestId,result:{ok:false,error:{code,message}}});
+  const plaintextLimit=1048576,encodedLimit=Math.ceil(plaintextLimit/3)*4+128;
+  if(!request||Object.keys(request).sort().join(',')!=='operation,requestId,value'||
+     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)||
+     !['encrypt','decrypt'].includes(request.operation)||typeof request.value!=='string'||
+     request.value.length>encodedLimit||
+     (request.operation==='encrypt'&&Buffer.byteLength(request.value,'utf8')>plaintextLimit)){
+    return failure('CREDENTIAL_CIPHER_INVALID_PAYLOAD','ZCode Desktop 凭据请求格式无效');
+  }
+  try{
+    const directory=join(process.env.ZCODE_DATA_BASE_DIR?.trim()||process.env.HOME?.trim()||homedir(),'.zcode','v2');
+    const file=join(directory,'credentials.json');
+    const context={keys:new Map(),createKeyStore};
+    let value;
+    if(request.operation==='decrypt'){
+      const load=await openCredentials(input,file,{requested:request.value},context);
+      value=load('requested',false);
+      if(Buffer.byteLength(value,'utf8')>plaintextLimit)throw secureStorageError();
+    }else{
+      const record=await readJson(file,true);
+      const material=await credentialKey(input,file,record,context);
+      const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',material.key,iv);
+      const body=Buffer.concat([cipher.update(request.value,'utf8'),cipher.final()]);
+      value=`enc:v2:${material.source}:${sha(material.key).slice(0,24)}:${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${body.toString('base64url')}`;
+    }
+    return {requestId,result:{ok:true,value}};
+  }catch{
+    return failure('CREDENTIAL_SECURE_STORAGE_UNAVAILABLE','ZCode Desktop 安全凭据存储不可用，请在原生 ZCode Desktop 检查登录后恢复会话');
+  }
 }
 async function readLocal(input,context={keys:new Map()}) {
   const directory=join(process.env.ZCODE_DATA_BASE_DIR?.trim()||process.env.HOME?.trim()||homedir(),'.zcode','v2');
@@ -289,7 +326,7 @@ async function auth(input,request=fetch,createClient=nativeProjectTokenClient,cr
   if(fresh?.scope!==grant.scope||(grant.projectToken&&sha(fresh?.oauthToken||'')!==grant.loginFingerprint))throw Error('ZCode Desktop 登录状态已变化，请重新加载模型');
   return {headersApplied:true,requestAuth:{apiKey:key}};
 }
-module.exports={decrypt,material,personalEntitled,startEntitlement,snapshot,auth,officialOrigin};
+module.exports={decrypt,material,personalEntitled,startEntitlement,snapshot,auth,officialOrigin,credentialCipher};
 if(require.main===module||process.env.CREWVELA_ZCODE_ACCOUNT_HELPER==='1'){
   // One private request per process. First-party modules may retain native
   // handles; finish only after the complete JSON frame has flushed, rather
@@ -297,7 +334,7 @@ if(require.main===module||process.env.CREWVELA_ZCODE_ACCOUNT_HELPER==='1'){
   const finish=value=>process.stdout.write(JSON.stringify(value),()=>process.exit(0));
   let bytes='';process.stdin.setEncoding('utf8');process.stdin.on('data',s=>bytes+=s);
   process.stdin.on('end',async()=>{
-    try{const input=JSON.parse(bytes);const result=await(input.operation==='auth'?auth(input):snapshot(input));finish({result});}
+    try{const input=JSON.parse(bytes);const result=await(input.operation==='credentialCipher'?credentialCipher(input):input.operation==='auth'?auth(input):snapshot(input));finish({result});}
     catch(e){const message=/^ZCode Desktop |^无法确认原生 ZCode Desktop/.test(e.message)?e.message:'ZCode Desktop 账号服务暂不可用，请在原生 ZCode Desktop 重新登录后恢复会话';finish({error:message});}
   });
 }

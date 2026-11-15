@@ -10,8 +10,8 @@ mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const failures = [];
 const evidence = [];
-const menus = ["常规", "Git", "通知", "外观", "陪伴", "模型设置", "协作中心", "共享记忆", "自动化", "快捷指令",
-  "浏览器控制", "电脑控制", "插件市场", "Skills", "MCP", "归档会话"];
+const menus = ["常规", "Git", "通知", "外观", "陪伴", "协作中心", "共享记忆", "自动化", "快捷指令",
+  "浏览器控制", "Skills", "归档会话"];
 const sizes = [
   { width: 687, height: 903 },
   { width: 720, height: 540 }, { width: 740, height: 540 }, { width: 760, height: 540 },

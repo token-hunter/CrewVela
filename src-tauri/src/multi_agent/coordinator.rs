@@ -166,7 +166,7 @@ fn run_coordinator_attempt(
     schema: &str,
     system_prompt: &str,
     user_prompt: String,
-    model: Option<&str>,
+    _model: Option<&str>,
     timeout: Duration,
     is_cancelled: &dyn Fn() -> bool,
     on_update: &mut dyn FnMut(CoordinatorStreamUpdate),
@@ -195,12 +195,6 @@ fn run_coordinator_attempt(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut selection = crate::model_assignments::for_runtime("claude_code", None)?;
-    if selection.model.is_none() && selection.connection_id == "local" { selection.model = model.map(str::to_owned); }
-    crate::model_assignments::configure_connection(&mut command, "claude_code", &selection)?;
-    // This transport also carries the existing internal retry model literally.
-    // User assignments are validated on save; argv escaping stays lossless here.
-    if let Some(model) = selection.model.as_deref() { command.arg("--model").arg(model); }
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -609,16 +603,6 @@ pub fn interpret_collaboration_message_streaming(
 
     let system_prompt = format!(
         "{system_prompt}\n14. plan_project 必须从用户消息中提取明确的绝对项目目录并写入 rootPath；没有明确目录时设为 null。涉及前后端并行开发时，必须创建独立的交叉 Review 任务：前端 Agent 审查后端接口契约，后端 Agent 审查前端调用与类型，Review 任务依赖相应实现任务，修复或集成任务再依赖 Review。Review Agent 的 role 必须是 reviewer，workspaceMode=read_only，reviewerKey 通常为 null。"
-    );
-    let provider_ids = crate::providers::load()?
-        .providers
-        .into_iter()
-        .filter(|provider| !provider.base_url.trim().is_empty())
-        .map(|provider| provider.id)
-        .collect::<Vec<_>>()
-        .join(", ");
-    let system_prompt = format!(
-        "{system_prompt}\n15. Claude Code Agent 需要使用 CrewVela 第三方 Provider 时，runtimeKind=claude_code，并把 model 填写为 Provider ID；当前可用 Provider ID：{provider_ids}。例如 Claude Code + GLM 必须填写 model=glm，不能只写 glm 的模型名。Anthropic 原生模型才直接填写模型 ID。"
     );
     let system_prompt = format!(
         "{system_prompt}\n16. 任务可用 requiredCapabilities 声明硬能力要求，只能从 filesystem、shell、resume、interrupt、mcp、approvals、usage、diff、commands、subagents、permission_modes 中选择；没有硬要求时返回空数组。commands 仅表示任务明确要求 Runtime 的斜杠/自定义命令发现能力，执行 shell、CLI、crewvela Skill 或 Agent 通信不能标记 commands。maxAttempts 默认 3，范围 1-10；retryBackoffSeconds 默认 5，范围 1-3600。不要把偏好写成硬能力。"
@@ -1283,11 +1267,11 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn coordinator_wrapper_preserves_literal_schema_system_and_model_arguments() {
+    fn coordinator_wrapper_preserves_literal_arguments_and_uses_local_model() {
         let root = std::env::temp_dir().join(format!("coordinator args 中文 & () {}", uuid::Uuid::new_v4()));
         let entry = root.join("node_modules/@anthropic-ai/claude-code/cli.js");
         std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
-        std::fs::write(&entry, r#"const assert=require('node:assert/strict');const args=process.argv.slice(2);for(const key of ['--system-prompt','--model'])assert.equal(args[args.indexOf(key)+1],'literal & % ! () 中文');assert.equal(args[args.indexOf('--json-schema')+1],'{"type":"object"}');let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{assert.equal(s,'plain & % ! () 中文');console.log(JSON.stringify({type:'result',result:'{"reply":"ok"}'}));});"#).unwrap();
+        std::fs::write(&entry, r#"const assert=require('node:assert/strict');const args=process.argv.slice(2);assert.equal(args[args.indexOf('--system-prompt')+1],'literal & % ! () 中文');assert(!args.includes('--model'));assert.equal(args[args.indexOf('--json-schema')+1],'{"type":"object"}');let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{assert.equal(s,'plain & % ! () 中文');console.log(JSON.stringify({type:'result',result:'{"reply":"ok"}'}));});"#).unwrap();
         let wrapper = root.join("claude.cmd");
         std::fs::write(&wrapper, "@node @anthropic-ai wrapper fixture").unwrap();
         let result = super::run_coordinator_attempt(&wrapper, r#"{"type":"object"}"#, "literal & % ! () 中文", "plain & % ! () 中文".into(), Some("literal & % ! () 中文"), std::time::Duration::from_secs(5), &|| false, &mut |_| {});

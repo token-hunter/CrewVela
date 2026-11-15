@@ -1,5 +1,5 @@
 // 浏览器控制（内置功能）：设置开关 = 注册一个本地 stdio MCP server（官方
-// @playwright/mcp，驱动系统 Chrome/Edge）+ 向 claude/codex/kimi 全局部署使用技能。
+// @playwright/mcp，驱动系统 Chrome 或自定义浏览器）+ 向 claude/codex/kimi 全局部署使用技能。
 // MCP 条目与技能随开关联动，source_plugin "builtin@browser-control" 是反向清理锚点；
 // 注入管道复用既有路径：claude PTY（enabled_claude_map）、多智能体 ACP
 // （enabled_acp_servers）、原生聊天 ACP（enabled_native_chat_servers）、codex PTY（-c 覆盖）。
@@ -32,9 +32,10 @@ fn default_true() -> bool {
 #[serde(rename_all = "snake_case")]
 pub enum BrowserChannel {
     #[default]
+    // 旧版 Edge 配置兼容为自动探测；序列化只输出 auto。
+    #[serde(alias = "msedge")]
     Auto,
     Chrome,
-    Msedge,
     Custom,
 }
 
@@ -137,25 +138,6 @@ fn chrome_candidates() -> Vec<PathBuf> {
     }
 }
 
-fn edge_candidates() -> Vec<PathBuf> {
-    if cfg!(target_os = "windows") {
-        let mut roots: Vec<PathBuf> = ["ProgramFiles(x86)", "PROGRAMFILES"]
-            .iter()
-            .filter_map(std::env::var_os)
-            .map(PathBuf::from)
-            .collect();
-        roots.dedup();
-        roots
-            .into_iter()
-            .map(|root| root.join(r"Microsoft\Edge\Application\msedge.exe"))
-            .collect()
-    } else if cfg!(target_os = "macos") {
-        vec!["/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge".into()]
-    } else {
-        vec!["/usr/bin/microsoft-edge".into()]
-    }
-}
-
 /// 解析结果：传给 @playwright/mcp 的 --browser channel 或 --executable-path。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedBrowser {
@@ -166,8 +148,15 @@ pub(crate) struct ResolvedBrowser {
 }
 
 pub(crate) fn resolve_browser(settings: &BrowserControlSettings) -> Result<ResolvedBrowser> {
+    resolve_browser_with_chrome_candidates(settings, &chrome_candidates())
+}
+
+fn resolve_browser_with_chrome_candidates(
+    settings: &BrowserControlSettings,
+    candidates: &[PathBuf],
+) -> Result<ResolvedBrowser> {
     let missing_hint =
-        "未找到可用的 Chrome 或 Edge，请安装其中之一后重试，或在浏览器控制设置里选择自定义路径";
+        "未找到可用的 Chrome，请安装 Chrome 后重试，或在浏览器控制设置里选择自定义路径";
     match settings.browser {
         BrowserChannel::Custom => {
             let path = PathBuf::from(settings.custom_path.trim());
@@ -183,35 +172,21 @@ pub(crate) fn resolve_browser(settings: &BrowserControlSettings) -> Result<Resol
             })
         }
         BrowserChannel::Chrome => {
-            let executable = first_existing(&chrome_candidates())
+            let executable = first_existing(candidates)
                 .ok_or_else(|| anyhow!("未检测到已安装的 Chrome。{missing_hint}"))?;
             Ok(ResolvedBrowser {
                 engine_args: vec!["--browser".into(), "chrome".into()],
                 label: format!("Chrome（{}）", executable.display()),
             })
         }
-        BrowserChannel::Msedge => {
-            let executable = first_existing(&edge_candidates())
-                .ok_or_else(|| anyhow!("未检测到已安装的 Edge。{missing_hint}"))?;
-            Ok(ResolvedBrowser {
-                engine_args: vec!["--browser".into(), "msedge".into()],
-                label: format!("Edge（{}）", executable.display()),
-            })
-        }
         BrowserChannel::Auto => {
-            if let Some(executable) = first_existing(&chrome_candidates()) {
+            if let Some(executable) = first_existing(candidates) {
                 return Ok(ResolvedBrowser {
                     engine_args: vec!["--browser".into(), "chrome".into()],
                     label: format!("Chrome（{}）", executable.display()),
                 });
             }
-            if let Some(executable) = first_existing(&edge_candidates()) {
-                return Ok(ResolvedBrowser {
-                    engine_args: vec!["--browser".into(), "msedge".into()],
-                    label: format!("Edge（{}）", executable.display()),
-                });
-            }
-            bail!("自动探测未找到 Chrome 或 Edge。{missing_hint}");
+            bail!("自动探测未找到 Chrome。{missing_hint}");
         }
     }
 }
@@ -940,7 +915,7 @@ fn window_scale<R: tauri::Runtime>(app: &AppHandle<R>) -> f64 {
         .unwrap_or(1.0)
 }
 
-/// 面板读取：设置 + 当前解析状态；若 MCP 条目与设置漂移（用户在 MCP 管理页
+/// 面板读取：设置 + 当前解析状态；若 MCP 条目与设置漂移（外部编辑配置后
 /// 手动停用/删除），以 browser-control.json 为准修复 enabled 状态。
 fn status(app: &AppHandle) -> Result<BrowserControlStatus> {
     let config_dir = crate::providers::config_dir()?;
@@ -1363,6 +1338,40 @@ mod tests {
     }
 
     #[test]
+    fn retired_edge_settings_load_as_auto_without_losing_other_preferences() {
+        let dir = temp_dir();
+        let path = settings_path_at(&dir);
+        std::fs::write(&path, r#"{"enabled":true,"browser":"msedge","customPath":"kept","headless":true,"preferPanel":false}"#).unwrap();
+        let migrated = load_settings_at(&path).unwrap();
+        assert_eq!(migrated.browser, BrowserChannel::Auto);
+        assert!(migrated.enabled && migrated.headless);
+        assert!(!migrated.prefer_panel);
+        assert_eq!(migrated.custom_path, "kept");
+        save_settings_at(&path, &migrated).unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["browser"], "auto");
+        assert!(serde_json::from_str::<BrowserChannel>(r#""unknown""#).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn automatic_and_explicit_browser_resolution_only_use_chrome() {
+        let dir = temp_dir();
+        let chrome = dir.join("chrome.exe");
+        std::fs::write(&chrome, b"fixture").unwrap();
+        for channel in [BrowserChannel::Auto, BrowserChannel::Chrome] {
+            let settings = settings(true, channel);
+            let resolved = resolve_browser_with_chrome_candidates(&settings, &[chrome.clone()]).unwrap();
+            assert_eq!(resolved.engine_args, vec!["--browser", "chrome"]);
+            assert!(resolved.label.starts_with("Chrome（"));
+            let error = resolve_browser_with_chrome_candidates(&settings, &[]).unwrap_err().to_string();
+            assert!(error.contains("Chrome"));
+            assert!(!error.contains("Edge"));
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn resolve_browser_custom_requires_existing_file() {
         let dir = temp_dir();
         let exe = dir.join("chrome.exe");
@@ -1385,7 +1394,7 @@ mod tests {
     #[test]
     fn mcp_config_carries_isolated_and_engine_prefix() {
         let browser = ResolvedBrowser {
-            engine_args: vec!["--browser".into(), "msedge".into()],
+            engine_args: vec!["--browser".into(), "chrome".into()],
             label: String::new(),
         };
         let engine = test_engine();
@@ -1405,7 +1414,7 @@ mod tests {
             vec![
                 r"C:\mcp\cli.js".to_string(),
                 "--browser".to_string(),
-                "msedge".to_string(),
+                "chrome".to_string(),
                 "--isolated".to_string(),
             ]
         );

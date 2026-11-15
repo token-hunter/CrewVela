@@ -43,18 +43,7 @@ export function ControlWindow() {
       }
     };
 
-    const refreshProviders = async () => {
-      try {
-        const items = await invoke<ProviderConfig[]>("list_providers");
-        if (!disposed) setProviders(items);
-      } catch {
-        // 主窗口关闭时应用会退出，无需在独立窗口重复显示错误。
-      } finally {
-        if (!disposed) {
-          providerTimer = window.setTimeout(refreshProviders, 1000);
-        }
-      }
-    };
+    const refreshProviders = async () => { if (!disposed) setProviders([]); };
 
     refreshSessions();
     refreshProviders();

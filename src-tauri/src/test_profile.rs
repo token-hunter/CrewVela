@@ -381,7 +381,7 @@ mod tests {
             .args(["--exact","test_profile::tests::isolated_backend_initializes_real_empty_stores_without_real_credentials","--nocapture"])
             .env(VARIABLE,&root).output().unwrap();
         assert!(output.status.success(),"{}\n{}",String::from_utf8_lossy(&output.stdout),String::from_utf8_lossy(&output.stderr));
-        assert!(root.join("config/providers.json").is_file());
+        assert!(!root.join("config/providers.json").exists(), "local-only startup must not create model-service configuration");
         fs::remove_dir_all(root).unwrap();
     }
 }

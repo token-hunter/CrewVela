@@ -84,6 +84,8 @@ impl AccountHost {
         Ok(Some(host))
     }
     fn call(&self, mut input: Value) -> Result<Value> {
+        // Decrypted control characters can expand to six JSON bytes each.
+        let output_limit: u64 = if input["operation"] == "credentialCipher" { 8 * 1024 * 1024 } else { 1024 * 1024 };
         input["builtin"] = json!(self.builtin);
         let mut command = Command::new(&self.program);
         command.args(["-e", include_str!("../../resources/zcode-account-host.cjs")]);
@@ -122,7 +124,7 @@ impl AccountHost {
         std::thread::spawn(move || {
             use std::io::Read;
             let mut bytes = Vec::new();
-            let result = stdout.take(1024 * 1024 + 1).read_to_end(&mut bytes);
+            let result = stdout.take(output_limit + 1).read_to_end(&mut bytes);
             let _ = tx.send((result, bytes));
         });
         let received = rx.recv_timeout(Duration::from_secs(45));
@@ -134,7 +136,7 @@ impl AccountHost {
         let (read, bytes) = received.unwrap();
         read.context("读取 ZCode Desktop 账号 Host 失败")?;
         let status = child.wait()?;
-        if !status.success() || bytes.len() > 1024 * 1024 {
+        if !status.success() || bytes.len() as u64 > output_limit {
             bail!("ZCode Desktop 账号 Host 响应无效");
         }
         // Never include parsing input or raw helper output in error diagnostics.
@@ -175,6 +177,9 @@ impl AccountHost {
     pub fn auth(&self, params: &Value, selected: &Value) -> Result<Value> {
         let (provider, grant) = self.grant_for_request(params, selected)?;
         self.call(json!({"operation":"auth","providerId":provider,"grant":grant}))
+    }
+    pub fn credential_cipher(&self, params: &Value) -> Result<Value> {
+        self.call(json!({"operation":"credentialCipher","request":params}))
     }
 }
 

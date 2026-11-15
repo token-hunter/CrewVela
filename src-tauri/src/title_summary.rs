@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::launcher::{build_env, resolve_claude, CLEAR_VARS};
+use crate::launcher::{build_env, resolve_claude};
 use crate::providers::ProviderConfig;
 
 const SUMMARY_TIMEOUT: Duration = Duration::from_secs(45);
@@ -22,9 +22,6 @@ pub fn summarize_title(provider: &ProviderConfig, key: &str, prompt: &str) -> Re
 
     let claude = resolve_claude()?;
     let mut command = claude_command(&claude)?;
-    for var in CLEAR_VARS {
-        command.env_remove(var);
-    }
     command
         .arg("-p")
         .arg("--output-format")
@@ -84,10 +81,8 @@ pub fn summarize_runtime(kind: &str, prompt: &str, model: Option<&str>) -> Resul
         else { crate::multi_agent::resolve_runtime_executable(runtime).ok_or_else(|| anyhow!("摘要运行时未安装"))? };
     let mut command = summary_command(&path, runtime)?;
     if runtime == AgentRuntimeKind::Pi {
-        if let Some(model) = model { command.args(["--model", model]); }
         command.args(["--print", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-approve", "--system-prompt", SYSTEM_PROMPT, "--", prompt]);
     } else {
-        if let Some(model) = model { command.args(["--model", model]); }
         command.args(["-p", "--output-format", "json", "--no-session-persistence", "--safe-mode", "--tools", "", "--permission-mode", "dontAsk", "--max-turns", "1", "--system-prompt", SYSTEM_PROMPT, "--", prompt]);
     }
     // 独立临时目录隔离项目上下文；运行时仍读取自己的账户配置。

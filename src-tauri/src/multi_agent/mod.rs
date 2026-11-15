@@ -23,11 +23,14 @@ pub(crate) use executor::interactive_runtime_prompt_busy;
 pub(crate) use executor::codex_terminal_state;
 pub(crate) use executor::codex_native_update_prompt;
 pub(crate) use executor::interactive_runtime_prompt_ready;
+#[cfg(test)]
+pub(crate) use executor::strip_terminal_control_sequences;
 pub(crate) use executor::external_command_path;
 pub use executor::{merge_integrator_delivery, AgentTerminalHost, MultiAgentSupervisor};
 pub use governance::CollaborationGovernance;
 pub mod templates;
 pub(crate) use runtime::capabilities_for_runtime;
+pub(crate) use runtime::{version_number, version_is_newer};
 pub use runtime::{
     check_runtime_updates, probe_all_runtimes, upgrade_runtime, RuntimeProbe, RuntimeUpgradeReceipt,
 };

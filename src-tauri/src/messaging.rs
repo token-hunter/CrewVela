@@ -396,7 +396,7 @@ mod tests {
 
     fn record(id: &str, title: &str) -> SessionRecord {
         SessionRecord {
-            launch_model: None, model_assignment: None,            id: id.into(),
+                        id: id.into(),
             claude_session_id: id.into(),
             kind: SessionKind::Claude,
             shell: None,

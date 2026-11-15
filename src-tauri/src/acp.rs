@@ -1714,7 +1714,7 @@ pub(crate) fn execute_managed_acp(
     permission_handler: Option<ManagedPermissionHandler>,
 ) -> Result<ManagedAcpOutcome> {
     let process_id = Arc::new(AtomicU32::new(0));
-    // MCP 管理页启用的 http 类型用户 server 一并交给 Agent；
+    // 保留配置中启用的 http 类型用户 server 一并交给 Agent；
     // 读取失败不阻塞：协作桥本身仍然是必需的控制面。
     let mut mcp_servers = vec![managed_mcp_server(mcp_url, token)];
     match crate::mcp::enabled_acp_servers() {

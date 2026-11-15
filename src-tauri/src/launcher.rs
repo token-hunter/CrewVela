@@ -76,22 +76,7 @@ fn append_absolute_paths(paths: &mut Vec<PathBuf>, candidates: impl IntoIterator
 
 /// 启动 Claude Code 前必须从继承环境移除的变量。
 /// Provider 路由会由当前会话重新注入，NO_COLOR 会关闭终端颜色。
-pub const CLEAR_VARS: &[&str] = &[
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_BASE_URL",
-    "ANTHROPIC_MODEL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
-    "ANTHROPIC_CUSTOM_HEADERS",
-    "API_TIMEOUT_MS",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-    "NO_COLOR",
-];
+
 
 /// 探测 claude 可执行文件路径，优先返回原生 claude.exe。
 ///
@@ -100,6 +85,7 @@ pub const CLEAR_VARS: &[&str] = &[
 /// 下的 claude.exe。直接 spawn 该 .exe 可绕过 cmd.exe 中间层，避免 conpty 下
 /// claude 的 TUI 不渲染、启动后卡住的问题。
 pub fn resolve_claude() -> Result<PathBuf> {
+    if let Some(path) = crate::runtime_installation::managed_executable(crate::multi_agent::AgentRuntimeKind::ClaudeCode)? { return Ok(path); }
     let raw = which("claude")
         .map_err(|_| anyhow!("未在 PATH 中找到 claude，请先安装 Claude Code CLI"))?;
 
@@ -127,74 +113,12 @@ pub fn resolve_claude() -> Result<PathBuf> {
     Ok(raw)
 }
 
-/// 组装 provider 所需的环境变量（不含 CLEAR_VARS）。
-pub fn build_env(provider: &ProviderConfig, key: &str) -> HashMap<String, String> {
-    let mut env = HashMap::new();
-    env.insert("ANTHROPIC_BASE_URL".into(), provider.base_url.clone());
-
-    for (k, v) in &provider.env {
-        if k != "ANTHROPIC_API_KEY" && k != "ANTHROPIC_AUTH_TOKEN" {
-            env.insert(k.clone(), v.clone());
-        }
-    }
-
-    env.insert(provider.meta.api_key_field.clone(), key.to_string());
-
-    let mut custom_headers = Vec::new();
-    if !provider.meta.custom_user_agent.is_empty() {
-        custom_headers.push(format!("User-Agent: {}", provider.meta.custom_user_agent));
-    }
-    let mut header_entries = provider.meta.request_headers.iter().collect::<Vec<_>>();
-    header_entries.sort_by(|left, right| left.0.cmp(right.0));
-    custom_headers.extend(
-        header_entries
-            .into_iter()
-            .map(|(name, value)| format!("{name}: {value}")),
-    );
-    if !custom_headers.is_empty() {
-        env.insert("ANTHROPIC_CUSTOM_HEADERS".into(), custom_headers.join("\n"));
-    }
-
-    env.insert("TERM".into(), "xterm-256color".into());
-    env.insert("COLORTERM".into(), "truecolor".into());
-
-    if !env.contains_key("ANTHROPIC_MODEL") {
-        let primary_model = env
-            .get("ANTHROPIC_DEFAULT_SONNET_MODEL")
-            .or_else(|| env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
-            .cloned();
-        if let Some(primary_model) = primary_model {
-            env.insert("ANTHROPIC_MODEL".into(), primary_model);
-        }
-    }
-
-    if let Some(t) = provider.timeout_ms {
-        env.insert("API_TIMEOUT_MS".into(), t.to_string());
-    }
-    if provider.disable_nonessential_traffic {
-        env.insert(
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC".into(),
-            "1".into(),
-        );
-    }
-    env
-}
-
-/// 启动前校验 provider 配置。空 base_url 直接拒绝，避免连到无效端点。
-pub fn validate_provider(provider: &ProviderConfig) -> Result<(), String> {
-    if provider.base_url.trim().is_empty() {
-        return Err(format!(
-            "请先编辑 {} provider，填写 API 端点（base_url）",
-            provider.id
-        ));
-    }
-    Ok(())
-}
-
 /// 从 cwds 取第 i 个有效目录；越界或空串返回 None（调用方据此用 home）。
 pub fn pick_cwd<'a>(cwds: &'a [String], i: usize) -> Option<&'a str> {
     cwds.get(i).map(|s| s.as_str()).filter(|s| !s.is_empty())
 }
+
+pub fn build_env(_provider: &ProviderConfig, _key: &str) -> HashMap<String,String> { HashMap::new() }
 
 #[cfg(test)]
 mod tests {
@@ -233,121 +157,6 @@ mod tests {
             hidden: false,
             meta: crate::providers::ProviderMeta::default(),
         }
-    }
-
-    #[test]
-    fn build_env_sets_base_token_and_models() {
-        let env = build_env(&sample(), "k");
-        assert_eq!(
-            env.get("ANTHROPIC_BASE_URL").unwrap(),
-            "https://example.com"
-        );
-        assert_eq!(env.get("ANTHROPIC_AUTH_TOKEN").unwrap(), "k");
-        assert_eq!(env.get("ANTHROPIC_MODEL").unwrap(), "m1");
-        assert_eq!(env.get("API_TIMEOUT_MS").unwrap(), "1000");
-        assert_eq!(
-            env.get("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC").unwrap(),
-            "1"
-        );
-        // 不应包含需清除的变量
-        assert!(!env.contains_key("ANTHROPIC_API_KEY"));
-    }
-
-    #[test]
-    fn build_env_honors_provider_api_key_field() {
-        let mut provider = sample();
-        provider.meta.api_key_field = "ANTHROPIC_API_KEY".into();
-
-        let env = build_env(&provider, "provider-key");
-
-        assert_eq!(
-            env.get("ANTHROPIC_API_KEY").map(String::as_str),
-            Some("provider-key")
-        );
-        assert!(!env.contains_key("ANTHROPIC_AUTH_TOKEN"));
-        assert!(CLEAR_VARS.contains(&"ANTHROPIC_AUTH_TOKEN"));
-    }
-
-    #[test]
-    fn inherited_provider_routing_is_cleared_before_launch() {
-        for variable in [
-            "ANTHROPIC_BASE_URL",
-            "ANTHROPIC_MODEL",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-        ] {
-            assert!(CLEAR_VARS.contains(&variable), "missing {variable}");
-        }
-    }
-
-    #[test]
-    fn build_env_applies_supported_custom_headers_without_a_proxy() {
-        let mut provider = sample();
-        provider
-            .meta
-            .request_headers
-            .insert("x-team".into(), "dock".into());
-        provider.meta.custom_user_agent = "crewvela/1.0".into();
-
-        let env = build_env(&provider, "provider-key");
-
-        assert_eq!(
-            env.get("ANTHROPIC_CUSTOM_HEADERS").map(String::as_str),
-            Some("User-Agent: crewvela/1.0\nx-team: dock")
-        );
-    }
-
-    #[test]
-    fn build_env_uses_provider_sonnet_model_when_primary_model_is_missing() {
-        let mut provider = sample();
-        provider.id = "glm".into();
-        provider.env = [
-            (
-                "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-                "glm-4.6".to_string(),
-            ),
-            (
-                "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-                "glm-4.6".to_string(),
-            ),
-            (
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-                "glm-4.5-air".to_string(),
-            ),
-        ]
-        .into_iter()
-        .collect();
-
-        let env = build_env(&provider, "glm-key");
-
-        assert_eq!(
-            env.get("ANTHROPIC_MODEL").map(String::as_str),
-            Some("glm-4.6")
-        );
-    }
-
-    #[test]
-    fn build_env_advertises_truecolor_terminal_capabilities() {
-        let env = build_env(&sample(), "k");
-
-        assert_eq!(env.get("TERM").map(String::as_str), Some("xterm-256color"));
-        assert_eq!(env.get("COLORTERM").map(String::as_str), Some("truecolor"));
-        assert!(CLEAR_VARS.contains(&"NO_COLOR"));
-    }
-
-    #[test]
-    fn validate_provider_rejects_empty_base_url() {
-        let mut p = sample();
-        p.base_url = String::new();
-        let err = validate_provider(&p).unwrap_err();
-        assert!(err.contains("base_url"), "错误应提及 base_url: {err}");
-    }
-
-    #[test]
-    fn validate_provider_accepts_filled_base_url() {
-        let p = sample();
-        assert!(validate_provider(&p).is_ok());
     }
 
     #[test]

@@ -5,6 +5,52 @@ const {mkdtemp,writeFile,mkdir,rm}=require('node:fs/promises');
 const {tmpdir}=require('node:os');
 const {join}=require('node:path');
 const host=require('../src-tauri/resources/zcode-account-host.cjs');
+
+test('process credential cipher reuses an existing OS key and preserves exact plaintext without writing files',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'zcode-cipher-'));
+  const previous=process.env.ZCODE_DATA_BASE_DIR;
+  try{
+    process.env.ZCODE_DATA_BASE_DIR=root;
+    const dir=join(root,'.zcode','v2');await mkdir(dir,{recursive:true});
+    await writeFile(join(dir,'credential-source'),'os\n');
+    await writeFile(join(dir,'credentials.json'),'{}');
+    const key=Buffer.alloc(32,7),store=()=>({get:async()=>key.toString('base64url')});
+    const requestId='1db0b641-d36f-4a55-83ce-962fc4bb96c0';
+    const value='  synthetic credential 中文\n ';
+    const encrypt=await host.credentialCipher({request:{requestId,operation:'encrypt',value}},store);
+    assert.equal(encrypt.result.ok,true);
+    assert.ok(encrypt.result.value.startsWith('enc:v2:os:'));
+    const decrypt=await host.credentialCipher({request:{requestId,operation:'decrypt',value:encrypt.result.value}},store);
+    assert.deepEqual(decrypt,{requestId,result:{ok:true,value}});
+    const fs=require('node:fs/promises');
+    assert.equal(await fs.readFile(join(dir,'credentials.json'),'utf8'),'{}');
+    assert.deepEqual((await fs.readdir(dir)).sort(),['credential-source','credentials.json']);
+    const wrongKey=await host.credentialCipher({request:{requestId,operation:'decrypt',value:encrypt.result.value}},()=>({get:async()=>Buffer.alloc(32,8).toString('base64url')}));
+    assert.equal(wrongKey.result.ok,false);
+    assert.equal(wrongKey.result.error.code,'CREDENTIAL_SECURE_STORAGE_UNAVAILABLE');
+    assert.equal(wrongKey.result.value,undefined);
+    assert.ok(!JSON.stringify(wrongKey).includes(value));
+  }finally{
+    if(previous===undefined)delete process.env.ZCODE_DATA_BASE_DIR;else process.env.ZCODE_DATA_BASE_DIR=previous;
+    await rm(root,{recursive:true,force:true});
+  }
+});
+
+test('credential cipher rejects malformed or oversized requests before opening secure storage',async()=>{
+  const requestId='1db0b641-d36f-4a55-83ce-962fc4bb96c0';
+  const store=()=>{throw Error('must not open the keyring for an invalid request');};
+  for(const request of [
+    {requestId,operation:'other',value:'synthetic'},
+    {requestId:'not-a-uuid',operation:'decrypt',value:'synthetic'},
+    {requestId,operation:'decrypt',value:'synthetic',sessionId:'foreign'},
+    {requestId,operation:'encrypt',value:'界'.repeat(349526)},
+    {requestId,operation:'decrypt',value:'x'.repeat(1398233)},
+  ]){
+    const result=await host.credentialCipher({request},store);
+    assert.equal(result.result.ok,false);
+    assert.equal(result.result.error.code,'CREDENTIAL_CIPHER_INVALID_PAYLOAD');
+  }
+});
 test('native encrypted credentials and corrupt authentication tag',()=>{
   const secret='isolated-secret',iv=Buffer.alloc(12,1);
   const cipher=createCipheriv('aes-256-gcm',createHash('sha256').update(secret).digest(),iv);

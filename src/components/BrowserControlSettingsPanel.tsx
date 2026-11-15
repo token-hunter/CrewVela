@@ -102,13 +102,13 @@ export function BrowserControlSettingsPanel() {
             </SettingsGroup>
             <SettingsGroup title="运行方式">
               <SettingSwitch title="无头模式" hint="使用外部浏览器时隐藏窗口。" checked={draft.headless} onChange={headless => setDraft({ ...draft, headless })} />
-              <SettingSwitch title="优先内置浏览器面板" hint={IS_MAC ? "在应用内显示网页操作；如需外部 Chrome/Edge，请关闭此项并重启会话。" : "在应用内显示操作，面板不可用时使用外部浏览器。"} checked={draft.preferPanel} onChange={preferPanel => setDraft({ ...draft, preferPanel })} />
+              <SettingSwitch title="优先内置浏览器面板" hint={IS_MAC ? "在应用内显示网页操作；如需外部 Chrome，请关闭此项并重启会话。" : "在应用内显示操作，面板不可用时使用外部浏览器。"} checked={draft.preferPanel} onChange={preferPanel => setDraft({ ...draft, preferPanel })} />
             </SettingsGroup>
           </fieldset>
         </fieldset>
         <aside className="workspace-section workspace-status" aria-label="浏览器运行状态">
         {status && <SettingsGroup title="当前运行环境" description="已保存的配置。">
-          <dl className="browser-saved-facts"><div><dt>浏览器</dt><dd>{status.resolvedBrowser?.match(/^(Chrome|Edge|Microsoft Edge)(?=[（(\s]|$)/)?.[1] ?? status.resolvedBrowser ?? "尚未解析浏览器"}</dd></div></dl>
+          <dl className="browser-saved-facts"><div><dt>浏览器</dt><dd>{status.resolvedBrowser?.match(/^Chrome(?=[（(\s]|$)/)?.[0] ?? status.resolvedBrowser ?? "尚未解析浏览器"}</dd></div></dl>
           <details className="runtime-details"><summary>引擎与接入详情</summary>
             <dl><div><dt>浏览器</dt><dd>{status.resolvedBrowser ?? "尚未解析浏览器"}</dd></div>
               <div><dt>引擎</dt><dd>{status.engine}</dd></div>

@@ -290,6 +290,7 @@ pub struct AgentProfile {
     pub persona: AgentPersona,
     #[serde(default)]
     pub persona_custom: String,
+    #[serde(skip)]
     pub model: Option<String>,
     pub permission_profile: PermissionProfile,
     pub max_concurrency: u32,
@@ -315,6 +316,7 @@ pub struct CreateAgentInput {
     pub persona: AgentPersona,
     #[serde(default)]
     pub persona_custom: String,
+    #[serde(skip)]
     pub model: Option<String>,
     #[serde(default = "default_permission_profile")]
     pub permission_profile: PermissionProfile,
@@ -337,6 +339,7 @@ pub struct UpdateAgentInput {
     pub persona: AgentPersona,
     #[serde(default)]
     pub persona_custom: String,
+    #[serde(skip)]
     pub model: Option<String>,
     pub enabled: bool,
 }
@@ -733,6 +736,7 @@ pub struct PlannedAgent {
     pub runtime_kind: AgentRuntimeKind,
     pub role: AgentRole,
     pub description: String,
+    #[serde(skip)]
     pub model: Option<String>,
     pub permission_profile: PermissionProfile,
     #[serde(default)]

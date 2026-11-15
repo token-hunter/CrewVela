@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::launcher::{resolve_claude, CLEAR_VARS};
+use crate::launcher::{resolve_claude};
 use crate::providers::ProviderConfig;
 use crate::pty::PtyManager;
 use crate::sessions::{PermissionMode, SessionKind, SessionManager, SessionRecord};
@@ -1829,10 +1829,7 @@ fn parse_explicit_launch(message: &str, providers: &[ProviderConfig]) -> Option<
 /// 本地 claude CLI 常以第三方 provider 的 env 块配置在 user settings 里，
 /// 完全禁用会让总控退化成官方登录态，未登录用户将无法使用总控。
 fn isolate_local_claude(command: &mut Command) {
-    for variable in CLEAR_VARS {
-        command.env_remove(variable);
-    }
-    command.arg("--setting-sources").arg("user");
+    // Preserve the local CLI's environment and normal settings-source precedence.
 }
 
 pub fn interpret_with_claude(
@@ -2184,19 +2181,40 @@ mod tests {
     }
 
     #[test]
-    fn local_controller_ignores_inherited_env_but_keeps_user_settings() {
+    fn local_controller_preserves_native_environment_and_settings() {
         let mut command = Command::new("claude");
         command.env("ANTHROPIC_MODEL", "k3");
 
         isolate_local_claude(&mut command);
 
-        assert!(command
-            .get_envs()
-            .any(|(name, value)| { name == "ANTHROPIC_MODEL" && value.is_none() }));
-        assert_eq!(
-            command.get_args().collect::<Vec<_>>(),
-            ["--setting-sources", "user"]
-        );
+        assert!(command.get_envs().any(|(name,value)| name == "ANTHROPIC_MODEL" && value == Some(std::ffi::OsStr::new("k3"))));
+        assert!(command.get_args().next().is_none());
+    }
+
+    #[test]
+    fn zcode_automation_queue_waits_for_composer_then_pastes_and_submits_once() {
+        let root = std::env::temp_dir().join(format!("crewvela-zcode-automation-{}", uuid::Uuid::new_v4()));
+        let manager = SessionManager::open_at(root.join("sessions.json"), root.join("events")).unwrap();
+        let session = manager.create_runtime(NewRuntimeSession { runtime_kind: "zcode_cli".into(), cwd: root.display().to_string(), project_id: None }).unwrap();
+        manager.attach_runtime(&session.id, 9).unwrap();
+        let queue = SessionActionQueue::open_at(root.join("mailbox.json"), root.join("outbox")).unwrap();
+        queue.enqueue_messages_durable(vec![(session.id.clone(), QueuedMessage::new("自动化任务\n第二行".into(), None))]).unwrap();
+        let now = Instant::now();
+        let mut writes = Vec::new();
+        assert!(queue.flush_ready_with_writer_at(&manager, now, |_, _| panic!("startup is not ready")).is_empty());
+        let observe = |raw: &str| manager.observe_runtime_prompt_output_with_blocker(&session.id, raw,
+            |text| crate::multi_agent::interactive_runtime_prompt_ready(crate::multi_agent::AgentRuntimeKind::ZCodeCli, text),
+            crate::multi_agent::interactive_runtime_prompt_blocked);
+        assert!(observe("\x1b[2J\x1b[HZCode 0.16.9\r\nStatus\r\nReady.\r\nLast idle\r\nType a prompt\r\nGLM-5.3-Flash account:fixture | high"), "idle ZCode CLI must accept the queued automation");
+        assert_eq!(queue.flush_ready_with_writer_at(&manager, now, |pty, bytes| { assert_eq!(pty, 9); writes.push(bytes.to_vec()); Ok(()) }), vec![session.id.clone()]);
+        assert!(queue.peek_next(&session.id).is_some(), "paste alone is not submission");
+        queue.flush_pending_submits_with_writer_at(&manager, now + SUBMIT_DELAY, |_, bytes| { writes.push(bytes.to_vec()); Ok(()) });
+        queue.flush_pending_submits_with_writer_at(&manager, now + SUBMIT_DELAY * 2, |_, _| panic!("must submit once"));
+        assert_eq!(writes, vec!["\x1b[200~自动化任务\n第二行\x1b[201~".as_bytes().to_vec(), b"\r".to_vec()]);
+        assert!(queue.peek_next(&session.id).is_none());
+        assert!(!manager.is_ready_for_prompt(&session.id));
+        drop(queue); drop(manager);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -2491,7 +2509,7 @@ mod tests {
 
     fn session(id: &str, pty_id: Option<u32>) -> SessionRecord {
         SessionRecord {
-            launch_model: None, model_assignment: None,            id: id.into(),
+                        id: id.into(),
             claude_session_id: id.into(),
             kind: SessionKind::Claude,
             shell: None,

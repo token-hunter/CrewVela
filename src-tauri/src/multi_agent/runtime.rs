@@ -413,14 +413,14 @@ fn run_spawned_command(mut command: Command, timeout_seconds: u64) -> Result<Str
     else { Err(if detail.is_empty() { output.status.to_string() } else { detail }) }
 }
 
-fn version_number(value: &str) -> Option<String> {
+pub(crate) fn version_number(value: &str) -> Option<String> {
     value
         .split(|ch: char| !ch.is_ascii_digit() && ch != '.')
         .find(|part| part.contains('.') && part.chars().all(|ch| ch.is_ascii_digit() || ch == '.'))
         .map(str::to_string)
 }
 
-fn version_is_newer(latest: &str, current: &str) -> bool {
+pub(crate) fn version_is_newer(latest: &str, current: &str) -> bool {
     let parse = |value: &str| {
         value
             .split('.')
@@ -579,6 +579,10 @@ fn resolve_definition_executable(
 }
 
 fn resolve_codex_definition(definition: &RuntimeDefinition) -> Result<(PathBuf, Option<String>), String> {
+    if let Some(path) = crate::runtime_installation::managed_executable(AgentRuntimeKind::Codex).map_err(|e| e.to_string())? {
+        let (version, error) = read_version(&path);
+        return version.map(|version| (path, Some(version))).ok_or_else(|| error.unwrap_or_else(|| "受管 Codex 版本检查失败，请修复安装".into()));
+    }
     let mut candidates = Vec::new();
     if let Ok(path) = which::which(definition.command) { candidates.push(path); }
     for prefix in codex_npm_prefixes() { candidates.extend(codex_npm_candidates(&prefix)); }

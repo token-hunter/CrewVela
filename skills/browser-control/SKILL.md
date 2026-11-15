@@ -1,11 +1,11 @@
 ---
 name: browser-control
-description: 通过 browser-control MCP 驱动用户本机 Chrome/Edge 完成网页打开、阅读、点击、填表、检索与截图。需要访问网页、查资料、操作 Web 界面或验证页面效果时使用。
+description: 通过 browser-control MCP 驱动用户本机 Chrome 完成网页打开、阅读、点击、填表、检索与截图。需要访问网页、查资料、操作 Web 界面或验证页面效果时使用。
 ---
 
 # 浏览器控制（browser-control）
 
-你可以通过 MCP 服务器 `browser-control` 驱动浏览器。**默认在实际调用浏览器工具时自动打开并接管 CrewVela 右侧栏的内置浏览器面板**：导航、点击、输入会实时显示在用户看得到的面板里。普通聊天、MCP 初始化和查询工具列表不会打开浏览器；Windows 面板连接失败时使用外部 Chrome/Edge 窗口。Windows 与外部浏览器基于官方 @playwright/mcp，macOS 内置面板使用下面的专用适配器。
+你可以通过 MCP 服务器 `browser-control` 驱动浏览器。**默认在实际调用浏览器工具时自动打开并接管 CrewVela 右侧栏的内置浏览器面板**：导航、点击、输入会实时显示在用户看得到的面板里。普通聊天、MCP 初始化和查询工具列表不会打开浏览器；Windows 面板连接失败时使用外部 Chrome 窗口。Windows 与外部浏览器基于官方 @playwright/mcp，macOS 内置面板使用下面的专用适配器。
 
 ### macOS 面板
 
@@ -71,5 +71,5 @@ browser_tabs          需要多页面并行时管理标签页
 - **凭据安全**：绝不主动索要或输入密码、支付信息；这类操作交给用户手动完成。
 - **下载与文件**：触发下载后向用户确认保存位置；不要静默下载可执行文件。
 - **超时**：单个工具调用超时会报错，重试一次仍失败就把已看到的快照内容汇报给用户再决定。
-- **浏览器找不到**（`Chromium distribution ... is not found`）：提示用户安装 Chrome 或 Edge 后重试。
+- **浏览器找不到**（`Chromium distribution ... is not found`）：提示用户安装 Chrome，或在浏览器控制设置中指定自定义路径后重试。
 - 工具不可用（列表里没有 browser_* 工具）说明本会话未启用浏览器控制，提示用户到 CrewVela 设置 → 浏览器控制 打开。

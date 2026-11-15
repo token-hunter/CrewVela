@@ -8,7 +8,6 @@ import { MultiAgentWorkspace } from "../../src/components/MultiAgentWorkspace";
 import { GeneralSettingsPanel } from "../../src/components/GeneralSettingsPanel";
 import { DEFAULT_GENERAL_SETTINGS } from "../../src/generalSettings";
 import { BrowserControlSettingsPanel } from "../../src/components/BrowserControlSettingsPanel";
-import { ComputerControlSettingsPanel } from "../../src/components/ComputerControlSettingsPanel";
 import { DEFAULT_BROWSER_CONTROL_SETTINGS } from "../../src/browserControlSettings";
 import type { SessionRecord } from "../../src/types";
 import "../../src/styles.css";
@@ -70,7 +69,7 @@ function Fixture() {
   const [closed, setClosed] = useState(false);
   if (mode === "general") return <GeneralSettingsPanel />;
   if (mode === "browser") return <BrowserControlSettingsPanel />;
-  if (mode === "computer") return <ComputerControlSettingsPanel />;
+  if (mode === "computer") return <div>此测试入口已退役</div>;
   if (mode === "agent") return closed ? <p>成员已保存</p> : <CollaborationAgentEditor agent={null} runtimeLocked={false} onClose={() => setClosed(true)} onSave={async draft => { await fixture.invoke("fixture_save_agent", { draft }); }} />;
   if (mode === "workspace") return <><button onClick={() => setProject(value => value === "project-A" ? "project-B" : "project-A")}>切换项目</button><p>{project}</p><MultiAgentWorkspace projectId={project} sessions={[]} theme="dark" onSessionsChange={() => {}} onCloseSession={() => {}} onClose={() => {}} /></>;
   if (mode === "automation") return <AutomationPanel sessions={[]} providers={[]} embedded />;

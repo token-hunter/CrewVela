@@ -8,15 +8,12 @@ import { join } from "node:path";
 
 const BROWSER_PATHS = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-  "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
 ];
 
 test("项目协作输入框固定在控制侧栏底部", () => {
   const browser = BROWSER_PATHS.find(existsSync);
-  assert.ok(browser, "未找到 Chrome 或 Edge，无法执行真实浏览器布局测试");
+  assert.ok(browser, "未找到 Chrome，无法执行真实浏览器布局测试");
   const fixture = new URL("./controlMultiAgentLayout.fixture.html", import.meta.url);
   const profile = mkdtempSync(join(tmpdir(), "crewvela-layout-browser-"));
   let result;
@@ -36,7 +33,7 @@ test("项目协作输入框固定在控制侧栏底部", () => {
       { encoding: "utf8", timeout: 15_000 },
     );
   } finally { rmSync(profile, { recursive: true, force: true }); }
-  assert.equal(result.status, 0, result.stderr || "Edge 布局测试启动失败");
+  assert.equal(result.status, 0, result.stderr || "Chrome 布局测试启动失败");
   const match = result.stdout.match(/<output id="layout-result">(-?\d+)<\/output>/);
   assert.ok(match, "没有读取到布局测量结果");
   const bottomGap = Number(match[1]);

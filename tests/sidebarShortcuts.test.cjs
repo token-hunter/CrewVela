@@ -16,7 +16,7 @@ function withStorage(stub) {
 test('配置会去重、丢弃未知 id，并按设置页导航顺序输出', async () => {
   const { sanitizeSidebarShortcuts, SIDEBAR_SHORTCUT_OPTIONS } = await modulePromise;
   assert.deepEqual(
-    sanitizeSidebarShortcuts(['automation', 'bogus', 'modelEvaluation', 'automation']),
+    sanitizeSidebarShortcuts(['automation', 'mcp', 'bogus', 'modelEvaluation', 'automation']),
     ['automation'],
   );
   assert.deepEqual(sanitizeSidebarShortcuts('nope'), []);

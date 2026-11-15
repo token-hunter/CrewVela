@@ -1,30 +1,18 @@
-import { PencilSimpleIcon } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { useRef, useState } from "react";
 import { Switch } from "./ui/Switch";
 import { Modal } from "./ui/Modal";
 import type { Dispatch, SetStateAction } from "react";
-import { DotsSixVertical } from "@phosphor-icons/react";
-import { stripOneM } from "../providerConfig";
 import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
 import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
-import { CubeIcon } from "@phosphor-icons/react/dist/csr/Cube";
 import { BrainIcon } from "@phosphor-icons/react/dist/csr/Brain";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
 import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
-import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
-import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
-import { EyeIcon } from "@phosphor-icons/react/dist/csr/Eye";
-import { EyeSlashIcon } from "@phosphor-icons/react/dist/csr/EyeSlash";
-import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { UsersIcon } from "@phosphor-icons/react/dist/csr/Users";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
-import { MonitorIcon } from "@phosphor-icons/react/dist/csr/Monitor";
 import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
-import { GitForkIcon } from "@phosphor-icons/react/dist/csr/GitFork";
-import { PlugIcon } from "@phosphor-icons/react/dist/csr/Plug";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import type {
   AppAppearance,
@@ -35,7 +23,6 @@ import type {
 } from "../types";
 import type { PetSettings } from "../petSettings";
 import type { NotificationSettings } from "../notificationSettings";
-import { formatTokens } from "../format";
 import { CollaborationSettingsPanel } from "./CollaborationSettingsPanel";
 import { SharedMemorySettingsPanel } from "./SharedMemorySettingsPanel";
 import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
@@ -48,30 +35,17 @@ import { PetSettingsPanel } from "./PetSettingsPanel";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 import { AutomationIcon } from "./AutomationIcon";
 import { ArchivedSessionsPanel } from "./ArchivedSessionsPanel";
-import { CaretDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
-import { InfoIcon } from "@phosphor-icons/react/dist/csr/Info";
-import { WarningCircleIcon } from "@phosphor-icons/react/dist/csr/WarningCircle";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { SkillCenterPanel } from "./SkillCenterPanel";
-import { McpSettingsPanel } from "./McpSettingsPanel";
-import { PluginMarketPanel } from "./PluginMarketPanel";
 import { BrowserControlSettingsPanel } from "./BrowserControlSettingsPanel";
-import { ComputerControlSettingsPanel } from "./ComputerControlSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
-import { ProviderQuotaCell } from "./ProviderQuotaCell";
-import { ModelAssignmentsPanel } from "./ModelAssignmentsPanel";
 
 interface Props {
-  initialModelView?: "assignments" | "connections";
   quickContext?: QuickContext;
   onSessionsChange?: (sessions: SessionRecord[]) => void;
   sessions: SessionRecord[];
   archivedSessions: SessionRecord[];
   projects: Project[];
-  providers: ProviderConfig[];
-  keyStates: Record<string, boolean>;
-  /** 按 provider 汇总的累计 token（全部会话，含已停止）。 */
-  usageByProvider: Record<string, number>;
   appearance: AppAppearance;
   resolvedAppearanceTheme: AppearanceTheme;
   petSettings: PetSettings;
@@ -79,12 +53,6 @@ interface Props {
   onAppearanceChange: Dispatch<SetStateAction<AppAppearance>>;
   onPetSettingsChange: (settings: PetSettings) => void;
   onNotificationSettingsChange: (settings: NotificationSettings) => void;
-  onEdit: (provider: ProviderConfig) => void;
-  onNew: () => void;
-  onDelete: (providerId: string) => void;
-  onSetHidden: (providerId: string, hidden: boolean) => void;
-  onRestoreDefault: (providerId: string) => void;
-  onReorder: (providerIds: string[]) => Promise<void>;
   onRestoreArchivedSession: (session: SessionRecord) => void | Promise<void>;
   onDeleteArchivedSession: (session: SessionRecord) => void | Promise<void>;
   onViewArchivedTranscript: (session: SessionRecord) => void;
@@ -97,16 +65,12 @@ interface Props {
 
 export type SettingsSection =
   | "generalSettings"
-  | "providers"
   | "collaboration"
   | "sharedMemory"
   | "automation"
   | "quickCommands"
   | "git"
   | "browserControl"
-  | "computerControl"
-  | "mcp"
-  | "pluginMarket"
   | "skills"
   | "appearance"
   | "notifications"
@@ -114,15 +78,11 @@ export type SettingsSection =
   | "archivedSessions";
 
 export function SettingsDialog({
-  initialModelView = "assignments",
   quickContext,
   onSessionsChange,
   sessions,
   archivedSessions,
   projects,
-  providers,
-  keyStates,
-  usageByProvider,
   appearance,
   resolvedAppearanceTheme,
   petSettings,
@@ -130,12 +90,6 @@ export function SettingsDialog({
   onAppearanceChange,
   onPetSettingsChange,
   onNotificationSettingsChange,
-  onEdit,
-  onNew,
-  onDelete,
-  onSetHidden,
-  onRestoreDefault,
-  onReorder,
   onRestoreArchivedSession,
   onDeleteArchivedSession,
   onViewArchivedTranscript,
@@ -145,19 +99,11 @@ export function SettingsDialog({
   initialCollaborationDiagnosticGlobal = false,
   initialCollaborationProjectId,
 }: Props) {
-  const [draggedProviderId, setDraggedProviderId] = useState<string | null>(
-    null,
+  const [activeSection, setActiveSection] = useState<SettingsSection>(
+    String(initialSection) === "mcp" ? "generalSettings" : initialSection,
   );
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const [savingOrder, setSavingOrder] = useState(false);
-  const [orderError, setOrderError] = useState("");
-  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
   const [automationEditing, setAutomationEditing] = useState(false);
   const [navQuery, setNavQuery] = useState("");
-  const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null);
-  const [modelView, setModelView] = useState(initialModelView);
-  const blockRowDragRef = useRef(false);
-
   const settingsNavGroups = [
     {
       label: "通用",
@@ -198,12 +144,6 @@ export function SettingsDialog({
       label: "智能体",
       items: [
         {
-          id: "providers" as const,
-          label: "模型设置",
-          keywords: "模型 provider 服务",
-          icon: <CubeIcon size={16} weight="regular" />,
-        },
-        {
           id: "collaboration" as const,
           label: "协作中心",
           keywords: "项目 agent 多智能体 协作",
@@ -234,29 +174,10 @@ export function SettingsDialog({
           icon: <GlobeIcon size={16} weight="regular" />,
         },
         {
-          id: "computerControl" as const,
-          label: "电脑控制",
-          keywords:
-            "电脑 computer 控制 桌面 应用 窗口 点击 输入 uia 自动化 截图 kimi kimicu kimi-cu kimi-computer-use",
-          icon: <MonitorIcon size={16} weight="regular" />,
-        },
-        {
-          id: "pluginMarket" as const,
-          label: "插件市场",
-          keywords: "插件 plugin marketplace 市场 安装 工具",
-          icon: <PlugIcon size={16} weight="regular" />,
-        },
-        {
           id: "skills" as const,
           label: "Skills",
           keywords: "Skill 技能 中央库 分发 项目 Agent",
           icon: <ScrollIcon size={16} weight="regular" />,
-        },
-        {
-          id: "mcp" as const,
-          label: "MCP",
-          keywords: "MCP 服务器 server 工具源 Model Context Protocol",
-          icon: <GitForkIcon size={16} weight="regular" style={{ transform: "rotate(180deg)" }} />,
         },
       ],
     },
@@ -273,44 +194,7 @@ export function SettingsDialog({
     },
   ];
   const normalizedNavQuery = navQuery.trim().toLocaleLowerCase();
-  const selectableProviders = providers.filter((provider) => !provider.hidden);
-
-  const resetDragState = () => {
-    setDraggedProviderId(null);
-    setDropTargetId(null);
-  };
-
-  const moveProvider = async (targetProviderId: string) => {
-    if (
-      savingOrder ||
-      !draggedProviderId ||
-      draggedProviderId === targetProviderId
-    ) {
-      resetDragState();
-      return;
-    }
-
-    const nextIds = providers.map((provider) => provider.id);
-    const sourceIndex = nextIds.indexOf(draggedProviderId);
-    const targetIndex = nextIds.indexOf(targetProviderId);
-    if (sourceIndex < 0 || targetIndex < 0) {
-      resetDragState();
-      return;
-    }
-
-    nextIds.splice(sourceIndex, 1);
-    nextIds.splice(targetIndex, 0, draggedProviderId);
-    resetDragState();
-    setSavingOrder(true);
-    setOrderError("");
-    try {
-      await onReorder(nextIds);
-    } catch (error) {
-      setOrderError(`排序未保存：${String(error)}`);
-    } finally {
-      setSavingOrder(false);
-    }
-  };
+  const selectableProviders: ProviderConfig[] = [];
 
   const sectionCopy = {
     generalSettings: {
@@ -318,12 +202,6 @@ export function SettingsDialog({
       title: "常规",
       description:
         "配置网络代理、窗口与电源、终端字体和渲染选项。",
-      note: "",
-    },
-    providers: {
-      eyebrow: "CONNECTIONS",
-      title: "模型设置",
-      description: "配置模型端点、模型映射与 API Key。",
       note: "",
     },
     collaboration: {
@@ -376,27 +254,6 @@ export function SettingsDialog({
         "选择 Agent 使用的浏览器，设置网页操作的运行方式。",
       note: "对已运行的会话不生效，重启会话后可用。",
     },
-    computerControl: {
-      eyebrow: "COMPUTER USE",
-      title: "电脑控制",
-      description:
-        "管理 Agent 操作本机桌面应用时可用的控制方式。",
-      note: "",
-    },
-    mcp: {
-      eyebrow: "MCP SERVERS",
-      title: "MCP 服务器",
-      description:
-        "接入 Model Context Protocol 工具源，启用的服务器会注入 Claude 会话与多 Agent 任务。",
-      note: "对已运行的会话不生效，重启会话后可用。",
-    },
-    pluginMarket: {
-      eyebrow: "PLUGIN MARKET",
-      title: "插件市场",
-      description:
-        "浏览精选插件，管理已安装的插件和市场来源。",
-      note: "",
-    },
     skills: {
       eyebrow: "SKILL CENTER",
       title: "Skills",
@@ -413,7 +270,7 @@ export function SettingsDialog({
   return (
     <Modal
       overlayClassName="dialog-overlay settings-overlay settings-native-overlay"
-      className={`settings-dialog settings-native${activeSection === "providers" && modelView === "connections" ? " settings-model-focus" : ""}`}
+      className="settings-dialog settings-native"
       onClose={onClose}
       closeOnOverlayClick
       labelledBy="settings-dialog-title"
@@ -487,19 +344,12 @@ export function SettingsDialog({
             className="settings-content-inner"
             data-settings-section={activeSection}
           >
-            {!(activeSection === "providers" && modelView === "assignments") && <div className="dialog-heading settings-heading">
+            <div className="dialog-heading settings-heading">
                 <div>
-                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? "创建自动化" : activeSection === "providers" && modelView === "connections" ? "模型服务" : sectionCopy.title}</h2>
-                  {activeSection !== "providers" && !(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
+                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? "创建自动化" : sectionCopy.title}</h2>
+                  {!(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
                 </div>
               <div className="settings-heading-actions">
-                {activeSection === "providers" && modelView === "connections" && <button className="btn secondary" type="button" onClick={() => setModelView("assignments")}>返回模型分配</button>}
-                {activeSection === "providers" && modelView === "connections" && (
-                  <button className="btn primary" aria-label="新建模型服务" onClick={onNew}>
-                    <PlusIcon size={16} aria-hidden="true" />
-                    <span>新建</span>
-                  </button>
-                )}
                 {activeSection === "appearance" && (
                     <Switch
                       className="appearance-follow-system"
@@ -523,115 +373,10 @@ export function SettingsDialog({
                     </Switch>
                   )}
               </div>
-            </div>}
+            </div>
             {sectionCopy.note && <p className="settings-page-note">{sectionCopy.note}</p>}
 
-            {activeSection === "providers" && modelView === "assignments" ? <ModelAssignmentsPanel providers={providers} onManageConnections={() => setModelView("connections")} /> : activeSection === "providers" ? (
-              <div className="settings-provider-list settings-provider-quota-list">
-                {orderError && <p role="alert">{orderError}</p>}
-
-                {providers.map((provider) => {
-                  const hasKey = keyStates[provider.id] ?? false;
-                  const configured = provider.baseUrl.length > 0;
-                  const effectiveModel = stripOneM(provider.env.ANTHROPIC_MODEL ?? "");
-                  const usage = usageByProvider[provider.id] ?? 0;
-                  const expanded = expandedProviderId === provider.id;
-                  const warnings = [!configured && "缺少端点", !hasKey && "缺少 Key", !effectiveModel && "兜底模型未配置"].filter(Boolean).join("、");
-                  return (
-                    <article
-                      className={`settings-provider-row settings-provider-quota-row${expanded ? " is-expanded" : ""}${provider.hidden ? " is-hidden" : ""}${
-                        draggedProviderId === provider.id ? " dragging" : ""
-                      }${dropTargetId === provider.id ? " drop-target" : ""}`}
-                      key={provider.id}
-                      draggable={!savingOrder}
-                      aria-label={`${provider.name || provider.id} 模型服务`}
-                      onPointerDownCapture={(event) => {
-                        const target = event.target;
-                        blockRowDragRef.current =
-                          target instanceof Element &&
-                          Boolean(target.closest(".model-provider-detail, .provider-quota-meta"));
-                      }}
-                      onPointerUpCapture={() => {
-                        blockRowDragRef.current = false;
-                      }}
-                      onPointerCancel={() => {
-                        blockRowDragRef.current = false;
-                      }}
-                      onDragStart={(event) => {
-                        if (blockRowDragRef.current) {
-                          event.preventDefault();
-                          blockRowDragRef.current = false;
-                          return;
-                        }
-                        setDraggedProviderId(provider.id);
-                        setDropTargetId(null);
-                        event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData("text/plain", provider.id);
-                      }}
-                      onDragEnd={resetDragState}
-                      onDragOver={(event) => {
-                        if (!draggedProviderId || savingOrder) return;
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = "move";
-                        setDropTargetId(provider.id);
-                      }}
-                      onDragLeave={(event) => {
-                        const relatedTarget = event.relatedTarget;
-                        if (
-                          !(relatedTarget instanceof Node) ||
-                          !event.currentTarget.contains(relatedTarget)
-                        ) {
-                          setDropTargetId((current) =>
-                            current === provider.id ? null : current,
-                          );
-                        }
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        void moveProvider(provider.id);
-                      }}
-                    >
-                      <ProviderQuotaCell provider={provider} hasKey={hasKey} active={activeSection === "providers"}>
-                        {({ values, controls }) => <>
-                          <div className="model-provider-heading">
-                            <span className="settings-provider-drag-handle" draggable={!savingOrder} title="拖动调整顺序" aria-hidden="true"><DotsSixVertical size={18} /></span>
-                            <button className="model-provider-toggle" type="button" aria-expanded={expanded} aria-controls={`model-detail-${provider.id}`} onClick={() => setExpandedProviderId(expanded ? null : provider.id)}>
-                              <span className="model-provider-name"><strong>{provider.name || provider.id}</strong>{warnings && <WarningCircleIcon className="model-provider-warning" size={16} aria-label={warnings} />}</span>
-                              <span className="provider-quota model-provider-summary">{values}</span>
-                              <CaretDownIcon className="model-provider-chevron" size={17} aria-hidden="true" />
-                            </button>
-                          </div>
-                          {expanded && <div className="model-provider-detail" id={`model-detail-${provider.id}`}>
-                            <dl className="model-provider-fields">
-                              <div><dt>接口地址</dt><dd className={configured ? "" : "model-provider-warning"}>{provider.baseUrl || "尚未配置"}</dd></div>
-                              <div><dt>API Key</dt><dd className={hasKey ? "" : "model-provider-warning"}>{hasKey ? "已设置" : "尚未设置"}</dd></div>
-                              <div><dt>兜底模型</dt><dd className={effectiveModel ? "" : "model-provider-warning"} title="未匹配角色时使用；未配置时使用 Claude Code 内置默认模型">{effectiveModel || "未配置（使用内置默认模型）"}</dd></div>
-                              <div><dt>本地 Token</dt><dd>{usage > 0 ? formatTokens(usage) : "—"}<button type="button" className="model-provider-info" aria-label="本地用量说明" title="全部会话累计 Token（含输入、输出、缓存），不代表账户额度；无统计时显示 —。"><InfoIcon size={16} /></button></dd></div>
-                            </dl>
-                            <footer className="model-provider-footer">
-                              <div className="settings-provider-actions">
-                                <button className="settings-provider-edit" type="button" onClick={() => onEdit(provider)} title="配置修改在下次启动或恢复会话时生效"><PencilSimpleIcon size={16} /><span>编辑配置</span></button>
-                                <details className="model-provider-more" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false; }}>
-                                  <summary>更多<CaretDownIcon size={14} /></summary>
-                                  <div className="model-provider-menu" onClick={(event) => { const details = event.currentTarget.closest("details"); if (details) details.open = false; }}>
-                                    <span className="model-provider-kind">{provider.builtin ? "内置服务" : "自建服务"}</span>
-                                    {provider.builtin ? <>
-                                      <button type="button" onClick={() => onSetHidden(provider.id, !provider.hidden)}>{provider.hidden ? <EyeIcon size={16} /> : <EyeSlashIcon size={16} />}{provider.hidden ? "重新显示" : "隐藏"}</button>
-                                      <button type="button" onClick={() => onRestoreDefault(provider.id)}><ArrowCounterClockwiseIcon size={16} />恢复默认</button>
-                                    </> : <button className="settings-provider-delete" type="button" onClick={() => onDelete(provider.id)}><TrashIcon size={16} />删除服务</button>}
-                                  </div>
-                                </details>
-                              </div>
-                              <div className="provider-quota model-provider-refresh">{controls}</div>
-                            </footer>
-                          </div>}
-                        </>}
-                      </ProviderQuotaCell>
-                    </article>
-                  );
-                })}
-              </div>
-            ) : activeSection === "collaboration" ? (
+            {activeSection === "collaboration" ? (
               <CollaborationSettingsPanel onClose={onClose} initialTab={initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} />
             ) : activeSection === "sharedMemory" ? (
               <SharedMemorySettingsPanel />
@@ -650,14 +395,8 @@ export function SettingsDialog({
               <GitSettingsPanel />
             ) : activeSection === "browserControl" ? (
               <BrowserControlSettingsPanel />
-            ) : activeSection === "computerControl" ? (
-              <ComputerControlSettingsPanel />
-            ) : activeSection === "pluginMarket" ? (
-              <PluginMarketPanel projects={projects} />
             ) : activeSection === "skills" ? (
               <SkillCenterPanel projects={projects} />
-            ) : activeSection === "mcp" ? (
-              <McpSettingsPanel />
             ) : activeSection === "notifications" ? (
               <NotificationSettingsPanel
                 settings={notificationSettings}

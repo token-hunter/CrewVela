@@ -145,7 +145,7 @@ export function GitSourceControlPanel({
   const [selection, setSelection] = useState<DiffSelection | null>(null);
   const [diff, setDiff] = useState("");
   const [workspaceMessages, setWorkspaceMessages] = useState<Record<string, string>>({});
-  const [providerId, setProviderId] = useState("");
+  const providerId = "local";
   const [loading, setLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const busy = loading || actionBusy;
@@ -168,9 +168,6 @@ export function GitSourceControlPanel({
     [keyStates, providers],
   );
 
-  useEffect(() => {
-    if (!providerId && aiProviders[0]) setProviderId(aiProviders[0].id);
-  }, [aiProviders, providerId]);
 
   useEffect(() => {
     if (preview) {
@@ -961,9 +958,7 @@ export function GitSourceControlPanel({
           </div>
           <div className="git-commit-composer">
             <div className="git-ai-row">
-              <select value={providerId} onChange={(event) => setProviderId(event.target.value)} aria-label="生成提交信息的模型服务">
-                {aiProviders.map((provider) => <option value={provider.id} key={provider.id}>{provider.name}</option>)}
-              </select>
+              <span>Claude Code · 本地配置</span>
               <button type="button" onClick={() => void generateMessage()} disabled={!isRuntimeEnabled("claude_code") || busy || !providerId || !status?.entries.some((entry) => entry.staged)}>
                 <MagicWand size={15} />AI 生成
               </button>

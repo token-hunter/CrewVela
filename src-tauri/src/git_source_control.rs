@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::launcher::{build_env, resolve_claude, CLEAR_VARS};
+use crate::launcher::{build_env, resolve_claude};
 use crate::providers::ProviderConfig;
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(90);
@@ -513,9 +513,6 @@ pub fn generate_commit_message(
     let settings_json = serde_json::json!({ "env": env }).to_string();
     let claude = resolve_claude()?;
     let mut command = crate::title_summary::claude_command(&claude)?;
-    for variable in CLEAR_VARS {
-        command.env_remove(variable);
-    }
     command
         .arg("-p")
         .arg("--output-format")

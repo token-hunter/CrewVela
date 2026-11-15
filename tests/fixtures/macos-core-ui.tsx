@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { RightSidebarActivityBar, RightSidebarStart, type SidebarTool } from "../../src/components/RightSidebarActivityBar";
-import { ComputerControlSettingsPanel } from "../../src/components/ComputerControlSettingsPanel";
 import { GeneralSettingsPanel } from "../../src/components/GeneralSettingsPanel";
 import { BrowserControlSettingsPanel } from "../../src/components/BrowserControlSettingsPanel";
 import "../../src/styles.css";

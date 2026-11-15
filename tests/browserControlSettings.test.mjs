@@ -39,10 +39,10 @@ test("validateBrowserControlSettings 校验自定义路径", () => {
   );
 });
 
-test("渠道选项覆盖 auto/chrome/msedge/custom 且互不重复", () => {
+test("渠道选项覆盖 auto/chrome/custom 且互不重复", () => {
   assert.deepEqual(
     BROWSER_CHANNEL_OPTIONS.map((option) => option.id),
-    ["auto", "chrome", "msedge", "custom"],
+    ["auto", "chrome", "custom"],
   );
   for (const option of BROWSER_CHANNEL_OPTIONS) {
     assert.ok(option.label.length > 0);

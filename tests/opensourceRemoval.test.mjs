@@ -57,6 +57,6 @@ test('shared feature styles survive removal of legacy feature stylesheets', () =
   assert.match(entry, /styles\/notifications\.css/);
   assert.match(entry, /styles\/integrations\.css/);
   for (const selector of ['notification-history-list', 'cid-account-row', 'notification-controls']) assert.ok(notifications.includes(`.${selector}`), selector);
-  for (const selector of ['notification-overlay-progress', 'mcp-settings-panel', 'skill-market', 'file-preview-editor']) assert.ok(integrations.includes(`.${selector}`), selector);
+  for (const selector of ['notification-overlay-progress', 'skill-market', 'file-preview-editor']) assert.ok(integrations.includes(`.${selector}`), selector);
   assert.doesNotMatch(notifications + integrations, /\.model-eval-|\.workflow-canvas-|\.multi-agent-voice-/);
 });

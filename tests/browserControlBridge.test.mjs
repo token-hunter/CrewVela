@@ -33,7 +33,7 @@ test("parseBridgeArgs 以 -- 切分引擎与浏览器参数", () => {
 
 test("stripLaunchOnlyArgs 移除启动语义参数（分体与连体值）", () => {
   assert.deepEqual(
-    stripLaunchOnlyArgs(["--browser", "msedge", "--isolated", "--viewport-size", "1280x720", "--headless"]),
+    stripLaunchOnlyArgs(["--browser", "chrome", "--isolated", "--viewport-size", "1280x720", "--headless"]),
     ["--viewport-size", "1280x720"],
   );
   assert.deepEqual(
@@ -46,7 +46,7 @@ test("composeSpawn 面板模式改写为 cdp-endpoint，外部模式原样透传
   const base = {
     engineCommand: "node.exe",
     engineArgs: ["C:\\mcp\\cli.js"],
-    browserArgs: ["--browser", "msedge", "--isolated"],
+    browserArgs: ["--browser", "chrome", "--isolated"],
   };
   const panel = composeSpawn({ ...base, mode: "panel", endpoint: "http://127.0.0.1:52341" });
   assert.equal(panel.command, "node.exe");
@@ -58,7 +58,7 @@ test("composeSpawn 面板模式改写为 cdp-endpoint，外部模式原样透传
   assert.equal(panel.useShell, false);
 
   const external = composeSpawn({ ...base, mode: "external" });
-  assert.deepEqual(external.args, ["C:\\mcp\\cli.js", "--browser", "msedge", "--isolated"]);
+  assert.deepEqual(external.args, ["C:\\mcp\\cli.js", "--browser", "chrome", "--isolated"]);
 });
 
 test("Windows npm wrapper 通过真实 Node 子进程保留自定义浏览器路径和参数字面值", () => {

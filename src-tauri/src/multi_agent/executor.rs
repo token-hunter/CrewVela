@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::model_assignments::find_claude_provider;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -67,7 +65,6 @@ pub trait AgentRuntimeAdapter: Send + Sync {
 }
 
 pub struct RuntimeRequest {
-    pub model_selection: crate::model_assignments::ResolvedSelection,
     pub run_id: String,
     pub cwd: PathBuf,
     pub project: MultiAgentProject,
@@ -204,7 +201,6 @@ impl AgentTerminalHost {
             cwd: request.cwd.display().to_string(),
         })?;
         self.sessions.set_runtime_command_host(&session.id, true)?;
-        self.sessions.record_model_assignment(&session.id, request.model_selection.clone())?;
         let environment = command.get_envs().map(|(key, value)| (key.to_os_string(), value.map(|value| value.to_os_string()))).collect();
         let pty_id = self.ensure_environment_terminal(&session, &request.cwd, environment)?;
         session = self.sessions.attach_runtime(&session.id, pty_id)?;
@@ -251,7 +247,7 @@ impl AgentTerminalHost {
             .unwrap()
             .get(&session.id)
             .is_some_and(|binding| {
-                binding.matches_profile(kind, &request.cwd, request.agent.model.as_deref())
+                binding.matches_profile(kind, &request.cwd, None)
                     && binding.matches_command(command)
                     && binding.pty_id == session.pty_id.unwrap_or_default()
                     && self.pty.is_running(binding.pty_id)
@@ -299,7 +295,6 @@ impl AgentTerminalHost {
                 self.sessions
                     .configure_pi_readiness(&mut native_command, &session.id)?;
             }
-            self.sessions.record_model_assignment(&session.id, request.model_selection.clone())?;
             let id = self.pty.open_agent_program(
                 &native_command,
                 &session.id,
@@ -1609,9 +1604,8 @@ fn execute_run(
             return Err(error);
         }
     };
-    let model_selection = crate::model_assignments::for_agent(&agent, store, &terminal_host.sessions)?;
     let mut agent = agent;
-    agent.model = model_selection.model.clone();
+    agent.model = None;
     let mut task = task;
     task.workspace_mode = execution_workspace_mode(&task, agent.runtime_kind);
     if let Err(error) = validate_readonly_runtime(task.workspace_mode, agent.runtime_kind) {
@@ -1622,7 +1616,7 @@ fn execute_run(
     let _ = store.append_runtime_event(super::AppendRuntimeEventInput {
         run_id: run_id.clone(),
         event_type: "starting".to_string(),
-        payload: serde_json::json!({"taskTitle": task.title, "runtime": agent.runtime_kind, "modelAssignment": &model_selection}),
+        payload: serde_json::json!({"taskTitle": task.title, "runtime": agent.runtime_kind}),
     });
     let _ = store.append_run_log(&run_id, "system", &format!("准备执行任务：{}", task.title));
     let message_turn = task.id.starts_with("cli-message-");
@@ -1705,7 +1699,6 @@ fn execute_run(
     }, &agent.id)?;
     let collaboration_messages = store.scoped_messages(&project.id, &task.id, &agent.id, 50)?;
     let request = RuntimeRequest {
-        model_selection,
         run_id: run_id.clone(),
         cwd: cwd.clone(),
         project,
@@ -2518,14 +2511,6 @@ fn execute_preferred_acp(
     if kind != ManagedAcpKind::DeepSeekHarness && request_requires_session_cli(request)? {
         return Ok(None);
     }
-    if kind != ManagedAcpKind::DeepSeekHarness && (request.agent.model.is_some() || request.model_selection.connection_id != "local") {
-        let _ = request.store.append_run_log(
-            &request.run_id,
-            "system",
-            "ACP 暂不接管显式模型/第三方 Provider，使用 PTY 兼容路径",
-        );
-        return Ok(None);
-    }
     let resume_session_id = locator_string(request.resume_locator.as_ref(), locator_keys);
     let mode = managed_acp_mode(
         request.task.workspace_mode,
@@ -2562,7 +2547,6 @@ fn execute_preferred_acp(
     request
         .store
         .link_agent_app_session(&request.project.id, &request.agent.id, &session.id)?;
-    request.terminal_host.sessions.record_model_assignment(&session.id, request.model_selection.clone())?;
     request
         .terminal_host
         .sessions
@@ -2654,7 +2638,7 @@ fn execute_preferred_acp(
             request.agent.permission_profile,
         ),
         cancelled,
-        request.agent.model.as_deref(),
+        None,
         permission_handler,
     );
     let outcome = match outcome {
@@ -2767,7 +2751,7 @@ impl AgentRuntimeAdapter for ZCodeAdapter {
         if request.agent.permission_profile == PermissionProfile::Auto {
             require_isolated_auto_approval(request, label)?;
         }
-        super::zcode::model_selection(request.agent.model.as_deref())
+        super::zcode::model_selection(None)
             .map_err(|error| PermanentRunError(error.to_string()))?;
         super::zcode::runtime_executable(self.0)
             .map_err(|error| PermanentRunError(error.to_string()))?;
@@ -2780,7 +2764,7 @@ impl AgentRuntimeAdapter for ZCodeAdapter {
             request.resume_locator.as_ref(),
             &request.cwd,
             request.agent.permission_profile,
-            request.agent.model.as_deref(),
+            None,
         )
         .map_err(|error| PermanentRunError(error.to_string()))?;
         let session = request
@@ -2890,7 +2874,7 @@ impl AgentRuntimeAdapter for ZCodeAdapter {
             resume.as_deref(),
             &render_task_prompt(request),
             mode,
-            request.agent.model.as_deref(),
+            None,
             serde_json::json!([{"name":"crewvela","type":"http","url":format!("{}/mcp",request.collaboration.endpoint),"headers":[{"name":"Authorization","value":format!("Bearer {}",request.collaboration.token)}],"isolation":"session"}]),
             cancelled,
             &mut permission,
@@ -3069,7 +3053,7 @@ fn runtime_permission_details(value: &serde_json::Value) -> String {
     let rendered = serde_json::to_string(&redact(value)).unwrap_or_default();
     rendered.chars().take(4000).collect()
 }
-/// claude 原生路径的 --mcp-config：crewvela 协作桥 + MCP 管理页启用的用户 server。
+/// claude 原生路径的 --mcp-config：crewvela 协作桥 + 保留配置中启用的用户 server。
 /// 同名时 crewvela 优先（控制面不可被用户配置顶掉）。
 fn claude_agent_mcp_config(
     user_servers: &serde_json::Map<String, serde_json::Value>,
@@ -3183,9 +3167,6 @@ fn configure_codex_base(command: &mut Command, request: &RuntimeRequest) -> Resu
     if needs_cli {
         configure_codex_session_cli_permissions(command, request)?;
     }
-    if let Some(model) = request.agent.model.as_deref() {
-        command.arg("--model").arg(model);
-    }
     Ok(())
 }
 
@@ -3217,7 +3198,6 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
         }
         let mut command = runtime_command(self.kind())?;
         configure_collaboration_mcp(&mut command, request)?;
-        let configured_provider = configure_claude_provider(&mut command, request)?;
         let (permission_mode, skip_permissions) = if request.task.id.starts_with("cli-message-") {
             ("dontAsk", false)
         } else {
@@ -3234,11 +3214,6 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
             let bash_cli = cli.replace('\\', "/");
             command.arg("--allowedTools").arg(format!("Bash({cli} sessions),Bash({cli} send:*),Bash({bash_cli} sessions),Bash({bash_cli} send:*)"))
                 .arg("--disallowedTools").arg("Write,Edit,NotebookEdit");
-        }
-        if configured_provider.is_none() {
-            if let Some(model) = request.agent.model.as_deref() {
-                command.arg("--model").arg(model);
-            }
         }
         if let Some(session_id) = locator_string(
             request.resume_locator.as_ref(),
@@ -3276,16 +3251,7 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
                 })
             })
             .collect::<HashMap<_, _>>();
-        let settings_json = configured_provider.as_ref().map_or_else(
-            || crate::pty::build_settings_json(&environment, &hook_command),
-            |provider| {
-                crate::pty::build_settings_json_with_provider(
-                    &environment,
-                    &hook_command,
-                    &provider.meta.settings,
-                )
-            },
-        );
+        let settings_json = crate::pty::build_settings_json(&environment, &hook_command);
         configure_claude_interactive(
             &mut command,
             permission_mode,
@@ -3390,15 +3356,6 @@ impl AgentRuntimeAdapter for KimiCodeAdapter {
             &["sessionId", "session_id"],
         ) {
             command.arg("--session").arg(session_id);
-        }
-        if let Some(model) = request
-            .agent
-            .model
-            .as_deref()
-            .map(str::trim)
-            .filter(|model| !model.is_empty())
-        {
-            command.arg("--model").arg(model);
         }
         command.arg("-p").arg(render_task_prompt(request));
         execute_command(self.kind(), command, None, request, cancelled)
@@ -3526,9 +3483,6 @@ impl AgentRuntimeAdapter for PiAdapter {
         let mut command = runtime_command(self.kind())?;
         configure_collaboration_mcp(&mut command, request)?;
         command.arg("--session").arg(&session);
-        if let Some(model) = request.agent.model.as_deref() {
-            command.arg("--model").arg(model);
-        }
         command.current_dir(external_command_path(&request.cwd));
         let mut result = request.terminal_host.execute_native(
             self.kind(),
@@ -3585,9 +3539,6 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
             &["sessionId", "sessionID", "session_id"],
         ) {
             command.arg("--session").arg(session_id);
-        }
-        if let Some(model) = request.agent.model.as_deref() {
-            command.arg("--model").arg(model);
         }
         let prompt_file = RuntimePromptFile::create(request, &render_task_prompt(request))?;
         command.arg("--file").arg(&prompt_file.path);
@@ -4367,15 +4318,6 @@ fn resolve_runtime(kind: AgentRuntimeKind) -> Result<PathBuf> {
 fn runtime_command(kind: AgentRuntimeKind) -> Result<Command> {
     Ok(super::runtime::command_for_path(&resolve_runtime(kind)?))
 }
-
-fn configure_claude_provider(
-    command: &mut Command,
-    request: &RuntimeRequest,
-) -> Result<Option<crate::providers::ProviderConfig>> {
-    crate::model_assignments::configure_connection(command, "claude_code", &request.model_selection)
-}
-
-
 fn session_cli_prompt(project_id: &str) -> String {
     let cli = std::env::current_exe()
         .map(|path| path.display().to_string())
@@ -4732,13 +4674,21 @@ pub(crate) fn interactive_runtime_prompt_ready(kind: AgentRuntimeKind, raw: &str
                 && lowered.contains("ctrl+p")
                 && lowered.contains("commands")
         }
+        // ZCode's composer replaces its empty-input placeholder while busy.
+        // The sidebar's "Ready." label can be hidden in narrow terminals or
+        // replaced by an MCP warning, so it is not a readiness requirement.
+        AgentRuntimeKind::ZCodeCli => {
+            plain.lines().any(|line| line.split('│').any(|cell| matches!(cell.trim(), "Type a prompt" | "输入提示词")))
+                && !["type to queue input", "输入内容会排队", "no available models", "没有可用模型",
+                    "waiting for browser authorization", "正在等待浏览器授权", "enter the api key", "输入 api key"]
+                    .iter().any(|marker| lowered.contains(marker))
+        }
         AgentRuntimeKind::MiniMaxCode | AgentRuntimeKind::Unsupported => false,
         // These TUIs have dynamic composers. Project communication uses their
         // structured task adapters rather than guessing an idle screen.
         AgentRuntimeKind::Pi
         | AgentRuntimeKind::DeepSeekHarness
-        | AgentRuntimeKind::ZCode
-        | AgentRuntimeKind::ZCodeCli => false,
+        | AgentRuntimeKind::ZCode => false,
         // Claude's SessionStart/UserPromptSubmit/Stop hooks are authoritative.
         AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::OhMyPi => false,
         _ => false,
@@ -4795,6 +4745,8 @@ pub(crate) fn interactive_runtime_prompt_blocked(raw: &str) -> bool {
         "› ",
         "❯ ",
         "ask anything",
+        "type a prompt",
+        "输入提示词",
     ]
     .iter()
     .filter_map(|marker| lowered.rfind(marker))
@@ -4845,7 +4797,7 @@ fn runtime_prompt_frame(raw: &str) -> &str {
     &raw[start..]
 }
 
-fn strip_terminal_control_sequences(raw: &str) -> String {
+pub(crate) fn strip_terminal_control_sequences(raw: &str) -> String {
     let mut output = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
     while let Some(character) = chars.next() {
@@ -5784,6 +5736,25 @@ mod tests {
     }
 
     #[test]
+    fn zcode_cli_readiness_uses_the_composer_and_blocks_active_or_login_screens() {
+        let ready = |text: &str| interactive_runtime_prompt_ready(AgentRuntimeKind::ZCodeCli, text);
+        assert!(ready("\x1b[2J\x1b[HType a prompt\nfixture-model | high"), "narrow mode has no sidebar");
+        assert!(ready("\x1b[2J\x1b[HStatus\nRequest timed out\nType a prompt\nfixture-model | high"), "MCP warning is not a busy turn");
+        assert!(ready("\x1b[2J\x1b[H输入提示词\nfixture-model | high"));
+        for screen in ["ZCODE", "Calling model...\nType to queue input\nesc to interrupt",
+            "Help says: Type a prompt\nuser draft",
+            "思考中...\n输入内容会排队", "Type a prompt\nPermission required: Allow once",
+            "Type a prompt\nNo available models. Configure a provider or sign in with /login.",
+            "Type a prompt\nWaiting for browser authorization...", "Type a prompt\nEnter the API key, then press Enter.",
+            "Type a prompt\x1b[2J\x1b[Hunknown replacement screen"] {
+            assert!(!ready(screen), "must not submit to {screen}");
+        }
+        assert!(!ready("Type a prompt\nesc to interrupt"));
+        assert!(ready("Type to queue input\nesc to interrupt\x1b[2J\x1b[HType a prompt"));
+        assert!(ready("Slash commands: /permissions enter to confirm\nType a prompt"), "historical help must not block a fresh empty composer");
+    }
+
+    #[test]
     fn opencode_prompt_repaint_recovers_after_busy_and_rejects_permission_choices() {
         let idle = "Ask anything...\nBuild · Space Bunny\ntab agents ctrl+p commands";
         assert!(interactive_runtime_prompt_ready(
@@ -6161,31 +6132,6 @@ exit 0
         );
         assert_eq!(config["mcpServers"]["filesystem"]["command"], "npx");
         assert_eq!(config["mcpServers"].as_object().unwrap().len(), 2);
-    }
-
-    #[test]
-    fn claude_provider_hint_resolves_crewvela_provider_instead_of_cli_model() {
-        let providers = vec![crate::providers::ProviderConfig {
-            id: "glm".to_string(),
-            name: "Z.AI GLM".to_string(),
-            base_url: "https://example.com/anthropic".to_string(),
-            auth_token_ref: "glm".to_string(),
-            env: std::collections::HashMap::new(),
-            timeout_ms: None,
-            disable_nonessential_traffic: false,
-            builtin: true,
-            hidden: false,
-            meta: crate::providers::ProviderMeta::default(),
-        }];
-        assert_eq!(
-            find_claude_provider("glm", &providers).map(|item| item.id.as_str()),
-            Some("glm")
-        );
-        assert_eq!(
-            find_claude_provider("Z.AI GLM", &providers).map(|item| item.id.as_str()),
-            Some("glm")
-        );
-        assert!(find_claude_provider("sonnet", &providers).is_none());
     }
 
     #[test]
