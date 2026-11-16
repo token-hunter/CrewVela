@@ -4,6 +4,8 @@ import { mkdirSync } from "node:fs";
 import { chromium } from "playwright";
 
 const base = process.env.CREWVELA_UI_URL || "http://127.0.0.1:1420";
+// Explicitly scoped runner; default keeps the full existing suite unchanged.
+const menusOnly = process.argv.includes("--menus-only");
 const output = "output/playwright/ui-polish";
 mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -59,13 +61,13 @@ try {
     await page.locator(".menu-backdrop").click({ position: { x: size.width - 5, y: size.height - 5 } });
     assert.equal(await menu.count(), 0);
 
-    // 更多工具 no longer duplicates the sidebar's 新建会话 entry: only the bulk
-    // actions remain, and nothing in it opens the runtime list.
+    // 更多工具 keeps the bulk actions and Help without duplicating 新建会话;
+    // nothing in this menu opens the runtime list.
     const moreTools = page.getByRole("button", { name: "更多工具", exact: true });
     const toolsMenu = page.getByRole("menu", { name: "更多工具", exact: true });
     await moreTools.click();
     await toolsMenu.waitFor();
-    assert.deepEqual(await toolsMenu.getByRole("menuitem").allTextContents(), ["停止全部", "删除全部"]);
+    assert.deepEqual(await toolsMenu.getByRole("menuitem").allTextContents(), ["停止全部", "删除全部", "帮助"]);
     await toolsMenu.getByRole("menuitem").first().hover();
     assert.equal(await menu.count(), 0);
     await page.locator(".menu-backdrop").click({ position: { x: size.width - 5, y: size.height - 5 } });
@@ -82,6 +84,11 @@ try {
     await page.locator(".menu-backdrop").click({ position: { x: size.width - 5, y: size.height - 5 } });
     assert.equal(await toolsMenu.count(), 0);
 
+    if (menusOnly) {
+      console.log(`PASS ${size.name}: menus only — direct Runtime entry, more-tools, Escape/outside click and selected session retained`);
+      await context.close();
+      continue;
+    }
     await page.getByRole("button", { name: "设置", exact: true }).click();
     await page.getByRole("heading", { name: "模型设置", exact: true }).waitFor();
     await page.screenshot({ animations: "disabled", path: `${output}/${size.name}-models.png` });

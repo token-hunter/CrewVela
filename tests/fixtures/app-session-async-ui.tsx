@@ -21,6 +21,12 @@ let providers = [{ id: "fixture-provider", name: "Fixture provider", baseUrl: "h
 // 轮询命令的返回内容由测试控制；每次都是新对象，键顺序也随机（Rust HashMap 的序列化顺序就是如此）。
 const shuffledKeys = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).sort(() => Math.random() - 0.5));
 const api = {
+  help: {
+    checks: 0, version: "0.1.0", versionFails: false, openFails: false, opens: [] as string[],
+    pending: [] as Array<{resolve:(value:unknown)=>void;reject:(reason:Error)=>void}>,
+    complete(value:unknown) { const entry=api.help.pending.shift(); if(!entry)throw Error("No pending app update check"); entry.resolve(value); },
+    fail(message:string) { const entry=api.help.pending.shift(); if(!entry)throw Error("No pending app update check"); entry.reject(new Error(message)); },
+  },
   calls, pending, rejectProviderDelete: true,
   rejectSwitchDismiss: false, switchCommands: [] as string[],
   usages: {} as Record<string, unknown>,
@@ -39,6 +45,11 @@ const api = {
     }
   },
   async invoke(command: string, args?: Record<string, unknown>) {
+    if (new URLSearchParams(location.search).has("app-help")) {
+      if(command === "plugin:app|version") { if(api.help.versionFails)throw Error("version unavailable");return api.help.version; }
+      if(command === "app_check_update") { if(args && Object.keys(args).length)throw Error("App check must not send session/config data");api.help.checks+=1;return new Promise((resolve,reject)=>api.help.pending.push({resolve,reject})); }
+      if(command === "plugin:opener|open_url") {api.help.opens.push(String(args?.url));if(api.help.openFails)throw Error("browser unavailable");return;}
+    }
     if (command === "model_assignments_snapshot") return { rows: [], projects: [] };
     if (command === "list_providers") return providers;
     if (command === "delete_provider") {
@@ -82,6 +93,7 @@ if (location.search.includes("handoff-recovery")) {
   sessions = sessions.filter(item => item.id !== "one");
 }
 Object.assign(window, { appSessionMock: api });
+if(new URLSearchParams(location.search).has("app-help"))localStorage.setItem("crewvela-appearance",JSON.stringify({theme:new URLSearchParams(location.search).get("theme")==="light"?"light":"dark",accent:"clay",followSystem:false}));
 localStorage.setItem("crewvela-notification-settings-v1", JSON.stringify({ enabled: false }));
 localStorage.setItem("crewvela-workspace-tabs", JSON.stringify({ tabs: [{ id: "a", title: "工作区 A" }, { id: "b", title: "工作区 B" }], activeTabId: "a", assignments: { one: "a", two: "a" } }));
 createRoot(document.getElementById("root")!).render(<App />);

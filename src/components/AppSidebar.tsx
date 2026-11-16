@@ -21,7 +21,6 @@ import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { SlidersIcon } from "@phosphor-icons/react/dist/csr/Sliders";
-import { StopIcon } from "@phosphor-icons/react/dist/csr/Stop";
 import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { UsersIcon } from "@phosphor-icons/react/dist/csr/Users";
@@ -40,6 +39,9 @@ import { RUNTIME_LOGOS } from "../runtimeLogos";
 import { SessionList } from "./SessionList";
 import { CommunicationGuideButton } from "./CommunicationGuide";
 import { AutomationIcon } from "./AutomationIcon";
+import { AppToolsMenu } from "./AppToolsMenu";
+import { AppHelpDialog } from "./AppHelpDialog";
+import type { AppHelpSection } from "../appHelp";
 import { SidebarAttention } from "./SidebarAttention";
 import type { AttentionKind } from "../sidebarAttention";
 import type { SettingsSection } from "./SettingsDialog";
@@ -126,6 +128,8 @@ export function AppSidebar(props: Props) {
   const { isRuntimeEnabled } = useRuntimeAvailability();
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+  const [helpSection, setHelpSection] = useState<AppHelpSection | null>(null);
+  const toolsButtonRef = useRef<HTMLButtonElement>(null);
   const newSessionButtonRef = useRef<HTMLButtonElement>(null);
   const newSessionMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -181,9 +185,11 @@ export function AppSidebar(props: Props) {
       <header className="unified-sidebar-header" data-tauri-drag-region>
         <div className="unified-sidebar-header-actions">
           <button
+            ref={toolsButtonRef}
             type="button"
             aria-label="更多工具"
             title="更多工具"
+            aria-haspopup="menu"
             aria-expanded={toolsMenuOpen}
             onClick={() => {
               if (toolsMenuOpen) {
@@ -236,39 +242,8 @@ export function AppSidebar(props: Props) {
           </span>
         </div>
 
-        {toolsMenuOpen && (
-          <>
-            <div className="menu-backdrop" onClick={closeToolsMenus} />
-            <div className="unified-tools-menu" role="menu" aria-label="更多工具">
-              <button
-                type="button"
-                role="menuitem"
-                className="danger"
-                disabled={props.stopAllDisabled}
-                onClick={() => {
-                  closeToolsMenus();
-                  props.onStopAll();
-                }}
-              >
-                <StopIcon size={17} weight="fill" />
-                <span>停止全部</span>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="danger"
-                disabled={props.deleteAllDisabled}
-                onClick={() => {
-                  closeToolsMenus();
-                  setDeleteConfirmOpen(true);
-                }}
-              >
-                <TrashIcon size={17} />
-                <span>删除全部</span>
-              </button>
-            </div>
-          </>
-        )}
+        {toolsMenuOpen && <AppToolsMenu trigger={toolsButtonRef} stopDisabled={props.stopAllDisabled} deleteDisabled={props.deleteAllDisabled}
+          onClose={closeToolsMenus} onStop={props.onStopAll} onDelete={() => setDeleteConfirmOpen(true)} onHelp={setHelpSection} />}
       </header>
       <div className="sidebar-new-session-row">
         <button
@@ -519,6 +494,7 @@ export function AppSidebar(props: Props) {
           </div>
         </div>
       )}
+      {helpSection && <AppHelpDialog key={helpSection} section={helpSection} onClose={() => setHelpSection(null)} />}
     </aside>
   );
 }

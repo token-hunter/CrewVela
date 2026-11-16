@@ -989,6 +989,8 @@ export default function App() {
       // SessionList 的会话操作菜单自行关闭 Esc，避免全局逻辑先清空当前会话选择。
       if (document.querySelector(".session-action-menu")) return;
       if (document.querySelector(".session-filter-menu")) return;
+      // The application menu consumes Esc before changing the selected session.
+      if (document.querySelector(".app-tools-menu")) return;
       if (event.target instanceof HTMLInputElement && event.target.closest(".session-search") && event.target.value) return;
       if (event.target instanceof HTMLInputElement && event.target.classList.contains("workspace-tab-input")) return;
       if (event.target instanceof HTMLInputElement && event.target.closest(".browser-address")) return;

@@ -1,5 +1,6 @@
 mod acp;
 mod app_instance;
+mod app_help;
 mod ai_memory;
 mod ai_memory_access;
 mod approvals;
@@ -6151,6 +6152,7 @@ pub fn run() {
             browser_control::browser_control_get,
             browser_control::browser_control_save,
             general_settings::general_settings_get,
+            app_help::app_check_update,
             general_settings::general_settings_save,
             send_windows_unpacked_notification,
             list_projects,
