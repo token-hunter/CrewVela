@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 const base = process.env.CREWVELA_UI_URL || 'http://127.0.0.1:1433';
-const dir = '.scratch/collaboration-header-20261116/ui';
+const dir = process.env.CREWVELA_HEADER_SCREENSHOTS || '.scratch/collaboration-header-20261116/ui';
 mkdirSync(dir, {recursive:true});
 const browser = await chromium.launch({channel:'chrome'});
 const errors = [];
@@ -20,14 +20,18 @@ async function geometry(page) {
     const menu = document.querySelector('.conversation-member-menu');
     const bounds = menu?.getBoundingClientRect();
     const header = document.querySelector('.conversation-header');
+    const select = header.querySelector('select'), css=getComputedStyle(select), selectRect=select.getBoundingClientRect();
+    const caret=header.querySelector('.conversation-project-select > svg').getBoundingClientRect();
     const visible = element=>!!element && getComputedStyle(element).display!=='none' && element.getBoundingClientRect().height>0;
-    return {overflow:document.body.scrollWidth>innerWidth,headerHeight:header.getBoundingClientRect().height,headerOverflow:header.scrollWidth>header.clientWidth,menu:bounds?{left:bounds.left,right:bounds.right,top:bounds.top,bottom:bounds.bottom,scroll:menu.scrollHeight>menu.clientHeight}:null,images:[...document.querySelectorAll('img')].filter(visible).every(img=>img.complete&&img.naturalWidth>0)};
+    return {overflow:document.body.scrollWidth>innerWidth,headerHeight:header.getBoundingClientRect().height,headerOverflow:header.scrollWidth>header.clientWidth,project:{font:parseFloat(css.fontSize),weight:parseInt(css.fontWeight),height:selectRect.height,width:selectRect.width,border:css.borderTopWidth,background:css.backgroundColor,ellipsis:css.textOverflow,caret:caret.width},menu:bounds?{left:bounds.left,right:bounds.right,top:bounds.top,bottom:bounds.bottom,scroll:menu.scrollHeight>menu.clientHeight}:null,images:[...document.querySelectorAll('img')].filter(visible).every(img=>img.complete&&img.naturalWidth>0)};
   });
 }
 try {
   for (const theme of ['dark','light']) for (const size of [{width:1015,height:1402},{width:780,height:1000},{width:390,height:844},{width:300,height:420}]) {
     const page=await fresh(`header=1&theme=${theme}`,size), trigger=page.locator('.conversation-members-trigger');
     const before=await geometry(page); assert.equal(before.overflow,false);assert.equal(before.headerOverflow,false);assert.ok(before.headerHeight<195,'Header stays below the old 205px wide layout while retaining the selected design typography');assert.equal(before.images,true);
+    assert.ok(before.project.font>=14&&before.project.font<=16,'Project selector remains body-sized across breakpoints');assert.ok(before.project.weight<=500);assert.ok(before.project.height>=26&&before.project.height<=30);assert.ok(before.project.width<=321);assert.equal(before.project.border,'0px');assert.equal(before.project.background,'rgba(0, 0, 0, 0)');assert.equal(before.project.caret,12);
+    assert.equal(await page.getByRole('combobox',{name:'协作项目',exact:true}).getAttribute('title'),'模型设置实测-20261115\n项目目录：/fixture/crewvela-model-live-e79907a4ca');
     assert.equal(await page.locator('.conversation-member-menu').count(),0);
     await trigger.click();const menu=page.locator('.conversation-member-menu');await menu.waitFor();
     assert.equal(await menu.getByRole('checkbox').count(),3);
@@ -55,11 +59,13 @@ try {
     await page.close();
   }
   const long=await fresh('members=many&long=1',{width:390,height:540});await long.locator('.conversation-members-trigger').click();
+  const longName=await long.evaluate(()=>window.conversationMock.projects[0].name);assert.ok((await long.getByLabel('协作项目',{exact:true}).getAttribute('title')).startsWith(longName));assert.equal((await geometry(long)).project.ellipsis,'ellipsis');
   assert.equal((await geometry(long)).headerOverflow,false);assert.equal((await geometry(long)).overflow,false);
   assert.equal((await geometry(long)).menu.scroll,true);await long.getByRole('checkbox',{name:'开发成员-23：很长的成员名称用于检查省略与布局',exact:true}).uncheck();
   await long.screenshot({path:`${dir}/long-members.png`});
   await long.setViewportSize({width:300,height:420});await long.waitForTimeout(80);const resized=(await geometry(long)).menu;assert.ok(resized.left>=0&&resized.right<=301&&resized.bottom<=421);
   await long.keyboard.press('Escape');await long.close();
+  const native=await fresh();const nativeProject=native.getByRole('combobox',{name:'协作项目',exact:true});await nativeProject.focus();await nativeProject.press('End');await native.waitForFunction(()=>document.querySelector('.conversation-heading select')?.value==='B');await nativeProject.press('Home');await native.waitForFunction(()=>document.querySelector('.conversation-heading select')?.value==='A');await native.close();
   const none=await fresh('members=none');await none.locator('.conversation-members-trigger').click();await none.locator('.conversation-member-menu').getByText('还没有团队成员。',{exact:false}).waitFor();await none.getByRole('button',{name:'添加成员',exact:true}).click();
   assert.equal(await none.locator('.conversation-member-menu').count(),0);assert.equal(await none.evaluate(()=>window.conversationMock.calls.filter(item=>item.command==='fixture_open_settings').length),1);await none.close();
   const busy=await fresh();await busy.evaluate(()=>window.conversationMock.holdSend=true);await busy.getByRole('combobox',{name:'给团队发消息',exact:true}).fill('测试成员界面');await busy.getByRole('button',{name:'发送消息',exact:true}).click();

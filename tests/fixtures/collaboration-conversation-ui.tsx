@@ -54,23 +54,52 @@ if (params.get("internal") === "1") tasks.push({ ...tasks[0], id: "cli-message-c
 if (params.get("header") === "1") { tasks.forEach(task=>{task.status="done";}); for(let i=tasks.length;i<28;i++) tasks.push({...tasks[0],id:`history-${i}`,title:`历史任务 ${i+1}`}); }
 const runHistory = params.get("evidence") === "1" ? [1,2].map(attempt=>({ id:`evidence-${attempt}`,projectId:"A",taskId:"t-build",agentId:"codex",attempt,status:"failed",sessionLocator:attempt===2?{stopUnverified:true}:null,leaseExpiresAt:0,lastHeartbeatAt:null,outputSummary:`尝试${attempt}输出`,error:attempt===2?"fixture 原进程停止状态待确认":"fixture 旧尝试失败",createdAt:clock+attempt,startedAt:clock,finishedAt:clock+attempt })) : [];
 const runLogs = runHistory.flatMap(run=>Array.from({length:25},(_,seq)=>({seq,projectId:"A",taskId:run.taskId,runId:run.id,stream:"stdout",content:`尝试${run.attempt}日志${seq}`,createdAt:clock+seq})));
-const snapshot = (id: string): any => ({ project: projects.find(project => project.id === id), agents: id === "A" ? agents : [agent("b-codex", "文档 Codex", "codex", "worker", "B")], tasks: id === "A" && params.get("plan") !== "pending" ? tasks : params.get("task-link")==="1" ? [{...tasks[0],id:"b-task",projectId:"B",title:"文档任务",assigneeAgentId:"b-codex"}] : [], runs: id==="A"?runHistory:[], messages: [], events: [], dependencies: [{ taskId: "t-review", dependsOnTaskId: "t-build" }], agentSessions: (id === "A" ? agents : []).map(agent => ({ agentId: agent.id, appSessionId: `session-${agent.id}`, projectId: id, id: `agent-session-${agent.id}`, status: agent.id === "codex" ? "running" : "idle", controlMode: "auto", currentTaskId: null, currentRunId: null, lastOutputAt: null, createdAt: clock, updatedAt: clock })), runLogs: id==="A"?runLogs:[], runtimeEvents: [], memories: [], instructions: [], artifacts: [], approvals: [], reviewDecisions: [], wakeups: [] });
+const snapshot = (id: string): any => ({ project: projects.find(project => project.id === id), agents: id === "A" ? agents : [agent("b-codex", "文档 Codex", "codex", "worker", "B")], tasks: id === "A" && params.get("plan") !== "pending" ? tasks : params.get("task-link")==="1" ? [{...tasks[0],id:"b-task",projectId:"B",title:"文档任务",assigneeAgentId:"b-codex"}] : [], runs: id==="A"?runHistory:[], messages: [], events: [], dependencies: [{ taskId: "t-review", dependsOnTaskId: "t-build" }], agentSessions: (id === "A" ? agents : []).map(agent => ({ agentId: agent.id, appSessionId: `session-${agent.id}`, projectId: id, id: `agent-session-${agent.id}`, status: agent.id === "codex" ? "running" : "idle", controlMode: params.get("manual") === agent.id ? "manual" : "auto", currentTaskId: null, currentRunId: null, lastOutputAt: null, createdAt: clock, updatedAt: clock })), runLogs: id==="A"?runLogs:[], runtimeEvents: [], memories: [], instructions: [], artifacts: [], approvals: [], reviewDecisions: [], wakeups: [] });
 const calls: Array<{ command: string; args: any }> = [];
 const pending: Array<{ command: string; args: any; resolve(value: any): void; reject(reason: Error): void }> = [];
 const receipts = new Map<string, string>();
 let failSend = params.get("fail") === "send";
 let failBeforeSave = params.get("fail") === "send-before-save";
 const mock = {
-  calls, pending, chats, projects, snapshot, holdProject: "", holdSend: false,
+  calls, pending, chats, projects, snapshot, archivedConversations: [] as any[], holdProject: "", holdSend: false, holdClear: false, holdNew: false, failClear: false, failNew: false,
   release(command: string, value?: any, error?: string) { const index = pending.findIndex(item => item.command === command); if (index < 0) throw Error(`No pending ${command}`); const item = pending.splice(index, 1)[0]; if (error) item.reject(Error(error)); else item.resolve(value ?? (command === "ma_snapshot" ? snapshot(item.args.projectId) : chats[item.args.projectId ?? item.args.input.projectId])); },
   async invoke(command: string, args: any = {}) {
     calls.push({ command, args: structuredClone(args) });
-    if ((["ma_snapshot", "ma_conversation_snapshot"].includes(command) && mock.holdProject === args.projectId) || (command === "ma_conversation_send" && mock.holdSend)) return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
+    if ((["ma_snapshot", "ma_conversation_snapshot"].includes(command) && mock.holdProject === args.projectId) || (command === "ma_conversation_send" && mock.holdSend) || (command === "ma_conversation_clear" && mock.holdClear) || (command === "ma_conversation_new" && mock.holdNew)) return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
     if (command === "ma_list_projects") return structuredClone(projects);
     if (command === "ma_snapshot") return structuredClone(snapshot(args.projectId));
     if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
+    if (command === "ma_conversation_new") {
+      if (mock.failNew) throw Error("隔离测试：新建会话失败，原记录保留");
+      const input = args.input, chat = chats[input.projectId];
+      if (chat.rounds.some((round: any) => ["queued","running","waiting_approval","stopping","unconfirmed"].includes(round.status))) throw Error("讨论正在进行，暂不能新建会话");
+      if (input.expectedConversationId !== chat.conversation.id || JSON.stringify([...input.expectedMessageIds].sort()) !== JSON.stringify(chat.messages.map((message: any) => message.id).sort())) throw Error("讨论记录已变化，请刷新后重试新建会话");
+      mock.archivedConversations.push(structuredClone(chat));
+      chat.conversation = { ...chat.conversation, id: crypto.randomUUID(), createdAt: Date.now() };
+      chat.messages = []; chat.rounds = []; chat.executionPlans = [];
+      return structuredClone(chat);
+    }
+    if (command === "ma_conversation_clear") {
+      if (mock.failClear) throw Error("隔离测试：清空失败，记录未更改");
+      const input = args.input, chat = chats[input.projectId];
+      if (chat.rounds.some((round: any) => ["queued","running","waiting_approval","stopping","unconfirmed"].includes(round.status))) throw Error("讨论正在进行，暂不能清空记录");
+      if (input.expectedConversationId !== chat.conversation.id || JSON.stringify([...input.expectedMessageIds].sort()) !== JSON.stringify(chat.messages.map((message: any) => message.id).sort())) throw Error("讨论记录已变化，请刷新后重新确认清空");
+      chats[input.projectId] = { ...chat, conversation: { ...chat.conversation, id: crypto.randomUUID() }, messages: [], rounds: [], executionPlans: [] };
+      return structuredClone(chats[input.projectId]);
+    }
     if (["ma_conversation_send", "ma_conversation_interrupt"].includes(command)) {
       const input = args.input, chat = chats[input.projectId];
+      if (params.get("natural") === "1") {
+        if (receipts.has(input.clientMessageId)) return structuredClone(chat);
+        receipts.set(input.clientMessageId,input.projectId);
+        chat.rounds.forEach((round: any)=>{round.status="paused";});
+        let user=chat.messages.find((m: any)=>m.clientMessageId===input.clientMessageId);
+        if(user){user.status="completed";user.queuedInput=null;}else{user={...message(input.clientMessageId,"user",input.body,null,"completed","message"),clientMessageId:input.clientMessageId,createdAt:clock+50000};chat.messages.push(user);}
+        const roundId=`round-${input.clientMessageId}`;
+        chat.rounds.push({id:roundId,projectId:input.projectId,conversationId:chat.conversation.id,userMessageId:user.id,participantAgentIds:input.participantAgentIds,mode:input.mode,intent:input.intent,status:"completed",phase:input.mode==="execution_plan"?"plan":input.intent==="exchange"?"exchange":"chat",maxRounds:input.maxRounds,currentRound:0,deadlineAt:clock+600000,stopReason:null,createdAt:clock+50000,updatedAt:clock+50000});
+        for(const [index,agentId] of input.participantAgentIds.entries()) chat.messages.push({...message(`natural-${chat.messages.length}`,"agent",input.intent==="exchange"?(index===0?"@Codex 我建议先核对接口，你觉得呢？":"我看到了前面的建议，接口一致，可以开始下一步。"):"你好！有什么需要我帮忙？",agentId),roundId,phase:"chat",replyToMessageId:index?chat.messages.at(-1).id:user.id,createdAt:clock+50001+index});
+        return structuredClone(chat);
+      }
       if (failBeforeSave) { failBeforeSave = false; throw Error("隔离测试：响应丢失，发送结果未确认"); }
       if (!receipts.has(input.clientMessageId)) {
         receipts.set(input.clientMessageId, input.projectId);
@@ -88,6 +117,7 @@ const mock = {
     if (command === "skill_center_snapshot") return {skillSets:[]};
     if (command === "collaboration_health") return {scopeLabel:"当前项目",sessions:[],runtimes:[],messages:[],handoffs:[],cliPath:"fixture",cliPathExists:true,replyEvidence:"fixture"};
     if (command === "general_settings_get") return GENERAL_SETTINGS_PREVIEW;
+    if (command === "plugin:opener|open_url") return null;
     if (command === "plugin:event|emit") return null;
     if (command === "ma_create_project") { const project = { ...args.input, id: crypto.randomUUID(), status: "active", createdAt: clock, updatedAt: clock }; projects = [...projects, project]; chats[project.id] = emptyChat(project.id); return project; }
     if (command === "plugin:dialog|open") return "/fixture/new-project";
@@ -97,6 +127,12 @@ const mock = {
     throw Error(`隔离页面未模拟 ${command}`);
   },
 };
+if(params.get("queued")==="1") {
+ const input={projectId:"A",clientMessageId:"pending-original",body:"@Codex 先回答这个问题",participantAgentIds:["codex"],mode:"discussion",intent:"chat",maxRounds:1,maxDurationSeconds:600};
+ chats.A.rounds[0].status=params.get("unconfirmed")==="1"?"unconfirmed":"needs_decision";
+ chats.A.messages.push({...message("queued-original","user",input.body,null,"needs_decision","message"),clientMessageId:input.clientMessageId,queuedInput:input});
+}
+if(params.get("markdown")==="1") chats.A.messages.push(message("m90","agent",'# 方案\n\n**已经确认**，使用 `read()`。\n\n- 第一步\n- 第二步\n\n```js\nconst value = "<safe>";\n```\n\n| 名称 | 状态 |\n| --- | --- |\n| 接口 | 完成 |\n\n[安全链接](https://example.com/) [危险链接](javascript:alert(1))\n\n![不要自动加载](https://example.invalid/tracking.png)\n\n<script>window.unsafeExecuted=true</script>',"claude"));
 (window as any).conversationMock = mock;
 (window as any).__TAURI_INTERNALS__ = { invoke: mock.invoke, transformCallback: () => 1 };
 function Fixture() {

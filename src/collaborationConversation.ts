@@ -1,11 +1,28 @@
-import type { AgentProfile, ConversationMessage, ConversationRound, ConversationStatus } from "./types";
+import type { AgentProfile, ConversationMessage, ConversationMode, ConversationRound, ConversationStatus } from "./types";
 import { hasMentionToken, replaceMentionToken } from "./multiAgentMention.ts";
 
 export const CONVERSATION_STATUS: Record<ConversationStatus, string> = {
   queued: "已排队", running: "正在回复", waiting_approval: "等待你处理", stopping: "正在停止",
   completed: "回复结束", failed: "失败", cancelled: "已取消", paused: "已暂停",
-  unconfirmed: "结果未确认", needs_decision: "需要你决策",
+  unconfirmed: "结果未确认", needs_decision: "等待你补充",
 };
+/** Conservative routing: uncertain requests stay in chat; a plan still needs explicit execution approval. */
+export function conversationRequestMode(body: string, selectedMode: ConversationMode): ConversationMode {
+  if (selectedMode === "execution_plan") return selectedMode;
+  const text = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+  if (/(?:不要|(?<!分)别|无需|不需要|暂不|先不|不准|只聊|讨论|聊聊|解释|如何|怎么|分析|评估|能否|是否|告诉我|是什么意思|示例)|\b(?:don't|do not|not yet|only discuss|explain|analy[sz]e|how to)\b/iu.test(text)) return "discussion";
+  const engineering = /(?:请|帮我|麻烦|你们|大家|团队|一起|共同|各自|分别)/u.test(text)
+    && /(?:分工|协作|合作|一起|共同|你们|大家|各自|分别)/u.test(text)
+    && /(?:开发|实现|编写|构建|修复|完成).{0,30}(?:项目|功能|程序|系统|应用|页面|任务|代码|bug)/iu.test(text);
+  const teamEngineering = /\b(?:team|together|collaborate|split the work)\b/i.test(text)
+    && /\b(?:build|implement|develop|fix)\b.{0,80}\b(?:project|feature|app|application|bug|code|page)\b/i.test(text);
+  return engineering || teamEngineering ? "execution_plan" : "discussion";
+}
+export function conversationRequestIntent(body: string): "chat" | "exchange" {
+  const text = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+  if (/(?:不要|(?<!分)别|无需|不需要|先不).{0,8}(?:互聊|互相|讨论|交流|回应)|\b(?:don't|do not|no need to).{0,12}(?:discuss|debate|exchange)/iu.test(text)) return "chat";
+  return /(?:互相|彼此).{0,12}(?:聊|讨论|交流|回应|回复)|(?:你们|大家|一起|共同).{0,12}(?:聊|讨论|交流)|(?:聊聊|讨论|交流).{0,12}(?:方案|思路|问题)|(?:对方|另一位).{0,12}(?:回复|回应|意见)|\b(?:discuss|debate|talk about|exchange ideas|exchange views|respond to each other)\b/iu.test(text) ? "exchange" : "chat";
+}
 export const TASK_STATUS: Record<string, string> = {
   draft: "待安排", ready: "等待执行", blocked: "等待依赖", claimed: "已领取", running: "进行中",
   waiting_approval: "等待你处理", in_review: "等待交付审批", changes_requested: "需修改",

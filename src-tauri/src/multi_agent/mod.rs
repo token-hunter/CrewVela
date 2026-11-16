@@ -22,7 +22,7 @@ pub(crate) use direct_message::{
 pub use domain::*;
 pub use conversation::{CollaborationConversation, ConversationMessage, ConversationRound,
     ConversationPlannedTask, ConversationExecutionPlan, ConversationSnapshot,
-    ConversationSendInput, ConversationInterruptInput, ConversationExecutePlanInput,
+    ConversationSendInput, ConversationInterruptInput, ConversationExecutePlanInput, ConversationClearInput,
     ConversationSupervisor};
 pub(crate) use executor::interactive_runtime_prompt_blocked;
 pub(crate) use executor::interactive_runtime_prompt_busy;
@@ -32,6 +32,8 @@ pub(crate) use executor::interactive_runtime_prompt_ready;
 #[cfg(test)]
 pub(crate) use executor::strip_terminal_control_sequences;
 pub(crate) use executor::external_command_path;
+#[cfg(windows)]
+pub(crate) use executor::git_bash_executable;
 pub use executor::{merge_integrator_delivery, AgentTerminalHost, MultiAgentSupervisor};
 pub use governance::CollaborationGovernance;
 pub(crate) use plan_validation::{validate_parallel_review_graph, ReviewGraphAgent, ReviewGraphTask};

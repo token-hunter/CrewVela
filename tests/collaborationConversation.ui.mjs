@@ -17,7 +17,7 @@ async function fresh(extra = '', viewport = { width: 1122, height: 1402 }) {
 const calls = (page, command) => page.evaluate(command => window.conversationMock.calls.filter(item => item.command === command), command);
 try {
   const page = await fresh();
-  assert.equal(await page.getByRole('tab', { name: '执行项目', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await page.getByRole('tab', { name: '聊天', exact: true }).getAttribute('aria-selected'), 'true');
   await page.getByRole('button', { name: '查看任务 · 3', exact: true }).click();
   const settings = page.getByRole('dialog', { name: '设置', exact: true });
   await settings.locator('.collab-task-row').first().waitFor(); assert.equal(await settings.locator('.collab-task-row').count(), 3);
@@ -30,7 +30,7 @@ try {
   await page.getByRole('button', { name: '查看Codex的原会话', exact: true }).click();
   assert.deepEqual((await calls(page, 'fixture_open_session')).at(-1).args, { sessionId: 'session-codex' });
   const editor = page.getByRole('combobox', { name: '给团队发消息', exact: true });
-  await page.getByRole('tab', { name: '讨论', exact: true }).click();
+  await page.getByRole('tab', { name: '聊天', exact: true }).click();
   await editor.fill('@Cod');
   await page.getByRole('option', { name: /@Codex/ }).waitFor();
   await page.waitForFunction(() => document.querySelector('.multi-agent-mention-results [role="option"]')?.textContent.includes('@Codex'));
@@ -46,7 +46,7 @@ try {
   assert.equal(sent.length, 1); assert.deepEqual(sent[0].args.input.participantAgentIds, ['claude', 'codex']);
   await page.getByRole('combobox', { name: '给团队插话', exact: true }).fill('先核对数据格式');
   await page.getByRole('button', { name: '发送插话', exact: true }).click();
-  await page.getByRole('button', { name: '继续讨论', exact: true }).waitFor();
+  await page.getByRole('button', { name: '继续输入', exact: true }).waitFor();
   assert.equal((await calls(page, 'ma_conversation_interrupt')).length, 1);
   assert.equal((await calls(page, 'ma_conversation_send')).length, 1, 'interjection is not an unbounded extra dispatch');
 
@@ -101,7 +101,7 @@ try {
   const stopping = await fresh('running=1&stopping=1');
   await stopping.getByRole('button', { name: /暂停讨论/ }).click();
   await stopping.getByText('正在停止', { exact: false }).first().waitFor();
-  assert.equal(await stopping.getByRole('button', { name: '继续讨论', exact: true }).count(), 0, 'unverified stops cannot unlock a new round');
+  assert.equal(await stopping.getByRole('button', { name: '继续输入', exact: true }).count(), 0, 'unverified stops cannot unlock a new round');
   assert.equal(await stopping.getByRole('button', { name: /暂停讨论/ }).isDisabled(), true);
 
   const unsupported = await fresh('unsupported=1');

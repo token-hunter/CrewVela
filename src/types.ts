@@ -921,7 +921,9 @@ export interface CollaborationMessage {
 
 /** A project owns one public team conversation. Private session history is never imported. */
 export type ConversationMode = "discussion" | "execution_plan";
-export type ConversationPhase = "opinions" | "responses" | "summary";
+export type ConversationIntent = "chat" | "exchange";
+/** The three legacy phases remain readable in existing conversation history. */
+export type ConversationPhase = "chat" | "exchange" | "plan" | "opinions" | "responses" | "summary";
 export type ConversationStatus = "queued" | "running" | "waiting_approval" | "stopping" | "completed" | "failed" | "cancelled" | "paused" | "unconfirmed" | "needs_decision";
 export interface CollaborationConversation {
   id: string;
@@ -946,6 +948,8 @@ export interface ConversationMessage {
   status: ConversationStatus;
   createdAt: number;
   updatedAt: number;
+  /** Durable interjection. queued waits for stop; needs_decision requires explicit retry. */
+  queuedInput?: ConversationSendInput | null;
 }
 export interface ConversationRound {
   id: string;
@@ -954,6 +958,7 @@ export interface ConversationRound {
   userMessageId: string;
   participantAgentIds: string[];
   mode: ConversationMode;
+  intent?: ConversationIntent;
   status: ConversationStatus;
   phase: ConversationPhase;
   maxRounds: number;
@@ -999,7 +1004,8 @@ export interface ConversationSendInput {
   body: string;
   participantAgentIds: string[];
   mode: ConversationMode;
-  /** Response passes after everyone's initial view; defaults to 1, hard maximum 3. */
+  intent?: ConversationIntent;
+  /** Legacy compatible bound for directed exchange; ordinary chat never repeats members. */
   maxRounds?: number;
   /** Whole discussion deadline, including queue and approvals; defaults to 600. */
   maxDurationSeconds?: number;
@@ -1008,6 +1014,12 @@ export interface ConversationInterruptInput {
   projectId: string;
   clientMessageId: string;
   body: string;
+  /** Omit only for legacy pause-only interjections. New clients preserve the full request. */
+  participantAgentIds?: string[];
+  mode?: ConversationMode;
+  intent?: ConversationIntent;
+  maxRounds?: number;
+  maxDurationSeconds?: number;
 }
 export interface ConversationExecutePlanInput {
   projectId: string;

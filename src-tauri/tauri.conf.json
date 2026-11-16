@@ -38,6 +38,7 @@
     "resources": {
       "../LICENSE": "licenses/CrewVela-LICENSE.txt",
       "../THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
+      "../THIRD_PARTY_NOTICES/markdown-LICENSES.txt": "licenses/markdown-LICENSES.txt",
       "../THIRD_PARTY_NOTICES/phosphor-icons-LICENSE": "licenses/phosphor-icons-LICENSE.txt",
       "../THIRD_PARTY_NOTICES/cc-switch-LICENSE": "licenses/cc-switch-LICENSE.txt",
       "../THIRD_PARTY_NOTICES/provider-quota.md": "licenses/provider-quota.md",

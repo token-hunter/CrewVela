@@ -4,6 +4,11 @@ use crate::multi_agent::{
     ProjectStatus, RunStatus, SendCollaborationMessageInput, UpdateRunInput,
 };
 
+#[path = "conversation_chat_tests.rs"]
+mod natural_chat;
+#[path = "conversation_live_tests.rs"]
+mod live_chat;
+
 struct Fixture {
     store: MultiAgentStore,
     root: std::path::PathBuf,
@@ -13,6 +18,9 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!("crewvela-conversation-{}", id()));
+        Self::at(root)
+    }
+    fn at(root: std::path::PathBuf) -> Self {
         std::fs::create_dir_all(root.join("project")).unwrap();
         let store = MultiAgentStore::open_at(root.join("store.db")).unwrap();
         let project = store
@@ -58,12 +66,16 @@ impl Fixture {
             body: "Discuss the project".into(),
             participant_agent_ids: self.agents.clone(),
             mode: "discussion".into(),
+            intent: "chat".into(),
             max_rounds: 1,
             max_duration_seconds: 60,
         }
     }
     fn run(&self, executor: &impl DiscussionExecutor) -> ConversationSnapshot {
-        let (round, _) = self.store.begin_conversation(self.input()).unwrap();
+        self.run_input(self.input(), executor)
+    }
+    fn run_input(&self, input: ConversationSendInput, executor: &impl DiscussionExecutor) -> ConversationSnapshot {
+        let (round, _) = self.store.begin_conversation(input).unwrap();
         run_discussion(
             &self.store,
             &round.id,
@@ -127,10 +139,63 @@ impl Drop for Fixture {
         // Windows retains open SQLite files until the enclosing fixture is dropped.
     }
 }
+
+#[test]
+fn conversation_rejects_manually_controlled_member_before_any_dispatch() {
+    let fixture = Fixture::new();
+    let target = &fixture.agents[1];
+    fixture.store.set_agent_control(&fixture.project, target, super::super::AgentControlMode::Manual, None).unwrap();
+    let result = fixture.store.begin_conversation(fixture.input());
+    let snapshot = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    assert!(result.is_err(), "a manual member must be rejected before starting the first member");
+    let error = result.unwrap_err().to_string();
+    assert!(error.contains("member-1") && error.contains("接管"), "{error}");
+    assert!(snapshot.rounds.is_empty() && snapshot.messages.is_empty());
+    assert!(fixture.store.snapshot(&fixture.project).unwrap().tasks.is_empty());
+    fixture.store.set_agent_control(&fixture.project, target, super::super::AgentControlMode::Auto, None).unwrap();
+    let (round, started) = fixture.store.begin_conversation(fixture.input()).unwrap();
+    assert!(started);
+    // An IPC retry must still return its accepted receipt after state changes.
+    fixture.store.set_agent_control(&fixture.project, target, super::super::AgentControlMode::Manual, None).unwrap();
+    let (receipt, restarted) = fixture.store.begin_conversation(fixture.input()).unwrap();
+    assert_eq!(receipt.id, round.id);
+    assert!(!restarted);
+}
 #[derive(Default)]
 struct Replies {
     prompts: Mutex<Vec<String>>,
     repeated: bool,
+}
+
+struct ScriptedReplies {
+    replies: Vec<String>,
+    calls: Mutex<Vec<(String, String)>>,
+}
+impl ScriptedReplies {
+    fn new(replies: Vec<String>) -> Self { Self { replies, calls: Mutex::new(Vec::new()) } }
+}
+impl DiscussionExecutor for ScriptedReplies {
+    fn execute(&self, store: &MultiAgentStore, task: &str, run: &str, agent: &str, _: &AtomicBool) -> Result<()> {
+        let project = store.agent_profile(agent)?.project_id;
+        let prompt = store.snapshot(&project)?.tasks.into_iter().find(|item| item.id == task).unwrap().description;
+        let mut calls = self.calls.lock().unwrap();
+        let output = self.replies.get(calls.len()).context("unexpected additional model call")?.clone();
+        calls.push((agent.into(), prompt));
+        drop(calls);
+        store.update_run(UpdateRunInput { run_id: run.into(), status: RunStatus::Running,
+            output_summary: None, error: None, session_locator: None })?;
+        store.finalize_successful_run(run, "isolated", &output, false, None, None)
+    }
+}
+
+fn controlled_reply(body: &str, control: Value) -> String {
+    format!("{body}\n{TURN_CONTROL_OPEN}{control}{TURN_CONTROL_CLOSE}")
+}
+
+fn interjection(input: &ConversationSendInput) -> ConversationInterruptInput {
+    ConversationInterruptInput { project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
+        body: input.body.clone(), participant_agent_ids: Some(input.participant_agent_ids.clone()), mode: Some(input.mode.clone()),
+        intent: Some(input.intent.clone()), max_rounds: Some(input.max_rounds), max_duration_seconds: Some(input.max_duration_seconds) }
 }
 impl DiscussionExecutor for Replies {
     fn execute(
@@ -177,12 +242,12 @@ impl DiscussionExecutor for Replies {
 }
 
 #[test]
-fn public_conversation_runs_views_responses_and_summary_with_durable_identity() {
+fn public_chat_calls_each_addressed_member_once_with_durable_identity() {
     let fixture = Fixture::new();
     let executor = Replies::default();
     let snapshot = fixture.run(&executor);
     assert_eq!(snapshot.rounds[0].status, "completed");
-    assert_eq!(snapshot.messages.len(), 6);
+    assert_eq!(snapshot.messages.len(), 3);
     let replies = snapshot
         .messages
         .iter()
@@ -193,21 +258,189 @@ fn public_conversation_runs_views_responses_and_summary_with_durable_identity() 
             .iter()
             .map(|m| m.phase.as_deref().unwrap())
             .collect::<Vec<_>>(),
-        ["opinions", "opinions", "responses", "responses", "summary"]
+        ["chat", "chat"]
     );
     assert!(replies.iter().all(|m| m.run_id.is_some()
         && m.task_id.is_some()
         && m.reply_to_message_id.is_some()
         && m.status == "completed"));
-    assert!(executor.prompts.lock().unwrap()[2].contains("Actual fixture reply 1"));
+    assert!(executor.prompts.lock().unwrap()[1].contains("Actual fixture reply 1"));
+    assert!(replies.iter().all(|reply| reply.reply_to_message_id.as_deref() == Some(snapshot.rounds[0].user_message_id.as_str())));
     let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
     let restored = reopened.conversation_snapshot(&fixture.project).unwrap();
-    assert_eq!(restored.messages.len(), 6);
+    assert_eq!(restored.messages.len(), 3);
     assert_eq!(restored.conversation.id, snapshot.conversation.id);
     assert_eq!(
         reopened.snapshot(&fixture.project).unwrap().project.status,
         ProjectStatus::Active
     );
+}
+
+fn clear_input(snapshot: &ConversationSnapshot) -> ConversationClearInput {
+    ConversationClearInput {
+        project_id: snapshot.conversation.project_id.clone(),
+        expected_conversation_id: snapshot.conversation.id.clone(),
+        expected_message_ids: snapshot.messages.iter().map(|message| message.id.clone()).collect(),
+    }
+}
+
+#[test]
+fn new_conversation_preserves_old_evidence_and_isolates_new_context_durably() {
+    let fixture = Fixture::new();
+    let previous = fixture.run(&Replies::default());
+    let project = serde_json::to_value(fixture.store.snapshot(&fixture.project).unwrap()).unwrap();
+    let fresh = fixture.store.new_conversation(clear_input(&previous)).unwrap();
+    assert_ne!(fresh.conversation.id, previous.conversation.id);
+    assert!(fresh.messages.is_empty() && fresh.rounds.is_empty() && fresh.execution_plans.is_empty());
+    assert_eq!(project, serde_json::to_value(fixture.store.snapshot(&fixture.project).unwrap()).unwrap());
+    let connection = fixture.store.connection.lock().unwrap();
+    for message in &previous.messages {
+        assert_eq!(message_with(&connection, &message.id).unwrap().conversation_id, previous.conversation.id);
+    }
+    drop(connection);
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    assert_eq!(reopened.conversation_snapshot(&fixture.project).unwrap().conversation.id, fresh.conversation.id);
+    assert!(reopened.conversation_snapshot(&fixture.project).unwrap().messages.is_empty());
+    let mut input = fixture.input(); input.client_message_id = "fresh-conversation-topic".into(); input.body = "NEW_SESSION_ONLY".into();
+    let executor = Replies::default();
+    let result = fixture.run_input(input, &executor);
+    assert!(result.messages.iter().all(|message| message.conversation_id == fresh.conversation.id));
+    let prompts = executor.prompts.lock().unwrap();
+    assert!(prompts[0].contains("NEW_SESSION_ONLY"));
+    assert!(!prompts[0].contains("Discuss the project") && !prompts[0].contains("Actual fixture reply"));
+}
+
+#[test]
+fn new_conversation_allows_empty_sessions_and_rejects_stale_or_active_requests() {
+    let fixture = Fixture::new();
+    let empty = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    let fresh = fixture.store.new_conversation(clear_input(&empty)).unwrap();
+    assert_ne!(fresh.conversation.id, empty.conversation.id);
+    assert!(fixture.store.new_conversation(clear_input(&empty)).unwrap_err().to_string().contains("已变化"));
+    assert_eq!(fixture.store.conversation_snapshot(&fixture.project).unwrap().conversation.id, fresh.conversation.id);
+    let finished = fixture.run(&Replies::default());
+    for status in ACTIVE {
+        let connection = fixture.store.connection.lock().unwrap();
+        let mut round = finished.rounds[0].clone(); round.status = (*status).into();
+        save_round(&connection, &round).unwrap(); drop(connection);
+        assert!(fixture.store.new_conversation(clear_input(&finished)).unwrap_err().to_string().contains("暂不能新建会话"), "{status}");
+    }
+    let connection = fixture.store.connection.lock().unwrap();
+    save_round(&connection, &finished.rounds[0]).unwrap();
+    connection.execute("UPDATE ma_runs SET status='running' WHERE project_id=?1", [&fixture.project]).unwrap();
+    drop(connection);
+    assert!(fixture.store.new_conversation(clear_input(&finished)).unwrap_err().to_string().contains("暂不能新建会话"));
+}
+
+#[test]
+fn clear_history_is_durable_project_scoped_and_preserves_execution_evidence() {
+    let fixture = Fixture::new();
+    fixture.git();
+    let initial = fixture.run(&Replies::default());
+    let draft = fixture.draft();
+    let plan = fixture.store.save_conversation_plan(&initial.rounds[0].id,
+        &initial.messages.last().unwrap().id, &json!({"summary":draft.summary,"tasks":draft.tasks}).to_string()).unwrap();
+    let approval = ConversationExecutePlanInput {project_id: fixture.project.clone(), plan_id: plan.id, client_request_id: "execute-before-clear".into()};
+    let tasks = fixture.store.apply_conversation_plan(&approval).unwrap();
+    let run = fixture.store.claim_task(ClaimTaskInput {task_id: tasks[0].clone(), agent_id: fixture.agents[0].clone(), lease_seconds: 120}).unwrap();
+    // Engineering execution may continue; clearing never stops or resets it.
+    let before = fixture.store.snapshot(&fixture.project).unwrap();
+    let other = fixture.store.create_project(CreateProjectInput {name:"Other".into(),goal:"unrelated".into(),root_path:fixture.root.display().to_string(),default_branch:"main".into()}).unwrap();
+    fixture.store.interrupt_conversation(ConversationInterruptInput {project_id: other.id.clone(),client_message_id:"other-message".into(),body:"KEEP_OTHER_PROJECT".into(),..Default::default()}).unwrap();
+    let other_before = fixture.store.conversation_snapshot(&other.id).unwrap();
+    let current = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    assert!(!current.messages.is_empty());
+    let cleared = fixture.store.clear_conversation(clear_input(&current)).unwrap();
+    assert_ne!(cleared.conversation.id, current.conversation.id);
+    assert!(cleared.messages.is_empty() && cleared.rounds.is_empty() && cleared.execution_plans.is_empty());
+    assert_eq!(serde_json::to_value(&before).unwrap(), serde_json::to_value(fixture.store.snapshot(&fixture.project).unwrap()).unwrap());
+    assert_eq!(serde_json::to_value(other_before).unwrap(), serde_json::to_value(fixture.store.conversation_snapshot(&other.id).unwrap()).unwrap());
+    assert!(fixture.store.apply_conversation_plan(&approval).unwrap_err().to_string().contains("已清空"));
+    // A late engineering result must not be re-published into the new history.
+    fixture.store.update_run(UpdateRunInput {run_id:run.id.clone(),status:RunStatus::Running,output_summary:None,error:None,session_locator:None}).unwrap();
+    fixture.store.finalize_successful_run(&run.id,"isolated","OLD_EXECUTION_OUTPUT",false,None,None).unwrap();
+    for _ in 0..3 { assert!(fixture.store.conversation_snapshot(&fixture.project).unwrap().messages.is_empty()); }
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    assert_eq!(reopened.conversation_snapshot(&fixture.project).unwrap().conversation.id, cleared.conversation.id);
+    assert!(reopened.conversation_snapshot(&fixture.project).unwrap().messages.is_empty());
+    let connection = fixture.store.connection.lock().unwrap();
+    let retained: i64 = connection.query_row("SELECT COUNT(*) FROM ma_conversation_messages WHERE project_id=?1",[&fixture.project],|row|row.get(0)).unwrap();
+    assert!(retained >= current.messages.len() as i64, "Original evidence is retained, not deleted");
+    drop(connection);
+    // Retrying a pre-clear send stays idempotent and cannot replay its execution.
+    assert!(!fixture.store.begin_conversation(fixture.input()).unwrap().1);
+    let mut input = fixture.input(); input.client_message_id = "new-topic".into(); input.body = "NEW_PUBLIC_TOPIC".into();
+    let (round, fresh) = fixture.store.begin_conversation(input).unwrap(); assert!(fresh);
+    let executor = Replies::default();
+    run_discussion(&fixture.store,&round.id,&Arc::new(AtomicBool::new(false)),&executor).unwrap();
+    let prompts = executor.prompts.lock().unwrap();
+    assert!(prompts[0].contains("NEW_PUBLIC_TOPIC"));
+    assert!(!prompts[0].contains("Discuss the project") && !prompts[0].contains("OLD_EXECUTION_OUTPUT") && !prompts[0].contains("Actual fixture reply"));
+    let latest = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    assert_eq!(latest.rounds.len(), 1);
+    assert_eq!(latest.messages.len(), 3);
+    assert!(latest.messages.iter().all(|message| message.conversation_id == cleared.conversation.id));
+}
+
+#[test]
+fn clear_history_rejects_active_discussions_and_stale_confirmation() {
+    let fixture = Fixture::new();
+    let initial = fixture.run(&Replies::default());
+    for status in ACTIVE {
+        let connection = fixture.store.connection.lock().unwrap();
+        let mut round = initial.rounds[0].clone(); round.status = (*status).into(); save_round(&connection,&round).unwrap(); drop(connection);
+        assert!(fixture.store.clear_conversation(clear_input(&initial)).unwrap_err().to_string().contains("暂不能清空"), "{status}");
+    }
+    let connection = fixture.store.connection.lock().unwrap();
+    save_round(&connection,&initial.rounds[0]).unwrap();
+    let run: String = connection.query_row("SELECT id FROM ma_runs WHERE project_id=?1 LIMIT 1",[&fixture.project],|row|row.get(0)).unwrap();
+    connection.execute("UPDATE ma_runs SET status='running' WHERE id=?1",[&run]).unwrap(); drop(connection);
+    assert!(fixture.store.clear_conversation(clear_input(&initial)).unwrap_err().to_string().contains("暂不能清空"));
+    let connection = fixture.store.connection.lock().unwrap();
+    connection.execute("UPDATE ma_runs SET status='succeeded' WHERE id=?1",[&run]).unwrap(); drop(connection);
+    fixture.store.interrupt_conversation(ConversationInterruptInput {project_id: fixture.project.clone(),client_message_id:"arrived-after-confirm".into(),body:"NEW_MESSAGE_AFTER_CONFIRM".into(),..Default::default()}).unwrap();
+    assert!(fixture.store.clear_conversation(clear_input(&initial)).unwrap_err().to_string().contains("已变化"));
+    let latest = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    let cleared = fixture.store.clear_conversation(clear_input(&latest)).unwrap();
+    assert!(fixture.store.clear_conversation(clear_input(&latest)).unwrap_err().to_string().contains("已变化"));
+    assert!(fixture.store.conversation_snapshot(&fixture.project).unwrap().messages.is_empty());
+    assert_eq!(fixture.store.conversation_snapshot(&fixture.project).unwrap().conversation.id, cleared.conversation.id);
+    let mut wrong = clear_input(&cleared); wrong.project_id = "missing-project".into();
+    assert!(fixture.store.clear_conversation(wrong).is_err());
+}
+
+#[test]
+fn clearing_hides_pending_plans_and_prevents_stale_approval() {
+    let fixture = Fixture::new();
+    let initial = fixture.run(&Replies::default());
+    let draft = fixture.draft();
+    let plan = fixture.store.save_conversation_plan(&initial.rounds[0].id,
+        &initial.messages.last().unwrap().id,&json!({"summary":draft.summary,"tasks":draft.tasks}).to_string()).unwrap();
+    let current = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    fixture.store.clear_conversation(clear_input(&current)).unwrap();
+    assert!(fixture.store.apply_conversation_plan(&ConversationExecutePlanInput {project_id:fixture.project.clone(),plan_id:plan.id,client_request_id:"stale-approval".into()}).unwrap_err().to_string().contains("已清空"));
+    assert!(fixture.store.conversation_snapshot(&fixture.project).unwrap().execution_plans.is_empty());
+}
+
+#[test]
+fn clear_and_new_send_serialize_without_losing_the_new_request() {
+    let fixture = Fixture::new();
+    let initial = fixture.run(&Replies::default());
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    let store = fixture.store.clone();
+    let clear = clear_input(&initial);
+    let clear_barrier = barrier.clone();
+    let clear_thread = std::thread::spawn(move || { clear_barrier.wait(); store.clear_conversation(clear) });
+    let store = fixture.store.clone();
+    let mut input = fixture.input(); input.client_message_id = "concurrent-new-topic".into(); input.body = "MUST_REMAIN_VISIBLE".into();
+    let send_thread = std::thread::spawn(move || { barrier.wait(); store.begin_conversation(input) });
+    let clear_result = clear_thread.join().unwrap();
+    let (round, created) = send_thread.join().unwrap().unwrap(); assert!(created);
+    let current = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    assert!(current.messages.iter().any(|message| message.body == "MUST_REMAIN_VISIBLE"));
+    assert_eq!(current.conversation.id, round.conversation_id);
+    assert_eq!(current.rounds.len(), if clear_result.is_ok() {1} else {2});
+    if let Err(error) = clear_result { assert!(error.to_string().contains("暂不能清空")); }
 }
 
 #[test]
@@ -231,7 +464,7 @@ fn retries_do_not_duplicate_human_messages_or_dispatch_again() {
     assert!(fixture.store.begin_conversation(changed).is_err());
     assert_eq!(
         fixture.store.snapshot(&fixture.project).unwrap().runs.len(),
-        5
+        2
     );
 }
 
@@ -392,6 +625,7 @@ impl DiscussionExecutor for StopDuringRun {
                 project_id: project,
                 client_message_id: "interjection".into(),
                 body: "human correction".into(),
+                ..Default::default()
             })?;
         }
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -487,16 +721,16 @@ fn unconfirmed_stop_is_visible_and_blocks_new_round() {
 }
 
 #[test]
-fn repeated_replies_stop_without_fabricated_summary() {
+fn identical_greetings_do_not_start_mutual_commentary_or_summary() {
     let fixture = Fixture::new();
     let snapshot = fixture.run(&Replies {
         repeated: true,
         ..Default::default()
     });
-    assert_eq!(snapshot.rounds[0].status, "needs_decision");
+    assert_eq!(snapshot.rounds[0].status, "completed");
     assert_eq!(
         fixture.store.snapshot(&fixture.project).unwrap().runs.len(),
-        4
+        2
     );
     assert!(!snapshot
         .messages
@@ -682,6 +916,7 @@ fn old_plan_is_invalidated_by_new_human_instruction() {
             project_id: fixture.project.clone(),
             client_message_id: "changed-goal".into(),
             body: "Do something else".into(),
+            ..Default::default()
         })
         .unwrap();
     assert!(fixture
@@ -720,7 +955,7 @@ fn malformed_plan_summary_is_preserved_as_real_reply_with_decision_status() {
         .last()
         .unwrap()
         .body
-        .contains("Actual fixture reply 5"));
+        .contains("Actual fixture reply 1"));
 }
 
 fn existing_business_run(fixture: &Fixture) -> super::super::AgentRun {
@@ -926,7 +1161,7 @@ fn snapshot_does_not_redispatch_or_rewrite_unchanged_messages() {
     );
     assert_eq!(
         fixture.store.snapshot(&fixture.project).unwrap().runs.len(),
-        5
+        2
     );
     assert_eq!(
         second.messages[0].client_message_id.as_deref(),

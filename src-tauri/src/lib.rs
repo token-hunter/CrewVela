@@ -1069,6 +1069,16 @@ fn ma_conversation_snapshot(project_id: String, state: State<'_, MultiAgentStore
 }
 
 #[tauri::command]
+fn ma_conversation_clear(input: multi_agent::ConversationClearInput, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
+    state.clear_conversation(input).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_conversation_new(input: multi_agent::ConversationClearInput, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
+    state.new_conversation(input).map_err(to_err)
+}
+
+#[tauri::command]
 fn ma_conversation_send(input: multi_agent::ConversationSendInput,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
@@ -1084,9 +1094,13 @@ fn ma_conversation_send(input: multi_agent::ConversationSendInput,
 #[tauri::command]
 fn ma_conversation_interrupt(input: multi_agent::ConversationInterruptInput,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
+    pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
+    admission: State<'_, runtime_admission::RuntimeAdmission>,
 ) -> Result<multi_agent::ConversationSnapshot, String> {
+    let _admission = admission.admit().map_err(to_err)?;
     let project_id = input.project_id.clone();
-    supervisor.interrupt(state.inner(), input).map_err(to_err)?;
+    supervisor.interrupt(state.inner(), input,
+        multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone()).map_err(to_err)?;
     state.conversation_snapshot(&project_id).map_err(to_err)
 }
 
@@ -6263,6 +6277,8 @@ pub fn run() {
             ma_runtime_events,
             ma_send_message,
             ma_conversation_snapshot,
+            ma_conversation_clear,
+            ma_conversation_new,
             ma_conversation_send,
             ma_conversation_interrupt,
             ma_conversation_control,

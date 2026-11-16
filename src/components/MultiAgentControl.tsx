@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowClockwise, ArrowSquareOut, CaretDown, Check, CheckCircle, ChatCircleText, GearSix, ListChecks, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, Check, CheckCircle, ChatCircleText, DotsThree, GearSix, ListChecks, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
+import { ConversationMarkdown } from "./ConversationMarkdown";
 import { AgentMentionMenu, type AgentMentionOption } from "./AgentMentionMenu";
 import { CollaborationProjectDialog } from "./CollaborationProjectDialog";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
-import { conversationIsActive, conversationMentionToken, conversationRecipients, CONVERSATION_STATUS, latestConversationRound, orderedConversationMessages, TASK_STATUS } from "../collaborationConversation";
+import { Modal } from "./ui/Modal";
+import { conversationIsActive, conversationMentionToken, conversationRecipients, conversationRequestIntent, conversationRequestMode, CONVERSATION_STATUS, latestConversationRound, orderedConversationMessages, TASK_STATUS } from "../collaborationConversation";
 import { RUNTIME_LABELS } from "../runtimeLogos";
 import { visibleProjectTasks } from "../collaborationTasks";
 import { hasMentionToken, selectMentionTokens } from "../multiAgentMention";
@@ -30,7 +32,7 @@ const draftKey = (id: string) => `crewvela-conversation-draft:${id}`;
 const pendingKey = (id: string) => `crewvela-conversation-pending:${id}`;
 function stored(key: string): string { try { return localStorage.getItem(key) ?? ""; } catch { return ""; } }
 function save(key: string, value: string) { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch { /* The current draft remains available in the editor. */ } }
-interface PendingSend { projectId: string; clientMessageId: string; body: string; participantAgentIds: string[]; mode: ConversationMode; interrupt: boolean }
+interface PendingSend { projectId: string; clientMessageId: string; body: string; participantAgentIds: string[]; mode: ConversationMode; intent?: "chat" | "exchange"; interrupt: boolean }
 function storedPending(id: string): PendingSend | null {
   try {
     const item = JSON.parse(stored(pendingKey(id)));
@@ -65,6 +67,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [showOlder, setShowOlder] = useState(false);
+  const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
+  const [clearConfirmation, setClearConfirmation] = useState<{ projectId: string; projectName: string; expectedConversationId: string; expectedMessageIds: string[] } | null>(null);
+  const [clearError, setClearError] = useState("");
+  const historyTrigger = useRef<HTMLButtonElement>(null);
+  const historyMenu = useRef<HTMLDivElement>(null);
+  const cancelClear = useRef<HTMLButtonElement>(null);
+  const historyMenuId = useId();
   const request = useRef(0);
   const generation = useRef(0);
   const mutation = useRef(false);
@@ -82,6 +91,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     request.current++; generation.current++; initializedMembers.current = null;
     currentProject.current = id; setProjectId(id); setSnapshot(null); setConversation(null); setHealthy(false); setLoading(false);
     operationError.current = ""; setError(""); setSelected([]); setMembersOpen(null); setShowOlder(false); setMentionOpen(false);
+    setHistoryMenuOpen(false); setClearConfirmation(null); setClearError("");
     setDraft(id ? stored(draftKey(id)) : ""); setPending(id ? storedPending(id) : null); followMessages.current = true;
     if (id) save(PROJECT_KEY, id);
   }, []);
@@ -131,7 +141,28 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   }, [active, projectId, refresh]);
   const agents = useMemo(() => snapshot?.agents.filter(agent => agent.projectId === projectId && agent.enabled) ?? [], [snapshot, projectId]);
   const supported = conversation?.supportedDiscussionRuntimes ?? [];
-  useEffect(() => { if (!active) setMembersOpen(null); }, [active]);
+  const manualMembers = useMemo(() => new Set(snapshot?.agentSessions.filter(session => session.projectId === projectId && session.controlMode === "manual").map(session => session.agentId) ?? []), [snapshot, projectId]);
+  useEffect(() => { if (!active) { setMembersOpen(null); setHistoryMenuOpen(false); setClearConfirmation(null); } }, [active]);
+  useEffect(() => {
+    if (!historyMenuOpen) return;
+    const frame = requestAnimationFrame(() => historyMenu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus());
+    const outside = (event: Event) => {
+      if (event.target instanceof Node && !historyMenu.current?.contains(event.target) && !historyTrigger.current?.contains(event.target)) setHistoryMenuOpen(false);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setHistoryMenuOpen(false); historyTrigger.current?.focus(); }
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        const items = Array.from(historyMenu.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []);
+        const index = items.findIndex(item => item === document.activeElement);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+        items[next]?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside, true); document.addEventListener("focusin", outside); window.addEventListener("keydown", key, true);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener("pointerdown", outside, true); document.removeEventListener("focusin", outside); window.removeEventListener("keydown", key, true); };
+  }, [historyMenuOpen]);
   useLayoutEffect(() => {
     if (membersOpen !== "header") return;
     const place = () => {
@@ -175,12 +206,15 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   useEffect(() => {
     if (!conversation || !snapshot || !projectId || !runtimeReady || runtimeError) return;
     const eligible = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id);
-    if (initializedMembers.current !== projectId) { initializedMembers.current = projectId; setSelected(eligible); setMode(latestConversationRound(conversation.rounds)?.mode ?? "discussion"); }
+    if (initializedMembers.current !== projectId) { initializedMembers.current = projectId; setSelected(eligible.filter(id => !manualMembers.has(id))); setMode("discussion"); }
     else setSelected(ids => ids.filter(id => eligible.includes(id)));
-  }, [agents, conversation, snapshot, projectId, runtimeReady, runtimeError, runtimePrefs, isRuntimeEnabled]);
+  }, [agents, conversation, snapshot, projectId, runtimeReady, runtimeError, runtimePrefs, isRuntimeEnabled, manualMembers]);
   const round = latestConversationRound(conversation?.rounds ?? []);
   const discussing = conversationIsActive(round);
   const messages = orderedConversationMessages(conversation?.messages ?? [], projectId ?? "");
+  const newConversationBlocked = busy || !!pending || !healthy || !active || !conversation || !!conversation.rounds.some(conversationIsActive);
+  const clearBlocked = newConversationBlocked || !messages.length;
+  const clearChanged = !!clearConfirmation && (conversation?.conversation.id !== clearConfirmation.expectedConversationId || messages.length !== clearConfirmation.expectedMessageIds.length || messages.some(message => !clearConfirmation.expectedMessageIds.includes(message.id)));
   useEffect(() => {
     if (!pending || !conversation || conversation.conversation.projectId !== pending.projectId || projectId !== pending.projectId) return;
     if (!conversation.messages.some(message => message.clientMessageId === pending.clientMessageId)) return;
@@ -216,9 +250,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   };
   const deliver = async (item: PendingSend) => {
     try {
-      const result = await mutationCall(item.interrupt ? "ma_conversation_interrupt" : "ma_conversation_send", { input: item.interrupt
-        ? { projectId: item.projectId, clientMessageId: item.clientMessageId, body: item.body }
-        : { projectId: item.projectId, clientMessageId: item.clientMessageId, body: item.body, participantAgentIds: item.participantAgentIds, mode: item.mode, maxRounds: 1, maxDurationSeconds: 600 } satisfies ConversationSendInput });
+      const input: ConversationSendInput = { projectId: item.projectId, clientMessageId: item.clientMessageId, body: item.body, participantAgentIds: item.participantAgentIds, mode: item.mode, intent: item.intent ?? "chat", maxRounds: item.intent === "exchange" ? 3 : 1, maxDurationSeconds: 600 };
+      const result = await mutationCall(item.interrupt ? "ma_conversation_interrupt" : "ma_conversation_send", { input });
       if (!result) return;
       save(pendingKey(item.projectId), "");
       if (stored(draftKey(item.projectId)) === item.body) save(draftKey(item.projectId), "");
@@ -237,12 +270,37 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const ids = conversationRecipients(body, selected, agents, projectId);
       if (ids.some(id => !isRuntimeEnabled(agents.find(agent => agent.id === id)!.runtimeKind))) throw Error("目标成员的 Runtime 已停用，请在协作设置中启用后重试。");
       if (ids.some(id => !supported.includes(agents.find(agent => agent.id === id)!.runtimeKind))) throw Error("所选成员暂不支持受限讨论，请调整成员或在原会话中操作。");
-      const item: PendingSend = { projectId, clientMessageId: crypto.randomUUID(), body, participantAgentIds: ids, mode, interrupt: discussing };
+      const manual = ids.filter(id => manualMembers.has(id)).map(id => agents.find(agent => agent.id === id)!.name);
+      if (!discussing && manual.length) throw Error(`${manual.join("、")} 正由用户接管，请取消选择这些成员，或在成员设置中交还自动控制后重试。`);
+      const item: PendingSend = { projectId, clientMessageId: crypto.randomUUID(), body, participantAgentIds: ids, mode: conversationRequestMode(body, mode), intent: conversationRequestIntent(body), interrupt: discussing };
       save(pendingKey(projectId), JSON.stringify(item)); setPending(item); await deliver(item);
     } catch (reason) { setOperationError(String(reason)); }
   };
   const control = async (action: "pause" | "cancel") => {
     try { await mutationCall("ma_conversation_control", { projectId, action }); void refresh(); } catch { /* Error is visible in the panel. */ }
+  };
+  const startNewConversation = async () => {
+    if (newConversationBlocked || !projectId || !conversation) return;
+    const id = projectId, epoch = generation.current, previousDraft = draft;
+    historyTrigger.current?.focus(); setHistoryMenuOpen(false);
+    try {
+      const result = await mutationCall("ma_conversation_new", { input: { projectId: id, expectedConversationId: conversation.conversation.id, expectedMessageIds: messages.map(message => message.id) } });
+      if (!result || !mounted.current || currentProject.current !== id || generation.current !== epoch) return;
+      setDraft(value => value === previousDraft ? "" : value);
+      if (stored(draftKey(id)) === previousDraft) save(draftKey(id), "");
+      setMode("discussion"); setShowOlder(false); setMembersOpen(null); setClearConfirmation(null); setClearError(""); setMentionOpen(false);
+      editor.current?.focus();
+    } catch { /* The failed action remains visible; the previous draft and conversation are retained. */ }
+  };
+  const confirmClear = async () => {
+    if (!clearConfirmation || clearBlocked || clearChanged || clearConfirmation.projectId !== currentProject.current) return;
+    const target = clearConfirmation;
+    const epoch = generation.current;
+    setClearError("");
+    try {
+      const result = await mutationCall("ma_conversation_clear", { input: { projectId: target.projectId, expectedConversationId: target.expectedConversationId, expectedMessageIds: target.expectedMessageIds } });
+      if (result && mounted.current && currentProject.current === target.projectId && generation.current === epoch) { setClearConfirmation(null); setShowOlder(false); }
+    } catch (reason) { if (mounted.current && currentProject.current === target.projectId && generation.current === epoch) setClearError(String(reason)); }
   };
   const applyPlan = async (plan: ConversationExecutionPlan) => {
     if (!projectId) return;
@@ -287,7 +345,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
 
   return <section className="collaboration-conversation" aria-label="团队协作会话">
     <header className="conversation-header">
-      <div className="conversation-heading"><span className="conversation-project-select"><select aria-label="协作项目" title={snapshot?.project.rootPath ? `项目目录：${snapshot.project.rootPath}` : undefined} value={projectId ?? ""} onChange={event => chooseProject(event.target.value || null)}><option value="" disabled>选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select><CaretDown size={15} aria-hidden="true" /></span>
+      <div className="conversation-heading"><span className="conversation-project-select"><select aria-label="协作项目" title={snapshot?.project.rootPath ? `${snapshot.project.name}\n项目目录：${snapshot.project.rootPath}` : projects.find(project => project.id === projectId)?.name} value={projectId ?? ""} onChange={event => chooseProject(event.target.value || null)}><option value="" disabled>选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select><CaretDown size={15} aria-hidden="true" /></span>
         <button type="button" className="conversation-icon" aria-label="创建协作项目" onClick={() => setCreatingProject(true)}><Plus size={18} /></button>
         {onOpenProjectSettings && <button type="button" className="conversation-icon" aria-label="管理项目与成员" onClick={() => onOpenProjectSettings(projectId ?? undefined)}><GearSix size={18} /></button>}
       </div>
@@ -295,19 +353,27 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         <div className="conversation-members" aria-label="当前团队成员"><button ref={headerMemberTrigger} type="button" className="conversation-members-trigger" aria-label={`选择参与成员，已选 ${selected.length} 位，共 ${agents.length} 位`} aria-expanded={membersOpen === "header"} aria-controls={membersOpen === "header" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "header" ? null : "header")} disabled={!snapshot}>
           <span className="conversation-member-preview" aria-hidden="true">{agents.slice(0, 3).map(agent => <span key={agent.id} data-selected={selected.includes(agent.id)}><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /></span>)}</span><span>成员 {agents.length}</span><CaretDown size={14} /></button></div>
       </div>
-      <div className="conversation-modes" role="tablist" aria-label="协作方式">{([['discussion', '讨论'], ['execution_plan', '执行项目']] as const).map(([value, label]) => <button type="button" role="tab" key={value} aria-selected={mode === value} disabled={busy} onClick={() => setMode(value)}>{label}</button>)}</div>
+      <div className="conversation-tabs-row"><div className="conversation-modes" role="tablist" aria-label="协作方式">{([['discussion', '聊天'], ['execution_plan', '执行项目']] as const).map(([value, label]) => <button type="button" role="tab" key={value} aria-selected={mode === value} disabled={busy} onClick={() => setMode(value)}>{label}</button>)}</div>
+        <div className="conversation-history-actions"><button ref={historyTrigger} type="button" className="conversation-icon" aria-label="讨论记录操作" aria-haspopup="menu" aria-expanded={historyMenuOpen} aria-controls={historyMenuOpen ? historyMenuId : undefined} disabled={!projectId || busy || !active} onClick={() => { setMembersOpen(null); setHistoryMenuOpen(value => !value); }}><DotsThree size={21} /></button>
+          {historyMenuOpen && <div ref={historyMenu} id={historyMenuId} className="conversation-history-menu" role="menu" aria-label="讨论记录操作"><button type="button" role="menuitem" disabled={newConversationBlocked} title={conversation?.rounds.some(conversationIsActive) ? "团队正在回复，结束后可新建会话" : pending ? "请先核对未确认的发送" : "开始新的团队会话"} onClick={() => void startNewConversation()}><Plus size={17} />新建会话</button><button type="button" role="menuitem" disabled={clearBlocked} title={conversation?.rounds.some(conversationIsActive) ? "讨论进行中，结束后可清空" : pending ? "请先核对未确认的发送" : !messages.length ? "暂无讨论记录" : undefined} onClick={() => {
+            if (clearBlocked || !projectId || !conversation) return;
+            historyTrigger.current?.focus(); setHistoryMenuOpen(false); setClearError("");
+            setClearConfirmation({ projectId, projectName: projects.find(project => project.id === projectId)?.name ?? "当前项目", expectedConversationId: conversation.conversation.id, expectedMessageIds: messages.map(message => message.id) });
+          }}><Broom size={17} />清空讨论记录</button></div>}
+        </div>
+      </div>
     </header>
     {membersOpen === "header" && createPortal(<div id={membersId} ref={membersMenu} className="conversation-member-menu" data-wide={membersPosition.width > 350} role="group" aria-label="选择参与成员" style={membersPosition}><header>参与成员</header>{agents.map(agent => {
-      const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind);
-      const reason = !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? "Runtime 已停用" : !supported.includes(agent.runtimeKind) ? "暂不支持受限讨论" : "";
-      return <label key={agent.id} className={eligible ? "" : "unavailable"} title={`${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]}${reason ? ` · ${reason}` : ""}`}><input type="checkbox" aria-label={agent.name} checked={selected.includes(agent.id)} disabled={!eligible || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span className="conversation-member-name"><strong>{agent.name}</strong><small>{ROLE[agent.role] ?? agent.role}{reason && ` · ${reason}`}{activeAgent?.id === agent.id && " · 正在回复"}</small></span><Check size={18} className="conversation-member-check" aria-hidden="true" /></label>;
+      const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id);
+      const reason = !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? "Runtime 已停用" : !supported.includes(agent.runtimeKind) ? "暂不支持受限讨论" : manualMembers.has(agent.id) ? "用户接管中" : "";
+      return <label key={agent.id} className={eligible ? "" : "unavailable"} title={`${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]}${reason ? ` · ${reason}` : ""}`}><input type="checkbox" aria-label={agent.name} checked={selected.includes(agent.id)} disabled={(!eligible && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span className="conversation-member-name"><strong>{agent.name}</strong><small>{ROLE[agent.role] ?? agent.role}{reason && ` · ${reason}`}{activeAgent?.id === agent.id && " · 正在回复"}</small></span><Check size={18} className="conversation-member-check" aria-hidden="true" /></label>;
     })}{!agents.length && <p>还没有团队成员。{onOpenProjectSettings && <button type="button" className="conversation-text-button" onClick={() => { setMembersOpen(null); onOpenProjectSettings(projectId ?? undefined); }}>添加成员</button>}</p>}</div>, document.body)}
 
     {(error || runtimeError) && <div className="conversation-error" role="alert"><WarningCircle size={17} /><span>{error || `读取 Runtime 启用状态失败：${runtimeError}`}</span><button type="button" disabled={busy || loading} onClick={() => { void loadProjects().catch(reason => setError(String(reason))); void refreshAvailability(); void refresh(); }}>重新读取</button></div>}
     <div className="conversation-transcript" role="log" aria-label="团队对话" aria-live="polite" ref={transcript} onScroll={event => { const node = event.currentTarget; followMessages.current = node.scrollHeight - node.scrollTop - node.clientHeight < 90; }}>
       {!projectId ? <div className="conversation-empty"><ChatCircleText size={30} /><h2>让 Agent 组成团队</h2><p>创建一个协作项目，选择成员，在这里讨论或分工开发。</p><button type="button" className="conversation-primary" onClick={() => setCreatingProject(true)}>创建协作项目</button></div>
         : !conversation ? <p className="conversation-empty" role="status">{loading ? "正在读取协作会话…" : "协作会话尚未读取，请重试。"}</p>
-        : !messages.length ? <div className="conversation-empty"><ChatCircleText size={30} /><h2>和团队开始对话</h2><p>选择成员后发送话题。讨论会逐位收集观点、相互回应并汇总；执行项目会先生成分工，确认后才开始工程任务。</p></div> : null}
+        : null}
       {messages.length > 100 && !showOlder && <button type="button" className="conversation-text-button conversation-older" onClick={() => setShowOlder(true)}>查看更早的 {messages.length - 100} 条消息</button>}
       {visibleMessages.map((message, index) => {
         const agent = agents.find(item => item.id === message.agentId) ?? snapshot?.agents.find(item => item.id === message.agentId);
@@ -317,8 +383,9 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const continuation = !!plan && previous?.senderType === "agent" && previous.agentId === message.agentId;
         return <article className={`conversation-message ${message.senderType} ${message.status}${continuation ? " plan-continuation" : ""}`} key={message.id} data-message-id={message.id}>
           {agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar">{message.senderType === "user" ? <User size={21} /> : <Robot size={21} />}</span>}
-          <div className="conversation-message-content"><header><strong>{message.senderType === "user" ? "我" : agent?.name ?? "历史成员"}</strong>{message.senderType === "agent" && <small>{message.phase === "summary" ? "汇总" : message.phase === "responses" ? "回应" : "观点"}</small>}{message.senderType !== "user" && message.status !== "completed" && <span className={`conversation-message-status ${message.status}`}>{CONVERSATION_STATUS[message.status]}</span>}{message.senderType === "agent" && message.runId && <button className="conversation-text-button conversation-message-source" type="button" title="查看原会话" aria-label={`查看${agent?.name ?? "历史成员"}的原会话`} onClick={() => void openAgentSession(message.agentId!)}><ArrowSquareOut size={14} /></button>}</header>
-            {!plan && (message.body ? <div className="conversation-message-body">{message.body}</div> : <p className="conversation-pending">{CONVERSATION_STATUS[message.status]}{message.status === "queued" ? "，尚未收到成员回复。" : message.status === "running" ? "，等待真实回复内容…" : "，没有已确认的回复内容。"}</p>)}
+          <div className="conversation-message-content"><header><strong>{message.senderType === "user" ? "我" : agent?.name ?? "历史成员"}</strong>{message.senderType !== "user" && message.status !== "completed" && <span className={`conversation-message-status ${message.status}`}>{CONVERSATION_STATUS[message.status]}</span>}{message.senderType === "agent" && message.runId && <button className="conversation-text-button conversation-message-source" type="button" title="查看原会话" aria-label={`查看${agent?.name ?? "历史成员"}的原会话`} onClick={() => void openAgentSession(message.agentId!)}><ArrowSquareOut size={14} /></button>}</header>
+            {!plan && (message.body ? <ConversationMarkdown body={message.body} /> : <p className="conversation-pending">{CONVERSATION_STATUS[message.status]}{message.status === "queued" ? "，尚未收到成员回复。" : message.status === "running" ? "，等待真实回复内容…" : "，没有已确认的回复内容。"}</p>)}
+            {message.queuedInput && <div className="conversation-progress"><span>{message.status === "queued" ? "等待前一轮确认停止后发送" : message.status === "cancelled" ? "这条消息尚未发送，已取消" : "这条消息尚未发送，等待你确认继续"}</span>{message.status === "needs_decision" && <button type="button" className="conversation-text-button" disabled={busy || !!pending || !healthy || !active || discussing} onClick={() => void mutationCall("ma_conversation_send", { input: message.queuedInput }).then(() => refresh()).catch(() => {})}>继续发送</button>}</div>}
             {plan && renderPlan(plan)}
           </div>
         </article>;
@@ -328,12 +395,12 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     </div>
 
     <footer className="conversation-footer">
-      {round && <div className="conversation-progress" role="status"><span className={`conversation-status-dot ${round.status}`} /><span>{activeAgent ? `${activeAgent.name} · ` : ""}{round.status === "completed" ? "本轮讨论结束" : CONVERSATION_STATUS[round.status]}{round.stopReason ? ` · ${round.stopReason}` : ""}</span>{discussing && <button className="conversation-text-button" type="button" disabled={busy || round.status === "stopping"} onClick={() => void control("pause")}><Pause size={13} />{round.status === "unconfirmed" ? "重新核对停止" : "暂停讨论"}</button>}{discussing && <button type="button" className="conversation-text-button" aria-label="结束本轮讨论" disabled={busy || round.status === "stopping"} onClick={() => void control("cancel")}><Stop size={13} />结束本轮</button>}{["paused", "cancelled"].includes(round.status) && <button className="conversation-text-button" type="button" disabled={busy || !!pending || !healthy} onClick={() => void submit(undefined, mode === "discussion" ? "继续讨论，请结合以上人工补充与已确认的上下文。" : "继续拟定项目分工，请结合以上人工补充与已确认的上下文。")}>{mode === "discussion" ? "继续讨论" : "继续拟定分工"}</button>}</div>}
+      {round && <div className="conversation-progress" role="status"><span className={`conversation-status-dot ${round.status}`} /><span>{activeAgent ? `${activeAgent.name} · ` : ""}{round.status === "completed" ? "已回复" : CONVERSATION_STATUS[round.status]}{round.stopReason ? ` · ${round.stopReason}` : ""}</span>{discussing && <button className="conversation-text-button" type="button" disabled={busy || round.status === "stopping"} onClick={() => void control("pause")}><Pause size={13} />{round.status === "unconfirmed" ? "重新核对停止" : "暂停讨论"}</button>}{discussing && <button type="button" className="conversation-text-button" aria-label="结束本轮讨论" disabled={busy || round.status === "stopping"} onClick={() => void control("cancel")}><Stop size={13} />结束本轮</button>}{["paused", "cancelled"].includes(round.status) && <button className="conversation-text-button" type="button" disabled={busy || !!pending || !healthy} onClick={() => editor.current?.focus()}>继续输入</button>}</div>}
       {runningTasks.length > 0 && <div className="conversation-progress"><ListChecks size={15} /><span>{runningTasks.length} 项工程任务仍在执行或等待处理</span><button className="conversation-text-button" type="button" disabled={!onOpenProjectSettings} onClick={openProjectTasks}>查看任务</button></div>}
       {pending && <div className="conversation-send-pending" role="status"><span>{busy ? "正在发送…" : "本次发送结果未确认，重新核对会使用同一消息编号。"}</span>{!busy && <button type="button" onClick={() => void deliver(pending)}>核对并重试</button>}</div>}
       <form className="conversation-composer multi-agent-composer" onSubmit={event => void submit(event)}>
         <div className="conversation-editor multi-agent-composer-editor">
-          <textarea ref={editor} aria-label={discussing ? "给团队插话" : "给团队发消息"} role="combobox" aria-expanded={mentionOpen && !!mentionMatch && mentionOptions.length > 0} aria-controls="conversation-mentions" aria-activedescendant={mentionOpen && mentionOptions.length ? `conversation-mentions-option-${Math.min(mentionIndex, mentionOptions.length - 1)}` : undefined} value={draft} placeholder={discussing ? "输入补充，暂停后续讨论并交给团队…" : "输入需求，@ 指定 Agent；不指定则发给当前团队"} disabled={!projectId} onChange={event => { changeDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionOpen(true); }} onSelect={event => { if (event.currentTarget.selectionStart !== mentionCursor) { setMentionCursor(event.currentTarget.selectionStart); setMentionOpen(true); } }} onKeyDown={event => {
+          <textarea ref={editor} aria-label={discussing ? "给团队插话" : "给团队发消息"} role="combobox" aria-expanded={mentionOpen && !!mentionMatch && mentionOptions.length > 0} aria-controls="conversation-mentions" aria-activedescendant={mentionOpen && mentionOptions.length ? `conversation-mentions-option-${Math.min(mentionIndex, mentionOptions.length - 1)}` : undefined} value={draft} placeholder={discussing ? "输入补充，暂停后续讨论并交给团队…" : "输入消息，@ 指定成员；不指定则发给已选成员"} disabled={!projectId} onChange={event => { changeDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionOpen(true); }} onSelect={event => { if (event.currentTarget.selectionStart !== mentionCursor) { setMentionCursor(event.currentTarget.selectionStart); setMentionOpen(true); } }} onKeyDown={event => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (mentionOpen && mentionMatch && mentionOptions.length) {
               if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setMentionOpen(false); return; }
@@ -344,15 +411,21 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           }} />
           {mentionOpen && mentionMatch && mentionOptions.length > 0 && <AgentMentionMenu id="conversation-mentions" options={mentionOptions} activeIndex={Math.min(mentionIndex, mentionOptions.length - 1)} onHighlight={setMentionIndex} onSelect={insertMention} allSelected={allMentionsSelected} onSelectAll={selectAllMentions} />}
         </div>
-        <div className="conversation-composer-actions"><button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"} aria-controls={membersOpen === "composer" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}><User size={16} /><span>{selected.length === agents.length && selected.length ? "发给当前团队" : `已选 ${selected.length} 位成员`}</span><CaretDown size={12} /></button><small>{mode === "discussion" ? "讨论" : "先生成分工"}{discussing ? " · 人工插话" : ""}</small><button type="submit" className="conversation-send" aria-label={discussing ? "发送插话" : "发送消息"} disabled={busy || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || !draft.trim() || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}><PaperPlaneTilt size={21} weight="fill" /></button></div>
-        {membersOpen === "composer" && <div id={membersId} ref={membersMenu} className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>参与成员</strong><button type="button" onClick={() => { const eligible = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id); setSelected(selected.length === eligible.length ? [] : eligible); }}>全选 / 取消全选</button></header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 暂不支持受限讨论" : ""}</small></span></label>)}</div>}
+        <div className="conversation-composer-actions"><button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"} aria-controls={membersOpen === "composer" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}><User size={16} /><span>{selected.length === agents.length && selected.length ? "发给当前团队" : `已选 ${selected.length} 位成员`}</span><CaretDown size={12} /></button><small>{mode === "discussion" ? "聊天" : "先生成分工"}{discussing ? " · 人工插话" : ""}</small><button type="submit" className="conversation-send" aria-label={discussing ? "发送插话" : "发送消息"} disabled={busy || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || !draft.trim() || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}><PaperPlaneTilt size={21} weight="fill" /></button></div>
+        {membersOpen === "composer" && <div id={membersId} ref={membersMenu} className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>参与成员</strong><button type="button" onClick={() => { const eligible = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id)).map(agent => agent.id); setSelected(selected.length === eligible.length ? [] : eligible); }}>全选 / 取消全选</button></header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || (manualMembers.has(agent.id) && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 暂不支持受限讨论" : manualMembers.has(agent.id) ? " · 用户接管中" : ""}</small></span></label>)}</div>}
       </form>
-      <p className="conversation-footnote"><WarningCircle size={13} />{discussing ? "插话会停止后续发言；正在执行的轮次需确认停止。" : mode === "discussion" ? "有界讨论，使用受限工具；工程任务需明确发起执行。" : "先生成待执行分工，确认成员、目录与验收要求后启动。"}</p>
     </footer>
 
     {creatingProject && <CollaborationProjectDialog onClose={() => setCreatingProject(false)} onCreate={async input => {
       const project = await invoke<MultiAgentProject>("ma_create_project", { input: { ...input, defaultBranch: "main" } });
       setProjects(items => [project, ...items.filter(item => item.id !== project.id)]); chooseProject(project.id);
     }} />}
+    {clearConfirmation && active && createPortal(<Modal className="conversation-clear-dialog" ariaLabel="清空讨论记录" initialFocusRef={cancelClear} onClose={() => { if (!mutation.current) setClearConfirmation(null); }}>
+      <h2>清空讨论记录？</h2>
+      <p>将清空「{clearConfirmation.projectName}」的讨论记录。项目、成员、任务、执行日志和 Agent 原会话保留。</p>
+      {clearChanged ? <p role="alert">讨论记录已变化，请取消后重新确认。</p> : conversation?.rounds.some(conversationIsActive) ? <p role="alert">讨论正在进行，暂不能清空记录。</p> : null}
+      {clearError && <p className="conversation-clear-error" role="alert">{clearError}</p>}
+      <div><button ref={cancelClear} type="button" disabled={busy} onClick={() => setClearConfirmation(null)}>取消</button><button type="button" className="conversation-clear-confirm" disabled={clearBlocked || clearChanged} onClick={() => void confirmClear()}>{busy ? "正在清空…" : "清空记录"}</button></div>
+    </Modal>, document.body)}
   </section>;
 }

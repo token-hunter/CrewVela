@@ -10,6 +10,8 @@ Copyright (c) 2020 Phosphor Icons
 
 ## 其他随附许可
 
+- 群聊 Markdown 显示使用 [react-markdown](https://github.com/remarkjs/react-markdown) 与 [remark-gfm](https://github.com/remarkjs/remark-gfm)，及其解析依赖；原始许可与声明见 [markdown-LICENSES.txt](THIRD_PARTY_NOTICES/markdown-LICENSES.txt)。
+
 - 模型 SVG 图标（智谱、DeepSeek、MiniMax）来自 [Lobe Icons](https://github.com/lobehub/lobe-icons)，Copyright (c) 2023 LobeHub，MIT 许可原文见 [lobe-icons-LICENSE](THIRD_PARTY_NOTICES/lobe-icons-LICENSE)。
 
 - 配额适配器：[来源说明](THIRD_PARTY_NOTICES/provider-quota.md)及 [CC Switch 许可证](THIRD_PARTY_NOTICES/cc-switch-LICENSE)。

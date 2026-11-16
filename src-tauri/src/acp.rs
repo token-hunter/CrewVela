@@ -587,7 +587,11 @@ impl AcpConnection {
             "initialize",
             json!({
                 "protocolVersion": 1,
-                "clientCapabilities": {},
+                "clientCapabilities": if adapter == ManagedAcpKind::Codex {
+                    // codex-acp 1.11 otherwise renders provider failures as assistant text
+                    // and returns end_turn. Negotiate its versioned terminal result instead.
+                    json!({"_meta":{"jetbrains":{"air":{"version":1,"capabilities":["sessionFailure"]}}}})
+                } else { json!({}) },
                 "clientInfo": {
                     "name": "crewvela",
                     "title": "CrewVela",
@@ -836,6 +840,21 @@ impl AcpConnection {
         let cancelled = response.get("stopReason").and_then(Value::as_str) == Some("cancelled");
         self.drain_updates(Duration::from_millis(120), Some(&mut collector))?;
         self.ensure_clear_command();
+        if !cancelled && self.adapter_kind == ManagedAcpKind::Codex {
+            if let Some(failure) = response.pointer("/_meta/jetbrains/air/sessionFailure") {
+                if failure.get("severity").and_then(Value::as_str) == Some("error") {
+                    let title = failure.get("title").and_then(Value::as_str).unwrap_or("未返回失败详情");
+                    // Only decode a typed failure's title, never scan legitimate assistant text.
+                    let payload = serde_json::from_str::<Value>(title).ok();
+                    let detail = payload.as_ref().and_then(|value| value.pointer("/error/message"))
+                        .and_then(Value::as_str).unwrap_or(title);
+                    let code = payload.as_ref().and_then(|value| value.pointer("/error/code"))
+                        .and_then(Value::as_str).or_else(|| failure.get("category").and_then(Value::as_str))
+                        .unwrap_or("unknown");
+                    return Err(anyhow!("Codex 请求失败（{code}）：{detail}"));
+                }
+            }
+        }
         Ok(AcpPromptResult {
             text: collector.text.trim().to_string(),
             commands: self.commands.clone(),
@@ -2211,6 +2230,55 @@ fn choose_permission_option(request: &Value, allow: bool) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn codex_acp_terminal_failure_is_not_a_successful_reply() {
+        let root = std::env::temp_dir().join(format!("acp-codex-failure-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("adapter.cjs");
+        // Reproduce codex-acp's legacy text fallback and negotiated terminal result.
+        std::fs::write(&script, r#"
+const rl=require('readline').createInterface({input:process.stdin});
+let typed=false;
+const send=(id,result)=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\n');
+const failure={id:'turn:error',revision:1,severity:'error',category:'invalid_request',title:JSON.stringify({type:'error',status:400,error:{type:'invalid_request_error',message:"The 'gpt-6.1-terra' model is not supported when using Codex with a ChatGPT account.",code:'model_not_found'}}),actions:[]};
+const meta=f=>({jetbrains:{air:{version:1,sessionFailure:f}}});
+rl.on('line',line=>{
+ const f=JSON.parse(line); if(f.id===undefined)return;
+ if(f.method==='initialize') {typed=f.params.clientCapabilities?._meta?.jetbrains?.air?.capabilities?.includes('sessionFailure');send(f.id,{protocolVersion:1,agentCapabilities:{}});}
+ else if(f.method==='session/new') send(f.id,{sessionId:'fixture',modes:{currentModeId:'plan',availableModes:[{id:'plan',name:'Plan'}]}});
+ else if(f.method==='session/prompt') {
+  const input=f.params.prompt[0].text;
+  const failed=input==='failure', quoted=input==='quoted', warning=input==='warning';
+  const text=failed?(typed?'':'Warning: Model metadata unavailable\n\n'+failure.title):(quoted?'Example error JSON: '+failure.title:'Real reply');
+  if(text)process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'fixture',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text}}}})+'\n');
+  send(f.id,{stopReason:'end_turn',...(typed&&failed?{_meta:meta(failure)}:warning?{_meta:meta({...failure,severity:'warning'})}:{})});
+ } else send(f.id,{});
+});
+setInterval(()=>{},1000);
+"#).unwrap();
+        let mut command = Command::new("node");
+        command.arg(&script);
+        let mut connection = AcpConnection::spawn_for_with_cli_identity(
+            ManagedAcpKind::Codex, root.to_str().unwrap(), None, Vec::new(), &["plan"],
+            false, false, Arc::new(AtomicU32::new(0)), None, Some(command), None,
+        ).unwrap();
+        let failure = connection.prompt("failure");
+        // Always reap the owned process, even when checking the pre-fix behavior.
+        let normal = connection.prompt("normal").unwrap();
+        let quoted = connection.prompt("quoted").unwrap();
+        let warning = connection.prompt("warning").unwrap();
+        connection.stop_checked().unwrap();
+        drop(connection);
+        std::fs::remove_dir_all(root).unwrap();
+        let error = failure.err().expect("provider HTTP 400 must not become a successful reply");
+        assert!(error.to_string().contains("gpt-6.1-terra"), "{error}");
+        assert!(error.to_string().contains("not supported"), "{error}");
+        assert!(error.to_string().contains("model_not_found"), "{error}");
+        assert_eq!(normal.text, "Real reply");
+        assert!(quoted.text.starts_with("Example error JSON:"));
+        assert_eq!(warning.text, "Real reply");
+    }
+
     #[test]
     #[ignore = "需要本机 OpenCode 和网络，使用当前账号验证免费模型回复或额度错误反馈，不使用工具"]
     fn real_opencode_free_model_reports_reply_or_quota_promptly() {
