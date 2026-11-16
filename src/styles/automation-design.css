@@ -30,6 +30,8 @@
 .automation-design .automation-executions .automation-card { padding:20px 20px 18px; border-radius:12px; background:color-mix(in srgb,var(--text) 2%,var(--settings-canvas,var(--bg-elev))); }
 .automation-design .automation-card.execution-running { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 3%,var(--bg-elev)); }
 .automation-design .automation-card[data-history-selected="true"]:not(.execution-running) { border-color:var(--border-strong); }
+.automation-design .automation-card { cursor:pointer; }
+.automation-design .automation-card:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
 .automation-design .automation-card header { gap:14px; align-items:center; }
 .automation-design .automation-card-title { gap:12px; align-items:center; flex:1; }
 .automation-task-icon { display:grid; place-items:center; flex:none; width:40px; height:40px; border-radius:9px; color:var(--text-dim); background:color-mix(in srgb,var(--text) 6%,var(--bg-elev)); }

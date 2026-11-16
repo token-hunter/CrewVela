@@ -5384,6 +5384,21 @@ fn create_automation(
 }
 
 fn create_automation_inner(input: NewAutomation, session_state: &SessionManager, multi_agent_store: &MultiAgentStore, automation_state: &AutomationManager) -> Result<Automation, String> {
+    save_automation_inner(None, input, session_state, multi_agent_store, automation_state)
+}
+
+#[tauri::command]
+fn update_automation(
+    id: String,
+    input: NewAutomation,
+    session_state: State<'_, SessionManager>,
+    multi_agent_store: State<'_, MultiAgentStore>,
+    automation_state: State<'_, AutomationManager>,
+) -> Result<Automation, String> {
+    save_automation_inner(Some(&id), input, &session_state, &multi_agent_store, &automation_state)
+}
+
+fn save_automation_inner(id: Option<&str>, input: NewAutomation, session_state: &SessionManager, multi_agent_store: &MultiAgentStore, automation_state: &AutomationManager) -> Result<Automation, String> {
     let direct_target_lifecycle = match &input.action {
         AutomationAction::Message { session_id, project_id: None, agent_id: None, .. } | AutomationAction::SendAgent { session_id, project_id: None, agent_id: None, .. } => Some(session_state.lifecycle_lock(session_id)),
         _ => None,
@@ -5462,9 +5477,11 @@ fn create_automation_inner(input: NewAutomation, session_state: &SessionManager,
         },
         AutomationAction::Broadcast { .. } => {}
     }
-    automation_state
-        .create(input, automation::now_millis())
-        .map_err(to_err)
+    let now = automation::now_millis();
+    match id {
+        Some(id) => automation_state.update(id, input, now),
+        None => automation_state.create(input, now),
+    }.map_err(to_err)
  }
 
 #[tauri::command]
@@ -6361,6 +6378,7 @@ pub fn run() {
             stop_automation_run,
             acknowledge_automation_run,
             create_automation,
+            update_automation,
             set_automation_enabled,
             delete_automation,
             preview_cron_trigger,
@@ -7055,7 +7073,10 @@ mod tests {
             let legacy = automations.create(input.clone(), automation::now_millis()).unwrap();
             if retired { sessions.retire_agent_runtime_sessions("fixture-project", "fixture-agent").unwrap(); }
             else { sessions.archive(&record.id).unwrap(); }
-            assert!(create_automation_inner(input, &sessions, &store, &automations).is_err());
+            assert!(create_automation_inner(input.clone(), &sessions, &store, &automations).is_err());
+            let before_edit = serde_json::to_value(automations.list()).unwrap();
+            assert!(save_automation_inner(Some(&legacy.id), input, &sessions, &store, &automations).is_err());
+            assert_eq!(serde_json::to_value(automations.list()).unwrap(), before_edit);
             dispatch_due_automations(&PtyManager::new(), &sessions, &queue, &automations, &store).unwrap();
             assert!(queue.peek_next(&record.id).is_none());
             let task = automations.list().into_iter().find(|task| task.id == legacy.id).unwrap();

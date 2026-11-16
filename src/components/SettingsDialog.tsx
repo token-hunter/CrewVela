@@ -108,7 +108,7 @@ export function SettingsDialog({
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     String(initialSection) === "mcp" ? "generalSettings" : initialSection,
   );
-  const [automationEditing, setAutomationEditing] = useState(false);
+  const [automationEditing, setAutomationEditing] = useState<"create" | "edit" | null>(null);
   const [navQuery, setNavQuery] = useState("");
   const [privacyCollaborationRequested, setPrivacyCollaborationRequested] = useState(false);
   const [taskRequest, setTaskRequest] = useState(initialCollaborationTasksRequest);
@@ -367,7 +367,7 @@ export function SettingsDialog({
           >
             {activeSection !== "skills" && (activeSection !== "automation" || automationEditing) && <div className="dialog-heading settings-heading">
                 <div>
-                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? "创建自动化" : sectionCopy.title}</h2>
+                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? automationEditing === "edit" ? "编辑定时任务" : "创建自动化" : sectionCopy.title}</h2>
                   {!(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
                 </div>
               <div className="settings-heading-actions">

@@ -14,14 +14,22 @@ let entries:any[] = ['running','completed','failed','unconfirmed'].map((stage,in
   recentRuns:[{id:`r${index}`,at:now,updatedAt:now,ok:stage!=='failed',origin:'schedule',stage,detail:({running:'已接收，正在执行',completed:'已收到与本任务关联的完成回传',failed:'Agent 返回认证失败',unconfirmed:'只确认已入队，请核对原会话'} as Record<string,string>)[stage],targets:[{sessionId:'session-fixture',messageId:`automation-r${index}-m`,projectId:null,taskId:null,runId:null,stage,detail:'本轮精确目标'}]}]
 }));
 if(q.get('empty'))entries=[];
+if((window as any).__automationEditSeed) entries=structuredClone((window as any).__automationEditSeed);
 if(q.get('design')==='1' && entries.length){
   entries[0].recentRuns.unshift({id:'previous-run',at:now-86400000,ok:true,origin:'schedule',stage:'completed',detail:'上一轮执行已确认结束',targets:[]},{id:'skipped-run',at:now-3600000,ok:true,origin:'schedule',stage:'skipped',detail:'上一轮未结束，跳过触发，未派发新任务',targets:[]});
 }
-const calls:any[]=[]; let fail=q.get('fail')==='1';
+const calls:any[]=[]; let fail=q.get('fail')==='1'; let failEdit=q.get('fail-edit')==='1';
 (window as any).__automationFixture={calls,get entries(){return entries;}};
 (window as any).__TAURI_INTERNALS__={transformCallback:()=>1, async invoke(command:string,args:any){
   calls.push({command,args});
   if(command==='list_automations')return structuredClone(entries);
+   if(command==='create_automation'){const item={...structuredClone(args.input),id:crypto.randomUUID(),enabled:true,runCount:0,consecutiveFailures:0,recentRuns:[],requestReceipts:{},createdAt:now,nextRunAt:null,lastRunAt:null};entries.push(item);return structuredClone(item);}
+   if(command==='update_automation'){
+     await new Promise(r=>setTimeout(r,100));
+     if(failEdit){failEdit=false;throw Error('隔离测试：保存失败，原计划未修改');}
+     const index=entries.findIndex(a=>a.id===args.id);if(index<0)throw Error('计划已删除');
+     entries[index]={...entries[index],...structuredClone(args.input)};return structuredClone(entries[index]);
+   }
   if(command==='get_runtime_preferences')return {disabledRuntimes:[]};
   if(command==='set_automation_enabled'){entries=entries.map(a=>a.id===args.id?{...a,enabled:args.enabled}:a);return entries.find(a=>a.id===args.id);}
   if(command==='delete_automation'){entries=entries.filter(a=>a.id!==args.id);return;}
@@ -34,8 +42,9 @@ const calls:any[]=[]; let fail=q.get('fail')==='1';
   }
   if(command==='stop_automation_run')throw Error('原会话的停止身份无法确认；请打开会话处理');
   if(command==='acknowledge_automation_run') {const a=entries.find(a=>a.id===args.id);a.recentRuns.find((r:any)=>r.id===args.runId).stage='acknowledged';return structuredClone(entries);}
-  if(command==='ma_probe_runtimes')return [{kind:'codex',installed:true,version:'fixture',executable:'C:/fixture/codex'}];
+   if(command==='ma_probe_runtimes')return ['codex','claude_code','kimi_code','pi','opencode','zcode_cli'].map(kind=>({kind,installed:true,version:'fixture',executable:`C:/fixture/${kind}`}));
   if(command==='ma_list_projects')return [];
+   if(command==='preview_cron_trigger')return [now+3600000,now+7200000,now+10800000];
   if(command==='plugin:event|listen')return 1;
   if(command==='plugin:event|unlisten')return;
   throw Error(`隔离 UI 未模拟 ${command}`);

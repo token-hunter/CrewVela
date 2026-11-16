@@ -1,7 +1,7 @@
 import { activeRun, currentRun, matchesRunFilter, planState, runStage, RUN_LABELS, type RunFilter } from "../automationExecution";
 import "../styles/automation-execution.css";
 import "../styles/automation-design.css";
-import { buildAutomationAction, eventAutomationTrigger, automationSessions, automationProjectRuntime, AUTOMATION_LABELS, type AutomationFormAction } from "../automationForm";
+import { buildAutomationAction, buildEditedAutomationAction, automationFormFromAction, eventAutomationTrigger, automationSessions, automationProjectRuntime, AUTOMATION_LABELS, type AutomationFormAction } from "../automationForm";
 import { TERMINAL_RUNTIMES } from "../runtimeTaxonomy";
 import { open as openDirectory } from "@tauri-apps/plugin-dialog";
 import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
@@ -12,10 +12,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { Switch } from "./ui/Switch";
 import { CalendarBlank, CheckCircle, XCircle, CircleNotch, MinusCircle, PauseCircle, TerminalWindow, Broadcast, ChatCircleText, ArrowSquareOut, ArrowClockwise, Play, Stop, Info, DotsThree } from "@phosphor-icons/react";
 import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
+import { CheckSquareIcon } from "@phosphor-icons/react/dist/csr/CheckSquare";
 import { FileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
+import { PencilSimpleIcon } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import type {
@@ -37,7 +39,7 @@ interface Props {
   providers: ProviderConfig[];
   onClose?: () => void;
   embedded?: boolean;
-  onFormOpenChange?: (open: boolean) => void;
+  onFormOpenChange?: (mode: "create" | "edit" | null) => void;
 }
 
 const pad = (value: number) => String(value).padStart(2, "0");
@@ -64,14 +66,29 @@ function truncate(value: string, max: number): string {
 }
 
 export function AutomationPanel({ sessions, providers, onClose, embedded = false, onFormOpenChange }: Props) {
+  const panelRoot = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const dismissCardMenus = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      panelRoot.current?.querySelectorAll<HTMLDetailsElement>("details.automation-card-menu[open]").forEach(menu => {
+        if (!menu.contains(event.target as Node)) menu.open = false;
+      });
+    };
+    // Capture outside pointers even when another panel stops event bubbling.
+    document.addEventListener("pointerdown", dismissCardMenus, true);
+    return () => document.removeEventListener("pointerdown", dismissCardMenus, true);
+  }, []);
   const { ready: availabilityReady, error: availabilityError, prefs: runtimePreferences, isRuntimeEnabled } = useRuntimeAvailability();
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<{ item: Automation; initialRuntime: AgentRuntimeKind | "" } | null>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (formOpen) nameInput.current?.focus(); }, [formOpen]);
   useEffect(() => {
-    onFormOpenChange?.(formOpen);
-    return () => onFormOpenChange?.(false);
-  }, [formOpen, onFormOpenChange]);
+    onFormOpenChange?.(formOpen ? editing ? "edit" : "create" : null);
+    return () => onFormOpenChange?.(null);
+  }, [formOpen, editing, onFormOpenChange]);
   const [busy, setBusy] = useState(false);
   const mutationInFlight = useRef(false);
   const listSequence = useRef(0);
@@ -117,7 +134,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
   const [maxRuns, setMaxRuns] = useState("");
   const [maxFailures, setMaxFailures] = useState("3");
   const [overlap, setOverlap] = useState<"skip" | "allow">("skip");
-  const [eventSource, setEventSource] = useState<"session" | "runtime" | "project">("session");
+  const [eventSource, setEventSource] = useState<"session" | "runtime" | "project" | "any">("session");
   const [eventSourceId, setEventSourceId] = useState("");
   const [eventRuntime, setEventRuntime] = useState<AgentRuntimeKind | "">("");
   const [targetProjects, setTargetProjects] = useState<MultiAgentProject[]>([]);
@@ -126,6 +143,40 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
   const [probeError, setProbeError] = useState<string | null>(null);
   const [probeLoading, setProbeLoading] = useState(false);
   const [probeRevision, setProbeRevision] = useState(0);
+  const openCreate = () => {
+    setEditing(null); setError(null); setName(""); setTriggerKind("daily"); setOnceAt(""); setIntervalMinutes("30");
+    setDailyTime("09:00"); setWeekdays([1, 2, 3, 4, 5]); setWeeklyTime("09:00"); setCronExpr(""); setCronPreview({ state: "idle" });
+    setForm({ runtime: "", mode: "new", source: "local", providerId: "", model: "", cwd: "", prompt: "", sessionId: "", projectId: "", agentId: "" });
+    setMaxRuns(""); setMaxFailures("3"); setOverlap("skip"); setEventSource("session"); setEventSourceId(""); setEventRuntime(""); setFormOpen(true);
+  };
+  const openEdit = async (item: Automation) => {
+    if (mutationInFlight.current) return;
+    mutationInFlight.current = true; listSequence.current += 1; setBusy(true); setError(null);
+    try {
+      const projectId = "projectId" in item.action ? item.action.projectId : null;
+      const agents = projectId ? (await invoke<{ agents: AgentProfile[] }>("ma_snapshot", { projectId })).agents : [];
+      const values = automationFormFromAction(item.action, sessions, agents);
+      setEditing({ item, initialRuntime: values.runtime }); setName(item.name); setForm(values);
+      setMaxRuns(item.maxRuns?.toString() ?? ""); setMaxFailures(String(item.maxConsecutiveFailures)); setOverlap(item.overlapPolicy ?? "allow");
+      setCronExpr(""); setCronPreview({ state: "idle" }); setEventSourceId(""); setEventRuntime(""); setEventSource("session");
+      const trigger = item.trigger;
+      if (trigger.kind === "on_session_event" || trigger.kind === "on_session_event_filtered") {
+        setTriggerKind(trigger.event === "completed" ? "on_completed" : "on_failed");
+        if (trigger.kind === "on_session_event") setEventSource("any");
+        else if (trigger.runtimeKind) { setEventSource("runtime"); setEventRuntime(trigger.runtimeKind); }
+        else { setEventSource(trigger.projectId ? "project" : "session"); setEventSourceId(trigger.projectId ?? trigger.sessionId ?? ""); }
+      } else {
+        setTriggerKind(trigger.kind);
+        if (trigger.kind === "once") { const date = new Date(trigger.at); setOnceAt(`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${String(date.getMilliseconds()).padStart(3,"0")}`); }
+        if (trigger.kind === "interval") setIntervalMinutes(String(trigger.minutes));
+        if (trigger.kind === "daily") setDailyTime(`${pad(trigger.hour)}:${pad(trigger.minute)}`);
+        if (trigger.kind === "weekly") { setWeeklyTime(`${pad(trigger.hour)}:${pad(trigger.minute)}`); setWeekdays([...trigger.weekdays]); }
+        if (trigger.kind === "cron") setCronExpr(trigger.expr);
+      }
+      setFormOpen(true);
+    } catch (reason) { setError(String(reason)); }
+    finally { mutationInFlight.current = false; setBusy(false); }
+  };
   const nativeBase: Partial<Record<AgentRuntimeKind, AgentRuntimeKind>> = { claude_chat: "claude_code", codex_chat: "codex", kimi_chat: "kimi_code", pi_chat: "pi", opencode_chat: "opencode" };
   const runtimeOptions = Object.entries(AUTOMATION_LABELS).filter(([kind]) => isRuntimeEnabled(kind as AgentRuntimeKind) && probes.some(p => p.kind === (nativeBase[kind as AgentRuntimeKind] ?? kind) && p.installed && !p.error));
   const availableSessions = form.runtime ? automationSessions(sessions, form.runtime) : [];
@@ -198,6 +249,8 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
       return { kind: "once", at };
     }
     if (triggerKind === "on_completed" || triggerKind === "on_failed") {
+      if (eventSource === "any" && editing?.item.trigger.kind === "on_session_event") return { kind: "on_session_event", event: triggerKind === "on_completed" ? "completed" : "failed" };
+      if (eventSource === "any") return "请选择具体事件来源";
       try { return eventAutomationTrigger(triggerKind === "on_completed" ? "completed" : "failed", eventSource, eventSourceId, eventRuntime); }
       catch (reason) { return String(reason); }
     }
@@ -228,7 +281,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
   const buildAction = (): AutomationAction | string => {
     if (!availabilityReady) return availabilityError ?? "Runtime 启用配置尚未加载";
     if (probeLoading || !runtimeOptions.some(([kind]) => kind === form.runtime)) return "请选择本机可用的 Agent，或重新检测安装状态";
-    try { return buildAutomationAction(form, isRuntimeEnabled, providers, sessions, targetAgents); }
+    try { return editing ? buildEditedAutomationAction(form, editing.item.action, editing.initialRuntime, isRuntimeEnabled, providers, sessions, targetAgents) : buildAutomationAction(form, isRuntimeEnabled, providers, sessions, targetAgents); }
     catch (reason) { return String(reason); }
   };
   const selectDirectory = async () => {
@@ -261,8 +314,9 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
     setBusy(true);
     setError(null);
     try {
-      await invoke<Automation>("create_automation", { input });
+      await invoke<Automation>(editing ? "update_automation" : "create_automation", editing ? { id: editing.item.id, input } : { input });
       setFormOpen(false);
+      setEditing(null);
       setName("");
       await refresh();
     } catch (reason) {
@@ -381,6 +435,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
 
   const panel = (
       <section
+        ref={panelRoot}
         className={`automation-dialog automation-design${embedded ? " embedded" : ""}`}
         data-automation-view={formOpen ? "form" : "list"}
         role={embedded ? undefined : "dialog"}
@@ -393,7 +448,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
             <div className="automation-heading-copy">
               <div className="automation-title-row">
                 <GearSixIcon size={24} weight="regular" aria-hidden="true" />
-                <h2 id={headingId}>{formOpen ? "创建自动化" : "自动化"}</h2>
+                <h2 id={headingId}>{formOpen ? editing ? "编辑定时任务" : "创建自动化" : "自动化"}</h2>
               </div>
               <p>{formOpen ? "选择 Agent 与执行任务，按时间或指定事件派发；记录保存在本机。" : "按计划运行任务，或在需要时随时执行。"}</p>
             </div>
@@ -402,7 +457,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
               {onClose && <button className="btn-icon" aria-label="关闭" title="关闭" disabled={busy} onClick={onClose}>
                 <XIcon size={15} />
               </button>}
-              <button className="btn automation-primary" disabled={busy} onClick={() => setFormOpen((open) => !open)}>
+              <button className="btn automation-primary" disabled={busy} onClick={() => formOpen ? setFormOpen(false) : openCreate()}>
                 <PlusIcon size={13} weight="bold" /> {formOpen ? "收起表单" : "新建自动化"}
               </button>
             </div>
@@ -418,6 +473,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
               <label>
                 名称
                 <input
+                  ref={nameInput}
                   value={name}
                   maxLength={60}
                   placeholder="例如：每天早上巡检依赖更新"
@@ -476,6 +532,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                     时间
                     <input
                       type="datetime-local"
+                      step="0.001"
                       value={onceAt}
                       onChange={(event) => setOnceAt(event.target.value)}
                     />
@@ -554,9 +611,9 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                 </p>
               )}
                   {(triggerKind === "on_completed" || triggerKind === "on_failed") && <div className="automation-event-source">
-                    <label>事件来源<select aria-label="事件来源" value={eventSource} onChange={e => { setEventSource(e.target.value as typeof eventSource); setEventSourceId(""); }}><option value="session">指定会话</option><option value="runtime">指定 Agent 类型</option><option value="project">指定项目</option></select></label>
+                    <label>事件来源<select aria-label="事件来源" value={eventSource} onChange={e => { setEventSource(e.target.value as typeof eventSource); setEventSourceId(""); }}><option value="session">指定会话</option><option value="runtime">指定 Agent 类型</option><option value="project">指定项目</option>{editing?.item.trigger.kind === "on_session_event" && <option value="any">全部会话（原有配置）</option>}</select></label>
                     {eventSource === "runtime" && <label>来源 Agent<select aria-label="来源 Agent" value={eventRuntime} onChange={e => setEventRuntime(e.target.value as AgentRuntimeKind)}><option value="">请选择来源 Agent</option>{runtimeOptions.map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select></label>}
-                    {eventSource !== "runtime" && <label>来源目标<select aria-label="来源目标" value={eventSourceId} onChange={e => setEventSourceId(e.target.value)}><option value="">请选择具体来源</option>{eventSource === "session" ? sessions.filter(s => !s.retiredAgentRuntime && !s.archivedAt && (s.agentRuntimeKind || s.kind === "claude")).map(s => <option key={s.id} value={s.id}>{s.title}</option>) : targetProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
+                    {eventSource !== "runtime" && eventSource !== "any" && <label>来源目标<select aria-label="来源目标" value={eventSourceId} onChange={e => setEventSourceId(e.target.value)}><option value="">请选择具体来源</option>{eventSource === "session" ? sessions.filter(s => !s.retiredAgentRuntime && !s.archivedAt && (s.agentRuntimeKind || s.kind === "claude")).map(s => <option key={s.id} value={s.id}>{s.title}</option>) : targetProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
                     <p>只响应所选来源的状态事件；请避免任务自身的完成事件不断触发下一轮，可在高级设置中限制次数。</p>
                   </div>}
                   <label className="automation-setting-row"><span>上一轮未结束</span><select aria-label="上一轮未结束" value={overlap} onChange={e => setOverlap(e.target.value as "skip" | "allow")}><option value="skip">跳过本轮</option><option value="allow">允许继续派发</option></select><small>{overlap === "skip" ? "任务或发送队列仍未结束时不重复启动。" : "可能并行新建会话；复用目标仍按其原生队列执行。"}</small></label>
@@ -577,8 +634,12 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                   const run = currentRun(item); const stage = runStage(run); const active = item.recentRuns.some(activeRun);
                   const Icon = actionIcon(item.action); const StateIcon = statusIcon(stage);
                   const targetSession = run?.targets?.find(t => sessions.some(s => s.id === t.sessionId))?.sessionId;
-                  return <article key={item.id} className={`automation-card execution-${stage}${item.enabled ? "" : " plan-paused"}`} data-history-selected={selectedHistory === item.id}>
-                    <header><div className="automation-card-title"><span className="automation-task-icon"><Icon size={25} weight="regular" aria-hidden="true" /></span><div><h3><button type="button" title="查看执行记录" onClick={() => viewHistory(item)}>{item.name}</button></h3><p title={actionText(item.action)}>{compactAction(item.action)}</p></div></div>
+                  return <article key={item.id} className={`automation-card execution-${stage}${item.enabled ? "" : " plan-paused"}`} data-history-selected={selectedHistory === item.id} tabIndex={0} aria-label={`编辑定时任务 ${item.name}`} aria-disabled={busy} onClick={event => {
+                    if (!(event.target instanceof Element) || event.target.closest("button, a, input, select, textarea, label, details")) return;
+                    if (window.getSelection()?.toString()) return;
+                    void openEdit(item);
+                  }} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); void openEdit(item); } }}>
+                    <header><div className="automation-card-title"><span className="automation-task-icon"><Icon size={25} weight="regular" aria-hidden="true" /></span><div><h3><button type="button" title="编辑定时任务" disabled={busy} onClick={() => void openEdit(item)}>{item.name}</button></h3><p title={actionText(item.action)}>{compactAction(item.action)}</p></div></div>
                       <Switch className="automation-toggle" label={`${item.enabled ? "暂停后续计划" : "开启计划"} ${item.name}`} checked={item.enabled} disabled={busy} onChange={() => void toggle(item)} childrenPosition="before"><span title={planState(item)}>{planState(item)}</span></Switch>
                     </header>
                     <p className="automation-card-schedule">{item.enabled ? <CalendarBlank size={17} aria-hidden="true" /> : <PauseCircle size={17} aria-hidden="true" />}<span>{item.enabled ? `计划：${triggerText(item.trigger)} · 下次 ${nextRunText(item)}` : "已暂停：暂不触发后续计划"}</span></p>
@@ -595,9 +656,10 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                       <summary aria-label={`${item.name} 更多操作`} title="更多操作"><DotsThree size={20} /></summary>
                       <div onClick={event => { const details=event.currentTarget.closest("details"); if(details)details.open=false; }}>
                         <p>计划触发 {item.runCount}{item.maxRuns ? `/${item.maxRuns}` : ""} 次{item.consecutiveFailures > 0 && ` · 连续失败 ${item.consecutiveFailures} 次`}</p>
+                        <button className="btn" disabled={busy} onClick={() => void openEdit(item)}><PencilSimpleIcon size={15} aria-hidden="true" />编辑定时任务</button>
                         {targetSession && <button className="btn" onClick={() => openSession(targetSession)}><ArrowSquareOut size={15} />打开原会话</button>}
                         <button className="btn" onClick={() => setSelectedHistory(item.id)}><FileTextIcon size={15} />查看全部执行记录</button>
-                        {stage === "unconfirmed" && run?.id && <><button className="btn" disabled={busy} onClick={() => void runAction(item,run,true)}><Stop size={15} />停止本轮</button><button className="btn" disabled={busy} onClick={() => setConfirmUnknownId(run.id!)}>已核对原会话</button></>}
+                        {stage === "unconfirmed" && run?.id && <><button className="btn" disabled={busy} onClick={() => void runAction(item,run,true)}><Stop size={15} />停止本轮</button><button className="btn" disabled={busy} onClick={() => setConfirmUnknownId(run.id!)}><CheckSquareIcon size={15} aria-hidden="true" />已核对原会话</button></>}
                         <button className="btn" disabled={busy || active} title={active ? "先核对或停止本轮" : "删除计划"} aria-label={`删除 ${item.name}`} onClick={() => setConfirmDeleteId(item.id)}><TrashIcon size={15} />删除计划</button>
                       </div>
                     </details></footer>
@@ -623,7 +685,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
             <div className={`automation-form-actions${error ? " has-error" : ""}`}>{error && <p className="automation-error" role="alert">{error}</p>}<span className="automation-execution-summary">{AUTOMATION_LABELS[form.runtime as AgentRuntimeKind] ?? "未选择 Agent"} · {form.mode === "new" ? "本地配置" : "沿用目标配置"} · {({ new: "新建会话", session: "指定会话", member: "项目成员", broadcast: "此 Agent 全部运行会话" })[form.mode]} · {triggerKind === "daily" ? `每天 ${dailyTime}` : triggerKind === "interval" ? `每 ${intervalMinutes} 分钟` : triggerKind === "weekly" ? `每周 ${weeklyTime}` : triggerKind === "cron" ? "cron 触发" : triggerKind === "once" ? "一次性触发" : "指定会话事件"} · {overlap === "skip" ? "未结束则跳过" : "允许继续派发"}</span>
               <button className="btn" disabled={busy} onClick={() => setFormOpen(false)}>取消</button>
               <button className="btn automation-primary" disabled={busy} onClick={() => void create()}>
-                保存自动化
+                {editing ? "保存修改" : "保存自动化"}
               </button>
             </div>
           )}

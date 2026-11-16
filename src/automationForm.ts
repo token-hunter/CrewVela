@@ -25,6 +25,28 @@ export interface AutomationFormAction {
   projectId: string;
   agentId: string;
 }
+export function automationFormFromAction(action: AutomationAction, sessions: SessionRecord[], agents: AgentProfile[]): AutomationFormAction {
+  const form: AutomationFormAction = { runtime: "", mode: "new", source: "local", providerId: "", model: "", cwd: "", prompt: "", sessionId: "", projectId: "", agentId: "" };
+  if (action.kind === "run_agent") return { ...form, runtime: action.runtimeKind, cwd: action.cwd, prompt: action.prompt };
+  if (action.kind === "broadcast_agent") return { ...form, runtime: action.runtimeKind, mode: "broadcast", prompt: action.body };
+  if (action.kind === "broadcast") return { ...form, runtime: "claude_code", mode: "broadcast", prompt: action.body };
+  const member = "agentId" in action && action.agentId ? agents.find(a => a.id === action.agentId && a.projectId === action.projectId) : undefined;
+  if (action.kind === "send_agent") return { ...form, runtime: action.runtimeKind, mode: action.agentId ? "member" : "session", projectId: action.projectId ?? "", agentId: action.agentId ?? "", sessionId: action.sessionId, prompt: action.body };
+  if (action.agentId && !member) throw Error("原任务的项目成员不存在，请先核对项目成员配置。");
+  if (action.kind === "launch") return { ...form, runtime: member?.runtimeKind ?? "claude_code", mode: member ? "member" : "new", projectId: action.projectId ?? "", agentId: action.agentId ?? "", cwd: action.cwd ?? "", prompt: action.prompt, providerId: action.providerId };
+  const session = sessions.find(s => s.id === action.sessionId);
+  return { ...form, runtime: member?.runtimeKind ?? (session ? automationSessionRuntime(session) : null) ?? "claude_code", mode: member ? "member" : "session", sessionId: action.sessionId, projectId: action.projectId ?? "", agentId: action.agentId ?? "", prompt: action.body };
+}
+
+export function buildEditedAutomationAction(form: AutomationFormAction, original: AutomationAction, initialRuntime: AgentRuntimeKind | "", enabled: (kind: AgentRuntimeKind) => boolean, providers: ProviderConfig[], sessions: SessionRecord[], agents: AgentProfile[]): AutomationAction {
+  const next = buildAutomationAction(form, enabled, providers, sessions, agents);
+  // Editing a name/prompt must not silently migrate legacy routing/provider semantics.
+  if (form.runtime !== initialRuntime) return next;
+  if (original.kind === "launch" && (form.mode === "new" || form.mode === "member")) return { ...original, prompt: form.prompt, cwd: form.mode === "new" ? form.cwd.trim() : original.cwd, projectId: form.mode === "member" ? form.projectId : null, agentId: form.mode === "member" ? form.agentId : null };
+  if (original.kind === "message" && (form.mode === "session" || form.mode === "member")) return { ...original, body: form.prompt, sessionId: form.mode === "session" ? form.sessionId : "", projectId: form.mode === "member" ? form.projectId : null, agentId: form.mode === "member" ? form.agentId : null };
+  if (original.kind === "broadcast" && form.mode === "broadcast") return { ...original, body: form.prompt };
+  return next;
+}
 export function buildAutomationAction(form: AutomationFormAction, enabled: (kind: AgentRuntimeKind) => boolean, providers: ProviderConfig[], sessions: SessionRecord[], agents: AgentProfile[]): AutomationAction {
   if (!form.runtime || !enabled(form.runtime) || !AUTOMATION_LABELS[form.runtime]) throw Error("请选择已启用且支持自动化的 Agent");
   const body = form.prompt;

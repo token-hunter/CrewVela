@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 mod execution;
 #[cfg(test)]
 mod execution_tests;
+#[cfg(test)]
+mod edit_tests;
 
 pub const MAX_RECENT_RUNS: usize = 20;
 pub const MAX_BODY_CHARS: usize = 32_000;
@@ -651,6 +653,39 @@ impl AutomationManager {
         Ok(automation)
     }
 
+    /// Updates future configuration without replacing execution receipts or live targets.
+    pub fn update(&self, id: &str, input: NewAutomation, now: u64) -> Result<Automation> {
+        Self::validate(&input, now)?;
+        let mut items = self.items.lock().unwrap();
+        let mut snapshot = items.clone();
+        let item = snapshot.iter_mut().find(|item| item.id == id)
+            .ok_or_else(|| anyhow!("未找到自动化任务: {id}"))?;
+        let trigger_changed = serde_json::to_value(&item.trigger)? != serde_json::to_value(&input.trigger)?;
+        if trigger_changed && matches!(&input.trigger, AutomationTrigger::Once { at } if *at <= now) {
+            return Err(anyhow!("请将一次性任务的时间设为未来时间"));
+        }
+        let reschedule = trigger_changed || item.max_runs != input.max_runs;
+        item.name = input.name.trim().into();
+        item.trigger = input.trigger;
+        item.action = input.action;
+        item.max_runs = input.max_runs;
+        item.max_consecutive_failures = input.max_consecutive_failures.unwrap_or(DEFAULT_MAX_CONSECUTIVE_FAILURES);
+        item.overlap_policy = input.overlap_policy;
+        if reschedule {
+            item.next_run_at = if !item.enabled || item.max_runs.is_some_and(|max| item.run_count >= max) {
+                None
+            } else if matches!(&item.trigger, AutomationTrigger::Once { at } if *at <= now || item.last_run_at.is_some_and(|last| *at <= last)) {
+                None
+            } else {
+                schedule_initial(&item.trigger, now)
+            };
+        }
+        let updated = item.clone();
+        self.persist(&snapshot)?;
+        *items = snapshot;
+        Ok(updated)
+    }
+
     /// 启用时重新排程（避免按陈旧 next_run_at 立即补跑）；禁用即停在下一边界。
     pub fn set_enabled(&self, id: &str, enabled: bool, now: u64) -> Result<Automation> {
         let mut items = self.items.lock().unwrap();
@@ -663,7 +698,7 @@ impl AutomationManager {
             item.enabled = enabled;
             item.next_run_at = if enabled {
                 // 一次性已跑过的任务重新启用没有意义，保持 None。
-                if matches!(item.trigger, AutomationTrigger::Once { .. }) && item.run_count > 0 {
+                if matches!(item.trigger, AutomationTrigger::Once { at } if item.last_run_at.is_some_and(|last| at <= last)) {
                     None
                 } else {
                     schedule_initial(&item.trigger, now)

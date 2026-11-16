@@ -1,9 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildAutomationAction, eventAutomationTrigger, automationSessions } from "../src/automationForm.ts";
+import { buildAutomationAction, buildEditedAutomationAction, automationFormFromAction, eventAutomationTrigger, automationSessions } from "../src/automationForm.ts";
 const base = {runtime:"codex",mode:"new",source:"local",providerId:"",model:"",cwd:"/fixture/project",prompt:"inspect literal $text",sessionId:"",projectId:"",agentId:""};
 const enabled = () => true;
 const build = (patch={}, sessions=[], agents=[]) => buildAutomationAction({...base,...patch}, enabled, [{id:"provider",hidden:false}], sessions, agents);
+test("编辑回填六种动作，原会话/成员路由与旧 Provider 不隐式迁移", () => {
+ const sessions=[{id:"target",kind:"claude",agentRuntimeKind:"codex"}];
+ const agents=[{id:"member",projectId:"project",runtimeKind:"claude_code",enabled:true}];
+ const actions=[
+  {kind:"run_agent",runtimeKind:"codex",providerId:null,model:null,cwd:"/fixture",prompt:"original"},
+  {kind:"send_agent",runtimeKind:"codex",sessionId:"target",projectId:null,agentId:null,body:"original"},
+  {kind:"send_agent",runtimeKind:"claude_code",sessionId:"",projectId:"project",agentId:"member",body:"original"},
+  {kind:"broadcast_agent",runtimeKind:"pi",body:"original"},
+  {kind:"launch",providerId:"saved-provider",cwd:"/fixture",projectId:null,agentId:null,prompt:"original"},
+  {kind:"message",sessionId:"target",projectId:null,agentId:null,body:"original"},
+  {kind:"broadcast",body:"original"},
+ ];
+ for(const action of actions){const form=automationFormFromAction(action,sessions,agents);assert.equal(form.prompt,"original");const next=buildEditedAutomationAction({...form,prompt:"edited"},action,form.runtime,enabled,[],sessions,agents);assert.equal(next.kind,action.kind);assert.equal(next.body??next.prompt,"edited");if(action.kind==="launch")assert.equal(next.providerId,"saved-provider");if(action.kind==="send_agent")assert.equal(next.agentId,action.agentId);}
+ const legacy=actions[4],form=automationFormFromAction(legacy,sessions,agents);
+ assert.equal(buildEditedAutomationAction({...form,runtime:"codex"},legacy,form.runtime,enabled,[],sessions,agents).kind,"run_agent");
+ assert.throws(()=>automationFormFromAction({...legacy,projectId:"missing",agentId:"missing"},[],[]),/成员不存在/);
+});
 test("Agent 新建默认沿用本地配置，不写模型和 Provider", () => {
  for (const runtime of ["claude_code","codex","kimi_code","pi","opencode","zcode_cli"]) {
   assert.deepEqual(build({runtime}), {kind:"run_agent",runtimeKind:runtime,providerId:null,model:null,cwd:base.cwd,prompt:base.prompt});

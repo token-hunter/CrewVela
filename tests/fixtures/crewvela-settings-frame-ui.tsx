@@ -7,7 +7,7 @@ import { DEFAULT_NOTIFICATION_SETTINGS } from "../../src/notificationSettings";
 import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
 import { BROWSER_CONTROL_PREVIEW } from "../../src/browserControlSettings";
 import { installSkillRuntimeFixture } from "./skill-runtime-first-mock";
-import type { AppAppearance, ProviderConfig, SessionRecord } from "../../src/types";
+import type { AppAppearance, Project, ProviderConfig, SessionRecord } from "../../src/types";
 import "../../src/styles.css";
 
 const params = new URLSearchParams(location.search);
@@ -88,6 +88,10 @@ if (params.get("mock") === "automation") {
       const item = {...args.input,id:`fixture-${entries.length}`,enabled:true,runCount:0,consecutiveFailures:0,maxConsecutiveFailures:args.input.maxConsecutiveFailures??3,nextRunAt:args.input.trigger.kind.startsWith("on_")?null:Date.now()+60000,recentRuns:[],createdAt:Date.now()};
       entries.push(item); return structuredClone(item);
     }
+    if (command === "update_automation") {
+      const index=entries.findIndex(item=>item.id===args.id);if(index<0)throw Error("计划不存在");
+      entries[index]={...entries[index],...structuredClone(args.input)};return structuredClone(entries[index]);
+    }
     if (command === "set_automation_enabled") { entries=entries.map(item=>item.id===args.id?{...item,enabled:args.enabled}:item); return entries.find(item=>item.id===args.id); }
     if (command === "delete_automation") { entries=entries.filter(item=>item.id!==args.id); return; }
     if (command === "plugin:event|listen") return 1;
@@ -95,7 +99,11 @@ if (params.get("mock") === "automation") {
     throw Error(`此隔离页面未模拟 ${command}`);
   }};
 }
-const archiveCount = params.get("archive") === "long" ? 100 : 0;
+const archiveProjects: Project[] = params.get("archive") === "projects" ? [
+  {id:"archive-project-a",name:"示例项目 A",path:"C:/fixture/project-a",badgeColor:"blue",createdAt:1,updatedAt:1},
+  {id:"archive-project-b",name:"示例项目 B",path:"C:/fixture/project-b",badgeColor:"purple",createdAt:1,updatedAt:1},
+] : [];
+const archiveCount = params.get("archive") === "long" ? 100 : params.get("archive") === "projects" ? 4 : 0;
 const sampleProviders: ProviderConfig[] = params.get("providers") === "sample" ? [
   { id: "fixture-api", name: "示例模型服务", baseUrl: "https://example.invalid/v1", authTokenRef: "", env: { ANTHROPIC_MODEL: "example-model" }, timeoutMs: null, disableNonessentialTraffic: false, builtin: true },
   { id: "fixture-local", name: "本地模型", baseUrl: "http://127.0.0.1:11434", authTokenRef: "", env: {}, timeoutMs: null, disableNonessentialTraffic: false, builtin: false },
@@ -106,6 +114,7 @@ const archive = Array.from({ length: archiveCount }, (_, index): SessionRecord =
   title: `归档会话 ${index + 1} · ${"长标题".repeat(12)}`, status: "stopped", ptyId: null,
   yolo: false, autoMode: false, titleLocked: false, exitCode: 0, lastError: null,
   createdAt: 1, updatedAt: 1, archivedAt: 1,
+  ...(archiveProjects.length ? {projectId:index<2?archiveProjects[0].id:index===2?archiveProjects[1].id:undefined} : {}),
 }));
 
 function Fixture() {
@@ -115,7 +124,7 @@ function Fixture() {
   return <>
     <button type="button" onClick={() => setOpen(true)}>打开设置回归</button>
     {params.get("debug") === "1" && <pre id="fixture-skills-log" />}
-    {open && <SettingsDialog sessions={params.get("mock") === "automation" ? (window as any).__automationSessions ?? [{ id:"fixture-session",kind:"terminal",agentRuntimeKind:"codex",title:"示例 Codex 会话",cwd:"/fixture/project",status:"completed" } as SessionRecord] : []} archivedSessions={archive} projects={params.get("mock") === "skills" ? [{ id: "fixture-project", name: "示例项目", path: "/fixture/project", badgeColor: "blue", createdAt: 0, updatedAt: 0 }] : []} providers={sampleProviders}
+    {open && <SettingsDialog sessions={params.get("mock") === "automation" ? (window as any).__automationSessions ?? [{ id:"fixture-session",kind:"terminal",agentRuntimeKind:"codex",title:"示例 Codex 会话",cwd:"/fixture/project",status:"completed" } as SessionRecord] : []} archivedSessions={archive} projects={params.get("mock") === "skills" ? [{ id: "fixture-project", name: "示例项目", path: "/fixture/project", badgeColor: "blue", createdAt: 0, updatedAt: 0 }] : archiveProjects} providers={sampleProviders}
       keyStates={{}} usageByProvider={{}} appearance={appearance} resolvedAppearanceTheme={theme}
       petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS}
       onAppearanceChange={setAppearance}
