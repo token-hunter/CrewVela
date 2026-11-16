@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowSquareOut, ArrowClockwise, X, ShieldCheck, Info, DownloadSimple } from "@phosphor-icons/react";
+import { ArrowSquareOut, ArrowClockwise, X, ShieldCheck, DownloadSimple } from "@phosphor-icons/react";
 import { Modal } from "./ui/Modal";
-import { APP_GUIDE_URL, APP_RELEASES_URL, APP_REPOSITORY_URL, trustedReleaseUrl, type AppHelpSection, type AppUpdateCheck } from "../appHelp";
+import { APP_RELEASES_URL, trustedReleaseUrl, type AppHelpSection, type AppUpdateCheck } from "../appHelp";
+import appLogo from "../../src-tauri/icons/icon.png";
 import privacyPolicy from "../../docs/privacy.md?raw";
 import "../styles/app-help.css";
 
@@ -45,15 +46,22 @@ export function AppHelpDialog({ section, onClose }: { section: AppHelpSection; o
     catch { if (mounted.current) setLinkError("无法打开浏览器，请重试或复制下方官方地址。"); }
     finally { opening.current = false; }
   };
-  const Icon = section === "privacy" ? ShieldCheck : section === "updates" ? DownloadSimple : Info;
+  if (section === "about") return createPortal(<Modal className="app-help-dialog app-help-about" overlayClassName="dialog-overlay app-help-overlay" ariaLabel={titles.about} onClose={onClose} closeOnOverlayClick>
+    <button type="button" className="btn-icon app-about-close" aria-label="关闭帮助窗口" title="关闭" onClick={onClose}><X size={19} aria-hidden="true" /></button>
+    <div className="app-help-content app-about-content"><div className="app-about-identity">
+      <span className="app-about-logo-frame"><img className="app-about-logo" src={appLogo} alt="CrewVela Logo" /></span>
+      <h2 className="app-about-name">CrewVela</h2>
+      <p className="app-help-version">版本 {version ?? (versionError ? "未取得" : "正在读取…")}</p>
+      {versionError && <div className="app-about-error" role="alert"><p>{versionError}</p><button type="button" className="app-help-link" onClick={() => setRevision(value => value + 1)}>重新读取版本</button></div>}
+    </div></div>
+  </Modal>, document.body);
+  const Icon = section === "privacy" ? ShieldCheck : DownloadSimple;
   return createPortal(<Modal className={`app-help-dialog app-help-${section}`} overlayClassName="dialog-overlay app-help-overlay" labelledBy="app-help-title" onClose={onClose} closeOnOverlayClick>
     <header><div><Icon size={21} /><h2 id="app-help-title">{titles[section]}</h2></div><button className="btn-icon" aria-label="关闭帮助窗口" onClick={onClose}><X size={19} /></button></header>
     <div className="app-help-content">
       {section === "privacy" && <article className="app-privacy-copy">{privacyPolicy.trim().split(/\r?\n\s*\r?\n/).filter(block => !block.startsWith("# ")).map((block, i) => block.startsWith("## ") ? <h3 key={i}>{block.slice(3)}</h3> : <p key={i}>{block}</p>)}</article>}
-      {section === "about" && <><h3 className="app-help-product">CrewVela</h3><p>多个 Agent，一个工作台。</p><p>使用本地 Agent CLI 进行会话、任务协作与工作区管理。</p></>}
       {section !== "privacy" && <p className="app-help-version">当前版本：{version ?? (versionError ? "未取得" : "正在读取…")}</p>}
       {versionError && <div role="alert"><p>{versionError}</p><button className="btn" onClick={() => setRevision(value => value + 1)}>重新读取版本</button></div>}
-      {section === "about" && <dl className="app-help-facts"><div><dt>开源许可</dt><dd>MIT License</dd></div><div><dt>项目地址</dt><dd><button className="app-help-link" onClick={() => void external(APP_REPOSITORY_URL)}>GitHub · token-hunter/CrewVela<ArrowSquareOut size={14} /></button></dd></div><div><dt>使用手册</dt><dd><button className="app-help-link" onClick={() => void external(APP_GUIDE_URL)}>查看使用手册<ArrowSquareOut size={14} /></button></dd></div></dl>}
       {section === "updates" && <>
         {checking && <p role="status" className="app-help-checking"><ArrowClockwise size={17} />正在检查 CrewVela 的公开稳定发行版…</p>}
         {error && <div className="app-help-error" role="alert"><strong>未能完成更新检查</strong><p>{error}</p></div>}

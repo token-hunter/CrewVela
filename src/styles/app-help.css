@@ -9,6 +9,25 @@
 .app-help-overlay { z-index:var(--z-dialog,1300); }
 .app-help-dialog { display:flex; flex-direction:column; width:min(560px,calc(100vw - 32px)); max-height:min(720px,calc(100vh - 32px)); padding:0; border:1px solid var(--border); border-radius:14px; background:var(--bg-elev); color:var(--text); box-shadow:var(--shadow-md); overflow:hidden; box-sizing:border-box; }
 .app-help-dialog.app-help-privacy { width:min(720px,calc(100vw - 32px)); }
+.app-help-dialog.app-help-about { position:relative; width:min(400px,calc(100vw - 32px)); height:310px; max-height:calc(100dvh - 32px); border-color:var(--border-strong); }
+.app-help-about .app-about-close { position:absolute; z-index:1; top:14px; right:14px; width:28px; height:28px; padding:0; border:0; border-radius:5px; background:transparent; color:var(--text-dim); cursor:pointer; }
+.app-help-about .app-about-close:hover { color:var(--text); background:var(--bg-hover); }
+.app-help-about .app-about-content { display:flex; flex:1; flex-direction:column; align-items:center; padding:44px 24px; text-align:center; }
+.app-about-identity { display:flex; flex:none; flex-direction:column; align-items:center; width:100%; margin:auto 0; }
+.app-about-logo-frame { display:block; flex:none; width:96px; height:98px; overflow:hidden; }
+/* Crop only transparent icon margins, preserving the complete visible mark. */
+.app-about-logo { display:block; width:128px; height:128px; max-width:none; transform:translate(-16px,-12.5px); object-fit:contain; }
+.app-help-about .app-about-name { margin:24px 0 10px; font:600 26px/1.25 var(--display-font); }
+.app-help-about .app-help-version { margin:0; font-size:15px; line-height:1.5; }
+.app-about-error { margin-top:12px; color:var(--danger); font-size:13px; }
+.app-about-error p { margin:0 0 5px; }.app-about-error .app-help-link { color:var(--text-dim); }
+@media(max-height:360px) {
+  .app-help-about .app-about-content { padding:32px 24px 20px; }
+  .app-help-about .app-about-logo-frame { width:72px; height:74px; }
+  .app-help-about .app-about-logo { width:96px; height:96px; transform:translate(-12px,-9.375px); }
+  .app-help-about .app-about-name { margin:14px 0 6px; font-size:22px; }
+  .app-help-about .app-help-version { font-size:14px; }
+}
 .app-help-dialog > header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px 24px; border-bottom:1px solid var(--border); flex:none; }
 .app-help-dialog > header > div { display:flex; align-items:center; gap:9px; }
 .app-help-dialog h2 { margin:0; font:600 21px/1.4 var(--display-font); }
