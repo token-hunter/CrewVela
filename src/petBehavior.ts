@@ -15,6 +15,7 @@ export interface PetAnimationFrame {
 }
 
 export const MOVING_PET_ACTIONS: readonly PetAction[] = ["walk", "run", "jump", "chase"];
+export const PET_REMINDER_INTERVAL_MS = 60_000;
 
 const ACTION_DURATION_MS: Record<PetAction, number> = {
   idle: 4200, blink: 900, sleep: 9000, stretch: 2400, walk: 5200, run: 3600,

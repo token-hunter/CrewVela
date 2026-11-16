@@ -9,6 +9,7 @@ import {
   isMovingPetAction,
   PET_ANIMATION_COLUMNS,
   PET_ANIMATION_ROWS,
+  PET_REMINDER_INTERVAL_MS,
   petAnimationFrame,
   petActionDuration,
   type PetAction,
@@ -39,6 +40,7 @@ export function DesktopPet({ settings, sessions, onPositionChange }: Props) {
   const movementFrame = useRef<number | null>(null);
   const actionDeck = useRef<PetAction[]>([]);
   const actionCursor = useRef(0);
+  const attention = useRef({ needed: false, lastReminderAt: null as number | null });
   const onPositionChangeRef = useRef(onPositionChange);
   const defaultPosition = useMemo(
     () => ({
@@ -63,8 +65,17 @@ export function DesktopPet({ settings, sessions, onPositionChange }: Props) {
     movementFrame.current = null;
   }, []);
 
+  // 持续 waiting/error 曾永久覆盖自主动作；提醒限频，播放后继续原动作牌组。
+  const takeReminder = useCallback(() => {
+    const state = attention.current;
+    const now = performance.now();
+    if (!state.needed || (state.lastReminderAt !== null && now - state.lastReminderAt < PET_REMINDER_INTERVAL_MS)) return false;
+    state.lastReminderAt = now;
+    return true;
+  }, []);
+
   const chooseNextAction = useCallback(() => {
-    if (needsAttention) return "remind" as const;
+    if (takeReminder()) return "remind" as const;
     if (actionDeck.current.length === 0 || actionCursor.current >= actionDeck.current.length) {
       actionDeck.current = createPetActionDeck();
       actionCursor.current = 0;
@@ -72,7 +83,7 @@ export function DesktopPet({ settings, sessions, onPositionChange }: Props) {
     const next = actionDeck.current[actionCursor.current];
     actionCursor.current += 1;
     return next;
-  }, [needsAttention]);
+  }, [takeReminder]);
 
   useEffect(() => {
     if (!settings.enabled) return;
@@ -92,10 +103,6 @@ export function DesktopPet({ settings, sessions, onPositionChange }: Props) {
     }, durationMs);
     return () => window.clearInterval(timer);
   }, [action, actionTick, pet.actionAtlas, settings.enabled]);
-
-  useEffect(() => {
-    if (needsAttention) setAction("remind");
-  }, [needsAttention]);
 
   useEffect(() => {
     stopMovement();
@@ -142,6 +149,15 @@ export function DesktopPet({ settings, sessions, onPositionChange }: Props) {
     actionCursor.current = 0;
     setAction("idle");
   }, [pet.id]);
+
+  useEffect(() => {
+    // 状态轮询只更新提醒状态，不重建自主动作计时器；冷却跨角色/启停保留。
+    attention.current.needed = needsAttention;
+    if (settings.enabled && takeReminder()) {
+      setAction("remind");
+      setActionTick((current) => current + 1);
+    }
+  }, [needsAttention, settings.enabled, takeReminder]);
 
   if (!settings.enabled) return null;
 
