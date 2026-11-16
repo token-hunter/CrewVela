@@ -544,7 +544,6 @@ export function SharedMemorySettingsPanel() {
 
       <details className="sm-faq" ref={faqRef}><summary>常见问题与手动操作</summary>{manual}</details>
     </section>}
-    {view === "overview" && <section className="sm-workflow" aria-labelledby="sm-workflow-title"><h3 id="sm-workflow-title">工作原理</h3><p className="sm-muted">记忆保存在本地 Markdown Wiki，Git 版本管理；默认不调用 LLM，无需 API Key。</p><div className="sm-flow"><div><ChatCircleIcon size={26} aria-hidden="true" /><span><strong>会话结束</strong><small>捕获会话内容</small></span></div><ArrowRightIcon className="sm-flow-arrow" size={18} aria-hidden="true" /><div><FileTextIcon size={26} aria-hidden="true" /><span><strong>保存项目记忆</strong><small>写入本地 Markdown Wiki</small></span></div><ArrowRightIcon className="sm-flow-arrow" size={18} aria-hidden="true" /><div><MagnifyingGlassIcon size={26} aria-hidden="true" /><span><strong>下次会话检索</strong><small>智能体主动检索已有记忆</small></span></div></div></section>}
     {view === "advanced" && <section className="sm-card sm-advanced"><h3>本地服务信息</h3><p className="sm-muted">此处展示当前服务路径；智能体接入与捕获范围请前往接入配置。</p><dl>{[['可执行文件', status?.executable], ['数据目录', status?.dataDir], ['服务地址', status?.serverUrl]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code>{value ?? "未检测到"}</code></dd></div>)}</dl><button type="button" className="sm-button" onClick={() => setView("setup")}>前往接入配置 <ArrowRightIcon size={16} aria-hidden="true" /></button></section>}
   </div>;
 }
