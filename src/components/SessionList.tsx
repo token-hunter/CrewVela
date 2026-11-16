@@ -782,7 +782,7 @@ export function SessionList({
       <div className="session-type-filters" role="group" aria-label="会话类型">
         {([
           ["all", "全部", sessions.length],
-          ["claude", "AI 会话", claudeCount],
+          ["claude", "会话", claudeCount],
           ["terminal", "终端", terminalCount],
         ] as const).map(([id, label, count]) => (
           <button

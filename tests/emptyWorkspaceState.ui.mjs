@@ -78,13 +78,16 @@ try {
       assert.equal(await radios.first().isChecked(), true);
       await page.evaluate(() => { delete window.__TAURI_INTERNALS__; });
 
-      // Claude Code 还要选 Provider：直接进入弹窗的 Provider 步骤，不再让人重新选 Agent。
+      // CLI 统一进入本次启动模式设置；取消后保留已选工作目录。
       await pill.click();
       await popover.getByRole("button", { name: "Claude Code", exact: true }).click();
-      const providerStep = page.getByRole("heading", { name: "选择 Provider", exact: true });
-      await providerStep.waitFor();
+      const launchStep = page.getByRole("dialog", { name: "新建 CLI 会话", exact: true });
+      await launchStep.waitFor();
+      assert.equal(await launchStep.getByRole("combobox", { name: "启动 Agent" }).inputValue(), "claude_code");
+      assert.equal(await launchStep.getByRole("combobox", { name: "本次启动模式" }).inputValue(), "cli_default");
       await page.keyboard.press("Escape");
-      await providerStep.waitFor({ state: "detached" });
+      await launchStep.waitFor({ state: "detached" });
+      assert.equal(await radios.first().isChecked(), true);
 
       // 「管理 Agent」直接打开已有管理弹窗，关闭后返回 Agent 列表。
       await pill.click();
@@ -95,7 +98,7 @@ try {
       await popover.waitFor();
       await page.keyboard.press("Escape");
 
-      // 上面的 Provider 起步只影响那一次：从侧栏再打开新建弹窗，仍从「选择 Agent」开始；
+      // 上面的启动设置只影响那一次：从侧栏再打开新建弹窗，仍从「选择 Agent」开始；
       // 弹窗里点 Agent 卡片走的是与空状态共用的启动链路。
       await page.getByRole("button", { name: "新建会话", exact: true }).click();
       await page.getByRole("menu", { name: "新建 Runtime 会话" }).getByRole("menuitem").filter({ hasText: "Claude Code" }).first().click();

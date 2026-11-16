@@ -17,7 +17,7 @@ try {
   const nav = page.getByRole("navigation", { name: "设置分类" });
   await nav.getByRole("button", { name: "外观", exact: true }).click();
   const palettes = {};
-  for (const [id, label] of [["light", "浅色"], ["sand", "暖沙"], ["dark", "深色"], ["ocean", "深海"], ["purple", "石墨黑"], ["aurora", "暖瓷白"]]) {
+  for (const [id, label] of [["light", "浅色"], ["sand", "暖沙"], ["dark", "深色"], ["ocean", "暖夜黑"], ["purple", "石墨黑"], ["aurora", "暖瓷白"]]) {
     const option = page.getByRole("button", { name: label, exact: true });
     await option.click();
     await page.waitForFunction(theme => document.documentElement.dataset.appearanceTheme === theme, id);
@@ -45,10 +45,10 @@ try {
     await page.screenshot({ path: `${output}/${id}.png`, animations: "disabled" });
     // Sand and dark palettes must inherit the actual selected theme tokens.
     if (id !== "light") assert.equal(palette.settingsBg, palette.rootBg, `${label}: settings overrides selected palette`);
-    assert.equal(palette.header, id === "purple" ? "rgb(25, 26, 28)" : palette.canvas, `${label}: header palette`);
-    assert.equal(palette.nav, id === "aurora" ? "rgb(235, 229, 224)" : id === "purple" ? "rgb(25, 26, 28)" : palette.canvas, `${label}: navigation palette`);
+    assert.equal(palette.header, id === "ocean" ? "rgb(19, 18, 17)" : id === "purple" ? "rgb(25, 26, 28)" : palette.canvas, `${label}: header palette`);
+    assert.equal(palette.nav, id === "aurora" ? "rgb(235, 229, 224)" : id === "ocean" ? "rgb(19, 18, 17)" : id === "purple" ? "rgb(25, 26, 28)" : palette.canvas, `${label}: navigation palette`);
     assert.equal(palette.inputBg, palette.settingsBg, `${label}: input palette tokens`);
-    assert.ok([palette.canvas, id === "purple" ? "rgb(40, 42, 45)" : palette.canvas, "rgba(0, 0, 0, 0)"].includes(palette.input), `${label}: input surface`);
+    assert.ok([palette.canvas, id === "ocean" ? "rgb(36, 34, 31)" : id === "purple" ? "rgb(40, 42, 45)" : palette.canvas, "rgba(0, 0, 0, 0)"].includes(palette.input), `${label}: input surface`);
     assert.deepEqual(palette.box, palettes.light.box, `${label}: fixed frame size`);
     assert.equal(palette.scheme, ["light", "sand", "aurora"].includes(id) ? "light" : "dark");
   }
@@ -62,6 +62,9 @@ try {
   assert.equal(palettes.purple.canvas, "rgb(32, 33, 35)");
   assert.equal(palettes.purple.text, "rgb(231, 232, 233)");
   assert.equal(palettes.purple.border, "rgb(65, 68, 73)");
+  assert.equal(palettes.ocean.canvas, "rgb(28, 27, 25)");
+  assert.equal(palettes.ocean.text, "rgb(238, 236, 232)");
+  assert.equal(palettes.ocean.border, "rgb(59, 56, 50)");
   assert.equal(new Set(Object.values(palettes).map(p => p.canvas)).size, 6);
   await page.getByRole("button", { name: "暖沙", exact: true }).click();
   await nav.getByRole("button", { name: "常规", exact: true }).click();

@@ -1,5 +1,7 @@
 import { attentionOpenMode, type AttentionKind } from "./sidebarAttention";
-import { IS_MAC, isTerminalShell, shellLabel } from "./platform";
+import { IS_MAC, isTerminalShell, shellLabel, terminalShells } from "./platform";
+import { existingViewPanel, type AppViewMenuProps, type ViewPanel } from "./appView";
+import { useWindowFullscreen } from "./hooks/useWindowFullscreen";
 import { sidebarTabKind } from "./components/RightSidebarActivityBar";
 import "./components/native-chat-tab-sort.css";
 import { useRuntimeAvailability, setRuntimeLaunchDefault } from "./runtimeAvailability";
@@ -472,6 +474,7 @@ export default function App() {
   const [extraRightSidebarTab, setExtraRightSidebarTab] = useState<RightSidebarTab | null>(null);
   const [sidebarTerminalIds, setSidebarTerminalIds] = useState<string[]>([]);
   const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false);
+  const [appToolsMenuOpen, setAppToolsMenuOpen] = useState(false);
   const [sidebarMaximized, setSidebarMaximized] = useState(false);
   const sidebarTerminalLaunchRef = useRef(false);
   const workspaceRootRef = useRef<string | null>(null);
@@ -2214,6 +2217,14 @@ export default function App() {
     if (rightSidebarOpen) closeRightSidebar();
     else void selectRightSidebarTab(openRightSidebarTabs.includes(lastRightSidebarTab) ? lastRightSidebarTab : "start");
   }, [closeRightSidebar, lastRightSidebarTab, openRightSidebarTabs, rightSidebarOpen, selectRightSidebarTab]);
+
+  const windowFullscreen = useWindowFullscreen(showError);
+  const openViewPanel = (panel: ViewPanel) => {
+    const existing = existingViewPanel(panel, openRightSidebarTabsRef.current, activeRightSidebarTabRef.current, lastRightSidebarTab);
+    if (existing) { void selectRightSidebarTab(existing); return; }
+    if (panel === "terminal") { void openSidebarTool(terminalShells()[0]); return; }
+    void selectRightSidebarTab(panel);
+  };
   const closeSessionById = useCallback(
     (id: string) => {
       const session = sessions.find((item) => item.id === id);
@@ -2229,6 +2240,34 @@ export default function App() {
       setPetSettings((current) => ({ ...current, position })),
     [],
   );
+
+  const nativeSessionView = Boolean(multiAgentWorkspaceProjectId || (selectedSession && isNativeChatSession(selectedSession)));
+  const viewMenu: AppViewMenuProps = {
+    leftSidebarVisible: !sidebarCollapsed,
+    rightSidebarVisible: rightSidebarOpen,
+    activePanel: activeRightSidebarTab && sidebarTabKind(activeRightSidebarTab) !== "start" ? sidebarTabKind(activeRightSidebarTab) as ViewPanel : null,
+    filesAvailable: Boolean(activeWorkspaceRoot),
+    terminalAvailable: Boolean(activeWorkspaceRoot || existingViewPanel("terminal", openRightSidebarTabs, activeRightSidebarTab, lastRightSidebarTab)),
+    focused: selectedSessionId !== null,
+    canFocus: !nativeSessionView && liveSessions.some(isPtySession),
+    canOverview: !nativeSessionView,
+    fullscreen: windowFullscreen.fullscreen,
+    fullscreenPending: windowFullscreen.pending,
+    fullscreenAvailable: windowFullscreen.available,
+    onToggleLeft: () => {
+      toggleSidebar();
+      requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('button[aria-label="更多工具"]')?.focus());
+    },
+    onToggleRight: toggleRightSidebar,
+    onPanel: openViewPanel,
+    onFocus: () => setSelectedSessionId(current => {
+      const terminals = liveSessions.filter(isPtySession);
+      return terminals.some(session => session.id === current) ? current : terminals[0]?.id ?? null;
+    }),
+    onOverview: clearSelectedSession,
+    onFullscreen: () => { void windowFullscreen.toggle(); },
+    onMenuChange: setAppToolsMenuOpen,
+  };
 
   return (
     <div
@@ -2287,6 +2326,7 @@ export default function App() {
         onOpenSection={openSettingsSection}
         onOpenSettings={openGeneralSettings}
         onOpenAttentionSession={openAttentionSession}
+        viewMenu={viewMenu}
       />
       <div className="communication-sidebar-hint"><CommunicationDiscoveryHint suppressed={Boolean(guideRequest) || settingsOpen} projectId={multiAgentWorkspaceProjectId ?? undefined} /></div>
       {!sidebarCollapsed && (
@@ -2323,6 +2363,7 @@ export default function App() {
           onToggleSidebar={toggleSidebar}
           rightSidebarOpen={rightSidebarOpen}
           onToggleRightSidebar={toggleRightSidebar}
+          viewMenu={viewMenu}
         />
         <div
           className={[
@@ -2431,6 +2472,10 @@ export default function App() {
               </div>
               {guideRequest && <CommunicationGuide key={guideRequest.nonce} initialScope={guideRequest.scope} initialProjectId={guideRequest.projectId}
                 sessions={communicationSessions(sessions)} selectedSessionId={selectedSessionId} preview={UI_PREVIEW} hidden={settingsOpen}
+                onOpenCollaboration={(projectId) => {
+                  setCollaborationInitialProjectId(projectId); setCollaborationTasksRequest(undefined);
+                  setCollaborationInitialTab("overview"); setCollaborationDiagnosticGlobal(false); setSettingsTarget("collaboration"); setSettingsOpen(true);
+                }}
                 onClose={() => setGuideRequest(null)} onDiagnostics={(projectId, scope) => {
                   setCollaborationInitialProjectId(projectId);
                   setCollaborationTasksRequest(undefined); setCollaborationInitialTab(scope === "project" && !projectId ? "overview" : "diagnostics"); setCollaborationDiagnosticGlobal(scope === "sessions"); setSettingsTarget("collaboration"); setSettingsOpen(true);
@@ -2540,7 +2585,7 @@ export default function App() {
                     ))}
                     {[...mountedRightSidebarTabs].filter(tab => sidebarTabKind(tab) === "browser").map(tab => (
                       <div key={tab} className={`right-sidebar-panel${activeRightSidebarTab === tab ? " active" : ""}`}>
-                        <MemoBrowserPanel panelId={tab === "browser" ? undefined : tab.slice(8)} active={!guideRequest && activeRightSidebarTab === tab && !sidebarMenuOpen} />
+                        <MemoBrowserPanel panelId={tab === "browser" ? undefined : tab.slice(8)} active={!guideRequest && activeRightSidebarTab === tab && !sidebarMenuOpen && !appToolsMenuOpen} />
                       </div>
                     ))}
                     {activeRightSidebarTab && !mountedRightSidebarTabs.has(activeRightSidebarTab) && (

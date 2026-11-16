@@ -21,7 +21,7 @@ test("normalizeRightSidebarTab 接受 browser", () => {
 
 test("App 保活挂载浏览器面板并传递 active", () => {
   assert.match(app, /\[\.\.\.mountedRightSidebarTabs\]\.filter\(tab => sidebarTabKind\(tab\) === "browser"\)\.map/);
-  assert.match(app, /MemoBrowserPanel panelId=\{tab === "browser" \? undefined : tab\.slice\(8\)\} active=\{!guideRequest && activeRightSidebarTab === tab && !sidebarMenuOpen\}/);
+  assert.match(app, /MemoBrowserPanel panelId=\{tab === "browser" \? undefined : tab\.slice\(8\)\} active=\{!guideRequest && activeRightSidebarTab === tab && !sidebarMenuOpen && !appToolsMenuOpen\}/);
 });
 
 test("浏览器旧宽度迁移到共享宽度，新浏览器实例复用共享值", () => {

@@ -7,6 +7,8 @@ import { SquareIcon } from "@phosphor-icons/react/dist/csr/Square";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { CommunicationGuideButton } from "./CommunicationGuide";
 import type { WorkspaceTab } from "../workspaceTabs";
+import type { AppViewMenuProps } from "../appView";
+import { CollapsedAppTools } from "./AppToolsMenu";
 
 interface Props {
   tabs: WorkspaceTab[];
@@ -20,6 +22,7 @@ interface Props {
   onToggleSidebar: () => void;
   rightSidebarOpen: boolean;
   onToggleRightSidebar: () => void;
+  viewMenu?: AppViewMenuProps;
 }
 
 export function WorkspaceTabs({
@@ -34,6 +37,7 @@ export function WorkspaceTabs({
   onToggleSidebar,
   rightSidebarOpen,
   onToggleRightSidebar,
+  viewMenu,
 }: Props) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -71,6 +75,7 @@ export function WorkspaceTabs({
       aria-label="工作区页签"
       data-tauri-drag-region
     >
+      {sidebarCollapsed && <CollapsedAppTools view={viewMenu} />}
       {sidebarCollapsed && (
         <button
           type="button"

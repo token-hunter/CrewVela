@@ -23,7 +23,7 @@ try {
   };
   await openAppearance();
   assert.equal(await page.locator(".appearance-follow-system small").innerText(), "浅色");
-  assert.deepEqual(await page.locator(".appearance-theme-option > strong").allTextContents(), ["深色","深海","石墨黑","浅色","暖沙","暖瓷白"]);
+  assert.deepEqual(await page.locator(".appearance-theme-option > strong").allTextContents(), ["深色","暖夜黑","石墨黑","浅色","暖沙","暖瓷白"]);
   assert.equal(await page.getByRole("button",{name:"极光",exact:true}).count(),0);
   assert.equal(await page.getByRole("button",{name:"暖瓷白",exact:true}).getAttribute("aria-pressed"),"true");
   assert.equal(await page.getByRole("tab",{name:"皮肤",exact:true}).count(),0);

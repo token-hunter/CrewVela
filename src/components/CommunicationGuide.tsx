@@ -37,8 +37,9 @@ interface Props {
   initialScope: CommunicationScope; initialProjectId?: string | null;
   sessions: CommunicationParticipant[]; selectedSessionId?: string | null; preview?: boolean; hidden?: boolean;
   onClose: () => void; onDiagnostics: (projectId: string | undefined, scope: CommunicationScope) => void;
+  onOpenCollaboration?: (projectId: string | undefined) => void;
 }
-export function CommunicationGuide({ initialScope, initialProjectId, sessions, selectedSessionId, preview = false, hidden = false, onClose, onDiagnostics }: Props) {
+export function CommunicationGuide({ initialScope, initialProjectId, sessions, selectedSessionId, preview = false, hidden = false, onClose, onDiagnostics, onOpenCollaboration }: Props) {
   const [scope, setScope] = useState(initialScope);
   const [projects, setProjects] = useState<MultiAgentProject[]>([]);
   const [projectId, setProjectId] = useState(initialProjectId ?? "");
@@ -94,7 +95,7 @@ export function CommunicationGuide({ initialScope, initialProjectId, sessions, s
   const activeExample = useRef(exampleKey); activeExample.current = exampleKey;
   useEffect(() => { copyRevision.current++; setCopyState(""); }, [exampleKey]);
   const copy = async () => {
-    if (!example || copyPending.current) return;
+    if (!example || loading || error || copyPending.current) return;
     copyPending.current = true; setCopyBusy(true); setCopyState("");
     const revision = copyRevision.current, key = exampleKey;
     try {
@@ -104,24 +105,36 @@ export function CommunicationGuide({ initialScope, initialProjectId, sessions, s
     finally { copyPending.current = false; setCopyBusy(false); }
   };
   return <aside className="communication-guide" hidden={hidden} aria-labelledby="communication-guide-title" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}>
-    <header><div><h2 id="communication-guide-title">会话通信</h2><p>让不同 Agent 互相发消息、核对结果。</p></div><button ref={closeRef} type="button" className="communication-icon-button" onClick={onClose} aria-label="关闭通信指南"><XIcon size={19} /></button></header>
+    <header><h2 id="communication-guide-title">会话通信</h2><button ref={closeRef} type="button" className="communication-icon-button" onClick={onClose} aria-label="关闭通信指南"><XIcon size={19} /></button></header>
     <div className="communication-guide-body">
       <div className="communication-scopes" role="group" aria-label="通信场景">{([["sessions", "独立会话"], ["project", "项目成员"]] as const).map(([id, label]) => <button type="button" key={id} aria-pressed={scope === id} onClick={() => setScope(id)}>{label}</button>)}</div>
-      {scope === "project" && <label className="communication-project">当前范围<select aria-label="通信示例项目" value={projectId} disabled={loading && projects.length === 0} onChange={event => { if (event.target.value === projectId) return; setProjectId(event.target.value); setMembers([]); setSourceId(""); setTargetId(""); }}><option value="">选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
+      <p className="communication-intro">复制后粘贴到发送方会话。</p>
+      <div className="communication-fields">
+      {scope === "project" && <label className="communication-field"><span>项目</span><select aria-label="通信示例项目" value={projectId} disabled={loading && projects.length === 0} onChange={event => { if (event.target.value === projectId) return; setProjectId(event.target.value); setMembers([]); setSourceId(""); setTargetId(""); }}><option value="">选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
+      {([['source', '发送方', source], ['target', '接收方', target]] as const).map(([role, label, participant]) => <label className="communication-field" key={role}>
+        <span>{label}</span><span className={`communication-select${participant && !loading && !error ? " has-logo" : ""}`}>
+          {participant && !loading && !error && <img src={RUNTIME_LOGOS[participant.family as keyof typeof RUNTIME_LOGOS]} data-runtime={participant.family} alt="" />}
+          <select aria-label={role === 'source' ? '示例发送方' : '示例接收方'} title={participant ? `${participant.name} · ${participant.runtime}` : undefined} value={participant?.id ?? ''} disabled={loading || Boolean(error) || (role === 'source' ? participants.length === 0 : participants.length < 2)} onChange={event => { if (role === 'source') { setSourceId(event.target.value); setTargetId(''); } else setTargetId(event.target.value); }}>
+            {!participant && <option value="">{loading ? '正在读取…' : scope === 'project' && !projectId ? '先选择项目' : '暂无可选对象'}</option>}
+            {participants.filter(item => role === 'source' || item.id !== source?.id).map(item => <option key={item.id} value={item.id}>{item.name}{scope === 'project' && item.name !== item.runtime ? ` · ${item.runtime}` : ''}</option>)}
+          </select>
+        </span>
+      </label>)}
+      </div>
       {error && <div role="alert" className="communication-error"><p>{error}</p><button type="button" className="communication-text-button" onClick={() => setRetry(value => value + 1)}>重新读取</button></div>}
-      <h3>{scope === "project" ? "让两个项目成员配合" : "让 Agent 互相发消息"}</h3>
-      <ol className="communication-steps">{(scope === "project" ? ["在同一项目中启用两位成员", "在成员会话中说出要联系谁", "在项目消息中查看往来"] : ["在 CrewVela 中打开两个 Agent 会话", "在其中一个会话里说出要联系的对象", "到对方会话查看消息和回复"]).map(step => <li key={step}>{step}</li>)}</ol>
-      {loading ? <p role="status" className="communication-muted">正在读取项目成员…</p> : participants.length < 2 ? <p className="communication-empty">{scope === "project" ? projectId ? "当前项目不足两位已启用成员。请在协作中心核对成员与运行时配置。" : "先选择协作项目，再查看成员通信示例。" : "在 CrewVela 中打开两个受支持的 Agent 会话后，这里会生成对应示例。普通 Shell 和已停止的会话不计入。"}</p> : <>
-        <div className="communication-participants" aria-label="示例对象">{[source, target].map((item, index) => item && <div key={item.id}><img src={RUNTIME_LOGOS[item.family as keyof typeof RUNTIME_LOGOS]} alt="" /><span><strong>{item.name}</strong><small>{index === 0 ? "发送方" : "接收方"} · {item.runtime}</small></span></div>)}</div>
-        {participants.length >= 2 && <details className="communication-choose"><summary>更换示例对象</summary><label>发送方<select aria-label="示例发送方" value={source?.id ?? ""} onChange={event => { setSourceId(event.target.value); setTargetId(""); }}>{participants.map(item => <option key={item.id} value={item.id}>{item.name} · {item.runtime}</option>)}</select></label><label>接收方<select aria-label="示例接收方" value={target?.id ?? ""} onChange={event => setTargetId(event.target.value)}>{participants.filter(item => item.id !== source?.id).map(item => <option key={item.id} value={item.id}>{item.name} · {item.runtime}</option>)}</select></label></details>}
-        <h3 className="communication-example-heading">试着对{source?.name}说</h3>
-        <p className="communication-example">{example}</p>
-        <button type="button" className="communication-copy" disabled={!example || copyBusy} onClick={() => void copy()}><CopyIcon size={17} />{copyBusy ? "复制中…" : "复制示例"}</button>
+      {loading ? <p role="status" className="communication-muted">正在读取项目成员…</p> : !error && participants.length < 2 && <p className="communication-empty" role="status">{scope === "project" ? projectId ? "当前项目至少需要两位已启用成员。" : "先选择协作项目，再选择通信对象。" : "打开两个受支持的 Agent 会话后，即可生成示例。"}</p>}
+      <section className="communication-example-section" aria-label="通信示例">
+        <h3>通信示例</h3><p className={`communication-example${!example || loading || error ? " is-empty" : ""}`}>{!loading && !error && example ? example : '选择发送方和接收方后生成示例。'}</p>
+        <button type="button" className="communication-copy" disabled={!example || copyBusy || loading || Boolean(error)} onClick={() => void copy()}><CopyIcon size={17} />{copyBusy ? "复制中…" : "复制示例"}</button>
         {copyState && <p role={copyState.startsWith("复制失败") ? "alert" : "status"} className="communication-copy-state">{copyState}</p>}
-      </>}
-      <button type="button" className="communication-diagnostics" disabled={scope === "project" && Boolean(projectId) && !projects.some(project => project.id === projectId)} onClick={() => onDiagnostics(scope === "project" ? projectId || undefined : undefined, scope)}>{scope === "project" && !projectId ? "打开协作中心" : "打开通信诊断"}</button>
-      <p className="communication-footnote">{scope === "project" ? "消息只发给指定成员。" : "对方忙碌时，消息会排队等待。"}已排队不代表已回复。{scope === "project" ? "请先启动成员任务或进入成员会话。" : "旧会话可能需要重新打开，以加载通信工具。"}</p>
+      </section>
+      {scope === 'project' && <button type="button" className="communication-project-link" onClick={() => { const id = projects.some(project => project.id === projectId) ? projectId : undefined; if (onOpenCollaboration) onOpenCollaboration(id); else onDiagnostics(id, 'project'); }}>打开协作中心</button>}
+      <details className="communication-help"><summary>使用说明</summary>
+        <ol>{(scope === "project" ? ["在同一项目中启用两位成员", "在发送方成员会话中粘贴示例", "在项目消息中查看往来"] : ["在 CrewVela 中打开两个 Agent 会话", "在发送方会话中粘贴示例", "到接收方会话查看消息和回复"]).map(step => <li key={step}>{step}</li>)}</ol>
+        <p>{scope === 'project' ? '消息只发给指定成员，请先启动成员任务或进入成员会话。' : '普通 Shell 和已停止的会话不计入。对方忙碌时消息会排队，旧会话可能需要重新打开以加载通信工具。'}</p>
+      </details>
     </div>
+    <footer className="communication-guide-footer"><span>已排队不代表已回复</span><span aria-hidden="true">·</span><button type="button" className="communication-diagnostics" aria-label="打开通信诊断" disabled={scope === "project" && (!projectId || !projects.some(project => project.id === projectId))} onClick={() => onDiagnostics(scope === "project" ? projectId : undefined, scope)}>通信诊断</button></footer>
   </aside>;
 }
 

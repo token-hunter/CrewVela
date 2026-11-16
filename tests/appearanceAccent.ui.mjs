@@ -17,7 +17,7 @@ try {
   assert.equal(await none.getAttribute('aria-checked'),'true');
   assert.equal(await page.getByRole('radio',{name:/^(蓝色|绿色)$/}).count(),0);
   assert.equal(await page.getByRole('radio',{name:/^(无强调色|陶土|紫色|青色|橙色|粉色|珊瑚色|灰色)$/}).count(),8);
-  for(const [label,theme,expected] of [['深色','dark','#c9c9c6'],['浅色','light','#454543'],['深海','ocean','#c9c9c6'],['石墨黑','purple','#c9c9c6'],['暖沙','sand','#454543'],['暖瓷白','aurora','#454543']]) {
+  for(const [label,theme,expected] of [['深色','dark','#c9c9c6'],['浅色','light','#454543'],['暖夜黑','ocean','#c9c9c6'],['石墨黑','purple','#c9c9c6'],['暖沙','sand','#454543'],['暖瓷白','aurora','#454543']]) {
    await page.getByRole('button',{name:label,exact:true}).click();
    await page.waitForFunction(t=>document.documentElement.dataset.appearanceTheme===t,theme);
    assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()),expected);

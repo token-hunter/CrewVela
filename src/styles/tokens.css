@@ -224,18 +224,20 @@
 
 /* 外观主题：保留同一组语义令牌，主题只负责重新映射表面与文本。 */
 :root[data-appearance-theme="ocean"] {
+  /* 暖夜黑：沿用 ocean 偏好标识，用暖中性黑替换原蓝灰色。 */
   color-scheme: dark;
-  --bg: #101820;
-  --bg-elev: #17232d;
-  --bg-sunken: #0b1218;
-  --bg-hover: #1e303d;
-  --border: #304553;
-  --border-strong: #597181;
-  --text: #d8e3e9;
-  --text-dim: #91a4af;
-  --text-faint: #657985;
-  --terminal-bg: #071016;
-  --terminal-shell: #0d1920;
+  --bg: #1c1b19;
+  --bg-elev: #24221f;
+  --bg-sunken: #090908;
+  --bg-sidebar: #131211;
+  --bg-hover: #2d2b27;
+  --border: #3b3832;
+  --border-strong: #756e64;
+  --text: #eeece8;
+  --text-dim: #aaa69f;
+  --text-faint: #9c968e;
+  --terminal-bg: #131211;
+  --terminal-shell: #090908;
 }
 
 :root[data-appearance-theme="purple"] {

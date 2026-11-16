@@ -6,6 +6,14 @@
 .app-help-submenu button { display:grid; grid-template-columns:22px minmax(0,1fr); gap:8px; align-items:center; min-height:36px; padding:6px 9px; border:0; border-radius:6px; background:transparent; color:var(--text); text-align:left; font:14px/1.5 var(--display-font); cursor:pointer; }
 .app-help-submenu button:hover,.app-tools-menu .app-help-root[aria-expanded="true"] { background:var(--bg-hover); }
 .app-tools-menu button:focus-visible,.app-help-submenu button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.app-help-submenu { max-height:calc(100vh - 16px); overflow-y:auto; overscroll-behavior:contain; }
+.app-view-submenu { width:256px; }
+.app-view-submenu button { grid-template-columns:22px minmax(0,1fr) 15px; }
+.app-view-submenu button[aria-expanded="true"] { background:var(--bg-hover); }
+.app-view-submenu button:disabled { cursor:not-allowed; color:var(--text-dim); }
+.app-view-branch { z-index:1102; width:224px; }
+.app-view-check { color:var(--accent); }
+.app-view-separator { height:1px; margin:4px 5px; background:var(--border); }
 .app-help-overlay { z-index:var(--z-dialog,1300); }
 .app-help-dialog { display:flex; flex-direction:column; width:min(560px,calc(100vw - 32px)); max-height:min(720px,calc(100vh - 32px)); padding:0; border:1px solid var(--border); border-radius:14px; background:var(--bg-elev); color:var(--text); box-shadow:var(--shadow-md); overflow:hidden; box-sizing:border-box; }
 .app-help-dialog.app-help-privacy { width:min(720px,calc(100vw - 32px)); }

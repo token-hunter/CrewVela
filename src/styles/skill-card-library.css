@@ -2,7 +2,7 @@
 .skill-card-library.skill-runtime-first { --skill-card-bg:color-mix(in srgb,var(--text) 4%,var(--settings-canvas,var(--bg-elev))); --skill-card-selected:color-mix(in srgb,var(--text) 68%,var(--border)); --accent-fill:var(--text); --on-accent-fill:var(--settings-canvas,var(--bg-elev)); --accent-fill-hover:color-mix(in srgb,var(--text) 85%,var(--bg-elev)); }
 /* Windows native popups can use a white fallback for transparent option rows. */
 .skill-card-library select option { background-color:var(--bg-elev); color:var(--text); }
-.skill-card-library.skill-runtime-first .skill-center-toolbar { gap:18px; border:0; padding:0 0 20px; min-width:0; position:relative; z-index:3; flex-wrap:wrap; }
+.skill-card-library.skill-runtime-first .skill-center-toolbar { justify-content:flex-start; gap:18px; border:0; padding:0 0 20px; min-width:0; position:relative; z-index:3; flex-wrap:wrap; }
 .skill-card-library .skill-center-toolbar > h2 { margin:0; color:var(--text); font:650 26px/1.35 var(--display-font); letter-spacing:-.5px; }
 .skill-card-library.skill-runtime-first .skill-center-tabs { display:flex; flex:0 0 auto; align-items:center; gap:0; padding:3px; border:0; border-radius:10px; background:var(--bg-hover); overflow:visible; }
 .skill-card-library.skill-runtime-first .skill-center-tabs button { min-height:30px; padding:4px 16px; border:1px solid transparent; border-radius:7px; color:var(--text-dim); font:500 14px/1.4 var(--display-font); background:transparent; }

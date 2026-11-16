@@ -170,6 +170,9 @@
   color: #91a0b2;
 }
 
+:root[data-appearance-theme="ocean"] .appearance-terminal-preview { color: var(--text); }
+:root[data-appearance-theme="ocean"] .appearance-terminal-preview span:nth-child(2) { color: var(--text-dim); }
+
 .appearance-terminal-preview i {
   width: 6px;
   height: 12px;

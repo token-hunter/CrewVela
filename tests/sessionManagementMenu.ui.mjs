@@ -28,7 +28,7 @@ async function uniformRows(menu) {
 try {
  for(const theme of ['dark','light'])for(const viewport of [{width:1280,height:850},{width:820,height:540}]) {
   const p=await fresh('1',theme,viewport),trigger=p.locator('.session-filter-trigger');
-  await p.getByRole('button',{name:'更多工具',exact:true}).click();const tools=p.getByRole('menu',{name:'更多工具',exact:true});assert.deepEqual(await tools.getByRole('menuitem').allTextContents(),['帮助']);await p.keyboard.press('Escape');
+  await p.getByRole('button',{name:'更多工具',exact:true}).click();const tools=p.getByRole('menu',{name:'更多工具',exact:true});assert.deepEqual(await tools.getByRole('menuitem').allTextContents(),['视图','帮助']);await p.keyboard.press('Escape');
   let m=await open(p);assert.equal(await m.getByRole('group',{name:'查看范围',exact:true}).count(),1);assert.equal(await m.getByRole('group',{name:'批量操作',exact:true}).count(),1);
   assert.equal(await m.getByRole('menuitemradio').count(),4);assert.equal(await m.getByRole('menuitem').count(),2);assert.equal(await m.locator('.session-filter-group-title,.session-filter-divider,.session-filter-scope,[role=separator]').count(),0);assert.equal(await m.getByRole('group',{name:'批量操作',exact:true}).getAttribute('aria-description'),'仅作用于当前工作区「工作区 A」');
   await uniformRows(m);
@@ -46,7 +46,7 @@ try {
   assert.equal(await d.getByRole('button',{name:'取消',exact:true}).evaluate(el=>el===document.activeElement),true);await d.screenshot({path:`${out}/confirm-${theme}-${viewport.width}.png`});
   await p.keyboard.press('Escape');assert.equal(await d.count(),0);assert.equal((await calls(p,'delete_session')).length,0);await p.close();
  }
- const stopping=await fresh();await stopping.getByRole('group',{name:'会话类型',exact:true}).getByRole('button',{name:/^AI 会话/}).click();await stopping.getByPlaceholder('搜索标题 / 目录 / provider').fill('fixture-ai');
+ const stopping=await fresh();await stopping.getByRole('group',{name:'会话类型',exact:true}).getByRole('button',{name:/^会话/}).click();await stopping.getByPlaceholder('搜索标题 / 目录 / provider').fill('fixture-ai');
  assert.equal(await stopping.locator('.session-item').count(),1);await (await open(stopping)).getByRole('menuitem',{name:'停止运行会话',exact:true}).click();
  await stopping.waitForFunction(()=>window.appSessionMock.bulkCalls.filter(item=>item.command==='stop_session').length===2);
  assert.deepEqual((await calls(stopping,'stop_session')).map(item=>item.sessionId).sort(),['one','three']);assert.equal(await stopping.evaluate(()=>window.appSessionMock.bulkSessions().find(item=>item.id==='other').status),'running');
@@ -65,5 +65,5 @@ try {
  const rejected=await fresh();await rejected.evaluate(()=>window.appSessionMock.rejectBulkDelete='three');d=await remove(rejected);await d.getByRole('button',{name:'确认删除',exact:true}).click();await rejected.getByText(/删除「fixture-ai」失败/).waitFor();assert.deepEqual(await rejected.evaluate(()=>window.appSessionMock.bulkSessions().map(item=>item.id).sort()),['other','three']);await rejected.close();
  const failedStop=await fresh();await failedStop.evaluate(()=>window.appSessionMock.rejectBulkStop='one');await (await open(failedStop)).getByRole('menuitem',{name:'停止运行会话',exact:true}).click();await failedStop.getByText(/停止「fixture-one」失败/).waitFor();assert.equal(await failedStop.evaluate(()=>window.appSessionMock.bulkSessions().find(item=>item.id==='one').status),'running');assert.equal(await failedStop.evaluate(()=>window.appSessionMock.bulkSessions().find(item=>item.id==='three').status),'stopped');await failedStop.close();
  const long=await fresh(`1&workspace-name=${encodeURIComponent('长名称协作工作区'.repeat(12))}`,'light',{width:820,height:540});const longMenu=await open(long);assert.equal(await longMenu.getByRole('menuitem',{name:'删除全部会话',exact:true}).innerText(),'删除全部会话');assert.match(await longMenu.getByRole('menuitem',{name:'删除全部会话',exact:true}).getAttribute('title'),/长名称协作工作区/);await long.keyboard.press('Escape');d=await remove(long);assert.equal(await d.evaluate(el=>el.scrollWidth<=el.clientWidth),true,'long workspace names wrap within confirmation');await d.screenshot({path:`${out}/confirm-long-name.png`});await long.keyboard.press('Escape');await long.close();
- assert.deepEqual(errors,[]);console.log('PASS: actual App minimal equal-spacing session menu, keyboard/viewport, exact workspace-wide stop/delete despite filters, confirmation/cancel/staleness, empty/disabled states, visible rejections and help-only tools');
+ assert.deepEqual(errors,[]);console.log('PASS: actual App minimal equal-spacing session menu, keyboard/viewport, exact workspace-wide stop/delete despite filters, confirmation/cancel/staleness, empty/disabled states, visible rejections and view/help tools');
 }finally {await browser.close();}

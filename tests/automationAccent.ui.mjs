@@ -5,7 +5,7 @@ import {chromium} from 'playwright';
 const base=process.env.CREWVELA_UI_URL||'http://127.0.0.1:1435',out='.scratch/automation-accent-20261116/ui';mkdirSync(out,{recursive:true});
 const browser=await chromium.launch({channel:'chrome'}),errors=[],metrics=[];
 const accents=[['clay','陶土'],['none','无强调色'],['purple','紫色'],['cyan','青色'],['orange','橙色'],['pink','粉色'],['coral','珊瑚色'],['gray','灰色']];
-const themes=[['dark','深色'],['light','浅色'],['ocean','深海'],['purple','石墨黑'],['sand','暖沙'],['aurora','暖瓷白']];
+const themes=[['dark','深色'],['light','浅色'],['ocean','暖夜黑'],['purple','石墨黑'],['sand','暖沙'],['aurora','暖瓷白']];
 const rgb=color=>color.match(/[\d.]+/g).slice(0,3).map(Number);
 function contrast(a,b){const luminance=color=>rgb(color).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);const values=[luminance(a),luminance(b)].sort((a,b)=>a-b);return (values[1]+.05)/(values[0]+.05);}
 async function colors(page){return page.evaluate(()=>{

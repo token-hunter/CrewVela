@@ -94,7 +94,7 @@ test('主 CLI 网格在原生聊天期间保活，避免侧栏轮询消费未挂
   assert.match(app, /sessions=\{displaySessions\.filter\(item => !sidebarTerminalIds\.includes\(item\.id\)\)\}/);
 });
 test('新建菜单挂起原生浏览器，文件和浏览器资源保留挂载', () => {
-  assert.match(app, /MemoBrowserPanel panelId=\{tab === "browser" \? undefined : tab\.slice\(8\)\} active=\{!guideRequest && activeRightSidebarTab === tab && !sidebarMenuOpen\}/);
+  assert.match(app, /MemoBrowserPanel panelId=\{tab === "browser" \? undefined : tab\.slice\(8\)\} active=\{!guideRequest && activeRightSidebarTab === tab && !sidebarMenuOpen && !appToolsMenuOpen\}/);
   assert.match(app, /\[\.\.\.mountedRightSidebarTabs\]\.filter\(tab => sidebarTabKind\(tab\) === "browser"\)\.map/);
   assert.match(app, /\[\.\.\.mountedRightSidebarTabs\]\.filter\(tab => sidebarTabKind\(tab\) === "files"\)\.map/);
 });

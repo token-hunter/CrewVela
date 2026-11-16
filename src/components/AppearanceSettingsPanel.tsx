@@ -18,7 +18,7 @@ interface Props {
 
 const THEME_OPTIONS: Array<{ id: AppearanceTheme; label: string }> = [
   { id: "dark", label: "深色" },
-  { id: "ocean", label: "深海" },
+  { id: "ocean", label: "暖夜黑" },
   { id: "purple", label: "石墨黑" },
   { id: "light", label: "浅色" },
   { id: "sand", label: "暖沙" },

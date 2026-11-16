@@ -44,6 +44,7 @@ import { AppToolsMenu } from "./AppToolsMenu";
 import { AppHelpDialog } from "./AppHelpDialog";
 import { Modal } from "./ui/Modal";
 import type { AppHelpSection } from "../appHelp";
+import type { AppViewMenuProps } from "../appView";
 import { SidebarAttention } from "./SidebarAttention";
 import type { AttentionKind } from "../sidebarAttention";
 import type { SettingsSection } from "./SettingsDialog";
@@ -126,6 +127,7 @@ interface Props {
   onOpenSection: (section: SettingsSection) => void;
   onOpenSettings: () => void;
   onOpenAttentionSession: (session: SessionRecord, kind: AttentionKind) => void;
+  viewMenu?: AppViewMenuProps;
 }
 
 export function AppSidebar(props: Props) {
@@ -257,7 +259,7 @@ export function AppSidebar(props: Props) {
           </span>
         </div>
 
-        {toolsMenuOpen && <AppToolsMenu trigger={toolsButtonRef} onClose={closeToolsMenus} onHelp={setHelpSection} />}
+        {toolsMenuOpen && <AppToolsMenu trigger={toolsButtonRef} onClose={closeToolsMenus} onHelp={setHelpSection} view={props.viewMenu} />}
       </header>
       <div className="sidebar-new-session-row">
         <button

@@ -67,6 +67,15 @@
   --settings-nav-bg: var(--bg-sunken);
 }
 
+:root[data-appearance-theme="ocean"] .settings-dialog.settings-native {
+  --settings-canvas: var(--bg);
+  --settings-nav-bg: var(--bg-sidebar);
+}
+
+:root[data-appearance-theme="ocean"] .settings-native .settings-window-header {
+  background: var(--bg-sidebar);
+}
+
 :root[data-appearance-theme="purple"] .settings-dialog.settings-native {
   --settings-canvas: var(--bg);
   --settings-nav-bg: var(--bg-sunken);
@@ -172,6 +181,8 @@
 .settings-native .settings-page-note { margin: -12px 0 24px; font-size: 12px; color: var(--text-dim); }
 .settings-native :is(input, select, textarea, button) { font-family: inherit; }
 .settings-native :is(input, select, textarea) { accent-color: var(--accent); }
+/* Windows native option popups need an explicit surface instead of an OS white fallback. */
+.settings-native select :is(option, optgroup) { background-color: var(--bg-elev); color: var(--text); }
 .settings-dialog.settings-native :is(.btn, .btn.primary, .btn.secondary) {
   min-height: 32px;
   height: auto;

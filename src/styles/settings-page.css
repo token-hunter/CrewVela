@@ -1128,10 +1128,10 @@
 }
 
 .appearance-theme-preview[data-preview-theme="ocean"] {
-  --preview-bg: #101820;
-  --preview-elev: #17232d;
-  --preview-border: #304553;
-  --preview-text: #7f98a6;
+  --preview-bg: #1c1b19;
+  --preview-elev: #131211;
+  --preview-border: #3b3832;
+  --preview-text: #aaa69f;
 }
 
 .appearance-theme-preview[data-preview-theme="purple"] {
