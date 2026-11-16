@@ -272,7 +272,7 @@ export function PiChat({ session, preview = false, onSessionRecord, active = tru
         ...current,
         history: [...current.history,
           { id: `preview-${Date.now()}`, role: "user", text, createdAt: Date.now() },
-          { id: `preview-${Date.now()}-reply`, role: "assistant", text: "这是 UI 预览回复；真实会话由本机 pi CLI 通过 pi --mode rpc 返回。", createdAt: Date.now() }],
+          { id: `preview-${Date.now()}-reply`, role: "assistant", text: "这是 UI 预览回复；真实回复由本机 Pi 返回。", createdAt: Date.now() }],
       } : current);
       setDraft("");
       setAttachments([]);
@@ -373,14 +373,14 @@ export function PiChat({ session, preview = false, onSessionRecord, active = tru
   };
 
   return (
-    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label="Pi Chat RPC 会话">
+    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label="Pi Chat 会话">
       <header className="harness-chat-header">
         <div className="harness-chat-controls"><span className="harness-workspace" title={session.cwd}><FolderSimple size={17} />工作目录：{session.cwd.split(/[\\/]/).filter(Boolean).pop() || session.cwd}</span><span className={`harness-connection${snapshot?.connected ? " connected" : ""}`}><i />{connecting ? "连接中" : snapshot?.connected ? "已连接" : "未连接"}</span>
           {snapshot?.connected && !preview && <button type="button" onClick={() => void stop()}>停止会话</button>}
           {!snapshot?.connected && !connecting && <button type="button" onClick={() => void connect()}>恢复会话</button>}
         </div>
       </header>
-      {preview && <div className="harness-chat-preview-banner">UI 预览：不会连接 pi、调用模型或执行工具。可交互内容为演示数据。</div>}
+      {preview && <div className="harness-chat-preview-banner">UI 预览：不会连接真实 Agent、调用模型或执行工具。可交互内容为演示数据。</div>}
       <NativeAgentSelector kind="pi_chat" {...switchProps} />
 
       <div className="harness-chat-messages" aria-live="polite">
@@ -404,7 +404,6 @@ export function PiChat({ session, preview = false, onSessionRecord, active = tru
           {permission.toolCall.rawInput !== undefined && <pre>{typeof permission.toolCall.rawInput === "string" ? permission.toolCall.rawInput : JSON.stringify(permission.toolCall.rawInput, null, 2)}</pre>}
           <div><button type="button" onClick={() => void answerPermission(true)}>允许一次</button><button type="button" onClick={() => void answerPermission(false)}>拒绝</button></div>
         </article>}
-        {connecting && <div className="harness-chat-info">正在连接 Pi Chat…（需要本机已安装 pi CLI 并配置模型凭证）</div>}
         {!connecting && !snapshot?.connected && <div className="harness-chat-info">会话已停止或未连接。点击“恢复会话”继续原 pi 会话。</div>}
         <div ref={messagesEnd} />
       </div>

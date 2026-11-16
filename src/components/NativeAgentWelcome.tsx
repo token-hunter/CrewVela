@@ -3,7 +3,7 @@ import { ArrowRight, ArrowsLeftRight } from "@phosphor-icons/react";
 import { RUNTIME_LOGOS, RUNTIME_LABELS } from "../runtimeLogos";
 import type { NativeAgentKind, NativeAgentSwitchProps } from "../nativeAgentSwitch";
 import { NativeAgentMascot } from "./NativeAgentMascot";
-import { NativeDolphin } from "./NativeDolphin";
+import { NativeWhaleGirl } from "./NativeWhaleGirl";
 import { NativeZCodeMascot } from "./NativeZCodeMascot";
 
 export function NativeAgentSelector({ kind, switching, enabledAgents, onSwitchAgent, onHandoffAgent, managedToolbar }: NativeAgentSwitchProps & { kind: NativeAgentKind }) {
@@ -25,18 +25,11 @@ export function NativeAgentWelcome({ kind, active = true, skillsDisabled, onSkil
     document.addEventListener("visibilitychange", update);
     return () => document.removeEventListener("visibilitychange", update);
   }, []);
-  const tagline = kind === "deepseek_harness" ? "代码理解 · 功能开发 · 问题排查"
-    : kind === "claude_chat" ? "本机 Claude Code · 原生 ACP 会话"
-    : kind === "codex_chat" ? "本机 Codex · 原生 ACP 会话"
-    : kind === "kimi_chat" ? "本机 Kimi Code · 原生 ACP 会话"
-    : kind === "opencode_chat" ? "本机 OpenCode · 原生 ACP 会话"
-    : kind === "pi_chat" ? "本机 pi · 原生 RPC 会话" : "技能 · 插件 · 工作流";
   return <div className={`native-agent-welcome ${kind === "zcode" ? "native-agent-zcode" : "native-agent-dolphin"}${!active || !visible ? " motion-paused" : ""}`}>
-    <div className="native-agent-character" aria-hidden={kind === "deepseek_harness" ? true : undefined}>
-      {kind === "deepseek_harness" ? <NativeDolphin /> : kind === "zcode" ? <NativeZCodeMascot active={active && visible} /> : <NativeAgentMascot kind={kind} active={active && visible} />}
+    <div className="native-agent-character">
+      {kind === "deepseek_harness" ? <NativeWhaleGirl active={active && visible} /> : kind === "zcode" ? <NativeZCodeMascot active={active && visible} /> : <NativeAgentMascot kind={kind} active={active && visible} />}
     </div>
     <h1>{RUNTIME_LABELS[kind]}</h1>
-    <p>{tagline}</p>
     <button type="button" className="native-agent-skills" disabled={skillsDisabled} onClick={onSkills}>{kind === "zcode" ? "查看技能与插件" : kind === "claude_chat" || kind === "codex_chat" || kind === "kimi_chat" || kind === "opencode_chat" || kind === "pi_chat" ? "查看命令" : "查看技能"}<ArrowRight size={17} /></button>
   </div>
 }

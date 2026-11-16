@@ -55,7 +55,7 @@ const previewSnapshot: HarnessSessionSnapshot = {
   busy: false,
   history: [
     { id: "preview-user-1", role: "user", text: "帮我看一下这个模块的测试为什么挂了。", createdAt: 1 },
-    { id: "preview-assistant-1", role: "assistant", reasoning: "先定位失败的测试，再检查最近的改动。这是演示思考内容。", streamStatus: "streaming", text: "我先运行失败的测试并查看相关改动。当前是 CrewVela UI 预览，没有连接 ACP 或 Codex。", createdAt: 2 },
+    { id: "preview-assistant-1", role: "assistant", reasoning: "先定位失败的测试，再检查最近的改动。这是演示思考内容。", streamStatus: "streaming", text: "我先运行失败的测试并查看相关改动。当前是 CrewVela UI 预览，没有连接真实 Agent 或调用模型。", createdAt: 2 },
   ],
   pendingPermission: { requestId: "preview-permission", toolCall: { title: "运行测试", rawInput: { command: "cargo test -p core" } }, options: [{ optionId: "allow", name: "允许一次", kind: "allow_once" }, { optionId: "reject", name: "拒绝", kind: "reject_once" }] },
   toolCalls: [{ toolCallId: "preview-run", title: "运行测试", status: "in_progress", rawInput: { command: "cargo test -p core" } }],
@@ -169,7 +169,7 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
     if (event.record) onSessionRecord(event.record);
     if (event.snapshot) {
       applySnapshot(event.snapshot);
-      if (event.kind === "error" || event.kind === "codex_goal_error") setError(String(event.data.message ?? "Codex Chat ACP 执行失败"));
+      if (event.kind === "error" || event.kind === "codex_goal_error") setError(String(event.data.message ?? "Codex Chat 执行失败"));
       return;
     }
     switch (event.kind) {
@@ -228,7 +228,7 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
         break;
       case "error":
         setPermission(null);
-        setError(String(event.data.message ?? "Codex Chat ACP 执行失败"));
+        setError(String(event.data.message ?? "Codex Chat 执行失败"));
         setSnapshot((current) => current ? { ...current, connected: false, busy: false } : current);
         break;
       default:
@@ -299,7 +299,7 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
         ...current,
         history: [...current.history,
           { id: `preview-${Date.now()}`, role: "user", text, createdAt: Date.now() },
-          { id: `preview-${Date.now()}-reply`, role: "assistant", text: "这是 UI 预览回复；真实会话由本机 Codex 通过 ACP 适配器返回。", createdAt: Date.now() }],
+          { id: `preview-${Date.now()}-reply`, role: "assistant", text: "这是 UI 预览回复；真实回复由本机 Codex 返回。", createdAt: Date.now() }],
       } : current);
       setDraft("");
       setAttachments([]);
@@ -415,14 +415,14 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
   };
 
   return (
-    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label="Codex Chat ACP 会话">
+    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label="Codex Chat 会话">
       <header className="harness-chat-header">
         <div className="harness-chat-controls"><span className="harness-workspace" title={session.cwd}><FolderSimple size={17} />工作目录：{session.cwd.split(/[\\/]/).filter(Boolean).pop() || session.cwd}</span><span className={`harness-connection${snapshot?.connected ? " connected" : ""}`}><i />{connecting ? "连接中" : snapshot?.connected ? "已连接" : "未连接"}</span>
           {snapshot?.connected && !preview && <button type="button" onClick={() => void stop()}>停止会话</button>}
           {!snapshot?.connected && !connecting && <button type="button" onClick={() => void connect()}>恢复会话</button>}
         </div>
       </header>
-      {preview && <div className="harness-chat-preview-banner">UI 预览：不会连接 ACP、调用模型或执行工具。可交互内容为演示数据。</div>}
+      {preview && <div className="harness-chat-preview-banner">UI 预览：不会连接真实 Agent、调用模型或执行工具。可交互内容为演示数据。</div>}
       <NativeAgentSelector kind="codex_chat" {...switchProps} />
 
       <div className="harness-chat-messages" aria-live="polite">
@@ -446,8 +446,7 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
           {permission.toolCall.rawInput !== undefined && <pre>{typeof permission.toolCall.rawInput === "string" ? permission.toolCall.rawInput : JSON.stringify(permission.toolCall.rawInput, null, 2)}</pre>}
           <div><button type="button" onClick={() => void answerPermission(true)}>允许一次</button><button type="button" onClick={() => void answerPermission(false)}>拒绝</button></div>
         </article>}
-        {connecting && <div className="harness-chat-info">正在连接 Codex Chat ACP…（需要本机已安装并登录 codex CLI）</div>}
-        {!connecting && !snapshot?.connected && <div className="harness-chat-info">会话已停止或未连接。点击“恢复会话”继续原 ACP 会话。</div>}
+        {!connecting && !snapshot?.connected && <div className="harness-chat-info">会话已停止或未连接。点击“恢复会话”继续原会话。</div>}
         <div ref={messagesEnd} />
       </div>
       {error && <pre className="harness-chat-error" role="alert">{error}</pre>}

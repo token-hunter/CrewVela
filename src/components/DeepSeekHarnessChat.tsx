@@ -49,7 +49,7 @@ const previewSnapshot: HarnessSessionSnapshot = {
   busy: false,
   history: [
     { id: "preview-user-1", role: "user", text: "先检查项目入口和现有测试。", createdAt: 1 },
-    { id: "preview-assistant-1", role: "assistant", reasoning: "先确认项目入口，再检查相关测试。这是演示思考内容。", streamStatus: "streaming", text: "我会从应用入口和测试脚本开始检查。当前是 CrewVela UI 预览，没有连接 ACP 或模型。", createdAt: 2 },
+    { id: "preview-assistant-1", role: "assistant", reasoning: "先确认项目入口，再检查相关测试。这是演示思考内容。", streamStatus: "streaming", text: "我会从应用入口和测试脚本开始检查。当前是 CrewVela UI 预览，没有连接真实 Agent 或调用模型。", createdAt: 2 },
   ],
   pendingPermission: { requestId: "preview-permission", toolCall: { title: "读取项目文件", rawInput: { path: "package.json" } } },
   toolCalls: [{ toolCallId: "preview-read", title: "读取文件", status: "in_progress", rawInput: { path: "package.json" } }],
@@ -84,7 +84,7 @@ function currentModel(options: unknown[]): string {
 
 function previewMessages(messages: HarnessChatMessage[], id: string, text: string): HarnessChatMessage[] {
   return [...messages, { id, role: "user", text, createdAt: Date.now() }, {
-    id: `${id}-reply`, role: "assistant", text: "这是 UI 预览回复；真实会话由本机 ACP Agent 返回。", createdAt: Date.now(),
+    id: `${id}-reply`, role: "assistant", text: "这是 UI 预览回复；真实回复由本机 DeepSeek Harness 返回。", createdAt: Date.now(),
   }];
 }
 
@@ -160,7 +160,7 @@ export function DeepSeekHarnessChat({ session, preview = false, onSessionRecord,
     if (event.record) onSessionRecord(event.record);
     if (event.snapshot) {
       applySnapshot(event.snapshot);
-      if (event.kind === "error") setError(String(event.data.message ?? "DeepSeek Harness ACP 执行失败"));
+      if (event.kind === "error") setError(String(event.data.message ?? "DeepSeek Harness 执行失败"));
       return;
     }
     switch (event.kind) {
@@ -212,7 +212,7 @@ export function DeepSeekHarnessChat({ session, preview = false, onSessionRecord,
         break;
       case "error":
         setPermission(null);
-        setError(String(event.data.message ?? "DeepSeek Harness ACP 执行失败"));
+        setError(String(event.data.message ?? "DeepSeek Harness 执行失败"));
         setSnapshot((current) => current ? { ...current, connected: false, busy: false } : current);
         break;
       default:
@@ -425,14 +425,14 @@ export function DeepSeekHarnessChat({ session, preview = false, onSessionRecord,
   };
 
   return (
-    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label="DeepSeek Harness ACP 会话">
+    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label="DeepSeek Harness 会话">
       <header className="harness-chat-header">
         <div className="harness-chat-controls"><span className="harness-workspace" title={session.cwd}><FolderSimple size={17} />工作目录：{session.cwd.split(/[\\/]/).filter(Boolean).pop() || session.cwd}</span><span className={`harness-connection${snapshot?.connected ? " connected" : ""}`}><i />{connecting ? "连接中" : snapshot?.connected ? "已连接" : "未连接"}</span>
           {snapshot?.connected && !preview && <button type="button" onClick={() => void stop()}>停止会话</button>}
           {!snapshot?.connected && !connecting && <button type="button" onClick={() => void connect()}>恢复会话</button>}
         </div>
       </header>
-      {preview && <div className="harness-chat-preview-banner">UI 预览：不会连接 ACP、调用模型或执行工具。可交互内容为演示数据。</div>}
+      {preview && <div className="harness-chat-preview-banner">UI 预览：不会连接真实 Agent、调用模型或执行工具。可交互内容为演示数据。</div>}
       <NativeAgentSelector kind="deepseek_harness" {...switchProps} />
 
       {snapshot?.controlState?.goal && <section className="harness-goal" aria-label="Harness 长期目标"><strong>目标 · {snapshot.controlState.goal.phase}</strong><p>{snapshot.controlState.goal.objective}</p><span>轮次 {snapshot.controlState.goal.roundsStarted ?? 0}/{snapshot.controlState.goal.maxGoalRounds ?? "—"}</span><div>
@@ -462,8 +462,7 @@ export function DeepSeekHarnessChat({ session, preview = false, onSessionRecord,
           {permission.toolCall.rawInput !== undefined && <pre>{typeof permission.toolCall.rawInput === "string" ? permission.toolCall.rawInput : JSON.stringify(permission.toolCall.rawInput, null, 2)}</pre>}
           <div><button type="button" onClick={() => void answerPermission(true)}>允许一次</button><button type="button" onClick={() => void answerPermission(false)}>拒绝</button></div>
         </article>}
-        {connecting && <div className="harness-chat-info">正在连接 DeepSeek Harness ACP…</div>}
-        {!connecting && !snapshot?.connected && <div className="harness-chat-info">会话已停止或未连接。点击“恢复会话”继续原 ACP 会话。</div>}
+        {!connecting && !snapshot?.connected && <div className="harness-chat-info">会话已停止或未连接。点击“恢复会话”继续原会话。</div>}
         <div ref={messagesEnd} />
       </div>
       {error && <pre className="harness-chat-error" role="alert">{error}</pre>}
