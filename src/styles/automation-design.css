@@ -1,16 +1,10 @@
 /* The selected automation visual, adapted to the existing settings frame. */
 .automation-design { container-type:inline-size; }
-/* The selected list uses clay even when the app's clay theme has neutral CTAs.
-   Keep these local to the list so settings, Skills and creation stay unchanged. */
+/* List actions use the selected accent; the form keeps global primary-button semantics. */
 .automation-design[data-automation-view="list"] {
-  --accent:#d97757; --accent-rgb:217,119,87; --accent-strong:#e08a6d;
-  --accent-fill:#d97757; --on-accent-fill:#1f1209; --accent-fill-hover:#e08a6d;
-  --accent-soft:rgba(217,119,87,.14);
-}
-:root[data-theme="light"] .automation-design[data-automation-view="list"] {
-  --accent:#ad5231; --accent-rgb:173,82,49; --accent-strong:#9a4729;
-  --accent-fill:#ad5231; --on-accent-fill:#fff; --accent-fill-hover:#9a4729;
-  --accent-soft:rgba(173,82,49,.1);
+  --accent-fill:var(--accent);
+  --on-accent-fill:var(--on-accent);
+  --accent-fill-hover:var(--accent-strong);
 }
 .automation-design.embedded[data-automation-view="list"] { height:auto; border:0; border-radius:0; box-shadow:none; background:transparent; }
 .automation-design[data-automation-view="list"] .automation-content { overflow:visible; }
@@ -48,7 +42,7 @@
 .automation-design .automation-toggle input { width:38px; height:23px; border-radius:20px; }
 .automation-design .automation-toggle input::after { width:15px; height:15px; top:3px; left:3px; background:var(--text-dim); }
 .automation-design .automation-toggle input:checked { background:var(--accent-fill); border-color:var(--accent-fill); }
-.automation-design .automation-toggle input:checked::after { left:18px; background:#fff; }
+.automation-design .automation-toggle input:checked::after { left:18px; background:var(--on-accent-fill); }
 .automation-design .automation-card-schedule { font-size:13px; line-height:1.55; margin:16px 0 12px; gap:8px; }
 .automation-card-schedule svg { flex:none; }
 .automation-design .automation-run-status { padding-top:13px; min-height:39px; align-items:center; gap:10px; font-size:13px; line-height:1.55; }

@@ -20,8 +20,8 @@ try{
   const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:dpr});page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(({seed,sessions})=>{window.__automationSeed=seed;window.__automationSessions=sessions;},{seed,sessions});
   await page.goto(`${base}/tests/fixtures/crewvela-settings-frame-ui.html?mock=automation&open=1&section=automation&theme=${theme}&accent=${accent}`);await page.locator('.automation-card').first().waitFor();
-  const colors=await page.evaluate(()=>({rootFill:getComputedStyle(document.documentElement).getPropertyValue('--accent-fill').trim(),primary:getComputedStyle(document.querySelector('.automation-heading .automation-primary')).backgroundColor,toggle:getComputedStyle(document.querySelector('.automation-toggle input:checked')).backgroundColor}));
-  const expected=theme==='dark'?'rgb(217, 119, 87)':'rgb(173, 82, 49)';
+  const colors=await page.evaluate(()=>{const probe=document.createElement('span');probe.style.color='var(--accent)';document.body.append(probe);const expected=getComputedStyle(probe).color;probe.remove();return {rootFill:getComputedStyle(document.documentElement).getPropertyValue('--accent-fill').trim(),expected,primary:getComputedStyle(document.querySelector('.automation-heading .automation-primary')).backgroundColor,toggle:getComputedStyle(document.querySelector('.automation-toggle input:checked')).backgroundColor};});
+  const expected=colors.expected;
   if(colors.primary!==expected)failures.push(`${key}: primary ${colors.primary}, expected ${expected}`);
   if(colors.toggle!==expected)failures.push(`${key}: toggle ${colors.toggle}, expected ${expected}`);
   if(accent==='clay')assert.equal(colors.rootFill,theme==='dark'?'#ecece9':'#141413','Do not mutate the global appearance palette');
@@ -51,5 +51,5 @@ try{
   await page.close();
  }
  writeFileSync(`${out}/appearance-metrics.json`,JSON.stringify({metrics,failures,errors},null,2));assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);
- console.log('PASS: production clay/none/purple appearance, dark/light, 125% scale, long unknown records, compact cards, full history and unchanged form palette');
+ console.log('PASS: list follows production clay/none/purple accent, dark/light, 125% scale, long unknown records, compact cards, full history and unchanged form palette');
 }finally{await browser.close();}

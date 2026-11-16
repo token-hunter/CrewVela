@@ -34,6 +34,7 @@ let providers = [{ id: "fixture-provider", name: "Fixture provider", baseUrl: "h
 // 轮询命令的返回内容由测试控制；每次都是新对象，键顺序也随机（Rust HashMap 的序列化顺序就是如此）。
 const shuffledKeys = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).sort(() => Math.random() - 0.5));
 const api = {
+  automationAccentCalls: [] as Array<{command:string;args:unknown}>,
   bulkCalls: [] as Array<{command:string;sessionId:string}>,
   rejectBulkDelete: "", rejectBulkStop: "",
   bulkSessions: () => structuredClone(sessions),
@@ -63,6 +64,14 @@ const api = {
     }
   },
   async invoke(command: string, args?: Record<string, unknown>) {
+    if (new URLSearchParams(location.search).has("automation-accent")) {
+      api.automationAccentCalls.push({command,args});
+      if(command==="list_automations")return structuredClone((window as any).__automationSeed ?? []);
+      if(command==="general_settings_get")return GENERAL_SETTINGS_PREVIEW;
+      if(command==="ma_list_projects")return [];
+      if(command==="ma_probe_runtimes")return [{kind:"codex",installed:true,executable:"fixture",version:"fixture",capabilities:[],error:null}];
+      if(["create_automation","run_automation_now","set_automation_enabled","stop_automation_run","delete_automation"].includes(command))throw Error("Appearance fixture must not mutate automations");
+    }
     if (new URLSearchParams(location.search).has("tasks-nav")) {
       if(command==="ma_list_projects")return structuredClone(navigationProjects);
       if(command==="ma_snapshot")return navigationSnapshot(String(args?.projectId));
