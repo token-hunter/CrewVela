@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Switch } from "./ui/Switch";
 import { Modal } from "./ui/Modal";
 import type { Dispatch, SetStateAction } from "react";
@@ -39,6 +39,8 @@ import { GitSettingsPanel } from "./GitSettingsPanel";
 import { SkillCenterPanel } from "./SkillCenterPanel";
 import { BrowserControlSettingsPanel } from "./BrowserControlSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
+import { LockIcon } from "@phosphor-icons/react/dist/csr/Lock";
+import { PrivacySettingsPanel } from "./PrivacySettingsPanel";
 
 interface Props {
   quickContext?: QuickContext;
@@ -75,7 +77,8 @@ export type SettingsSection =
   | "appearance"
   | "notifications"
   | "companionship"
-  | "archivedSessions";
+  | "archivedSessions"
+  | "privacy";
 
 export function SettingsDialog({
   quickContext,
@@ -104,6 +107,14 @@ export function SettingsDialog({
   );
   const [automationEditing, setAutomationEditing] = useState(false);
   const [navQuery, setNavQuery] = useState("");
+  const [privacyCollaborationRequested, setPrivacyCollaborationRequested] = useState(false);
+  const settingsNav = useRef<HTMLElement>(null);
+  const privacyNavigationTarget = useRef<SettingsSection | null>(null);
+  useEffect(() => {
+    if (privacyNavigationTarget.current !== activeSection) return;
+    privacyNavigationTarget.current = null;
+    settingsNav.current?.querySelector<HTMLButtonElement>('.settings-nav-item[aria-current="page"]')?.focus();
+  }, [activeSection]);
   const settingsNavGroups = [
     {
       label: "通用",
@@ -190,6 +201,7 @@ export function SettingsDialog({
           keywords: "归档 会话 恢复 删除",
           icon: <ArchiveIcon size={16} weight="regular" />,
         },
+        { id: "privacy" as const, label: "隐私", keywords: "隐私 privacy 数据 目录 存储 外部 服务 CLI 访问", icon: <LockIcon size={16} weight="regular" /> },
       ],
     },
   ];
@@ -266,6 +278,7 @@ export function SettingsDialog({
       description: "查看、恢复或永久删除已归档的会话。",
       note: "",
     },
+    privacy: { eyebrow: "PRIVACY", title: "隐私", description: "了解数据存放位置与 Agent 访问范围。", note: "" },
   }[activeSection];
   return (
     <Modal
@@ -281,7 +294,7 @@ export function SettingsDialog({
             <XIcon size={18} aria-hidden="true" />
           </button>
         </header>
-        <aside className="settings-nav">
+        <aside className="settings-nav" ref={settingsNav}>
           <label className="settings-search">
             <MagnifyingGlassIcon size={15} aria-hidden="true" />
             <input
@@ -315,7 +328,7 @@ export function SettingsDialog({
                       aria-current={
                         activeSection === item.id ? "page" : undefined
                       }
-                      onClick={() => setActiveSection(item.id)}
+                      onClick={() => { privacyNavigationTarget.current = null; setPrivacyCollaborationRequested(false); setActiveSection(item.id); }}
                       key={item.id}
                     >
                       <span className="settings-nav-icon" aria-hidden="true">
@@ -376,8 +389,10 @@ export function SettingsDialog({
             </div>}
             {sectionCopy.note && <p className="settings-page-note">{sectionCopy.note}</p>}
 
-            {activeSection === "collaboration" ? (
-              <CollaborationSettingsPanel onClose={onClose} initialTab={initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} />
+            {activeSection === "privacy" ? (
+              <PrivacySettingsPanel onNavigate={destination => { privacyNavigationTarget.current = destination; setNavQuery(""); setPrivacyCollaborationRequested(destination === "collaboration"); setActiveSection(destination); }} />
+            ) : activeSection === "collaboration" ? (
+              <CollaborationSettingsPanel onClose={onClose} initialTab={privacyCollaborationRequested ? "records" : initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} />
             ) : activeSection === "sharedMemory" ? (
               <SharedMemorySettingsPanel />
             ) : activeSection === "quickCommands" ? (

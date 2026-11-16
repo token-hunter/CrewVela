@@ -17,7 +17,7 @@ test("所有保留设置页共用固定窗口与分类导航", () => {
   assert.match(stylesSource, /height: min\(900px, calc\(100dvh - 64px\)\)/);
   assert.match(settingsSource, /className="settings-content" key=\{activeSection\}/);
   assert.doesNotMatch(settingsSource, /settings-feature-dialog|settings-workspace-dialog|collaboration-content|shared-memory-content/);
-  assert.match(settingsSource, /<aside className="settings-nav">/);
+  assert.match(settingsSource, /<aside\b[^>]*className="settings-nav"[^>]*>/);
   assert.doesNotMatch(settingsSource, /<aside[^>]+hidden=/);
 });
 

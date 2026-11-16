@@ -1,11 +1,25 @@
-//! Manual, metadata-only application update checks. No download or install path.
+//! Manual application metadata and privacy-directory access. No download or install path.
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{cmp::Ordering, time::Duration};
+use std::path::Path;
 
 const REPOSITORY: &str = "https://github.com/token-hunter/CrewVela";
 const RELEASE_API: &str = "https://api.github.com/repos/token-hunter/CrewVela/releases/latest";
 const MAX_METADATA_BYTES: usize = 1024 * 1024;
+
+fn checked_application_directory(path: &Path) -> Result<String, String> {
+    if !path.is_absolute() || !path.is_dir() { return Err("应用数据目录不可用，请检查目录或文件系统权限。".into()); }
+    path.to_str().map(str::to_owned).ok_or_else(|| "应用数据目录无法表示为有效文本。".into())
+}
+
+#[tauri::command]
+pub async fn app_data_directory() -> Result<String, String> {
+    crate::blocking_command(|| {
+        let directory = crate::providers::config_dir().map_err(|_| "无法读取当前应用数据目录。".to_string())?;
+        checked_application_directory(&directory)
+    }).await
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,6 +91,17 @@ pub async fn app_check_update(app: tauri::AppHandle) -> Result<AppUpdateCheck, S
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn application_directory_is_absolute_existing_and_read_only() {
+        let root=std::env::temp_dir().join(format!("crewvela-privacy-directory-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        assert_eq!(checked_application_directory(&root).unwrap(),root.to_str().unwrap());
+        assert_eq!(crate::workspace_files::resolve_path(root.to_str().unwrap(),".").unwrap(),root.canonicalize().unwrap());
+        assert!(checked_application_directory(Path::new("relative-folder")).is_err());
+        let missing=root.join("missing");assert!(checked_application_directory(&missing).is_err());assert!(!missing.exists());
+        let file=root.join("record.txt");std::fs::write(&file,"fixture").unwrap();assert!(checked_application_directory(&file).is_err());assert_eq!(std::fs::read_to_string(&file).unwrap(),"fixture");
+        std::fs::remove_file(file).unwrap();std::fs::remove_dir(root).unwrap();
+    }
     fn release(tag: &str) -> Vec<u8> { serde_json::to_vec(&serde_json::json!({"tag_name":tag,"draft":false,"prerelease":false,"body":"更新说明","html_url":"https://untrusted.invalid/download.exe"})).unwrap() }
     #[test]
     fn version_precedence_and_build_metadata() {

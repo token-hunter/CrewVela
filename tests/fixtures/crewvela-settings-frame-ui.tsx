@@ -16,6 +16,23 @@ document.documentElement.dataset.theme = theme;
 const accent = (params.get("accent") ?? DEFAULT_APPEARANCE.accent) as AppAppearance["accent"];
 document.documentElement.dataset.appearanceAccent = accent;
 if (params.get("mock") === "skills") installSkillRuntimeFixture(params);
+if (params.get("mock") === "privacy") {
+  const privacy = { calls: [] as Array<{command:string;args:any}>, path:"C:/fixture/CrewVela", readFails:false, openFails:false, copyFails:false, deferRead:false,
+    pending:[] as Array<{resolve:(path:string)=>void;reject:(error:Error)=>void}>,
+    finish(path:string) {const entry=privacy.pending.shift();if(!entry)throw Error("No pending directory read");entry.resolve(path);},
+  };
+  (window as any).__privacyFixture=privacy;
+  (window as any).__TAURI_INTERNALS__={transformCallback:()=>1,async invoke(command:string,args:any){
+    privacy.calls.push({command,args});
+    if(command==="app_data_directory") {if(privacy.readFails)throw Error("目录权限不足");if(privacy.deferRead)return new Promise((resolve,reject)=>privacy.pending.push({resolve,reject}));return privacy.path;}
+    if(command==="workspace_open_path") {if(args.root!==privacy.path||args.relativePath!==".")throw Error("Unexpected directory target");if(privacy.openFails)throw Error("文件管理器不可用");return;}
+    if(command==="plugin:clipboard-manager|write_text") {if(privacy.copyFails)throw Error("剪贴板不可用");return;}
+    if(command==="get_runtime_preferences")return {disabledRuntimes:[]};
+    if(command==="plugin:event|listen")return 1;
+    if(command==="plugin:event|unlisten")return;
+    throw Error(`隐私隔离页面未模拟 ${command}`);
+  }};
+}
 if (params.get("mock") === "browser") {
   let browser = structuredClone(BROWSER_CONTROL_PREVIEW);
   let failNext = params.get("fail") === "1";
@@ -106,7 +123,7 @@ function Fixture() {
       onEdit={() => {}} onNew={() => {}} onDelete={() => {}} onSetHidden={() => {}}
       onRestoreDefault={() => {}} onReorder={async () => {}} onRestoreArchivedSession={() => {}}
       onDeleteArchivedSession={() => {}} onViewArchivedTranscript={() => {}} onClose={() => setOpen(false)}
-      initialSection={params.get("section") === "mcp" ? ("mcp" as any) : params.get("section") === "automation" ? "automation" : params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : params.get("section") === "skills" ? "skills" : "generalSettings"} />}
+      initialSection={params.get("section") === "privacy" ? "privacy" : params.get("section") === "mcp" ? ("mcp" as any) : params.get("section") === "automation" ? "automation" : params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : params.get("section") === "skills" ? "skills" : "generalSettings"} />}
   </>;
 }
 

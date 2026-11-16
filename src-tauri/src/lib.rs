@@ -6153,6 +6153,7 @@ pub fn run() {
             browser_control::browser_control_save,
             general_settings::general_settings_get,
             app_help::app_check_update,
+            app_help::app_data_directory,
             general_settings::general_settings_save,
             send_windows_unpacked_notification,
             list_projects,

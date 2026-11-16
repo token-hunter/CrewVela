@@ -14,6 +14,6 @@ test("主页设置按钮进入常规设置，移除的设置入口不再可达",
 });
 
 test("保留设置分类导航，不再加载模型管理页面", () => {
- assert.match(settings, /<aside className="settings-nav">/);
+ assert.match(settings, /<aside\b[^>]*className="settings-nav"[^>]*>/);
  assert.doesNotMatch(settings, /ModelAssignmentsPanel|ProviderQuotaCell|ComputerControlSettingsPanel|PluginMarketPanel/);
 });
