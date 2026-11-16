@@ -22,14 +22,18 @@ try {
   assert.equal(await choose("agent-reach").isChecked(), true, "adding Agent preserves selected Skills");
   assert.equal(await page.locator('.skill-runtime-tabs [aria-pressed="true"]').count(), 2);
   assert.equal(await page.getByRole("button", { name: "部署到 2 个 Agent", exact: true }).isEnabled(), true);
+  await page.locator(".skill-filter-menu > summary").click();
   await page.getByLabel("分发状态筛选", { exact: true }).selectOption("attention");
-  assert.equal(await page.locator("tbody tr").count(), 1);
+  await page.locator(".skill-filter-menu > summary").click();
+  assert.equal(await page.locator(".skill-library-card").count(), 1);
   await choose("browser-control").check();
   await page.getByRole("button", { name: "部署到 2 个 Agent", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "整批未写入" }).waitFor();
   assert.equal(await choose("browser-control").isChecked(), true);
   assert.deepEqual((await calls("skill_center_deploy_batch")).at(-1).args.inputs.map(i => i.runtime), ["claude_code", "codex"]);
+  await page.locator(".skill-filter-menu > summary").click();
   await page.getByLabel("分发状态筛选", { exact: true }).selectOption("all");
+  await page.locator(".skill-filter-menu > summary").click();
   await page.locator('.skill-runtime-tabs [data-runtime="codex"]').click();
   await page.getByRole("searchbox", { name: "搜索 Skill", exact: true }).fill("agent-reach");
   await page.getByRole("checkbox", { name: "选择当前列表全部 Skill", exact: true }).check();
@@ -47,6 +51,7 @@ try {
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Skill 配置集已保存" }).waitFor();
   assert.deepEqual((await calls("skill_center_save_set")).at(-1).args.input.items.map(i => i.runtime), ["claude_code", "codex"]);
+  await page.locator(".skill-tools-menu > summary").click();
   await page.getByRole("button", { name: "撤下选中", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "已安全撤下 2 个部署" }).waitFor();
   assert.equal((await calls("skill_center_undeploy_batch")).at(-1).args.deploymentIds.length, 2);
@@ -55,7 +60,9 @@ try {
   await page.locator('.skill-runtime-tabs [data-runtime="claude_code"]').click();
   assert.equal(await page.getByRole("button", { name: "部署到 0 个 Agent", exact: true }).isEnabled(), false);
   assert.equal(await page.getByRole("button", { name: "保存配置集", exact: true }).isEnabled(), false);
+  await page.locator(".skill-tools-menu > summary").click();
   assert.equal(await page.getByRole("button", { name: "撤下选中", exact: true }).isEnabled(), false);
+  await page.locator(".skill-tools-menu > summary").click();
   await page.locator('.skill-runtime-tabs [data-runtime="claude_code"]').click();
   assert.equal(await choose("agent-reach").isChecked(), true);
   await page.getByRole("searchbox", { name: "搜索 Skill", exact: true }).fill("");
@@ -73,7 +80,7 @@ try {
   await page.getByRole("status").filter({ hasText: "安全分发" }).waitFor();
   assert.equal((await calls("skill_center_deploy_batch")).at(-1).args.inputs[0].taskId, "task-1");
   await page.getByLabel("任务 ID", { exact: true }).fill("task-2");
-  assert.match(await page.locator("tbody tr").filter({ hasText: "browser-control" }).innerText(), /未部署/);
+  assert.match(await page.locator(".skill-library-card").filter({ hasText: "browser-control" }).innerText(), /未部署/);
   await page.goto(url("confirm=cancel"));
   await choose("agent-image").check(); await page.getByRole("button", { name: "部署到 Claude Code", exact: true }).click();
   assert.equal((await calls("fixture_confirmation")).at(-1).args.accepted, false);
@@ -90,7 +97,7 @@ try {
   await git.waitFor({ state: "detached" });
   for (const theme of ["dark", "light"]) for (const size of [{ width: 1440, height: 1024 }, { width: 820, height: 540 }, { width: 687, height: 903 }]) {
     await page.setViewportSize(size); await page.goto(url(`theme=${theme}&skills=long`));
-    await page.locator("tbody tr").first().waitFor();
+    await page.locator(".skill-library-card").first().waitFor();
     const picker = await page.locator(".skill-runtime-tabs").evaluate(element => {
       const buttons = [...element.querySelectorAll("button")];
       return { width: element.clientWidth, overflow: element.scrollWidth > element.clientWidth, buttons: buttons.map(button => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height, background: getComputedStyle(button).backgroundColor, color: getComputedStyle(button).color })) };
@@ -103,8 +110,13 @@ try {
     assert.equal(await page.locator('.skill-runtime-tabs [data-runtime="opencode"]').evaluate(button => button === document.activeElement), true);
     await page.keyboard.press("Space");
     assert.equal(await page.locator('.skill-runtime-tabs [aria-pressed="true"]').count(), 2, "keyboard selection remains additive");
-    await page.locator(".skill-target-details > summary").click();
-    await page.locator(".skill-target-details > summary").press(process.platform === "darwin" ? "End" : "Control+End"); // 滚到末尾的快捷键因平台而异：macOS 的 Control+End 不滚动
+    await page.locator(".skill-tools-menu > summary").click();
+    await page.getByRole("button", { name: "目标详情", exact: true }).click();
+    const targetInfo=page.getByRole("dialog",{name:"Skill 部署目标详情",exact:true});
+    await targetInfo.getByText("Claude Code",{exact:true}).waitFor();
+    await targetInfo.getByRole("button",{name:"关闭",exact:true}).click();
+    await page.locator(".skill-card-checkbox").first().focus();
+    await page.keyboard.press(process.platform === "darwin" ? "End" : "Control+End");
     await page.waitForFunction(() => document.querySelector(".skill-distribution-body").scrollTop > 0); // 键盘滚动是平滑动画，等待其生效再测量
     const box = await page.evaluate(() => { const f=document.querySelector(".settings-native").getBoundingClientRect(), a=document.querySelector(".skill-center-footer").getBoundingClientRect(),b=document.querySelector(".skill-distribution-body"); return { visible:a.bottom<=f.bottom, overflow:b.scrollWidth>b.clientWidth, scroll:b.scrollTop>0, outer:document.querySelector(".settings-content").scrollTop }; });
     assert.equal(box.visible, true); assert.equal(box.overflow, false); assert.equal(box.scroll, true); assert.equal(box.outer, 0);

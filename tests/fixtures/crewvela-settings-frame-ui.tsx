@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SettingsDialog } from "../../src/components/SettingsDialog";
 import { DEFAULT_APPEARANCE } from "../../src/appearance";
@@ -13,6 +13,8 @@ import "../../src/styles.css";
 const params = new URLSearchParams(location.search);
 const theme = params.get("theme") === "light" ? "light" : "dark";
 document.documentElement.dataset.theme = theme;
+const accent = (params.get("accent") ?? DEFAULT_APPEARANCE.accent) as AppAppearance["accent"];
+document.documentElement.dataset.appearanceAccent = accent;
 if (params.get("mock") === "skills") installSkillRuntimeFixture(params);
 if (params.get("mock") === "browser") {
   let browser = structuredClone(BROWSER_CONTROL_PREVIEW);
@@ -91,11 +93,12 @@ const archive = Array.from({ length: archiveCount }, (_, index): SessionRecord =
 
 function Fixture() {
   const [open, setOpen] = useState(params.get("open") === "1");
-  const [appearance, setAppearance] = useState<AppAppearance>({ ...DEFAULT_APPEARANCE, theme });
+  const [appearance, setAppearance] = useState<AppAppearance>({ ...DEFAULT_APPEARANCE, theme, accent });
+  useEffect(() => { document.documentElement.dataset.appearanceAccent = appearance.accent; }, [appearance.accent]);
   return <>
     <button type="button" onClick={() => setOpen(true)}>打开设置回归</button>
     {params.get("debug") === "1" && <pre id="fixture-skills-log" />}
-    {open && <SettingsDialog sessions={params.get("mock") === "automation" ? [{ id:"fixture-session",kind:"terminal",agentRuntimeKind:"codex",title:"示例 Codex 会话",cwd:"/fixture/project",status:"completed" } as SessionRecord] : []} archivedSessions={archive} projects={params.get("mock") === "skills" ? [{ id: "fixture-project", name: "示例项目", path: "/fixture/project", badgeColor: "blue", createdAt: 0, updatedAt: 0 }] : []} providers={sampleProviders}
+    {open && <SettingsDialog sessions={params.get("mock") === "automation" ? (window as any).__automationSessions ?? [{ id:"fixture-session",kind:"terminal",agentRuntimeKind:"codex",title:"示例 Codex 会话",cwd:"/fixture/project",status:"completed" } as SessionRecord] : []} archivedSessions={archive} projects={params.get("mock") === "skills" ? [{ id: "fixture-project", name: "示例项目", path: "/fixture/project", badgeColor: "blue", createdAt: 0, updatedAt: 0 }] : []} providers={sampleProviders}
       keyStates={{}} usageByProvider={{}} appearance={appearance} resolvedAppearanceTheme={theme}
       petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS}
       onAppearanceChange={setAppearance}

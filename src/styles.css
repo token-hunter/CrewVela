@@ -20,6 +20,7 @@
 @import "./styles/skill-workspace.css";
 @import "./styles/settings-native.css";
 @import "./styles/skill-runtime-first.css";
+@import "./styles/skill-card-library.css";
 @import "./styles/quick-commands.css";
 @import "./styles/automation-agent-first.css";
 /* 普通会话 Agent 接力；作用域限定到显式入口和弹窗。 */

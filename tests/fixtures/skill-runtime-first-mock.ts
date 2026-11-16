@@ -1,12 +1,15 @@
 // Isolated IPC for Runtime-first UI acceptance. No filesystem or network access.
 export function installSkillRuntimeFixture(params: URLSearchParams) {
-  const names = ["browser-control", "computer-control", "agent-image", "agent-reach", "agnes-ai"];
+  const cardDemo = params.get("skills") === "cards";
+  const names = cardDemo ? ["frontend-design", "code-review", "research", "browser-control", "doc-coauthoring", "git-commit"] : ["browser-control", "computer-control", "agent-image", "agent-reach", "agnes-ai"];
+  const descriptions = ["高质量前端界面设计，生成符合规范的页面结构、样式与交互方案。", "代码审查与回归检查，识别潜在问题并给出改进建议与修复方案。", "一手资料检索与研究，整合多来源信息并提供可验证的结论与引用。", "网页浏览与操作，完成信息获取、页面交互与内容提取等任务。", "文档协作与结构整理，支持多人协作、内容重构与格式规范化。", "规范化 Git 提交，基于变更内容生成清晰、一致的提交信息。"];
   const assets = (params.get("skills") === "empty" ? [] : params.get("skills") === "long" ? [...names, ...Array.from({ length: 60 }, (_, i) => `example-skill-${i}`)] : names).map((name, i) => ({
-    id: name, name, description: `示例 Skill：${name}`, sourceType: "git", sourceRef: "https://example.invalid/skills", sourceRevision: "fixture-revision",
-    centralPath: `/fixture/skills/${name}`, contentHash: `fixture-hash-${i}`, trustState: i === 2 || i === 4 ? "unknown" : "trusted", fileCount: 2, scriptCount: 0, riskSummary: [], updatedAt: 0,
+    id: name, name, description: cardDemo ? descriptions[i] : `示例 Skill：${name}`, sourceType: cardDemo ? ["local", "adopted", "git"][i % 3] : "git", sourceRef: "https://example.invalid/skills", sourceRevision: "fixture-revision",
+    centralPath: `/fixture/skills/${name}`, contentHash: `fixture-hash-${i}`, trustState: i === 2 || (!cardDemo && i === 4) ? "unknown" : "trusted", fileCount: 2, scriptCount: 0, riskSummary: [], updatedAt: 0,
   }));
   let deployments: any[] = names.slice(0, 2).map((skillId, i) => ({ id: `deployment-${i}`, skillId, runtime: "claude_code", scope: "global", projectPath: null, taskId: null, agentId: null, targetPath: `/fixture/claude/${skillId}`, mode: "copy", status: "synced", sourceHash: assets[i]?.contentHash, targetHash: assets[i]?.contentHash, lastError: null, updatedAt: 0 }));
   deployments.push({ ...deployments[0], id: "conflict", runtime: "codex", status: "conflict", targetPath: "/fixture/codex/browser-control", lastError: "示例冲突：Runtime 副本已被修改" });
+  if (cardDemo) deployments = [...deployments.slice(0,2), ...deployments.slice(0,2).map((d,i) => ({...d,id:`codex-${i}`,runtime:"codex",targetPath:`/fixture/codex/${d.skillId}`})), {...deployments[0],id:"browser",skillId:"browser-control"}, {...deployments[0],id:"doc-local",skillId:"doc-coauthoring",status:"runtime_newer"}];
   let sets: any[] = [];
   const runtimes = [["claude_code", "Claude Code", ".claude/skills"], ["codex", "Codex", ".codex/skills"], ["kimi_code", "Kimi Code", ".kimi/skills"], ["pi", "Pi", ".pi/skills"], ["opencode", "OpenCode", ".opencode/skills"]].map(([runtime, label, projectRoot]) => ({ runtime, label, projectRoot, globalRoot: `/fixture/${runtime}/skills`, discoveryRoots: [], installed: runtime !== "opencode", recursiveScan: false }));
   let failNext = params.get("fail");

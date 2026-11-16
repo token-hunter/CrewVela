@@ -13,7 +13,7 @@ try {
   await release("skill_center_snapshot", null, "fixture initial load failed");
   await page.getByRole("alert").filter({ hasText: "fixture initial load failed" }).waitFor();
   await page.getByRole("button", { name: "重新读取中央库", exact: true }).click();
-  await page.locator(".skill-center-matrix").waitFor();
+  await page.locator(".skill-library-grid").waitFor();
   const local = page.getByRole("button", { name: "导入目录", exact: true });
   const openImport = async () => { if (!await local.isVisible()) await page.locator(".skill-import-menu > summary").click(); };
   await openImport();
@@ -25,7 +25,7 @@ try {
   await pending("skill_center_import"); await release("skill_center_import", {});
   await pending("skill_center_import"); await release("skill_center_import", null, "second source failed");
   await page.locator(".skill-center-message").filter({ hasText: "已导入 1 个来源" }).waitFor();
-  assert.equal(await page.locator(".skill-center-matrix tbody tr").count(), 3, "partial successes must appear after a failed import");
+  assert.equal(await page.locator(".skill-library-grid [role=listitem]").count(), 3, "partial successes must appear after a failed import");
   await page.getByRole("button", { name: "Skill-A", exact: false }).first().click();
   await pending("skill_center_preview");
   assert.equal(await page.locator(".skill-asset-list button").filter({ hasText: "Skill-B" }).isDisabled(), true);

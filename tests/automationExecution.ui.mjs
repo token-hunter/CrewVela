@@ -3,7 +3,7 @@ import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 const browser=await chromium.launch({channel:'chrome'}), errors=[];
 const base=process.env.CREWVELA_UI_URL||'http://127.0.0.1:1432';
-mkdirSync('.scratch/automation-execution/ui',{recursive:true});
+mkdirSync('.scratch/automation-style-parity-20261116/ui',{recursive:true});
 try {
  for(const theme of ['dark','light'])for(const width of [1487,390]){
   const page=await browser.newPage({viewport:{width,height:1058}});page.on('pageerror',e=>errors.push(e.message));
@@ -12,17 +12,18 @@ try {
   assert.equal(await page.locator('.automation-card').count(),4);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'No horizontal overflow');
   if(width===1487){const cards=await page.locator('.automation-card').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().toJSON()));assert.equal(Math.round(cards[0].y),Math.round(cards[1].y),'two columns');}
-  await page.screenshot({path:`.scratch/automation-execution/ui/${theme}-${width}.jpg`,fullPage:true});
+  await page.screenshot({path:`.scratch/automation-style-parity-20261116/ui/${theme}-${width}.jpg`,fullPage:true});
   if(width===1487){
     const seed=await page.evaluate(()=>window.__automationFixture.entries);
     const frame=await browser.newPage({viewport:{width:1487,height:1058}});
-    await frame.addInitScript(seed=>window.__automationSeed=seed,seed);
+    const sessions=await page.evaluate(()=>window.__automationFixture.sessions);
+    await frame.addInitScript(({seed,sessions})=>{window.__automationSeed=seed;window.__automationSessions=sessions;},{seed,sessions});
     await frame.goto(`${base}/tests/fixtures/crewvela-settings-frame-ui.html?mock=automation&section=automation&open=1&theme=${theme}`);
     await frame.locator('.automation-card').first().waitFor();
     assert.equal(await frame.locator('.settings-dialog').count(),1);
     const cards=await frame.locator('.automation-card').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().toJSON()));
     assert.equal(Math.round(cards[0].y),Math.round(cards[1].y),'Actual settings host retains two columns');
-    await frame.screenshot({path:`.scratch/automation-execution/ui/settings-${theme}-1487.jpg`,fullPage:true});
+    await frame.screenshot({path:`.scratch/automation-style-parity-20261116/ui/settings-${theme}-1487.jpg`,fullPage:true});
     await frame.close();
   }
   await page.getByRole('button',{name:'已完成1',exact:true}).click();
@@ -41,6 +42,9 @@ try {
   assert.equal(await page.locator('.execution-running').count(),1,'Failed stop must preserve running state');
   await running.getByRole('button',{name:'打开会话',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.__automationOpened),'session-fixture');
+  await page.getByRole('region',{name:'执行记录 仓库巡检'}).waitFor();
+  await running.getByRole('button',{name:'执行记录 1',exact:true}).click();
+  assert.equal(await page.getByRole('region',{name:'执行记录 仓库巡检'}).count(),0,'Default history can be closed');
   await running.getByRole('button',{name:'执行记录 1',exact:true}).click();
   await page.getByRole('region',{name:'执行记录 仓库巡检'}).waitFor();
   await page.close();
@@ -56,6 +60,7 @@ try {
  await lost.waitForFunction(()=>document.querySelector('.execution-queued'));
  assert.equal(await lost.evaluate(()=>window.__automationFixture.entries[2].recentRuns.length),2,'No second side effect');
  const unknown=lost.locator('.automation-card').filter({has:lost.getByRole('heading',{name:'文档整理',exact:true})});
+ await unknown.locator('.automation-card-menu > summary').click();
  await unknown.getByRole('button',{name:'已核对原会话',exact:true}).click();
  await unknown.getByRole('button',{name:'确认原任务不再执行',exact:true}).click();
  await unknown.getByText('已核对·结果未知',{exact:true}).waitFor();assert.equal(await unknown.getByText('已完成',{exact:true}).count(),0);

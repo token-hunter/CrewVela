@@ -70,7 +70,12 @@ try {
       }
       for (const field of ["x", "width"]) near(g.inner[field], baseline.inner[field], `${label}/${menu}/body-${field}`);
       if (g.title.width > 0) near(g.title.x, baseline.title.x, `${label}/${menu}/title-x`);
-      if (g.titleFont !== baseline.titleFont || g.titleLineHeight !== baseline.titleLineHeight) failures.push(`${label}/${menu}: common heading typography changed`);
+      if (menu === "自动化") {
+        const panelWidth=await page.locator('.automation-design').evaluate(e=>e.clientWidth);
+        const expected=panelWidth<=500?28:32;
+        assert.equal(g.titleFont,`${expected}px`,`${label}: selected automation design owns its heading`);
+        near(parseFloat(g.titleLineHeight),expected*1.25,`${label}: automation heading line height`);
+      } else if (g.titleFont !== baseline.titleFont || g.titleLineHeight !== baseline.titleLineHeight) failures.push(`${label}/${menu}: common heading typography changed`);
       const margin = size.width <= 720 ? 8 : size.width <= 1000 ? 16 : 32;
       near(g.frame.width, Math.min(1280, size.width - margin * 2), `${label}/${menu}/frame-width`);
       near(g.frame.height, Math.min(900, size.height - margin * 2), `${label}/${menu}/frame-height`);

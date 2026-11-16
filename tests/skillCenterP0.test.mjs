@@ -21,14 +21,14 @@ test("设置的集成分组保留 Skills 独立入口与内置 MCP 基础", () =
   assert.match(backend, /struct SkillSet/);
 });
 
-test("多 Runtime 分发矩阵覆盖当前支持的 Runtime", () => {
+test("多 Runtime 卡片分发保留当前支持的 Runtime 与批量事务入口", () => {
   for (const runtime of [
     "claude_code", "codex", "kimi_code",
     "pi", "opencode",
   ]) {
     assert.match(backend, new RegExp(`\"${runtime}\"`));
   }
-  assert.match(panel, /skill-center-matrix/);
+  assert.match(panel, /skill-library-grid/);
   assert.match(panel, /skill_center_deploy_batch/);
   assert.match(panel, /skill_center_undeploy_batch/);
 });

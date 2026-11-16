@@ -1,5 +1,6 @@
 import { activeRun, currentRun, matchesRunFilter, planState, runStage, RUN_LABELS, type RunFilter } from "../automationExecution";
 import "../styles/automation-execution.css";
+import "../styles/automation-design.css";
 import { buildAutomationAction, eventAutomationTrigger, automationSessions, automationProjectRuntime, AUTOMATION_LABELS, type AutomationFormAction } from "../automationForm";
 import { TERMINAL_RUNTIMES } from "../runtimeTaxonomy";
 import { open as openDirectory } from "@tauri-apps/plugin-dialog";
@@ -9,6 +10,7 @@ import { useRuntimeAvailability } from "../runtimeAvailability";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Switch } from "./ui/Switch";
+import { CalendarBlank, CheckCircle, XCircle, CircleNotch, MinusCircle, PauseCircle, TerminalWindow, Broadcast, ChatCircleText, ArrowSquareOut, ArrowClockwise, Play, Stop, Info, DotsThree } from "@phosphor-icons/react";
 import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
 import { FileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
@@ -75,6 +77,10 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
   const listSequence = useRef(0);
   const [filter, setFilter] = useState<RunFilter>("all");
   const [selectedHistory, setSelectedHistory] = useState<string | null>(null);
+  const historyInitialized = useRef(false);
+  useEffect(() => {
+    if (!historyInitialized.current && automations.length) { historyInitialized.current = true; setSelectedHistory(automations[0].id); }
+  }, [automations]);
   const [confirmUnknownId, setConfirmUnknownId] = useState<string | null>(null);
   const manualRequests = useRef(new Map<string, string>());
   const openSession = (sessionId: string) => window.dispatchEvent(new CustomEvent("crewvela-automation-open-session", { detail: { sessionId } }));
@@ -359,12 +365,27 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
     return "触发已结束";
   };
 
+  const localToday = new Date();
+  const nextPlan = automations.filter(item => planState(item) === "计划已启用" && typeof item.nextRunAt === "number" && Number.isFinite(item.nextRunAt)).sort((a,b) => a.nextRunAt! - b.nextRunAt!)[0];
+  const shortId = (run: AutomationRun) => run.id ? run.id.slice(0,8) : "历史记录";
+  const displayStage = (stage: string) => stage === "running" ? "进行中" : RUN_LABELS[stage] ?? "结果未确认";
+  const statusIcon = (stage: string) => stage === "completed" ? CheckCircle : stage === "failed" ? XCircle : stage === "waiting" ? PauseCircle : ["running","stopping","dispatching"].includes(stage) ? CircleNotch : ["queued","submitted","received"].includes(stage) ? ClockIcon : MinusCircle;
+  const actionIcon = (action: AutomationAction) => action.kind === "run_agent" || action.kind === "launch" ? TerminalWindow : action.kind === "broadcast_agent" || action.kind === "broadcast" ? Broadcast : ChatCircleText;
+  const compactAction = (action: AutomationAction) => {
+    if (action.kind !== "run_agent") return actionText(action);
+    const folder = action.cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || action.cwd;
+    return `${(AUTOMATION_LABELS[action.runtimeKind] ?? action.runtimeKind).replace(/ CLI$/, "")} · ${folder}`;
+  };
+  const viewHistory = (item: Automation) => setSelectedHistory(selectedHistory === item.id ? null : item.id);
+  const headingId = embedded && !formOpen ? "settings-title" : "automation-title";
+
   const panel = (
       <section
-        className={`automation-dialog${embedded ? " embedded" : ""}`}
+        className={`automation-dialog automation-design${embedded ? " embedded" : ""}`}
+        data-automation-view={formOpen ? "form" : "list"}
         role={embedded ? undefined : "dialog"}
         aria-modal={embedded ? undefined : "true"}
-        aria-labelledby="automation-title"
+        aria-labelledby={headingId}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="automation-content">
@@ -372,14 +393,15 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
             <div className="automation-heading-copy">
               <div className="automation-title-row">
                 <GearSixIcon size={24} weight="regular" aria-hidden="true" />
-                <h2 id="automation-title">{formOpen ? "创建自动化" : "自动化"}</h2>
+                <h2 id={headingId}>{formOpen ? "创建自动化" : "自动化"}</h2>
               </div>
-              <p>选择 Agent 与执行任务，按时间或指定事件派发；记录保存在本机。</p>
+              <p>{formOpen ? "选择 Agent 与执行任务，按时间或指定事件派发；记录保存在本机。" : "按计划运行任务，或在需要时随时执行。"}</p>
             </div>
             <div className="settings-heading-actions">
-              <button className="btn-icon" aria-label="关闭" title="关闭" disabled={busy} onClick={onClose}>
+              {!formOpen && <div className="automation-calendar"><span><CalendarBlank size={18} aria-hidden="true" /><time>{`${localToday.getFullYear()}-${pad(localToday.getMonth()+1)}-${pad(localToday.getDate())}`}</time></span><span title={nextPlan ? nextPlan.name : undefined}><ClockIcon size={18} aria-hidden="true" />{nextPlan ? `下次计划：${formatDateTime(nextPlan.nextRunAt!)}` : "暂无待触发计划"}</span></div>}
+              {onClose && <button className="btn-icon" aria-label="关闭" title="关闭" disabled={busy} onClick={onClose}>
                 <XIcon size={15} />
-              </button>
+              </button>}
               <button className="btn automation-primary" disabled={busy} onClick={() => setFormOpen((open) => !open)}>
                 <PlusIcon size={13} weight="bold" /> {formOpen ? "收起表单" : "新建自动化"}
               </button>
@@ -547,32 +569,53 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
             {!formOpen && <section className="automation-list-section automation-executions">
               <nav className="automation-filters" aria-label="执行状态筛选">
                 {([["all", "全部"], ["active", "进行中"], ["completed", "已完成"], ["failed", "失败"], ["attention", "待处理"]] as const).map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}<span>{automations.filter(a => matchesRunFilter(a, key)).length}</span></button>)}
-                <button className="automation-refresh" disabled={busy} onClick={() => void refresh()}>刷新</button>
+                <button className="automation-refresh" aria-label="刷新自动化" title="刷新自动化" disabled={busy} onClick={() => void refresh()}><ArrowClockwise size={18} /></button>
               </nav>
               <div className="automation-list">
                 {!automations.some(a => matchesRunFilter(a, filter)) && <p className="automation-empty">{automations.length ? "此筛选下没有任务。" : "还没有自动化任务。"}</p>}
                 {automations.filter(a => matchesRunFilter(a, filter)).map(item => {
                   const run = currentRun(item); const stage = runStage(run); const active = item.recentRuns.some(activeRun);
-                  return <article key={item.id} className={`automation-card execution-${stage}${item.enabled ? "" : " plan-paused"}`}>
-                    <header><div className="automation-card-title"><ClockIcon size={21} /><div><h3>{item.name}</h3><p title={actionText(item.action)}>{actionText(item.action)}</p></div></div>
-                      <Switch className="automation-toggle" label={`${item.enabled ? "暂停后续计划" : "开启计划"} ${item.name}`} checked={item.enabled} disabled={busy} onChange={() => void toggle(item)}><span>{planState(item)}</span></Switch>
+                  const Icon = actionIcon(item.action); const StateIcon = statusIcon(stage);
+                  const targetSession = run?.targets?.find(t => sessions.some(s => s.id === t.sessionId))?.sessionId;
+                  return <article key={item.id} className={`automation-card execution-${stage}${item.enabled ? "" : " plan-paused"}`} data-history-selected={selectedHistory === item.id}>
+                    <header><div className="automation-card-title"><span className="automation-task-icon"><Icon size={25} weight="regular" aria-hidden="true" /></span><div><h3><button type="button" title="查看执行记录" onClick={() => viewHistory(item)}>{item.name}</button></h3><p title={actionText(item.action)}>{compactAction(item.action)}</p></div></div>
+                      <Switch className="automation-toggle" label={`${item.enabled ? "暂停后续计划" : "开启计划"} ${item.name}`} checked={item.enabled} disabled={busy} onChange={() => void toggle(item)} childrenPosition="before"><span title={planState(item)}>{planState(item)}</span></Switch>
                     </header>
-                    <p className="automation-card-schedule"><ClockIcon size={15} />{triggerText(item.trigger)} · 下次：{nextRunText(item)}</p>
-                    <div className="automation-run-status"><span className={`automation-status status-${stage}`}>{RUN_LABELS[stage] ?? "结果未确认"}</span><span>{run ? run.detail : "到点后执行，也可手动运行一次"}</span></div>
+                    <p className="automation-card-schedule">{item.enabled ? <CalendarBlank size={17} aria-hidden="true" /> : <PauseCircle size={17} aria-hidden="true" />}<span>{item.enabled ? `计划：${triggerText(item.trigger)} · 下次 ${nextRunText(item)}` : "已暂停：暂不触发后续计划"}</span></p>
+                    <div className={`automation-run-status tone-${stage}`}><StateIcon className="automation-state-icon" size={21} aria-hidden="true" /><span className={`automation-status status-${stage}`}>{displayStage(stage)}</span><span className="automation-run-description" title={run?.detail}>{run?.id && <span className="automation-execution-id" title={run.id}>执行 {shortId(run)} · </span>}{run ? run.detail : "到点后执行，也可手动运行一次"}</span></div>
                     <footer><div className="automation-card-buttons">
-                      {run?.targets?.some(t => sessions.some(s => s.id === t.sessionId)) && <button className="btn" onClick={() => openSession(run.targets!.find(t => sessions.some(s => s.id === t.sessionId))!.sessionId)}>打开会话</button>}
-                      {active && run?.id && <button className="btn" disabled={busy || stage === "dispatching"} onClick={() => void runAction(item, run, true)}>停止本轮</button>}
-                      {stage === "unconfirmed" && run?.id && <button className="btn" disabled={busy} onClick={() => setConfirmUnknownId(run.id!)}>已核对原会话</button>}
-                      {!active && <button className="btn automation-primary" disabled={busy} onClick={() => void runAction(item, stage === "failed" || stage === "cancelled" ? run : undefined)}>{stage === "failed" || stage === "cancelled" ? "失败重试" : "立即执行"}</button>}
-                      <button className="btn" aria-expanded={selectedHistory === item.id} onClick={() => setSelectedHistory(selectedHistory === item.id ? null : item.id)}>执行记录 {item.recentRuns.length}</button>
-                    </div><span>计划触发 {item.runCount}{item.maxRuns ? `/${item.maxRuns}` : ""} 次</span></footer>
+                      {!item.enabled && stage === "unconfirmed" && <button className="btn" disabled={busy} onClick={() => void toggle(item)}><Play size={16} />开启计划</button>}
+                      {active && targetSession && <button className={`btn${stage === "running" ? " automation-primary" : ""}`} onClick={() => openSession(targetSession)}><ArrowSquareOut size={16} />打开会话</button>}
+                      {active && run?.id && stage !== "unconfirmed" && <button className="btn" disabled={busy || stage === "dispatching"} onClick={() => void runAction(item, run, true)}><Stop size={16} />停止本轮</button>}
+                      {stage === "failed" && <button className="btn" aria-label={`执行记录 ${item.recentRuns.length}`} aria-expanded={selectedHistory === item.id} onClick={() => viewHistory(item)}><FileTextIcon size={16} />查看原因</button>}
+                      {!active && <button className="btn automation-primary" disabled={busy} onClick={() => void runAction(item, stage === "failed" || stage === "cancelled" ? run : undefined)}>{stage === "failed" || stage === "cancelled" ? <ArrowClockwise size={16} /> : <Play size={16} />}{stage === "failed" || stage === "cancelled" ? "失败重试" : "立即执行"}</button>}
+                      {stage !== "failed" && <button className={`btn automation-record-button${active ? " compact" : ""}`} aria-label={`执行记录 ${item.recentRuns.length}`} aria-expanded={selectedHistory === item.id} title="执行记录" onClick={() => viewHistory(item)}><FileTextIcon size={16} />{!active && "记录"}</button>}
+                    </div>
+                    <details className="automation-card-menu" onKeyDown={event => {if(event.key === "Escape"){event.preventDefault();event.stopPropagation();event.currentTarget.open=false;event.currentTarget.querySelector("summary")?.focus();}}}>
+                      <summary aria-label={`${item.name} 更多操作`} title="更多操作"><DotsThree size={20} /></summary>
+                      <div onClick={event => { const details=event.currentTarget.closest("details"); if(details)details.open=false; }}>
+                        <p>计划触发 {item.runCount}{item.maxRuns ? `/${item.maxRuns}` : ""} 次{item.consecutiveFailures > 0 && ` · 连续失败 ${item.consecutiveFailures} 次`}</p>
+                        {targetSession && <button className="btn" onClick={() => openSession(targetSession)}><ArrowSquareOut size={15} />打开原会话</button>}
+                        <button className="btn" onClick={() => setSelectedHistory(item.id)}><FileTextIcon size={15} />查看全部执行记录</button>
+                        {stage === "unconfirmed" && run?.id && <><button className="btn" disabled={busy} onClick={() => void runAction(item,run,true)}><Stop size={15} />停止本轮</button><button className="btn" disabled={busy} onClick={() => setConfirmUnknownId(run.id!)}>已核对原会话</button></>}
+                        <button className="btn" disabled={busy || active} title={active ? "先核对或停止本轮" : "删除计划"} aria-label={`删除 ${item.name}`} onClick={() => setConfirmDeleteId(item.id)}><TrashIcon size={15} />删除计划</button>
+                      </div>
+                    </details></footer>
                     {confirmUnknownId === run?.id && <div className="automation-state-note" role="group" aria-label="确认核对"><p>请先检查原会话，确认原任务不再执行。此操作仅解除待核对状态，不代表成功，不会重发任务。</p><button className="btn" disabled={busy} onClick={() => void runAction(item,run,false,true)}>确认原任务不再执行</button><button className="btn" onClick={() => setConfirmUnknownId(null)}>取消</button></div>}
-                    <div className="automation-card-secondary">{item.consecutiveFailures > 0 && <span>连续失败 {item.consecutiveFailures} 次</span>}<button className="btn-icon" disabled={busy || active} title={active ? "先核对或停止本轮" : "删除计划"} aria-label={`删除 ${item.name}`} onClick={() => setConfirmDeleteId(item.id)}><TrashIcon size={14} /></button>{confirmDeleteId === item.id && <><button className="btn danger-solid" disabled={busy} onClick={() => void remove(item.id)}>确认删除</button><button className="btn" onClick={() => setConfirmDeleteId(null)}>取消</button></>}</div>
+                    {confirmDeleteId === item.id && <div className="automation-delete-confirm"><span>确认删除此计划及其记录？</span><button className="btn danger-solid" disabled={busy || active} onClick={() => void remove(item.id)}>确认删除</button><button className="btn" onClick={() => setConfirmDeleteId(null)}>取消</button></div>}
                   </article>;
                 })}
               </div>
-              <p className="automation-state-note">暂停计划只影响后续触发。已入队不代表已完成；停止本轮仅在能核对具体消息时执行，已进入共享会话的任务需在原会话停止。</p>
-              {automations.filter(a => a.id === selectedHistory).map(item => <section className="automation-execution-history" key={item.id} aria-label={`执行记录 ${item.name}`}><h3>执行记录 · {item.name}</h3>{!item.recentRuns.length && <p>尚无执行记录。</p>}{[...item.recentRuns].reverse().map((run, index) => <details key={run.id ?? index}><summary><span className={`automation-status status-${runStage(run)}`}>{RUN_LABELS[runStage(run)] ?? "结果未确认"}</span><time>{formatDateTime(run.at)}</time><span>{({manual:"手动执行",retry:"重试",event:"事件触发",schedule:"计划触发"} as Record<string,string>)[run.origin ?? ""] ?? "历史记录"}</span><span>{run.detail}</span></summary><p>执行编号：{run.id ?? "旧记录未提供"}{run.retryOf && ` · 重试自 ${run.retryOf}`}</p>{run.targets?.map(target => <div className="automation-target-receipt" key={target.messageId}><strong>{RUN_LABELS[target.stage] ?? "结果未确认"}</strong><span>{target.detail}</span><code>消息 {target.messageId}</code><code>任务 {target.taskId ?? "无项目任务"} · Run {target.runId ?? "未取得"}</code>{sessions.some(s => s.id === target.sessionId) && <button className="btn" onClick={() => openSession(target.sessionId)}>打开会话</button>}</div>)}</details>)}</section>)}
+              {!selectedHistory && <p className="automation-state-note"><Info size={16} aria-hidden="true" />暂停计划不停止当前执行；已入队不代表已完成。打开执行记录核对实际结果。</p>}
+              {automations.filter(a => a.id === selectedHistory).map(item => <section className="automation-execution-history" key={item.id} aria-label={`执行记录 ${item.name}`}>
+                <header><h3>执行记录 · {item.name}</h3><p><Info size={16} aria-hidden="true" />暂停计划不停止当前执行；已入队不代表已完成。</p></header>
+                {!item.recentRuns.length && <p>尚无执行记录。</p>}
+                {[...item.recentRuns].reverse().map((run,index) => {
+                  const stage=runStage(run), StateIcon=statusIcon(stage);
+                  const target=run.targets?.find(t => sessions.some(s => s.id === t.sessionId));
+                  return <details key={run.id ?? index}><summary><span className="automation-history-id" title={run.id}>{shortId(run)}</span><time>{formatDateTime(run.at)}</time><span className={`automation-history-stage tone-${stage}`}><StateIcon size={17} aria-hidden="true" />{displayStage(stage)}</span><span className="automation-history-origin">{({manual:"手动执行",retry:"重试",event:"事件触发",schedule:"计划触发"} as Record<string,string>)[run.origin ?? ""] ?? "历史记录"}</span><span className="automation-history-detail" title={run.detail}>{run.detail}</span>{target && <button className="automation-history-session" aria-label={`打开执行 ${shortId(run)} 的会话`} onClick={event => {event.preventDefault();event.stopPropagation();openSession(target.sessionId);}}><ArrowSquareOut size={15} />打开会话</button>}</summary><p>执行编号：{run.id ?? "旧记录未提供"}{run.retryOf && ` · 重试自 ${run.retryOf}`}</p><p>{run.detail}</p>{run.targets?.map(target => <div className="automation-target-receipt" key={target.messageId}><strong>{displayStage(target.stage)}</strong><span>{target.detail}</span><code>消息 {target.messageId}</code><code>任务 {target.taskId ?? "无项目任务"} · Run {target.runId ?? "未取得"}</code>{sessions.some(s => s.id === target.sessionId) && <button className="btn" onClick={() => openSession(target.sessionId)}>打开会话</button>}</div>)}</details>;
+                })}
+              </section>)}
             </section>}
           </div>
 

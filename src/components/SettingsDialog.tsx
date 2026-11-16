@@ -344,7 +344,7 @@ export function SettingsDialog({
             className="settings-content-inner"
             data-settings-section={activeSection}
           >
-            <div className="dialog-heading settings-heading">
+            {activeSection !== "skills" && (activeSection !== "automation" || automationEditing) && <div className="dialog-heading settings-heading">
                 <div>
                   <h2 id="settings-title">{activeSection === "automation" && automationEditing ? "创建自动化" : sectionCopy.title}</h2>
                   {!(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
@@ -373,7 +373,7 @@ export function SettingsDialog({
                     </Switch>
                   )}
               </div>
-            </div>
+            </div>}
             {sectionCopy.note && <p className="settings-page-note">{sectionCopy.note}</p>}
 
             {activeSection === "collaboration" ? (
