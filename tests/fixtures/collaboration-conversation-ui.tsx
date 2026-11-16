@@ -1,8 +1,15 @@
 // Isolated IPC fixture. Never starts a CLI, edits a user project, or calls a model.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Robot, CornersOut, X } from "@phosphor-icons/react";
 import { MultiAgentControl } from "../../src/components/MultiAgentControl";
+import { SettingsDialog } from "../../src/components/SettingsDialog";
+import { DEFAULT_APPEARANCE } from "../../src/appearance";
+import { DEFAULT_PET_SETTINGS } from "../../src/petSettings";
+import { DEFAULT_NOTIFICATION_SETTINGS } from "../../src/notificationSettings";
+import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
+import type { AppAppearance } from "../../src/types";
+import type { CollaborationTasksRequest } from "../../src/collaborationTasks";
 import "../../src/styles.css";
 
 const params = new URLSearchParams(location.search);
@@ -10,17 +17,23 @@ document.documentElement.dataset.theme = params.get("theme") === "light" ? "ligh
 document.documentElement.dataset.appearanceAccent = params.get("accent") ?? "clay";
 const clock = new Date("2026-11-16T10:20:00+08:00").getTime();
 const agent = (id: string, name: string, runtimeKind: string, role: string, projectId = "A") => ({ id, projectId, name, runtimeKind, role, avatarId: null, enabled: true, description: "", persona: "efficient", personaCustom: "", model: null, permissionProfile: "default", maxConcurrency: 1, capabilities: [], createdAt: clock, updatedAt: clock });
-const agents = [agent("claude", "Claude Code", "claude_code", "orchestrator"), agent("codex", "Codex", "codex", "worker"), agent("kimi", "Kimi Code", "kimi_code", "reviewer")];
+const agents = params.get("header") === "1"
+  ? [{ ...agent("claude", "模型验收-Claude", "claude_code", "worker"), avatarId: "orbit" }, { ...agent("codex", "模型验收-Codex", "codex", "worker"), avatarId: "block" }, { ...agent("kimi", "聊天-ZCodeCLI", "zcode_cli", "orchestrator"), avatarId: "sprout" }]
+  : [agent("claude", "Claude Code", "claude_code", "orchestrator"), agent("codex", "Codex", "codex", "worker"), agent("kimi", "Kimi Code", "kimi_code", "reviewer")];
+if (params.get("members") === "none") agents.length = 0;
+if (params.get("members") === "many") for (let i=0;i<24;i++) agents.push(agent(`extra-${i}`, `开发成员-${i}：很长的成员名称用于检查省略与布局`, "codex", "worker"));
 let projects = [
   { id: "A", name: "团队待办应用", rootPath: "/fixture/todo-app", goal: "实现团队待办应用", defaultBranch: "main", status: "active", createdAt: clock, updatedAt: clock },
   { id: "B", name: "文档项目", rootPath: "/fixture/docs", goal: "整理文档", defaultBranch: "main", status: "active", createdAt: clock, updatedAt: clock },
 ];
+if (params.get("header") === "1") { projects[0].name = "模型设置实测-20261115"; projects[0].rootPath = "/fixture/crewvela-model-live-e79907a4ca"; }
+if (params.get("long") === "1") { projects[0].name = "很长的协作项目名称".repeat(12); projects[0].rootPath = "/fixture/" + "很长的目录名称".repeat(12); }
 const planned = [
   { key: "design", title: "方案与验收", assigneeAgentId: "claude", reviewerAgentId: null, workspaceMode: "read_only", writePaths: [], dependsOn: [], description: "梳理方案及验收项", acceptanceCriteria: "接口与交互要求完整", verificationCommand: null },
   { key: "build", title: "列表与筛选", assigneeAgentId: "codex", reviewerAgentId: "kimi", workspaceMode: "worktree", writePaths: ["src/"], dependsOn: ["design"], description: "实现列表与筛选交互", acceptanceCriteria: "通过组件测试及构建", verificationCommand: "npm test" },
   { key: "review", title: "审查与测试", assigneeAgentId: "kimi", reviewerAgentId: null, workspaceMode: "read_only", writePaths: [], dependsOn: ["build"], description: "核对交互边界与回归", acceptanceCriteria: "记录检查结果和未验证项", verificationCommand: null },
 ];
-const emptyChat = (id: string): any => ({ conversation: { id: `conversation-${id}`, projectId: id, createdAt: clock }, messages: [], rounds: [], executionPlans: [], supportedDiscussionRuntimes: params.get("unsupported") === "1" ? ["claude_code", "codex"] : ["claude_code", "codex", "kimi_code"] });
+const emptyChat = (id: string): any => ({ conversation: { id: `conversation-${id}`, projectId: id, createdAt: clock }, messages: [], rounds: [], executionPlans: [], supportedDiscussionRuntimes: params.get("unsupported") === "1" ? ["claude_code", "codex"] : ["claude_code", "codex", "kimi_code", ...(params.get("header") === "1" ? ["zcode_cli"] : [])] });
 const message = (id: string, senderType: string, body: string, agentId: string | null = null, status = "completed", kind = "reply"): any => ({ id, projectId: "A", conversationId: "conversation-A", roundId: "round-1", replyToMessageId: "m1", taskId: null, runId: agentId ? `run-${agentId}` : null, agentId, senderType, kind, phase: "opinions", body, status, createdAt: clock + Number(id.slice(1) || 0) * 1000, updatedAt: clock });
 const chats: Record<string, any> = { A: emptyChat("A"), B: emptyChat("B") };
 if (params.get("empty") !== "1") {
@@ -37,7 +50,11 @@ if (params.get("empty") !== "1") {
   chats.A.executionPlans = [{ id: "plan-1", projectId: "A", roundId: "round-1", messageId: "m3", summary: "按成员分工与依赖推进", tasks: planned, status: params.get("plan") === "pending" ? "pending" : "applied", taskIds: params.get("plan") === "pending" ? [] : ["t-design", "t-build", "t-review"], createdAt: clock }];
 }
 const tasks = planned.map((task, index) => ({ ...task, id: `t-${task.key}`, projectId: "A", parentId: null, stage: index, status: ["done", "running", "blocked"][index], priority: 0, requiredCapabilities: [], maxAttempts: 2, retryBackoffSeconds: 1, nextRetryAt: null, createdAt: clock, updatedAt: clock }));
-const snapshot = (id: string): any => ({ project: projects.find(project => project.id === id), agents: id === "A" ? agents : [agent("b-codex", "文档 Codex", "codex", "worker", "B")], tasks: id === "A" && params.get("plan") !== "pending" ? tasks : [], runs: [], messages: [], events: [], dependencies: [{ taskId: "t-review", dependsOnTaskId: "t-build" }], agentSessions: (id === "A" ? agents : []).map(agent => ({ agentId: agent.id, appSessionId: `session-${agent.id}`, projectId: id, id: `agent-session-${agent.id}`, status: agent.id === "codex" ? "running" : "idle", controlMode: "auto", currentTaskId: null, currentRunId: null, lastOutputAt: null, createdAt: clock, updatedAt: clock })), runLogs: [], runtimeEvents: [], memories: [], instructions: [], artifacts: [], approvals: [], reviewDecisions: [], wakeups: [] });
+if (params.get("internal") === "1") tasks.push({ ...tasks[0], id: "cli-message-conversation-internal", title: "讨论内部执行", status: "running", stage: 9 });
+if (params.get("header") === "1") { tasks.forEach(task=>{task.status="done";}); for(let i=tasks.length;i<28;i++) tasks.push({...tasks[0],id:`history-${i}`,title:`历史任务 ${i+1}`}); }
+const runHistory = params.get("evidence") === "1" ? [1,2].map(attempt=>({ id:`evidence-${attempt}`,projectId:"A",taskId:"t-build",agentId:"codex",attempt,status:"failed",sessionLocator:attempt===2?{stopUnverified:true}:null,leaseExpiresAt:0,lastHeartbeatAt:null,outputSummary:`尝试${attempt}输出`,error:attempt===2?"fixture 原进程停止状态待确认":"fixture 旧尝试失败",createdAt:clock+attempt,startedAt:clock,finishedAt:clock+attempt })) : [];
+const runLogs = runHistory.flatMap(run=>Array.from({length:25},(_,seq)=>({seq,projectId:"A",taskId:run.taskId,runId:run.id,stream:"stdout",content:`尝试${run.attempt}日志${seq}`,createdAt:clock+seq})));
+const snapshot = (id: string): any => ({ project: projects.find(project => project.id === id), agents: id === "A" ? agents : [agent("b-codex", "文档 Codex", "codex", "worker", "B")], tasks: id === "A" && params.get("plan") !== "pending" ? tasks : params.get("task-link")==="1" ? [{...tasks[0],id:"b-task",projectId:"B",title:"文档任务",assigneeAgentId:"b-codex"}] : [], runs: id==="A"?runHistory:[], messages: [], events: [], dependencies: [{ taskId: "t-review", dependsOnTaskId: "t-build" }], agentSessions: (id === "A" ? agents : []).map(agent => ({ agentId: agent.id, appSessionId: `session-${agent.id}`, projectId: id, id: `agent-session-${agent.id}`, status: agent.id === "codex" ? "running" : "idle", controlMode: "auto", currentTaskId: null, currentRunId: null, lastOutputAt: null, createdAt: clock, updatedAt: clock })), runLogs: id==="A"?runLogs:[], runtimeEvents: [], memories: [], instructions: [], artifacts: [], approvals: [], reviewDecisions: [], wakeups: [] });
 const calls: Array<{ command: string; args: any }> = [];
 const pending: Array<{ command: string; args: any; resolve(value: any): void; reject(reason: Error): void }> = [];
 const receipts = new Map<string, string>();
@@ -66,6 +83,12 @@ const mock = {
     if (command === "ma_conversation_control") { const chat = chats[args.projectId]; if (chat.rounds.length) chat.rounds[chat.rounds.length - 1].status = params.get("stopping") === "1" ? "stopping" : args.action === "pause" ? "paused" : "cancelled"; return structuredClone(chat); }
     if (command === "ma_conversation_execute_plan") { const chat = chats[args.input.projectId]; const plan = chat.executionPlans.find((item: any) => item.id === args.input.planId); plan.status = "applied"; plan.taskIds = ["t-design", "t-build", "t-review"]; return structuredClone(chat); }
     if (command === "ma_pause_project") { projects.find(project => project.id === args.projectId)!.status = "paused"; return { accepted: true, projectId: args.projectId }; }
+    if (command === "ma_confirm_run_stopped") { if(params.get("confirm-fails")==="1")throw Error("fixture 确认失败"); const run=runHistory.find(run=>run.id===args.runId);if(!run||args.confirmedStopped!==true)throw Error("Wrong run confirmation");run.sessionLocator=null;return null; }
+    if (["ma_probe_runtimes","ma_check_runtime_updates"].includes(command)) return agents.map(agent=>({kind:agent.runtimeKind,installed:true,version:"fixture",capabilities:[],error:null}));
+    if (command === "skill_center_snapshot") return {skillSets:[]};
+    if (command === "collaboration_health") return {scopeLabel:"当前项目",sessions:[],runtimes:[],messages:[],handoffs:[],cliPath:"fixture",cliPathExists:true,replyEvidence:"fixture"};
+    if (command === "general_settings_get") return GENERAL_SETTINGS_PREVIEW;
+    if (command === "plugin:event|emit") return null;
     if (command === "ma_create_project") { const project = { ...args.input, id: crypto.randomUUID(), status: "active", createdAt: clock, updatedAt: clock }; projects = [...projects, project]; chats[project.id] = emptyChat(project.id); return project; }
     if (command === "plugin:dialog|open") return "/fixture/new-project";
     if (command === "get_runtime_preferences") return { disabledRuntimes: params.get("disabled") ? [params.get("disabled")] : [] };
@@ -77,12 +100,16 @@ const mock = {
 (window as any).conversationMock = mock;
 (window as any).__TAURI_INTERNALS__ = { invoke: mock.invoke, transformCallback: () => 1 };
 function Fixture() {
+  const [taskRequest,setTaskRequest] = useState<CollaborationTasksRequest>();
+  const taskSequence = useRef(0);
+  const [appearance,setAppearance] = useState<AppAppearance>({...DEFAULT_APPEARANCE,theme:params.get("theme")==="light"?"light":"dark"});
   const [active, setActive] = useState(true);
   const [instance, setInstance] = useState(0);
   (mock as any).setActive = setActive;
   (mock as any).selectInstance = setInstance;
-  const panel = (index: number) => <MultiAgentControl active={active && index === instance} defaultCwd="/fixture/todo-app" onOpenSession={id => { calls.push({ command: "fixture_open_session", args: { sessionId: id } }); }} onOpenProjectSettings={id => { calls.push({ command: "fixture_open_settings", args: { projectId: id } }); }} onOpenWorkspace={id => { calls.push({ command: "fixture_open_workspace", args: { projectId: id } }); }} />;
-  return <main className="conversation-fixture-frame"><header className="conversation-fixture-resource"><span><Robot size={21} />多智能体<XMark /></span><small>隔离示例 · 无真实 Agent 调用</small><CornersOut size={19} /></header>{params.get("instances") === "2" ? [0,1].map(index => <div style={{ display: index === instance ? "flex" : "none", flex: 1, minHeight: 0 }} key={index} data-instance={index}>{panel(index)}</div>) : panel(0)}</main>;
+  const panel = (index: number) => <MultiAgentControl active={active && index === instance} defaultCwd="/fixture/todo-app" onOpenSession={id => { calls.push({ command: "fixture_open_session", args: { sessionId: id } }); }} onOpenProjectSettings={(id,target) => { calls.push({ command: "fixture_open_settings", args: { projectId: id, target } }); if(id&&target==="tasks")setTaskRequest({projectId:id,requestId:++taskSequence.current}); }} onOpenWorkspace={id => { calls.push({ command: "fixture_open_workspace", args: { projectId: id } }); }} />;
+  (mock as any).openTasks = (projectId:string) => setTaskRequest({projectId,requestId:++taskSequence.current});
+  return <main className="conversation-fixture-frame"><header className="conversation-fixture-resource"><span><Robot size={21} />多智能体<XMark /></span><small>隔离示例 · 无真实 Agent 调用</small><CornersOut size={19} /></header>{params.get("header")==="1"&&<div className="conversation-shell-header" aria-hidden="true"/>}{params.get("instances") === "2" ? [0,1].map(index => <div style={{ display: index === instance ? "flex" : "none", flex: 1, minHeight: 0 }} key={index} data-instance={index}>{panel(index)}</div>) : panel(0)}{taskRequest && <SettingsDialog initialSection="collaboration" initialCollaborationProjectId={taskRequest.projectId} initialCollaborationTasksRequest={taskRequest} sessions={[]} archivedSessions={[]} projects={[]} appearance={appearance} resolvedAppearanceTheme={params.get("theme")==="light"?"light":"dark"} petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS} onAppearanceChange={setAppearance} onPetSettingsChange={()=>{}} onNotificationSettingsChange={()=>{}} onRestoreArchivedSession={()=>{}} onDeleteArchivedSession={()=>{}} onViewArchivedTranscript={()=>{}} onClose={()=>setTaskRequest(undefined)}/>}</main>;
 }
 function XMark() { return <X size={17} aria-hidden="true" style={{ marginLeft: 18 }} />; }
 const style = document.createElement("style"); style.textContent = 'html,body,#root{height:100%;margin:0;overflow:hidden}.conversation-fixture-frame{height:100%;display:flex;flex-direction:column;background:var(--bg-elev);color:var(--text)}.conversation-fixture-resource{height:64px;flex:none;display:flex;align-items:center;gap:18px;padding:0 30px;border-bottom:1px solid var(--border);background:var(--bg)}.conversation-fixture-resource>span{white-space:nowrap;flex:none;display:flex;align-items:center;gap:9px;padding:8px 13px;border-radius:8px;background:var(--bg-hover);font:600 17px var(--display-font)}.conversation-fixture-resource>small{margin-left:auto;color:var(--text-dim);font:11px var(--display-font)}@media(max-width:480px){.conversation-fixture-resource{padding:0 14px;gap:8px}.conversation-fixture-resource>small{font-size:9px}}'; document.head.append(style);

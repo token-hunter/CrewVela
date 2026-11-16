@@ -18,14 +18,15 @@ const calls = (page, command) => page.evaluate(command => window.conversationMoc
 try {
   const page = await fresh();
   assert.equal(await page.getByRole('tab', { name: '执行项目', exact: true }).getAttribute('aria-selected'), 'true');
-  await page.getByRole('button', { name: '任务 3', exact: true }).click();
-  const drawer = page.getByRole('dialog', { name: '协作任务详情', exact: true });
-  await drawer.waitFor(); assert.equal(await drawer.locator('.conversation-task-list > details').count(), 3);
-  await drawer.getByRole('button', { name: '暂停项目执行', exact: true }).click();
+  await page.getByRole('button', { name: '查看任务 · 3', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: '设置', exact: true });
+  await settings.locator('.collab-task-row').first().waitFor(); assert.equal(await settings.locator('.collab-task-row').count(), 3);
+  assert.equal(await settings.getByRole('button', { name: '全部', exact: true }).getAttribute('aria-pressed'), 'true');
+  await settings.getByRole('button', { name: '暂停项目', exact: true }).click();
   await page.waitForFunction(() => window.conversationMock.projects[0].status === 'paused');
   assert.equal((await calls(page, 'ma_pause_project')).length, 1);
-  await drawer.getByRole('button', { name: '关闭任务详情', exact: true }).click();
-  await drawer.waitFor({ state: 'detached' });
+  await settings.getByRole('button', { name: '关闭设置', exact: true }).click();
+  await settings.waitFor({ state: 'detached' });
   await page.getByRole('button', { name: '查看Codex的原会话', exact: true }).click();
   assert.deepEqual((await calls(page, 'fixture_open_session')).at(-1).args, { sessionId: 'session-codex' });
   const editor = page.getByRole('combobox', { name: '给团队发消息', exact: true });
@@ -104,35 +105,56 @@ try {
   assert.equal(await stopping.getByRole('button', { name: /暂停讨论/ }).isDisabled(), true);
 
   const unsupported = await fresh('unsupported=1');
-  assert.equal(await unsupported.locator('.conversation-members button').filter({ hasText: 'Kimi Code' }).isDisabled(), true);
+  await unsupported.locator('.conversation-members-trigger').click();
+  assert.equal(await unsupported.locator('.conversation-member-menu').getByRole('checkbox', { name: 'Kimi Code', exact: true }).isDisabled(), true);
+  await unsupported.keyboard.press('Escape');
   await unsupported.getByRole('combobox', { name: '给团队发消息', exact: true }).fill('@Kimi Code 检查');
   await unsupported.getByRole('button', { name: '发送消息', exact: true }).click();
   await unsupported.getByRole('alert').filter({ hasText: '暂不支持受限讨论' }).waitFor();
   assert.equal((await calls(unsupported, 'ma_conversation_send')).length, 0);
 
   const disabled = await fresh('disabled=codex');
-  assert.equal(await disabled.locator('.conversation-members button').filter({ hasText: 'Codex' }).isDisabled(), true);
+  await disabled.locator('.conversation-members-trigger').click();
+  assert.equal(await disabled.locator('.conversation-member-menu').getByRole('checkbox', { name: 'Codex', exact: true }).isDisabled(), true);
+  await disabled.keyboard.press('Escape');
   await disabled.getByRole('combobox', { name: '给团队发消息', exact: true }).fill('@Codex 检查');
   await disabled.getByRole('button', { name: '发送消息', exact: true }).click();
   await disabled.getByRole('alert').filter({ hasText: 'Runtime 已停用' }).waitFor();
   assert.equal((await calls(disabled, 'ma_conversation_send')).length, 0, 'disabled Runtime preferences also constrain explicit mentions');
 
   mkdirSync('.scratch/collaboration-conversation', { recursive: true });
-  for (const [theme, size] of [['dark', { width: 1122, height: 1402 }], ['light', { width: 1122, height: 1402 }], ['dark', { width: 390, height: 844 }], ['light', { width: 390, height: 844 }]]) {
+  for (const [theme, size] of ['dark', 'light'].flatMap(theme => [{ width: 1122, height: 1402 }, { width: 780, height: 540 }, { width: 640, height: 700 }, { width: 390, height: 844 }, { width: 300, height: 420 }].map(size => [theme, size]))) {
     const visual = await fresh(`theme=${theme}`, size);
     await visual.locator('.conversation-transcript').evaluate(node => { node.scrollTop = 0; });
     const geometry = await visual.evaluate(() => {
       const footer = document.querySelector('.conversation-footer').getBoundingClientRect();
       const editor = document.querySelector('.conversation-composer textarea');
       const computed = getComputedStyle(editor);
-      return { overflow: document.body.scrollWidth > innerWidth, bottom: footer.bottom, fill: computed.webkitTextFillColor, color: computed.color, placeholder: getComputedStyle(editor, '::placeholder').webkitTextFillColor, images: [...document.querySelectorAll('img')].every(img => img.complete && img.naturalWidth > 0) };
+      const area = editor.getBoundingClientRect(), wrapper = editor.parentElement.getBoundingClientRect(), actions = document.querySelector('.conversation-composer-actions').getBoundingClientRect();
+      return { overflow: document.body.scrollWidth > innerWidth, bottom: footer.bottom, area: { width: area.width, height: area.height, bottom: area.bottom }, wrapper: { width: wrapper.width, height: wrapper.height }, actionsTop: actions.top, fill: computed.webkitTextFillColor, color: computed.color, placeholder: getComputedStyle(editor, '::placeholder').webkitTextFillColor, images: [...document.querySelectorAll('img')].every(img => img.complete && img.naturalWidth > 0) };
     });
-    assert.equal(geometry.overflow, false); assert.ok(geometry.bottom <= size.height + 1);
+    assert.equal(geometry.overflow, false); assert.ok(geometry.bottom <= size.height + 1, JSON.stringify({ theme, size, geometry }));
+    assert.ok(Math.abs(geometry.area.width - geometry.wrapper.width) < 1, 'typing fills the editor width');
+    assert.ok(Math.abs(geometry.area.height - geometry.wrapper.height) < 1, 'no unused strip below the textarea');
+    assert.ok(geometry.area.height >= 96, 'multiline input has sufficient default space');
+    assert.ok(geometry.actionsTop >= geometry.area.bottom - 1, 'recipient and send actions stay below the full-width editor');
     assert.notEqual(geometry.fill, 'rgba(0, 0, 0, 0)', 'typed text remains visible without the old transparent highlight overlay');
     assert.equal(geometry.fill, geometry.color); assert.notEqual(geometry.placeholder, 'rgba(0, 0, 0, 0)');
     assert.equal(geometry.images, true);
     await visual.screenshot({ path: `.scratch/collaboration-conversation/${theme}-${size.width}.jpg`, fullPage: false });
+    await visual.locator('.conversation-target').click();
+    const recipients = await visual.locator('.conversation-recipient-menu').boundingBox();
+    assert.ok(recipients.y >= 0 && recipients.y + recipients.height <= size.height + 1, 'member popup remains visible above the expanded editor');
+    await visual.keyboard.press('Escape');
   }
+  const resizing = await fresh('empty=1&members=many', { width: 780, height: 540 });
+  const resizeEditor = resizing.getByRole('combobox', { name: '给团队发消息', exact: true });
+  const original = await resizeEditor.boundingBox();
+  await resizing.mouse.move(original.x + original.width - 4, original.y + original.height - 4); await resizing.mouse.down();
+  await resizing.mouse.move(original.x + original.width - 4, original.y + original.height + 60, { steps: 10 }); await resizing.mouse.up();
+  const expanded = await resizeEditor.boundingBox(); assert.ok(expanded.height > original.height + 30, 'manual resizing changes the actual textarea, not only an ignored inline height');
+  await resizing.locator('.conversation-target').click();
+  const resizedRecipients = await resizing.locator('.conversation-recipient-menu').boundingBox(); assert.ok(resizedRecipients.y >= 0 && resizedRecipients.y + resizedRecipients.height <= 541);
   assert.deepEqual(errors, []);
   console.log('PASS: scoped chat, explicit mentions, duplicate guards, durable retry identity, project isolation, new drafts, plan execution, pause semantics, source sessions, supported runtimes, dark/light and narrow layouts');
 } finally { for (const context of contexts) await context.close(); await browser.close(); }

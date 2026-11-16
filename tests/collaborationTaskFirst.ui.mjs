@@ -53,7 +53,7 @@ try {
   await stage.click();
   await page.locator('.collab-task-menu summary').first().click();
   await page.getByRole('button', { name: '查看任务详情', exact: true }).click();
-  await page.getByRole('button', { name: '关闭详情', exact: true }).click();
+  await page.getByRole('button', { name: '关闭任务详情', exact: true }).click();
   await page.locator('.collab-activity-disclosure > summary').click();
   await page.getByRole('button', { name: '查看全部活动', exact: true }).click();
   assert.equal(await page.getByRole('tab', { name: '协作记录', exact: true }).getAttribute('aria-selected'), 'true');

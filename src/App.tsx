@@ -80,6 +80,7 @@ import { FileExplorerPanel } from "./components/FileExplorerPanel";
 import { BrowserPanel } from "./components/BrowserPanel";
 import { saveBrowserPanelState } from "./browserPanelState";
 import { WorkspaceTabs } from "./components/WorkspaceTabs";
+import type { CollaborationTasksRequest } from "./collaborationTasks";
 import {
   RightSidebarActivityBar,
   RightSidebarStart,
@@ -435,6 +436,8 @@ export default function App() {
   const [collaborationInitialTab, setCollaborationInitialTab] = useState<"overview" | "diagnostics">("overview");
   const [collaborationDiagnosticGlobal, setCollaborationDiagnosticGlobal] = useState(false);
   const [collaborationInitialProjectId, setCollaborationInitialProjectId] = useState<string | undefined>();
+  const [collaborationTasksRequest, setCollaborationTasksRequest] = useState<CollaborationTasksRequest>();
+  const collaborationTaskSequence = useRef(0);
   const [settingsTarget, setSettingsTarget] = useState<SettingsSection>("generalSettings");
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>(
@@ -506,11 +509,17 @@ export default function App() {
       setCollaborationInitialTab("overview");
       setCollaborationDiagnosticGlobal(false);
       setCollaborationInitialProjectId(undefined);
+      setCollaborationTasksRequest(undefined);
       setSettingsTarget(section);
       setSettingsOpen(true);
     },
     [],
   );
+  const openCollaborationTasks = useCallback((projectId: string) => {
+    openSettingsSection("collaboration");
+    setCollaborationInitialProjectId(projectId);
+    setCollaborationTasksRequest({ projectId, requestId: ++collaborationTaskSequence.current });
+  }, [openSettingsSection]);
   const toastIdRef = useRef(0);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const showError = useCallback((message: string) => {
@@ -1241,15 +1250,16 @@ export default function App() {
       listen<{ sessionId: string }>("crewvela-conversation-open-session", event => {
         if (!disposed && event.payload?.sessionId) void selectSession(event.payload.sessionId);
       }),
-      listen<{ projectId?: string }>("crewvela-conversation-open-settings", event => {
+      listen<{ projectId?: string; target?: "tasks" }>("crewvela-conversation-open-settings", event => {
         if (disposed) return;
+        if (event.payload?.target === "tasks" && event.payload.projectId) { openCollaborationTasks(event.payload.projectId); return; }
         openSettingsSection("collaboration");
         setCollaborationInitialProjectId(event.payload?.projectId);
       }),
     ];
     for (const subscription of subscriptions) void subscription.catch(error => { if (!disposed) showError(`协作窗口事件监听失败：${String(error)}`); });
     return () => { disposed = true; window.removeEventListener("crewvela-automation-open-session", openAutomationSession); for (const subscription of subscriptions) void subscription.then(unlisten => unlisten()).catch(error => console.error("释放协作窗口监听失败：", error)); };
-  }, [openSettingsSection, selectSession, showError]);
+  }, [openSettingsSection, openCollaborationTasks, selectSession, showError]);
 
   const renameSession = useCallback(async (session: SessionRecord) => {
     const title = window.prompt("会话标题", session.title)?.trim();
@@ -2412,7 +2422,7 @@ export default function App() {
                 sessions={communicationSessions(sessions)} selectedSessionId={selectedSessionId} preview={UI_PREVIEW} hidden={settingsOpen}
                 onClose={() => setGuideRequest(null)} onDiagnostics={(projectId, scope) => {
                   setCollaborationInitialProjectId(projectId);
-                  setCollaborationInitialTab(scope === "project" && !projectId ? "overview" : "diagnostics"); setCollaborationDiagnosticGlobal(scope === "sessions"); setSettingsTarget("collaboration"); setSettingsOpen(true);
+                  setCollaborationTasksRequest(undefined); setCollaborationInitialTab(scope === "project" && !projectId ? "overview" : "diagnostics"); setCollaborationDiagnosticGlobal(scope === "sessions"); setSettingsTarget("collaboration"); setSettingsOpen(true);
                 }} />}
               {(activeRightSidebarTab || mountedRightSidebarTabs.size > 0) && (
                 <>
@@ -2492,7 +2502,7 @@ export default function App() {
                         onSurfaceChange={tab === "multi_agent" ? handleControlSurfaceChange : undefined}
                         onOpenMultiAgentWorkspace={setMultiAgentWorkspaceProjectId}
                         onOpenSession={selectSession}
-                        onOpenProjectSettings={projectId => { openSettingsSection("collaboration"); setCollaborationInitialProjectId(projectId); }}
+                        onOpenProjectSettings={(projectId, target) => { if (target === "tasks" && projectId) { openCollaborationTasks(projectId); return; } openSettingsSection("collaboration"); setCollaborationInitialProjectId(projectId); }}
                       />
                       </div>
                     ))}
@@ -2604,6 +2614,7 @@ export default function App() {
               initialCollaborationTab={collaborationInitialTab}
               initialCollaborationDiagnosticGlobal={collaborationDiagnosticGlobal}
               initialCollaborationProjectId={collaborationInitialProjectId}
+              initialCollaborationTasksRequest={collaborationTasksRequest}
               onClose={() => setSettingsOpen(false)}
             />
           )}

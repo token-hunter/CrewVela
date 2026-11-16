@@ -28,7 +28,7 @@ interface Props {
   onSurfaceChange?: (surface: ControlSurface) => void;
   onOpenMultiAgentWorkspace?: (projectId: string) => void;
   onOpenSession?: (sessionId: string) => void | Promise<void>;
-  onOpenProjectSettings?: (projectId?: string) => void;
+  onOpenProjectSettings?: (projectId?: string, target?: "tasks") => void;
 }
 
 /** Shared dock/detached shell. General commands remain available from their own application entry. */

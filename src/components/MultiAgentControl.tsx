@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowClockwise, ArrowSquareOut, CaretDown, CheckCircle, ChatCircleText, FolderOpen, GearSix, ListChecks, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowSquareOut, CaretDown, Check, CheckCircle, ChatCircleText, GearSix, ListChecks, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { AgentMentionMenu, type AgentMentionOption } from "./AgentMentionMenu";
 import { CollaborationProjectDialog } from "./CollaborationProjectDialog";
-import { Modal } from "./ui/Modal";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
 import { conversationIsActive, conversationMentionToken, conversationRecipients, CONVERSATION_STATUS, latestConversationRound, orderedConversationMessages, TASK_STATUS } from "../collaborationConversation";
 import { RUNTIME_LABELS } from "../runtimeLogos";
+import { visibleProjectTasks } from "../collaborationTasks";
 import { hasMentionToken, selectMentionTokens } from "../multiAgentMention";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import type { AgentProfile, ConversationExecutionPlan, ConversationMode, ConversationSendInput, ConversationSnapshot, MultiAgentProject, MultiAgentSnapshot, SessionRecord } from "../types";
@@ -22,7 +22,7 @@ interface Props {
   focusedProjectRequest?: number;
   onOpenWorkspace?: (projectId: string) => void;
   onOpenSession?: (sessionId: string) => void | Promise<void>;
-  onOpenProjectSettings?: (projectId?: string) => void;
+  onOpenProjectSettings?: (projectId?: string, target?: "tasks") => void;
 }
 const PROJECT_KEY = "crewvela-multi-agent-project";
 const ROLE: Record<string, string> = { orchestrator: "方案", worker: "开发", reviewer: "审查", integrator: "集成" };
@@ -38,7 +38,6 @@ function storedPending(id: string): PendingSend | null {
   } catch { return null; }
 }
 function projectFromStorage(): string | null { return stored(PROJECT_KEY) || null; }
-function basename(path: string) { return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path; }
 
 /** One persisted project conversation. It deliberately has no general-command or global-broadcast route. */
 export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, onOpenWorkspace, onOpenSession, onOpenProjectSettings }: Props) {
@@ -55,8 +54,12 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [healthy, setHealthy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<PendingSend | null>(null);
-  const [membersOpen, setMembersOpen] = useState(false);
-  const [tasksOpen, setTasksOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState<"header" | "composer" | null>(null);
+  const [membersPosition, setMembersPosition] = useState({ left: 0, top: 0, width: 320, maxHeight: 320 });
+  const membersId = useId();
+  const headerMemberTrigger = useRef<HTMLButtonElement>(null);
+  const composerMemberTrigger = useRef<HTMLButtonElement>(null);
+  const membersMenu = useRef<HTMLDivElement>(null);
   const [creatingProject, setCreatingProject] = useState(false);
   const [mentionCursor, setMentionCursor] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -78,7 +81,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const chooseProject = useCallback((id: string | null) => {
     request.current++; generation.current++; initializedMembers.current = null;
     currentProject.current = id; setProjectId(id); setSnapshot(null); setConversation(null); setHealthy(false); setLoading(false);
-    operationError.current = ""; setError(""); setSelected([]); setMembersOpen(false); setTasksOpen(false); setShowOlder(false); setMentionOpen(false);
+    operationError.current = ""; setError(""); setSelected([]); setMembersOpen(null); setShowOlder(false); setMentionOpen(false);
     setDraft(id ? stored(draftKey(id)) : ""); setPending(id ? storedPending(id) : null); followMessages.current = true;
     if (id) save(PROJECT_KEY, id);
   }, []);
@@ -128,6 +131,47 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   }, [active, projectId, refresh]);
   const agents = useMemo(() => snapshot?.agents.filter(agent => agent.projectId === projectId && agent.enabled) ?? [], [snapshot, projectId]);
   const supported = conversation?.supportedDiscussionRuntimes ?? [];
+  useEffect(() => { if (!active) setMembersOpen(null); }, [active]);
+  useLayoutEffect(() => {
+    if (membersOpen !== "header") return;
+    const place = () => {
+      const anchor = headerMemberTrigger.current?.getBoundingClientRect();
+      const panel = headerMemberTrigger.current?.closest(".collaboration-conversation")?.getBoundingClientRect();
+      if (!anchor || !panel) return;
+      const width = Math.min(416, Math.max(300, panel.width * .41), panel.width - 28, innerWidth - 16);
+      const left = Math.max(8, panel.left + 14, Math.min(anchor.right - width, innerWidth - width - 8));
+      const below = innerHeight - anchor.bottom - 16;
+      const above = anchor.top - 16;
+      const flipped = below < 160 && above > below;
+      const maxHeight = Math.max(60, Math.min(340, flipped ? above : below));
+      const height = Math.min(membersMenu.current?.scrollHeight ?? 300, maxHeight);
+      setMembersPosition({ left, width, maxHeight, top: flipped ? anchor.top - height - 8 : anchor.bottom + 8 });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    const observer = new ResizeObserver(place);
+    const panel = headerMemberTrigger.current?.closest(".collaboration-conversation");
+    if (panel) observer.observe(panel);
+    if (membersMenu.current) observer.observe(membersMenu.current);
+    return () => { observer.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [membersOpen, agents.length]);
+  useEffect(() => {
+    if (!membersOpen) return;
+    const trigger = membersOpen === "header" ? headerMemberTrigger.current : composerMemberTrigger.current;
+    const frame = requestAnimationFrame(() => membersMenu.current?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled)')?.focus());
+    const outside = (event: Event) => {
+      if (event.target instanceof Node && !membersMenu.current?.contains(event.target) && !trigger?.contains(event.target)) setMembersOpen(null);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing) return;
+      event.preventDefault(); event.stopPropagation(); setMembersOpen(null); trigger?.focus();
+    };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("focusin", outside);
+    window.addEventListener("keydown", key, true);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener("pointerdown", outside, true); document.removeEventListener("focusin", outside); window.removeEventListener("keydown", key, true); };
+  }, [membersOpen]);
   useEffect(() => {
     if (!conversation || !snapshot || !projectId || !runtimeReady || runtimeError) return;
     const eligible = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id);
@@ -146,9 +190,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     setPending(null); setOperationError("");
   }, [conversation, pending, projectId]);
   const visibleMessages = showOlder ? messages : messages.slice(-100);
-  const executionTaskIds = new Set(conversation?.executionPlans.flatMap(plan => plan.taskIds) ?? []);
-  const discussionTaskIds = new Set(messages.filter(item => item.kind === "reply").map(item => item.taskId));
-  const tasks = snapshot?.tasks.filter(task => executionTaskIds.has(task.id) || (!task.id.startsWith("cli-message-conversation-") && !discussionTaskIds.has(task.id))) ?? [];
+  const tasks = visibleProjectTasks(snapshot?.tasks ?? []);
+  const openProjectTasks = () => { if (snapshot && projectId && active) { setMembersOpen(null); onOpenProjectSettings?.(projectId, "tasks"); } };
   const runningTasks = tasks.filter(task => ["claimed", "running", "waiting_approval", "in_review"].includes(task.status));
   const activeAgent = discussing ? agents.find(agent => conversation?.messages.some(message => message.roundId === round?.id && message.senderType === "agent" && message.agentId === agent.id && message.status === "running")) : undefined;
   useEffect(() => {
@@ -201,17 +244,6 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const control = async (action: "pause" | "cancel") => {
     try { await mutationCall("ma_conversation_control", { projectId, action }); void refresh(); } catch { /* Error is visible in the panel. */ }
   };
-  const pauseProject = async () => {
-    if (!projectId || mutation.current || !active) return;
-    const id = projectId, epoch = generation.current;
-    mutation.current = true; setBusy(true); setError(""); request.current++;
-    try {
-      const receipt = await invoke<{ accepted?: boolean; message?: string }>("ma_pause_project", { projectId: id });
-      if (receipt.accepted === false) throw Error(receipt.message || "暂停项目未获确认。");
-      if (currentProject.current === id && generation.current === epoch) { mutation.current = false; await refresh(); }
-    } catch (reason) { if (mounted.current && currentProject.current === id && generation.current === epoch) setError(`暂停项目失败：${String(reason)}`); }
-    finally { mutation.current = false; if (mounted.current) setBusy(false); }
-  };
   const applyPlan = async (plan: ConversationExecutionPlan) => {
     if (!projectId) return;
     // Persist a stable operation identity before the request; uncertainty must not duplicate engineering tasks.
@@ -255,17 +287,21 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
 
   return <section className="collaboration-conversation" aria-label="团队协作会话">
     <header className="conversation-header">
-      <div className="conversation-heading"><select aria-label="协作项目" value={projectId ?? ""} onChange={event => chooseProject(event.target.value || null)}><option value="" disabled>选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+      <div className="conversation-heading"><span className="conversation-project-select"><select aria-label="协作项目" title={snapshot?.project.rootPath ? `项目目录：${snapshot.project.rootPath}` : undefined} value={projectId ?? ""} onChange={event => chooseProject(event.target.value || null)}><option value="" disabled>选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select><CaretDown size={15} aria-hidden="true" /></span>
         <button type="button" className="conversation-icon" aria-label="创建协作项目" onClick={() => setCreatingProject(true)}><Plus size={18} /></button>
         {onOpenProjectSettings && <button type="button" className="conversation-icon" aria-label="管理项目与成员" onClick={() => onOpenProjectSettings(projectId ?? undefined)}><GearSix size={18} /></button>}
       </div>
-      <div className="conversation-context"><FolderOpen size={16} /><span title={snapshot?.project.rootPath ?? defaultCwd ?? ""}>{snapshot ? basename(snapshot.project.rootPath) : "选择项目后开始协作"}</span><button type="button" className="conversation-text-button" disabled={!snapshot} onClick={() => setTasksOpen(true)}>任务 {tasks.length}<ArrowSquareOut size={14} /></button></div>
-      <div className="conversation-members" aria-label="当前团队成员">{agents.map(agent => {
-        const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind);
-        return <button type="button" key={agent.id} aria-pressed={selected.includes(agent.id)} disabled={!eligible || busy} title={eligible ? `${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]} · 点击选择参与讨论` : !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? `${agent.name} 的 Runtime 已停用，请在协作设置中启用` : `${agent.name} 暂无强制只读讨论支持，可在原会话执行`} onClick={() => toggleMember(agent)}><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small> · {ROLE[agent.role] ?? agent.role}</small></span><i className={activeAgent?.id === agent.id ? "running" : selected.includes(agent.id) ? "selected" : ""} /></button>;
-      })}{snapshot && !agents.length && <p>还没有团队成员。<button className="conversation-text-button" type="button" onClick={() => onOpenProjectSettings?.(projectId ?? undefined)}>添加成员</button></p>}</div>
+      <div className="conversation-context-row"><div className="conversation-context"><button type="button" className="conversation-text-button conversation-task-link" disabled={!snapshot || !onOpenProjectSettings} onClick={openProjectTasks}>查看任务 · {tasks.length}<ArrowSquareOut size={14} /></button></div>
+        <div className="conversation-members" aria-label="当前团队成员"><button ref={headerMemberTrigger} type="button" className="conversation-members-trigger" aria-label={`选择参与成员，已选 ${selected.length} 位，共 ${agents.length} 位`} aria-expanded={membersOpen === "header"} aria-controls={membersOpen === "header" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "header" ? null : "header")} disabled={!snapshot}>
+          <span className="conversation-member-preview" aria-hidden="true">{agents.slice(0, 3).map(agent => <span key={agent.id} data-selected={selected.includes(agent.id)}><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /></span>)}</span><span>成员 {agents.length}</span><CaretDown size={14} /></button></div>
+      </div>
       <div className="conversation-modes" role="tablist" aria-label="协作方式">{([['discussion', '讨论'], ['execution_plan', '执行项目']] as const).map(([value, label]) => <button type="button" role="tab" key={value} aria-selected={mode === value} disabled={busy} onClick={() => setMode(value)}>{label}</button>)}</div>
     </header>
+    {membersOpen === "header" && createPortal(<div id={membersId} ref={membersMenu} className="conversation-member-menu" data-wide={membersPosition.width > 350} role="group" aria-label="选择参与成员" style={membersPosition}><header>参与成员</header>{agents.map(agent => {
+      const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind);
+      const reason = !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? "Runtime 已停用" : !supported.includes(agent.runtimeKind) ? "暂不支持受限讨论" : "";
+      return <label key={agent.id} className={eligible ? "" : "unavailable"} title={`${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]}${reason ? ` · ${reason}` : ""}`}><input type="checkbox" aria-label={agent.name} checked={selected.includes(agent.id)} disabled={!eligible || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span className="conversation-member-name"><strong>{agent.name}</strong><small>{ROLE[agent.role] ?? agent.role}{reason && ` · ${reason}`}{activeAgent?.id === agent.id && " · 正在回复"}</small></span><Check size={18} className="conversation-member-check" aria-hidden="true" /></label>;
+    })}{!agents.length && <p>还没有团队成员。{onOpenProjectSettings && <button type="button" className="conversation-text-button" onClick={() => { setMembersOpen(null); onOpenProjectSettings(projectId ?? undefined); }}>添加成员</button>}</p>}</div>, document.body)}
 
     {(error || runtimeError) && <div className="conversation-error" role="alert"><WarningCircle size={17} /><span>{error || `读取 Runtime 启用状态失败：${runtimeError}`}</span><button type="button" disabled={busy || loading} onClick={() => { void loadProjects().catch(reason => setError(String(reason))); void refreshAvailability(); void refresh(); }}>重新读取</button></div>}
     <div className="conversation-transcript" role="log" aria-label="团队对话" aria-live="polite" ref={transcript} onScroll={event => { const node = event.currentTarget; followMessages.current = node.scrollHeight - node.scrollTop - node.clientHeight < 90; }}>
@@ -293,7 +329,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
 
     <footer className="conversation-footer">
       {round && <div className="conversation-progress" role="status"><span className={`conversation-status-dot ${round.status}`} /><span>{activeAgent ? `${activeAgent.name} · ` : ""}{round.status === "completed" ? "本轮讨论结束" : CONVERSATION_STATUS[round.status]}{round.stopReason ? ` · ${round.stopReason}` : ""}</span>{discussing && <button className="conversation-text-button" type="button" disabled={busy || round.status === "stopping"} onClick={() => void control("pause")}><Pause size={13} />{round.status === "unconfirmed" ? "重新核对停止" : "暂停讨论"}</button>}{discussing && <button type="button" className="conversation-text-button" aria-label="结束本轮讨论" disabled={busy || round.status === "stopping"} onClick={() => void control("cancel")}><Stop size={13} />结束本轮</button>}{["paused", "cancelled"].includes(round.status) && <button className="conversation-text-button" type="button" disabled={busy || !!pending || !healthy} onClick={() => void submit(undefined, mode === "discussion" ? "继续讨论，请结合以上人工补充与已确认的上下文。" : "继续拟定项目分工，请结合以上人工补充与已确认的上下文。")}>{mode === "discussion" ? "继续讨论" : "继续拟定分工"}</button>}</div>}
-      {runningTasks.length > 0 && <div className="conversation-progress"><ListChecks size={15} /><span>{runningTasks.length} 项工程任务仍在执行或等待处理</span><button className="conversation-text-button" type="button" onClick={() => setTasksOpen(true)}>查看任务</button></div>}
+      {runningTasks.length > 0 && <div className="conversation-progress"><ListChecks size={15} /><span>{runningTasks.length} 项工程任务仍在执行或等待处理</span><button className="conversation-text-button" type="button" disabled={!onOpenProjectSettings} onClick={openProjectTasks}>查看任务</button></div>}
       {pending && <div className="conversation-send-pending" role="status"><span>{busy ? "正在发送…" : "本次发送结果未确认，重新核对会使用同一消息编号。"}</span>{!busy && <button type="button" onClick={() => void deliver(pending)}>核对并重试</button>}</div>}
       <form className="conversation-composer multi-agent-composer" onSubmit={event => void submit(event)}>
         <div className="conversation-editor multi-agent-composer-editor">
@@ -308,13 +344,12 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           }} />
           {mentionOpen && mentionMatch && mentionOptions.length > 0 && <AgentMentionMenu id="conversation-mentions" options={mentionOptions} activeIndex={Math.min(mentionIndex, mentionOptions.length - 1)} onHighlight={setMentionIndex} onSelect={insertMention} allSelected={allMentionsSelected} onSelectAll={selectAllMentions} />}
         </div>
-        <div className="conversation-composer-actions"><button type="button" className="conversation-target" aria-expanded={membersOpen} onClick={() => setMembersOpen(value => !value)} disabled={!agents.length}><User size={16} /><span>{selected.length === agents.length && selected.length ? "发给当前团队" : `已选 ${selected.length} 位成员`}</span><CaretDown size={12} /></button><small>{mode === "discussion" ? "讨论" : "先生成分工"}{discussing ? " · 人工插话" : ""}</small><button type="submit" className="conversation-send" aria-label={discussing ? "发送插话" : "发送消息"} disabled={busy || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || !draft.trim() || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}><PaperPlaneTilt size={21} weight="fill" /></button></div>
-        {membersOpen && <div className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>参与成员</strong><button type="button" onClick={() => { const eligible = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id); setSelected(selected.length === eligible.length ? [] : eligible); }}>全选 / 取消全选</button></header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 暂不支持受限讨论" : ""}</small></span></label>)}</div>}
+        <div className="conversation-composer-actions"><button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"} aria-controls={membersOpen === "composer" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}><User size={16} /><span>{selected.length === agents.length && selected.length ? "发给当前团队" : `已选 ${selected.length} 位成员`}</span><CaretDown size={12} /></button><small>{mode === "discussion" ? "讨论" : "先生成分工"}{discussing ? " · 人工插话" : ""}</small><button type="submit" className="conversation-send" aria-label={discussing ? "发送插话" : "发送消息"} disabled={busy || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || !draft.trim() || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}><PaperPlaneTilt size={21} weight="fill" /></button></div>
+        {membersOpen === "composer" && <div id={membersId} ref={membersMenu} className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>参与成员</strong><button type="button" onClick={() => { const eligible = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id); setSelected(selected.length === eligible.length ? [] : eligible); }}>全选 / 取消全选</button></header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 暂不支持受限讨论" : ""}</small></span></label>)}</div>}
       </form>
       <p className="conversation-footnote"><WarningCircle size={13} />{discussing ? "插话会停止后续发言；正在执行的轮次需确认停止。" : mode === "discussion" ? "有界讨论，使用受限工具；工程任务需明确发起执行。" : "先生成待执行分工，确认成员、目录与验收要求后启动。"}</p>
     </footer>
 
-    {tasksOpen && createPortal(<Modal overlayClassName="dialog-overlay conversation-drawer-overlay" className="conversation-task-drawer" ariaLabel="协作任务详情" onClose={() => setTasksOpen(false)}><header><div><h2>项目任务</h2><p>{snapshot?.project.name}</p></div><button type="button" className="conversation-icon" aria-label="关闭任务详情" onClick={() => setTasksOpen(false)}><X size={20} /></button></header>{!tasks.length && <p>还没有工程任务。切换到“执行项目”生成分工。</p>}<div className="conversation-task-list">{tasks.map(task => <details key={task.id}><summary><ListChecks size={17} /><strong>{task.title}</strong><span className={task.status}>{TASK_STATUS[task.status] ?? task.status}</span></summary><p>{task.description}</p><dl><dt>负责人</dt><dd>{agents.find(agent => agent.id === task.assigneeAgentId)?.name ?? "未分配"}</dd><dt>验收要求</dt><dd>{task.acceptanceCriteria || "尚未指定"}</dd><dt>验收命令</dt><dd><code>{task.verificationCommand ?? "未指定命令"}</code></dd><dt>工作区</dt><dd>{task.workspaceMode === "worktree" ? "独立工作树" : task.workspaceMode === "read_only" ? "只读任务" : task.workspaceMode}</dd></dl>{snapshot?.runs.filter(run => run.taskId === task.id).map(run => <section className="conversation-run-detail" key={run.id}><strong>尝试 {run.attempt} · {run.status}</strong>{run.error && <p role="alert">{run.error}</p>}{run.outputSummary && <p>{run.outputSummary}</p>}<details><summary>执行日志</summary><pre>{snapshot.runLogs.filter(log => log.runId === run.id).map(log => log.content).join("\n") || "尚无日志"}</pre></details><UnverifiedRunNotice run={run} onConfirmed={refresh} /></section>)}</details>)}</div><footer>{runningTasks.length > 0 && snapshot?.project.status === "active" && <button type="button" disabled={busy || !healthy} onClick={() => void pauseProject()}><Pause size={14} />暂停项目执行</button>}{onOpenWorkspace && projectId && <button type="button" className="conversation-primary" onClick={() => { setTasksOpen(false); onOpenWorkspace(projectId); }}>打开协作工作台<ArrowSquareOut size={15} /></button>}<button type="button" onClick={() => setTasksOpen(false)}>返回对话</button></footer></Modal>, document.body)}
     {creatingProject && <CollaborationProjectDialog onClose={() => setCreatingProject(false)} onCreate={async input => {
       const project = await invoke<MultiAgentProject>("ma_create_project", { input: { ...input, defaultBranch: "main" } });
       setProjects(items => [project, ...items.filter(item => item.id !== project.id)]); chooseProject(project.id);

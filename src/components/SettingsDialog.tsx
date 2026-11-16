@@ -41,6 +41,7 @@ import { BrowserControlSettingsPanel } from "./BrowserControlSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { LockIcon } from "@phosphor-icons/react/dist/csr/Lock";
 import { PrivacySettingsPanel } from "./PrivacySettingsPanel";
+import type { CollaborationTasksRequest } from "../collaborationTasks";
 
 interface Props {
   quickContext?: QuickContext;
@@ -63,6 +64,7 @@ interface Props {
   initialCollaborationTab?: "overview" | "diagnostics";
   initialCollaborationDiagnosticGlobal?: boolean;
   initialCollaborationProjectId?: string;
+  initialCollaborationTasksRequest?: CollaborationTasksRequest;
 }
 
 export type SettingsSection =
@@ -101,6 +103,7 @@ export function SettingsDialog({
   initialCollaborationTab = "overview",
   initialCollaborationDiagnosticGlobal = false,
   initialCollaborationProjectId,
+  initialCollaborationTasksRequest,
 }: Props) {
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     String(initialSection) === "mcp" ? "generalSettings" : initialSection,
@@ -108,6 +111,11 @@ export function SettingsDialog({
   const [automationEditing, setAutomationEditing] = useState(false);
   const [navQuery, setNavQuery] = useState("");
   const [privacyCollaborationRequested, setPrivacyCollaborationRequested] = useState(false);
+  const [taskRequest, setTaskRequest] = useState(initialCollaborationTasksRequest);
+  useEffect(() => {
+    setTaskRequest(initialCollaborationTasksRequest);
+    if (initialCollaborationTasksRequest) { setActiveSection("collaboration"); setNavQuery(""); setPrivacyCollaborationRequested(false); }
+  }, [initialCollaborationTasksRequest?.projectId, initialCollaborationTasksRequest?.requestId]);
   const settingsNav = useRef<HTMLElement>(null);
   const privacyNavigationTarget = useRef<SettingsSection | null>(null);
   useEffect(() => {
@@ -328,7 +336,7 @@ export function SettingsDialog({
                       aria-current={
                         activeSection === item.id ? "page" : undefined
                       }
-                      onClick={() => { privacyNavigationTarget.current = null; setPrivacyCollaborationRequested(false); setActiveSection(item.id); }}
+                      onClick={() => { privacyNavigationTarget.current = null; setPrivacyCollaborationRequested(false); setTaskRequest(undefined); setActiveSection(item.id); }}
                       key={item.id}
                     >
                       <span className="settings-nav-icon" aria-hidden="true">
@@ -390,9 +398,9 @@ export function SettingsDialog({
             {sectionCopy.note && <p className="settings-page-note">{sectionCopy.note}</p>}
 
             {activeSection === "privacy" ? (
-              <PrivacySettingsPanel onNavigate={destination => { privacyNavigationTarget.current = destination; setNavQuery(""); setPrivacyCollaborationRequested(destination === "collaboration"); setActiveSection(destination); }} />
+              <PrivacySettingsPanel onNavigate={destination => { privacyNavigationTarget.current = destination; setNavQuery(""); setTaskRequest(undefined); setPrivacyCollaborationRequested(destination === "collaboration"); setActiveSection(destination); }} />
             ) : activeSection === "collaboration" ? (
-              <CollaborationSettingsPanel onClose={onClose} initialTab={privacyCollaborationRequested ? "records" : initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} />
+              <CollaborationSettingsPanel onClose={onClose} initialTab={privacyCollaborationRequested ? "records" : initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} taskRequest={taskRequest} />
             ) : activeSection === "sharedMemory" ? (
               <SharedMemorySettingsPanel />
             ) : activeSection === "quickCommands" ? (

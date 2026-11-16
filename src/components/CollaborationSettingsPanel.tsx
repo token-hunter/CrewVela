@@ -1,4 +1,8 @@
 import { CollaborationRecordsPanel } from "./CollaborationRecordsPanel";
+import { createPortal } from "react-dom";
+import { CollaborationTaskDetails } from "./CollaborationTaskDetails";
+import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
+import { visibleProjectTasks, type CollaborationTasksRequest } from "../collaborationTasks";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -44,6 +48,7 @@ interface Props {
   initialTab?: "overview" | "diagnostics" | "records";
   initialDiagnosticGlobal?: boolean;
   initialProjectId?: string;
+  taskRequest?: CollaborationTasksRequest;
 }
 
 interface SuggestedSkillSet {
@@ -204,7 +209,7 @@ function runtimeVersion(value: string | null | undefined): string {
   return value?.match(/\d+(?:\.\d+)+/)?.[0] ?? value ?? "—";
 }
 
-export function CollaborationSettingsPanel({ onClose, initialTab = "overview", initialDiagnosticGlobal = false, initialProjectId }: Props) {
+export function CollaborationSettingsPanel({ onClose, initialTab = "overview", initialDiagnosticGlobal = false, initialProjectId, taskRequest }: Props) {
   const [projects, setProjects] = useState<MultiAgentProject[]>(
     UI_PREVIEW ? [PREVIEW_PROJECT] : [],
   );
@@ -252,7 +257,33 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   const [runtimeExpanded, setRuntimeExpanded] = useState(false);
   const runtimeContentId = useId();
   const [detail, setDetail] = useState<{ title: string; content: string } | null>(null);
+  const [taskDetail, setTaskDetail] = useState<{ projectId: string; taskId: string } | null>(null);
+  const taskPanel = useRef<HTMLElement>(null);
+  const appliedTaskRequest = useRef("");
+  const focusedTaskRequest = useRef("");
   const currentSnapshot = snapshot?.project.id === selectedProjectId && projects.some((project) => project.id === selectedProjectId) ? snapshot : null;
+  const taskSnapshot = currentSnapshot ? { ...currentSnapshot, tasks: visibleProjectTasks(currentSnapshot.tasks) } : null;
+  const taskNavigationBlocked = editingAgent !== undefined || creatingProject || managingRuntimes || handoffRequest !== null;
+  useEffect(() => { setTaskDetail(null); }, [selectedProjectId]);
+  useEffect(() => {
+    if (!taskRequest || taskNavigationBlocked || currentSnapshot?.project.id !== taskRequest.projectId) return;
+    const key = `${taskRequest.projectId}:${taskRequest.requestId}`;
+    if (appliedTaskRequest.current === key) return;
+    appliedTaskRequest.current = key;
+    setTaskDetail(null); setDetail(null); setTab("overview"); setFilter("all"); setCollapsed(new Set());
+  }, [taskRequest, currentSnapshot, taskNavigationBlocked]);
+  useEffect(() => {
+    if (!taskRequest || taskNavigationBlocked || currentSnapshot?.project.id !== taskRequest.projectId || tab !== "overview" || filter !== "all") return;
+    const key = `${taskRequest.projectId}:${taskRequest.requestId}`;
+    if (appliedTaskRequest.current !== key || focusedTaskRequest.current === key) return;
+    const frame = requestAnimationFrame(() => {
+      if (!taskPanel.current) return;
+      taskPanel.current.scrollIntoView({ block: "start", behavior: "auto" });
+      taskPanel.current.focus({ preventScroll: true });
+      focusedTaskRequest.current = key;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [taskRequest, currentSnapshot?.project.id, taskNavigationBlocked, tab, filter]);
   const requestHandoff = (taskId?: string, recordId?: string) => setHandoffRequest({ nonce: Date.now(), taskId, recordId });
   const pauseProject = async () => {
     if (!currentSnapshot || projectInFlight.current) return;
@@ -315,7 +346,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
           nextProjects.some((project) => project.id === storedProjectId)
             ? storedProjectId
             : initialProjectId ? null : nextProjects[0]?.id ?? null;
-        if (initialProjectId && !nextProjects.some(project => project.id === initialProjectId)) setError("请求诊断的项目已不可用，请明确选择其他项目。");
+        if (initialProjectId && !nextProjects.some(project => project.id === initialProjectId)) setError("请求的项目已不可用，请明确选择其他项目。");
         selectProject(nextProjectId);
       })
       .catch((reason) => {
@@ -330,6 +361,19 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
       runtimeCheckSequence.current += 1;
     };
   }, [selectProject, initialProjectId]);
+
+  // A repeated deep link must still win after a manual project selection, even
+  // when initialProjectId itself has not changed. Do not replay consumed links.
+  useEffect(() => {
+    if (!taskRequest || taskNavigationBlocked || projectsLoading || appliedTaskRequest.current === `${taskRequest.projectId}:${taskRequest.requestId}`) return;
+    if (!projects.some(project => project.id === taskRequest.projectId)) {
+      if (selectionRef.current !== null) selectProject(null);
+      setError("请求的项目已不可用，请明确选择其他项目。");
+      return;
+    }
+    setError(null);
+    if (selectionRef.current !== taskRequest.projectId) selectProject(taskRequest.projectId);
+  }, [taskRequest, taskNavigationBlocked, projectsLoading, projects, selectProject]);
 
   const refreshSnapshot = useCallback(() => {
     if (!selectedProjectId) {
@@ -508,12 +552,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   };
 
   const showTask = (task: NonNullable<typeof currentSnapshot>["tasks"][number]) => {
-    const latestRun = currentSnapshot?.runs.filter((run) => run.taskId === task.id).sort((a, b) => b.createdAt - a.createdAt)[0];
-    const logs = currentSnapshot?.runLogs.filter((log) => log.taskId === task.id && (!latestRun || log.runId === latestRun.id)).sort((a, b) => b.seq - a.seq).slice(0, 20).reverse() ?? [];
-    setDetail({ title: task.title, content: task.description + "\n\n验收标准：" + task.acceptanceCriteria + "\n验证命令：" + (task.verificationCommand ?? "未设置")
-      + "\n\n最近执行：" + (latestRun ? latestRun.id + " · " + latestRun.status : "暂无记录")
-      + "\n错误证据：" + (latestRun?.error || "暂无错误记录")
-      + "\n\n最近执行日志（最多 20 条）：\n" + (logs.map((log) => `[${formatDateTime(log.createdAt)} ${log.stream}] ${log.content}`).join("\n") || "暂无日志记录") });
+    if (currentSnapshot) setTaskDetail({ projectId: currentSnapshot.project.id, taskId: task.id });
   };
   const eventTask = (event: NonNullable<typeof currentSnapshot>["events"][number]) => {
     const run = currentSnapshot?.runs.find((run) => run.id === event.entityId);
@@ -542,8 +581,8 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     <header className="collab-page-header"><div><h2>协作中心</h2><p>管理团队、任务与协作通信</p></div><div className="collab-guide-actions"><CommunicationGuideButton scope="project" projectId={selectedProjectId} className="btn secondary communication-workspace-entry" /><button className="btn secondary" disabled={!currentSnapshot} onClick={() => void openWorkspace()}><ArrowSquareOutIcon size={16} />打开工作台</button></div></header>
     {error && <p role="alert" className="collaboration-settings-error">{error}</p>}
     <section className="collab-project-toolbar">
-      <div className="collab-project-picker"><select aria-label="当前项目" value={selectedProjectId ?? ""} disabled={!projects.length} onChange={(event) => selectProject(event.target.value || null)}>{!projects.length && <option value="">暂无协作项目</option>}{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-      <span className="collab-project-counts"><b>{currentSnapshot?.tasks.length ?? "—"}</b> 个任务<span>· <b>{memberCount}</b> 位成员</span></span></div>
+      <div className="collab-project-picker"><select aria-label="当前项目" value={selectedProjectId ?? ""} disabled={!projects.length} onChange={(event) => selectProject(event.target.value || null)}>{!selectedProjectId && <option value="" disabled={projects.length > 0}>{projects.length ? "请选择协作项目" : "暂无协作项目"}</option>}{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+      <span className="collab-project-counts"><b>{taskSnapshot?.tasks.length ?? "—"}</b> 个任务<span>· <b>{memberCount}</b> 位成员</span></span></div>
       <span className={"collab-project-state " + (currentSnapshot?.project.status ?? "")}><i />{currentSnapshot ? projectStatusLabel(currentSnapshot.project) : selectedProjectId ? "加载中…" : "未选择项目"}</span>
       <div className="collab-project-actions"><button className="btn secondary" disabled={!currentSnapshot || projectBusy} onClick={() => void pauseProject()}>{projectBusy ? "处理中…" : currentSnapshot?.project.status === "active" ? "暂停项目" : "继续项目"}</button><button type="button" className="btn secondary" disabled={projectsLoading} onClick={() => setCreatingProject(true)}>创建项目</button><button className="btn collab-primary" disabled={Boolean(selectedProjectId && !currentSnapshot)} onClick={() => requestHandoff()}>交接工作</button></div>
     </section>
@@ -600,14 +639,17 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
       : <p className="collab-empty">{selectedProjectId ? "正在加载协作记录…" : "请选择项目后查看协作记录"}</p>)}
     {tab === "archive" && <KnowledgeBaseDialog embedded projectId={selectedProjectId} snapshot={UI_PREVIEW ? currentSnapshot : undefined} onOpenRecord={openArchiveRecord} />}
     {tab === "overview" && <>
+      {currentSnapshot && <details className="collab-project-info" key={currentSnapshot.project.id}><summary><CaretRightIcon size={14}/><span>项目信息</span></summary><dl><dt>项目目录</dt><dd><code>{currentSnapshot.project.rootPath || "尚未提供项目目录"}</code></dd></dl></details>}
       <section className="collab-diagnostic-summary" aria-label="协作诊断摘要"><i className={diagnosticIssues.length ? "warning" : "unknown"} /><strong>{health ? checkSummary : "尚未取得检查结果"}</strong><button onClick={() => setTab("diagnostics")} title={health ? `${health.scopeLabel} · ${checks.length} 项检查${health.checkedAt ? " · " + new Date(health.checkedAt).toLocaleTimeString("zh-CN") : ""}` : undefined}>查看诊断 →</button></section>
-      <div className="collab-main-grid"><section className="collab-task-panel" aria-label="项目任务"><header><h3>项目任务</h3><div className="collab-task-filters" role="group" aria-label="任务筛选">{[["attention","待处理"],["all","全部"],["running","执行中"],["in_review","待审核"]].map(([id,title]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>{title}</button>)}</div></header><div className="collab-task-columns"><span>任务</span><span>负责人</span><span>状态</span><span>更新</span><span /></div>
-      {groupTasksByStage(currentSnapshot).filter((group) => group.tasks.some((task) => taskMatchesFilter(task.status, filter))).map((group) => <div key={group.stage} className="collab-stage"><button className="collab-stage-title" aria-expanded={!collapsed.has(group.stage)} onClick={() => setCollapsed((current) => { const next = new Set(current); if (next.has(group.stage)) next.delete(group.stage); else next.add(group.stage); return next; })}><span>{collapsed.has(group.stage) ? "›" : "⌄"} 阶段 {group.stage}{UI_PREVIEW ? " · " + (["调研与方案","实现","验证与交付"][group.stage] ?? "") : ""}</span><span>{group.done}/{group.total} 已完成 <i className={group.allDone ? "done" : ""}>{group.allDone ? "✓" : ""}</i></span></button>
+      <div className="collab-main-grid"><section ref={taskPanel} tabIndex={-1} className="collab-task-panel" aria-label="项目任务"><header><h3>项目任务</h3><div className="collab-task-filters" role="group" aria-label="任务筛选">{[["attention","待处理"],["all","全部"],["running","执行中"],["in_review","待审核"]].map(([id,title]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>{title}</button>)}</div></header>
+      {currentSnapshot?.runs.filter(run => run.sessionLocator?.stopUnverified === true).map(run => <UnverifiedRunNotice key={run.id} run={run} taskTitle={currentSnapshot.tasks.find(task => task.id === run.taskId)?.title} onConfirmed={refreshSnapshot}/>)}
+      <div className="collab-task-columns"><span>任务</span><span>负责人</span><span>状态</span><span>更新</span><span /></div>
+      {groupTasksByStage(taskSnapshot).filter((group) => group.tasks.some((task) => taskMatchesFilter(task.status, filter))).map((group) => <div key={group.stage} className="collab-stage"><button className="collab-stage-title" aria-expanded={!collapsed.has(group.stage)} onClick={() => setCollapsed((current) => { const next = new Set(current); if (next.has(group.stage)) next.delete(group.stage); else next.add(group.stage); return next; })}><span>{collapsed.has(group.stage) ? "›" : "⌄"} 阶段 {group.stage}{UI_PREVIEW ? " · " + (["调研与方案","实现","验证与交付"][group.stage] ?? "") : ""}</span><span>{group.done}/{group.total} 已完成 <i className={group.allDone ? "done" : ""}>{group.allDone ? "✓" : ""}</i></span></button>
       {!collapsed.has(group.stage) && [...group.tasks].sort((a,b) => taskPriority(a.status) - taskPriority(b.status) || b.updatedAt - a.updatedAt).filter((task) => taskMatchesFilter(task.status, filter)).map((task) => {
         const owner = agents.find((agent) => agent.id === task.assigneeAgentId);
         return <div className={"collab-task-row" + (task.status === "running" ? " selected" : "")} key={task.id}><strong><i className={"task-mark " + task.status}>{task.status === "done" ? "✓" : ""}</i>{task.title}</strong><span className="collab-task-owner">{owner && <AgentAvatar avatarId={owner.avatarId} runtimeKind={owner.runtimeKind} decorative />}{owner?.name ?? "未指派"}</span><span className={"collab-status " + task.status}><i />{TASK_STATUS_LABELS[task.status]}</span><time>{formatDateTime(task.updatedAt)}</time><details className="collab-task-menu"><summary aria-label={task.title + "操作"}>⋯</summary><div><button onClick={() => showTask(task)}>查看任务详情</button>{!["done","waiting_approval","in_review"].includes(task.status) && <button onClick={() => requestHandoff(task.id)}>交接此任务</button>}{task.status === "in_review" && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_approve_task")}>批准交付</button>}{["failed","cancelled","changes_requested"].includes(task.status) && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_retry_task")}>重试任务</button>}</div></details></div>;
       })}</div>)}
-      {!currentSnapshot?.tasks.some((task) => taskMatchesFilter(task.status, filter)) && <p className="collab-empty">{currentSnapshot?.tasks.length ? "当前筛选暂无任务" : "暂无协作任务"}</p>}</section>
+      {!taskSnapshot?.tasks.some((task) => taskMatchesFilter(task.status, filter)) && <p className="collab-empty">{taskSnapshot?.tasks.length ? "当前筛选暂无任务" : "暂无协作任务"}</p>}</section>
       <details className="collab-activity-disclosure"><summary><CaretRightIcon size={16} aria-hidden="true" /><strong>最近活动</strong><span>{activity.length} 条活动 · {health?.handoffs.length ?? 0} 条交接</span></summary><aside className="collab-side-panels"><section className="collab-activity-panel"><header><h3>最近活动</h3><button onClick={() => setTab("records")}>查看全部活动</button></header><div>{activity.slice(0,4).map((event) => <article key={event.seq}><i className={String(event.payload.tone ?? "")} /><time>{formatDateTime(event.createdAt)}</time><p>{activityLabel(event.eventType)}{eventTask(event) && <button onClick={() => showTask(eventTask(event)!)}> · {eventTask(event)!.title}</button>}</p></article>)}{!activity.length && <p className="collab-empty">暂无活动记录</p>}</div></section>
       <section className="collab-handoff-panel"><header><h3>交接记录</h3></header>{health?.handoffs.slice(0,3).map((record) => <article key={record.id}><div><p>{sessionName(record.sourceId)} → {sessionName(record.targetId)}</p><small>{HANDOFF_LABELS[record.state] ?? record.state} · {record.consequence}</small></div><button onClick={() => requestHandoff(undefined,record.id)}>查看</button></article>)}{!health?.handoffs.length && <p className="collab-empty">暂无交接记录</p>}</section></aside></details></div>
       <p className="collab-sync-note"><ArrowClockwiseIcon size={16} />任务依赖与执行状态自动同步</p>
@@ -660,6 +702,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     }} />}
 
     <CollaborationSupportPanel initialGlobal={initialDiagnosticGlobal} snapshot={currentSnapshot} enabledRuntimes={visibleRuntimeOrder} onChanged={() => { if (!UI_PREVIEW) void refreshSnapshot(); }} view={tab} request={handoffRequest} onHealthChange={setHealth} onHandoffClose={() => setHandoffRequest(null)} />
+    {taskDetail && currentSnapshot?.project.id === taskDetail.projectId && createPortal(<Modal className="collaboration-handoff-dialog collab-task-detail-dialog" onClose={() => setTaskDetail(null)} ariaLabel="协作任务详情"><button className="collab-modal-close" aria-label="关闭任务详情" onClick={() => setTaskDetail(null)}>×</button><h3>{currentSnapshot.tasks.find(task => task.id === taskDetail.taskId)?.title ?? "任务已不可用"}</h3><CollaborationTaskDetails snapshot={currentSnapshot} taskId={taskDetail.taskId} onChanged={refreshSnapshot}/></Modal>, document.body)}
     {detail && <Modal className="collaboration-handoff-dialog" onClose={() => setDetail(null)} ariaLabel={detail.title}><button className="collab-modal-close" aria-label="关闭详情" onClick={() => setDetail(null)}>×</button><h3>{detail.title}</h3><pre>{detail.content}</pre></Modal>}
   </div>;
 }

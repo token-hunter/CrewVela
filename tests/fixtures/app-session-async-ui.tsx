@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 import App from "../../src/App";
 import type { SessionRecord } from "../../src/types";
+import { navigationProjects, navigationSnapshot, navigationConversation } from "./collaboration-task-navigation-data";
+import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
 import "../../src/styles.css";
 import "../../src/styles/cowork.css";
 
@@ -45,6 +47,16 @@ const api = {
     }
   },
   async invoke(command: string, args?: Record<string, unknown>) {
+    if (new URLSearchParams(location.search).has("tasks-nav")) {
+      if(command==="ma_list_projects")return structuredClone(navigationProjects);
+      if(command==="ma_snapshot")return navigationSnapshot(String(args?.projectId));
+      if(command==="ma_conversation_snapshot")return navigationConversation(String(args?.projectId));
+      if(["ma_probe_runtimes","ma_check_runtime_updates"].includes(command))return [{kind:"codex",installed:true,executable:"fixture",version:"fixture",protocol:"local",capabilities:[],error:null}];
+      if(command==="skill_center_snapshot")return {skillSets:[]};
+      if(command==="collaboration_health")return {scopeLabel:"当前项目",sessions:[],runtimes:[],messages:[],handoffs:[],cliPath:"fixture",cliPathExists:true,replyEvidence:"fixture"};
+      if(command==="general_settings_get")return GENERAL_SETTINGS_PREVIEW;
+      if(command==="ma_list_interventions")return [];
+    }
     if (new URLSearchParams(location.search).has("app-help")) {
       if(command === "plugin:app|version") { if(api.help.versionFails)throw Error("version unavailable");return api.help.version; }
       if(command === "app_check_update") { if(args && Object.keys(args).length)throw Error("App check must not send session/config data");api.help.checks+=1;return new Promise((resolve,reject)=>api.help.pending.push({resolve,reject})); }
