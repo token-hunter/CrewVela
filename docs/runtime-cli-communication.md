@@ -34,7 +34,9 @@ Pi 项目任务另通过同一私有扩展的官方 `registerMcpServer` 接入�
 
 受管 Claude Code 原生 runtime 的身份 settings 和输入就绪 hooks 在常规权限模式也启用，独立于 YOLO；不会为通信放宽权限。发送方声明的会话 ID 不存在时拒绝，不把它静默降级成人工无来源消息。回复包装同时提供合法 PowerShell（`&` 调用与单引号转义）和 Bash 命令，始终引用发送方原 ID。
 
-统一技能源为 `skills/crewvela/SKILL.md`。本机可经共享 `.agents/skills`（当前链接到 `.claude/skills`）被多个运行时发现。部署路径遵循每个运行时自身的发现规则，不替换 Kimi 已有 skill roots，不覆盖 Codex developer instructions 或放宽工具环境策略。
+统一技能源为 `skills/crewvela/SKILL.md`。应用启动时同步到共享 `.agents/skills/crewvela` 和六种 CLI 的原生用户 Skill 目录：Claude `.claude/skills`、Codex `.codex/skills`、Kimi `.kimi-code/skills`、ZCode CLI `.zcode/skills`、Pi `.pi/agent/skills`、OpenCode `.config/opencode/skills`。尊重 `CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`KIMI_CODE_HOME`、`PI_CODING_AGENT_DIR`、`OPENCODE_CONFIG_DIR` / `XDG_CONFIG_HOME`，只更新内置原文或可识别的旧版，保留自定义文件及 Skill Center 管理记录。共享目录可独立存在或链接，不依赖链接才能发现。
+
+ZCode CLI 0.16 的 Skill 发现与斜杠补全分开：`zcode --json skills list` 可检查发现，`/skill crewvela <需求>` 是原生调用方式。应用另安装 `.zcode/commands/crewvela.md`，让 `/crewvela <需求>` 出现在原生自定义命令列表，要求通过 Skill 工具加载同一指南；已有自定义同名命令保留。旧运行进程需要重新启动或恢复原会话才能刷新命令目录；发现成功不代表模型已调用 Skill，更不代表消息已送达。不替换 Kimi 已有 skill roots，不覆盖 Codex developer instructions 或放宽工具环境策略。
 
 Pi 私有桥的启动 token 校验通过后，将原生会话位置保存到应用私有 sidecar。恢复Pi必须带官方 `--session` 指向仍存在的原会话文件。缺失或无效时明确拒绝，不静默建立新历史。尚未报告位置的旧进程不能承诺自动恢复上下文。
 

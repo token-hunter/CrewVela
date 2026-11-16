@@ -2567,6 +2567,7 @@ mod tests {
             yolo: false,
             auto_mode: false,
             permission_mode: Some(crate::sessions::PermissionMode::Default),
+            cli_launch_mode: None,
             permission_mode_revision: 1,
             approval_policy: ApprovalPolicy::default(),
             waiting_reason: None,

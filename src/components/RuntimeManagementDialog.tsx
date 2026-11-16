@@ -7,8 +7,10 @@ import type { AgentRuntimeKind } from "../types";
 import type { RuntimeDropPosition } from "../runtimePreferences";
 import { Modal } from "./ui/Modal";
 import "../styles/runtime-management.css";
+import "../styles/cli-launch.css";
 import { RuntimeInstallWizard } from "./RuntimeInstallWizard";
 import { supportsRuntimeInstallation } from "../runtimeInstallation";
+import { isCliRuntime, launchChoices } from "../runtimeLaunch";
 
 export function RuntimeManagementDialog({ order, onReorder, orderError, onClose }: {
   order: AgentRuntimeKind[];
@@ -52,17 +54,24 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
     catch (reason) { setError(String(reason)); }
     finally { setPending(null); }
   };
+  const saveMode = async (kind: AgentRuntimeKind, mode: string) => {
+    if (pending) return;
+    setPending(kind); setError(null);
+    try { await availability.setRuntimeLaunchDefault(kind, mode); }
+    catch (reason) { setError(`保存默认启动模式失败：${String(reason)}`); }
+    finally { setPending(null); }
+  };
   const managed = order.filter((kind) => !isRetiredRuntime(kind));
   const groups: Array<[RuntimeCategory, string]> = [
     ["terminal", "CLI 终端 Agent"],
     ["chat", "原生聊天 Agent"],
   ];
   const renderItem = (kind: AgentRuntimeKind, index: number, group: AgentRuntimeKind[]) => <div
-    className={`collab-runtime-management-row${dragging === kind ? " dragging" : ""}`} key={kind}
+    className={`collab-runtime-management-row${isCliRuntime(kind) ? " cli-mode-row" : ""}${dragging === kind ? " dragging" : ""}`} key={kind}
     data-runtime-order={kind} data-drop-position={dropTarget?.kind === kind ? dropTarget.position : undefined}
     draggable
     onDragStart={(event) => {
-      if ((event.target as Element).closest("button, input")) { event.preventDefault(); return; }
+      if ((event.target as Element).closest("button, input, select")) { event.preventDefault(); return; }
       dragSource.current = kind;
       setDragging(kind);
       setDropTarget(null);
@@ -96,6 +105,10 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
       <small>{pending === kind ? "保存中…" : availability.ready ? availability.isRuntimeEnabled(kind) ? "已启用" : "已禁用" : "加载中…"}</small>
       <input type="checkbox" aria-label={`启用 ${RUNTIME_LABELS[kind]}`} checked={availability.ready && availability.isRuntimeEnabled(kind)} disabled={!availability.ready || pending !== null} onChange={(event) => void toggle(kind, event.target.checked)} />
     </label>
+    {isCliRuntime(kind) && <select className="runtime-default-mode" aria-label={`默认启动模式 · ${RUNTIME_LABELS[kind]}`} value={availability.prefs.defaultLaunchModes?.[kind] ?? "cli_default"} disabled={!availability.ready || pending !== null} onChange={event => void saveMode(kind, event.target.value)}>
+      {!launchChoices(kind).some(choice => choice.id === (availability.prefs.defaultLaunchModes?.[kind] ?? "cli_default")) && <option disabled value={availability.prefs.defaultLaunchModes?.[kind]}>已保存模式不可用</option>}
+      {launchChoices(kind).map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
+    </select>}
     {supportsRuntimeInstallation(kind) && <button type="button" className="btn secondary collab-runtime-install-entry" onClick={() => setInstalling(kind)}>安装与版本</button>}
     <div className="collab-runtime-order-actions" role="group" aria-label={`调整 ${RUNTIME_LABELS[kind]} 顺序`}>
       <button type="button" aria-label={`上移 ${RUNTIME_LABELS[kind]}`} title="上移" disabled={index === 0} onClick={() => onReorder(kind, group[index - 1], "before")}><ArrowUp size={14} aria-hidden="true" /></button>
@@ -111,11 +124,12 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
     <div className="collab-runtime-management-list" onDragOver={(event) => {
       if (!dragSource.current) return;
       event.preventDefault();
-    }} onDrop={(event) => { event.preventDefault(); clearDrag(); }}>{groups.map(([category, title]) => <section key={category} className="collab-runtime-management-group-section">
-      <h4 className="collab-runtime-management-group">{title}</h4>
+    }} onDrop={(event) => { event.preventDefault(); clearDrag(); }}>{groups.filter(([category]) => managed.some(kind => runtimeCategory(kind) === category)).map(([category, title]) => <section key={category} className="collab-runtime-management-group-section">
+      <h4 className="collab-runtime-management-group">{title}{category === "terminal" && <span className="runtime-default-heading">默认启动模式</span>}</h4>
       {managed.filter((kind) => runtimeCategory(kind) === category).map(renderItem)}
     </section>)}
     </div>
+    <p className="runtime-launch-footnote">默认模式用于之后新建的 CLI 会话；已打开的会话保持原设置。</p>
     </>}
   </Modal>;
 }

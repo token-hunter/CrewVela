@@ -417,6 +417,7 @@ mod tests {
             yolo: false,
             auto_mode: false,
             permission_mode: None,
+            cli_launch_mode: None,
             permission_mode_revision: 0,
             approval_policy: ApprovalPolicy::default(),
             waiting_reason: None,

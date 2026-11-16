@@ -2054,16 +2054,16 @@ pub(crate) fn deepseek_executable() -> Result<PathBuf> {
 
 /// kimi CLI 原生 ACP server 启动命令：`kimi acp`（stdio JSON-RPC，无需适配器）。
 pub(crate) fn kimi_acp_command() -> Result<Command> {
-    let executable = which::which("kimi")
-        .context("未找到 kimi CLI；请先安装 Kimi Code（npm install -g @moonshot-ai/kimi-code）并完成 kimi login")?;
+    let executable = crate::multi_agent::resolve_runtime_executable_checked(crate::multi_agent::AgentRuntimeKind::KimiCode)
+        .map_err(anyhow::Error::msg)?;
     let mut command = command_for_script(&executable);
     command.arg("acp");
     Ok(command)
 }
 
 pub(crate) fn opencode_acp_command() -> Result<Command> {
-    let executable = which::which("opencode")
-        .context("未找到 opencode CLI；请先安装 OpenCode（npm install -g opencode-ai）并完成 opencode auth login")?;
+    let executable = crate::multi_agent::resolve_runtime_executable_checked(crate::multi_agent::AgentRuntimeKind::OpenCode)
+        .map_err(anyhow::Error::msg)?;
     let mut command = command_for_script(&executable);
     command.args(["acp", "--print-logs", "--log-level", "ERROR"]);
     Ok(command)

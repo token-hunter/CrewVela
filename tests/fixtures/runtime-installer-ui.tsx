@@ -8,6 +8,7 @@ import '../../src/styles/collaboration-overview.css';
 const params = new URLSearchParams(location.search);
 const theme = params.get('theme') === 'light' ? 'light' : 'dark';
 document.documentElement.setAttribute('data-theme', theme);
+const versions: Record<string, string> = { claude_code: '2.1.325', codex: '0.169.0', opencode: '1.19.5', kimi_code: '2.6.2', pi: '1.5.2' };
 const state = {
   starts: 0,
   calls: [] as Array<{ command: string; args: any }>,
@@ -27,13 +28,15 @@ const state = {
   if (command === 'set_runtime_enabled') return { disabledRuntimes: args.enabled ? [] : [args.kind] };
   if (command === 'runtime_install_environment') {
     if (state.environmentError) { state.environmentError = false; throw new Error('fixture network offline'); }
-    return { kind: args.kind, supported: true, executable: state.installed ? `C:/fixture/official/${args.kind}.exe` : null, version: state.installed ? args.kind === 'codex' ? 'codex-cli 0.169.0' : '2.1.325 (Claude Code)' : null,
-      latestVersion: args.kind === 'codex' ? '0.169.0' : '2.1.325', source: state.installed ? 'CrewVela 用户级安装' : '未安装或安装异常', installDirectory: `C:/fixture/runtime-installations/${args.kind}`, auth: state.auth, error: state.installed ? null : '未检测到命令', updateError: null };
+    return { kind: args.kind, supported: params.get('scenario') !== 'dependency', executable: state.installed ? `C:/fixture/official/${args.kind}.exe` : null, version: state.installed ? versions[args.kind] : null,
+      latestVersion: versions[args.kind], source: state.installed ? 'CrewVela 用户级安装' : '未安装或安装异常', installDirectory: `C:/fixture/runtime-installations/${args.kind}`,
+      dependencyMessage: params.get('scenario') === 'dependency' ? 'Kimi Code 需要 Git for Windows / Git Bash；安装后重新检查' : args.kind === 'kimi_code' ? '已检测到 Git Bash，不需要 Node/npm' : '当前平台支持，不需要 Node/npm',
+      auth: ['claude_code', 'codex'].includes(args.kind) ? state.auth : 'unverified', error: state.installed ? null : '未检测到命令', updateError: null };
   }
   if (command === 'runtime_install_status') return state.job;
   if (command === 'runtime_install_start') {
     if (state.holdStart) await new Promise<void>(resolve => { state.releaseStart = resolve; });
-    state.job = { id: crypto.randomUUID(), kind: args.kind, phase: 'downloading', message: '正在下载并校验官方安装文件…', downloaded: 64, total: state.unknownTotal ? null : 100, version: args.kind === 'codex' ? '0.169.0' : '2.1.325', executable: null, error: null };
+    state.job = { id: crypto.randomUUID(), kind: args.kind, phase: 'downloading', message: '正在下载并校验官方安装文件…', downloaded: 64, total: state.unknownTotal ? null : 100, version: versions[args.kind], executable: null, error: null };
     state.starts += 1;
     if (params.get('scenario') === 'retry') window.setTimeout(() => state.finish(state.starts === 1 ? 'failed' : 'ready'), 1000);
     if (params.get('scenario') === 'success') window.setTimeout(() => state.finish('ready'), 1000);

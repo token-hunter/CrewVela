@@ -34,6 +34,22 @@ let providers = [{ id: "fixture-provider", name: "Fixture provider", baseUrl: "h
 // 轮询命令的返回内容由测试控制；每次都是新对象，键顺序也随机（Rust HashMap 的序列化顺序就是如此）。
 const shuffledKeys = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).sort(() => Math.random() - 0.5));
 const api = {
+  cliLaunch: {
+    defaults: JSON.parse(localStorage.getItem('fixture-cli-launch-defaults') ?? '{"claude_code":"auto","codex":"read_only"}') as Record<string, string>,
+    calls: [] as Array<{command: string; args: any}>,
+    failSave: false, failLaunch: false, hold: false,
+    pending: [] as Array<() => void>,
+    release() { api.cliLaunch.pending.shift()?.(); },
+  },
+  fullscreen: {
+    value: false, hold: false, fail: false, readFails: false,
+    maximized: false, unmaximizeFails: false, maximizeFails: false,
+    transitions: [] as string[],
+    calls: [] as Array<{label:unknown;value:unknown}>,
+    pending: [] as Array<() => void>,
+    complete() { const finish=api.fullscreen.pending.shift(); if(!finish)throw Error("No pending fullscreen request"); finish(); },
+    external(value:boolean) { api.fullscreen.value=value; api.emit("tauri://resize",{width:1440,height:900}); },
+  },
   automationAccentCalls: [] as Array<{command:string;args:unknown}>,
   bulkCalls: [] as Array<{command:string;sessionId:string}>,
   rejectBulkDelete: "", rejectBulkStop: "",
@@ -64,6 +80,49 @@ const api = {
     }
   },
   async invoke(command: string, args?: Record<string, unknown>) {
+    if (location.search.includes('cli-launch')) {
+      if (command === 'list_projects') return [{id:'fixture-project',name:'Fixture project',path:'C:\\fixture',createdAt:0}];
+      if (command === 'plugin:dialog|open') return 'C:\\fixture';
+      if (command === 'get_runtime_preferences') return {disabledRuntimes:[],defaultLaunchModes:structuredClone(api.cliLaunch.defaults)};
+      if (command === 'set_runtime_launch_default') {
+        api.cliLaunch.calls.push({command,args});
+        if (api.cliLaunch.failSave) throw Error('fixture 默认模式写入失败');
+        api.cliLaunch.defaults[String(args?.kind)] = String(args?.mode);
+        localStorage.setItem('fixture-cli-launch-defaults', JSON.stringify(api.cliLaunch.defaults));
+        const prefs = {disabledRuntimes:[],defaultLaunchModes:structuredClone(api.cliLaunch.defaults)};
+        api.emit('runtime-preferences-changed',prefs);return prefs;
+      }
+      if (command === 'launch_runtime_session') {
+        api.cliLaunch.calls.push({command,args});
+        if (api.cliLaunch.failLaunch) throw Error('fixture CLI 拒绝启动模式');
+        const finish=()=>{
+          const record:SessionRecord={...sessions[0],id:`cli-${api.cliLaunch.calls.length}`,title:String(args?.runtimeKind),kind:'terminal',shell:null,agentRuntimeKind:args?.runtimeKind as any,providerName:String(args?.runtimeKind),providerId:`local-runtime-${args?.runtimeKind}`,status:'running',ptyId:999,cwd:String(args?.cwd),projectId:args?.projectId as string|null,cliLaunchMode:String(args?.launchMode)};
+          sessions=[...sessions,record];return record;
+        };
+        if(api.cliLaunch.hold)return new Promise<SessionRecord>(resolve=>api.cliLaunch.pending.push(()=>resolve(finish())));
+        return finish();
+      }
+    }
+    if(command==="plugin:window|is_fullscreen") { if(api.fullscreen.readFails)throw Error("fixture fullscreen read rejected");return api.fullscreen.value; }
+    if(command==="plugin:window|is_maximized") return api.fullscreen.maximized;
+    if(command==="plugin:window|unmaximize") {
+      api.fullscreen.transitions.push("unmaximize");
+      if(api.fullscreen.unmaximizeFails)throw Error("fixture unmaximize rejected");
+      api.fullscreen.maximized=false;return;
+    }
+    if(command==="plugin:window|maximize") {
+      api.fullscreen.transitions.push("maximize");
+      if(api.fullscreen.maximizeFails)throw Error("fixture maximize rejected");
+      api.fullscreen.maximized=true;return;
+    }
+    if(command==="plugin:window|set_fullscreen") {
+      api.fullscreen.transitions.push(`fullscreen:${args?.value}`);
+      api.fullscreen.calls.push({label:args?.label,value:args?.value});
+      if(api.fullscreen.fail)throw Error("fixture fullscreen rejected");
+      const finish=()=>{api.fullscreen.value=args?.value===true;};
+      if(api.fullscreen.hold)return new Promise<void>(resolve=>api.fullscreen.pending.push(()=>{finish();resolve();}));
+      finish();return;
+    }
     if (new URLSearchParams(location.search).has("automation-accent")) {
       api.automationAccentCalls.push({command,args});
       if(command==="list_automations")return structuredClone((window as any).__automationSeed ?? []);

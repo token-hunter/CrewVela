@@ -2,7 +2,9 @@ import { attentionOpenMode, type AttentionKind } from "./sidebarAttention";
 import { IS_MAC, isTerminalShell, shellLabel } from "./platform";
 import { sidebarTabKind } from "./components/RightSidebarActivityBar";
 import "./components/native-chat-tab-sort.css";
-import { useRuntimeAvailability } from "./runtimeAvailability";
+import { useRuntimeAvailability, setRuntimeLaunchDefault } from "./runtimeAvailability";
+import { CliLaunchDialog } from "./components/CliLaunchDialog";
+import { type CliRuntime, type RuntimeLaunchSelection } from "./runtimeLaunch";
 import { isRetiredRuntime } from "./runtimeTaxonomy";
 import { EmptyWorkspaceLauncher } from "./components/EmptyWorkspaceLauncher";
 import {
@@ -710,6 +712,7 @@ export default function App() {
   );
   // 项目下新建会话流程：记录目标项目，目录选择随之锁定为项目路径。
   const [launchProject, setLaunchProject] = useState<SessionDirectory | null>(null);
+  const [cliLaunchRequest, setCliLaunchRequest] = useState<{ runtime: CliRuntime; project?: SessionDirectory } | null>(null);
   const [dirPromptFor, setDirPromptFor] = useState<{
     provider: ProviderConfig;
     count: number;
@@ -1437,8 +1440,9 @@ export default function App() {
       | "zcode_cli"
     >,
     project?: SessionDirectory,
+    selection?: RuntimeLaunchSelection,
   ) => {
-    if (!isRuntimeEnabled(runtimeKind)) { showError("该 Runtime 未启用或配置尚未加载"); return; }
+    if (!isRuntimeEnabled(runtimeKind)) { showError("该 Runtime 未启用或配置尚未加载"); return false; }
     const current = sessions.find(
       (session) => session.id === selectedSessionId,
     );
@@ -1451,12 +1455,13 @@ export default function App() {
       zcode_cli: "ZCode CLI",
     }[runtimeKind];
     if (UI_PREVIEW) {
-      const launched: SessionRecord = { ...PREVIEW_SESSIONS[0], id: `preview-${runtimeKind}-${Date.now()}`, kind: "terminal", shell: null, agentRuntimeKind: runtimeKind, claudeSessionId: "", providerId: `local-runtime-${runtimeKind}`, providerName: runtimeLabel, title: `${runtimeLabel}${project ? ` · ${project.name}` : ""}`, cwd: project?.path ?? current?.cwd ?? PREVIEW_SESSIONS[0].cwd, projectId: project?.id ?? null, ptyId: 999, status: "running", yolo: false, autoMode: false, worktree: null };
+      if (selection?.saveAsDefault) await setRuntimeLaunchDefault(runtimeKind, selection.mode);
+      const launched: SessionRecord = { ...PREVIEW_SESSIONS[0], id: `preview-${runtimeKind}-${Date.now()}`, kind: "terminal", shell: null, agentRuntimeKind: runtimeKind, claudeSessionId: "", providerId: `local-runtime-${runtimeKind}`, providerName: runtimeLabel, title: `${runtimeLabel}${project ? ` · ${project.name}` : ""}`, cwd: project?.path ?? current?.cwd ?? PREVIEW_SESSIONS[0].cwd, projectId: project?.id ?? null, ptyId: 999, status: "running", yolo: false, autoMode: false, worktree: null, cliLaunchMode: selection?.mode ?? "cli_default" };
       setSessions(items => [launched, ...items]);
       setSessionTypeFilter("all");
       setSelectedSessionId(null);
       setMultiAgentWorkspaceProjectId(null);
-      return;
+      return true;
     }
     const picked = project?.path ?? await open({
       directory: true,
@@ -1464,12 +1469,14 @@ export default function App() {
       title: `选择 ${runtimeLabel} 工作目录`,
       defaultPath: current?.cwd,
     });
-    if (typeof picked !== "string") return;
+    if (typeof picked !== "string") return false;
     try {
+      if (selection?.saveAsDefault) await setRuntimeLaunchDefault(runtimeKind, selection.mode);
       const launched = await invoke<SessionRecord>("launch_runtime_session", {
         runtimeKind,
         cwd: picked,
         projectId: project?.id ?? null,
+        launchMode: selection?.mode,
       });
       setSessions((items) => [
         launched,
@@ -1477,9 +1484,11 @@ export default function App() {
       ]);
       setSessionTypeFilter("all");
       setSelectedSessionId(null);
+      return true;
     } catch (error) {
       showError(`启动 ${runtimeLabel} 失败：${String(error)}`);
       await refreshSessions();
+      throw error;
     }
   }, [refreshSessions, selectedSessionId, sessions, showError]);
 
@@ -1697,7 +1706,7 @@ export default function App() {
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
   // zcode CLI 是终端交互式 TUI：走通用 Runtime PTY 会话链路，与 ZCode Desktop 原生聊天分离。
-  const openZCodeCli = useCallback(async (project?: SessionDirectory) => launchRuntimeSession("zcode_cli", project), [launchRuntimeSession]);
+  const openZCodeCli = useCallback(async (project?: SessionDirectory) => { setCliLaunchRequest({ runtime: "zcode_cli", project }); }, []);
 
   // 按 Agent 新建会话：带项目则用项目目录，不带则走各 Agent 自己的选目录步骤。
   // 「选择 Agent」弹窗与空工作区共用；Claude Code 要先选 Provider，不走这里。
@@ -1710,7 +1719,7 @@ export default function App() {
       else if (runtime === "opencode_chat") void openOpenCodeChat(project);
       else if (runtime === "pi_chat") void openPiChat(project);
       else if (runtime === "zcode") void openZCode(project);
-      else void launchRuntimeSession(runtime, project);
+      else setCliLaunchRequest({ runtime, project });
     },
     [launchRuntimeSession, openClaudeChat, openCodexChat, openDeepSeekHarness, openKimiChat, openOpenCodeChat, openPiChat, openZCode],
   );
@@ -2170,8 +2179,8 @@ export default function App() {
           | "pi"
         | "opencode"
       >,
-    ) => void launchRuntimeSession(runtimeKind),
-    [launchRuntimeSession],
+    ) => setCliLaunchRequest({ runtime: runtimeKind }),
+    [],
   );
   const launchPreset = useCallback(
     (preset: LaunchPreset) => void handleLaunchPreset(preset),
@@ -2414,7 +2423,7 @@ export default function App() {
                     onDirectoryChange={(directory) => setEmptyDirectories(current => ({ ...current, [workspace.activeTabId]: directory }))}
                     onLaunch={(runtime, project) => {
                       if (!isRuntimeEnabled(runtime)) return;
-                      if (runtime === "claude_code") { void launchRuntimeSession("claude_code", project ?? undefined); return; }
+                      if (runtime === "claude_code") { setCliLaunchRequest({ runtime, project: project ?? undefined }); return; }
                       startAgentSession(runtime, project ?? undefined);
                     }}
                   />
@@ -2563,7 +2572,7 @@ export default function App() {
                 if (!isRuntimeEnabled("claude_code")) return;
                 setNewSessionOpen(false);
                 setLaunchProject(null);
-                void launchRuntimeSession("claude_code", project);
+                setCliLaunchRequest({ runtime: "claude_code", project });
               }}
               onOpenSettings={() => {
                 setNewSessionOpen(false);
@@ -2576,6 +2585,11 @@ export default function App() {
               }}
             />
           )}
+          {cliLaunchRequest && <CliLaunchDialog initialRuntime={cliLaunchRequest.runtime} onClose={() => setCliLaunchRequest(null)} onLaunch={async (kind, selection) => {
+            const started = await launchRuntimeSession(kind, cliLaunchRequest.project, selection);
+            if (started) setCliLaunchRequest(null);
+            return started;
+          }} />}
           {addProjectOpen && (
             <AddProjectDialog
               onConfirm={handleAddProject}

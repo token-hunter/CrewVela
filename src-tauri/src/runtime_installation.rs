@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha512};
 use std::{collections::HashMap, fs, io::{Read, Write}, path::{Component, Path, PathBuf}, process::Command, sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, Ordering}}, time::Duration};
 use crate::multi_agent::AgentRuntimeKind;
+mod additional;
 
 const CLAUDE_BASE: &str = "https://downloads.claude.ai/claude-code-releases";
 const MAX_DOWNLOAD: u64 = 384 * 1024 * 1024;
@@ -30,20 +31,23 @@ pub(crate) struct Environment {
     pub version: Option<String>, pub latest_version: Option<String>, pub source: String,
     pub install_directory: String, pub auth: String, pub error: Option<String>,
     pub update_error: Option<String>,
+    pub dependency_message: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Installed { kind: AgentRuntimeKind, version: String, directory: String }
 #[derive(Clone, Debug)]
-struct Release { version: String, url: String, integrity: String, archive: bool }
+struct Release { version: String, url: String, integrity: String, archive: ArchiveFormat }
+#[derive(Clone, Copy, Debug)]
+enum ArchiveFormat { File, TarGz, Zip }
 
-fn supported_kind(kind: AgentRuntimeKind) -> bool { matches!(kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex) }
+fn supported_kind(kind: AgentRuntimeKind) -> bool { matches!(kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex | AgentRuntimeKind::OpenCode | AgentRuntimeKind::KimiCode | AgentRuntimeKind::Pi) }
 fn platform() -> Result<(&'static str, &'static str)> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => Ok(("win32-x64", "x86_64-pc-windows-msvc")),
         ("windows", "aarch64") => Ok(("win32-arm64", "aarch64-pc-windows-msvc")),
-        _ => bail!("首批一键安装支持 Windows x64 / ARM64，请使用该 CLI 的官方安装方式"),
+        _ => bail!("一键安装支持 Windows x64 / ARM64，请使用该 CLI 的官方安装方式"),
     }
 }
 fn root() -> Result<PathBuf> { Ok(crate::providers::config_dir()?.join("runtime-installations")) }
@@ -53,6 +57,9 @@ fn valid_version(value: &str) -> bool {
 }
 fn relative_executable(kind: AgentRuntimeKind) -> Result<PathBuf> {
     if kind == AgentRuntimeKind::ClaudeCode { return Ok("claude.exe".into()); }
+    if kind == AgentRuntimeKind::KimiCode { return Ok("kimi.exe".into()); }
+    if kind == AgentRuntimeKind::Pi { return Ok("pi.exe".into()); }
+    if kind == AgentRuntimeKind::OpenCode { return Ok("package/bin/opencode.exe".into()); }
     if kind != AgentRuntimeKind::Codex { bail!("此 Runtime 暂不支持一键安装"); }
     Ok(PathBuf::from("package/vendor").join(platform()?.1).join("bin/codex.exe"))
 }
@@ -87,14 +94,23 @@ fn output(executable: &Path, args: &[&str], limit: usize) -> Result<std::process
 fn verify(executable: &Path, kind: AgentRuntimeKind, expected: Option<&str>) -> Result<String> {
     let version = output(executable, &["--version"], 16 * 1024)?;
     if !version.status.success() { bail!("CLI 版本自检失败，原安装已保留"); }
-    let text = String::from_utf8_lossy(&version.stdout).trim().to_string();
-    if !text.to_ascii_lowercase().contains(if kind == AgentRuntimeKind::Codex { "codex" } else { "claude" })
-        || expected.is_some_and(|value| !text.split_whitespace().any(|word| word == value)) { bail!("CLI 返回的版本与安装包不符，原安装已保留"); }
+    let text = cli_text(&version);
+    let found = crate::multi_agent::version_number(&text).context("CLI 未返回有效版本号，原安装已保留")?;
+    if !valid_version(&found) || expected.is_some_and(|value| found != value) { bail!("CLI 返回的版本与安装包不符，原安装已保留"); }
+    if matches!(kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex)
+        && !text.to_ascii_lowercase().contains(if kind == AgentRuntimeKind::Codex { "codex" } else { "claude" }) { bail!("CLI 版本身份不符，原安装已保留"); }
     let help = output(executable, &["--help"], 256 * 1024)?;
-    if !help.status.success() || help.stdout.is_empty() { bail!("CLI 帮助/启动自检失败，原安装已保留"); }
+    if !help.status.success() { bail!("CLI 帮助/启动自检失败，原安装已保留"); }
+    additional::verify_help(kind, &cli_text(&help))?;
     Ok(text)
 }
+fn cli_text(result: &std::process::Output) -> String {
+    format!("{}\n{}", String::from_utf8_lossy(&result.stdout), String::from_utf8_lossy(&result.stderr)).trim().to_string()
+}
 fn auth_status(executable: &Path, kind: AgentRuntimeKind) -> String {
+    // These CLIs do not share a stable, secret-free login status contract.
+    // Do not guess account readiness from installed files or a successful help command.
+    if !matches!(kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex) { return "unverified".into(); }
     let args: &[&str] = if kind == AgentRuntimeKind::Codex { &["login", "status"] } else { &["auth", "status"] };
     let Ok(result) = output(executable, args, 32 * 1024) else { return "unverified".into(); };
     if kind == AgentRuntimeKind::ClaudeCode {
@@ -132,8 +148,9 @@ async fn release(kind: AgentRuntimeKind) -> Result<Release> {
         let manifest: serde_json::Value = serde_json::from_str(&text(&client, &format!("{CLAUDE_BASE}/{version}/manifest.json")).await?)?;
         let digest = manifest["platforms"][platform]["checksum"].as_str().context("官方发行缺少此平台校验值")?;
         if digest.len() != 64 || !digest.bytes().all(|c| c.is_ascii_hexdigit()) { bail!("官方校验值无效"); }
-        return Ok(Release { version: version.clone(), url: format!("{CLAUDE_BASE}/{version}/{platform}/claude.exe"), integrity: format!("sha256-{}", digest.to_ascii_lowercase()), archive: false });
+        return Ok(Release { version: version.clone(), url: format!("{CLAUDE_BASE}/{version}/{platform}/claude.exe"), integrity: format!("sha256-{}", digest.to_ascii_lowercase()), archive: ArchiveFormat::File });
     }
+    if kind != AgentRuntimeKind::Codex { return additional::release(&client, kind, platform).await; }
     let main: serde_json::Value = serde_json::from_str(&text(&client, "https://registry.npmjs.org/@openai/codex/latest").await?)?;
     let version = main["version"].as_str().filter(|value| valid_version(value)).context("官方 Codex 版本号无效")?.to_string();
     let native_version = format!("{version}-{platform}");
@@ -147,11 +164,12 @@ fn parse_codex_release(value: &serde_json::Value, version: &str, platform: &str)
     let integrity = value["dist"]["integrity"].as_str().context("官方包缺少完整性校验")?;
     let digest = integrity.strip_prefix("sha512-").context("官方包缺少 SHA512 校验")?;
     if base64::engine::general_purpose::STANDARD.decode(digest)?.len() != 64 { bail!("官方完整性校验值无效"); }
-    Ok(Release { version: version.into(), url: expected, integrity: integrity.into(), archive: true })
+    Ok(Release { version: version.into(), url: expected, integrity: integrity.into(), archive: ArchiveFormat::TarGz })
 }
 pub(crate) async fn environment(kind: AgentRuntimeKind) -> Result<Environment, String> {
     if !supported_kind(kind) { return Err("此 Runtime 保留现有官方安装方式".into()); }
-    let supported = platform().is_ok();
+    let dependency = additional::dependencies(kind);
+    let supported = platform().is_ok() && dependency.is_ok();
     let path = crate::multi_agent::resolve_runtime_executable_checked(kind);
     let (executable, version, auth, error, source) = match path {
         Ok(path) => {
@@ -163,8 +181,9 @@ pub(crate) async fn environment(kind: AgentRuntimeKind) -> Result<Environment, S
         }
         Err(error) => (None, None, "unverified".into(), Some(error), "未安装或安装异常".into()),
     };
-    let latest = if supported { release(kind).await } else { Err(anyhow!("此平台请使用官方安装方式")) };
+    let latest = if platform().is_ok() { release(kind).await } else { Err(anyhow!("此平台请使用官方安装方式")) };
     Ok(Environment { kind, supported, executable, version, auth, error, source,
+        dependency_message: dependency.unwrap_or_else(|error| error.to_string()),
         install_directory: root().map_err(|e| e.to_string())?.join(kind.as_str()).display().to_string(),
         latest_version: latest.as_ref().ok().map(|r| r.version.clone()), update_error: latest.err().map(|e| e.to_string()) })
 }
@@ -189,6 +208,7 @@ pub(crate) fn start(kind: AgentRuntimeKind) -> Result<InstallJob, String> {
 fn start_at(base: PathBuf, kind: AgentRuntimeKind) -> Result<InstallJob, String> {
     platform().map_err(|e| e.to_string())?;
     if !supported_kind(kind) { return Err("此 Runtime 暂不支持一键安装".into()); }
+    additional::dependencies(kind).map_err(|e| e.to_string())?;
     let mut state = jobs().lock().unwrap();
     if state.get(kind.as_str()).is_some_and(|op| op.job.running()) { return Err("该 Runtime 已有安装操作，请等待或取消后重试".into()); }
     let job = InstallJob { id: uuid::Uuid::new_v4().to_string(), kind, phase: "checking".into(), message: "正在检查平台与官方发行信息…".into(), downloaded: 0, total: None, version: None, executable: None, error: None };
@@ -229,10 +249,13 @@ async fn install(base: &Path, kind: AgentRuntimeKind, id: &str, cancel: &Arc<Ato
     check_cancel(cancel)?;
     change(id, "installing", "完整性校验通过，正在准备官方 CLI…", 0, None);
     let prepared = staging.0.join("prepared"); fs::create_dir(&prepared)?;
-    let extract_path = prepared.clone(); let archive_path = archive.clone(); let is_archive = release.archive; let cancel_copy = cancel.clone();
+    let extract_path = prepared.clone(); let archive_path = archive.clone(); let archive_format = release.archive; let cancel_copy = cancel.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<()> {
-        if is_archive { extract_archive(&archive_path, &extract_path, &cancel_copy)?; }
-        else { fs::rename(&archive_path, extract_path.join("claude.exe"))?; }
+        match archive_format {
+            ArchiveFormat::TarGz => extract_archive(&archive_path, &extract_path, &cancel_copy)?,
+            ArchiveFormat::Zip => additional::extract_zip(&archive_path, &extract_path, &cancel_copy)?,
+            ArchiveFormat::File => fs::rename(&archive_path, extract_path.join("claude.exe"))?,
+        }
         Ok(())
     }).await??;
     check_cancel(cancel)?;
@@ -304,12 +327,31 @@ fn publish_with(folder: &Path, prepared: &Path, kind: AgentRuntimeKind, version:
     let directory = format!("{version}-{}", uuid::Uuid::new_v4());
     let versions = folder.join("versions"); fs::create_dir_all(&versions)?;
     let destination = versions.join(&directory);
-    fs::rename(prepared, &destination).context("无法保存 CLI 版本目录；原安装未修改")?;
+    rename_for_publication(prepared, &destination).context("无法保存 CLI 版本目录；原安装未修改")?;
     let current = folder.join("current.json");
     if current.exists() { fs::copy(&current, folder.join("previous.json")).context("无法备份旧安装入口；原入口未修改")?; }
     write(&current, &serde_json::to_vec(&Installed { kind, version: version.into(), directory })?)
         .context("无法切换 CLI 入口；旧入口仍保留，新文件保留供排查")?;
     Ok(destination.join(relative_executable(kind)?))
+}
+fn rename_for_publication(source: &Path, destination: &Path) -> std::io::Result<()> {
+    rename_for_publication_with(|| fs::rename(source, destination))
+}
+fn rename_for_publication_with(mut rename: impl FnMut() -> std::io::Result<()>) -> std::io::Result<()> {
+    // Windows can briefly retain the freshly verified EXE's image/scan handle.
+    // Only retry sharing/access errors; a final failure leaves the old pointer intact.
+    let mut delays = [100, 200, 400, 800, 1000].into_iter();
+    loop {
+        match rename() {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                if cfg!(windows) && (error.kind() == std::io::ErrorKind::PermissionDenied || matches!(error.raw_os_error(), Some(32 | 33))) {
+                    if let Some(delay) = delays.next() { std::thread::sleep(Duration::from_millis(delay)); continue; }
+                }
+                return Err(error);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -381,7 +423,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap(); let port = listener.local_addr().unwrap().port();
         let server = std::thread::spawn(move || { let (mut stream, _) = listener.accept().unwrap(); let mut request = [0;4096]; let _ = stream.read(&mut request); stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\nbad").unwrap(); });
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let release = Release { version: "1.2.3".into(), url: format!("http://127.0.0.1:{port}"), integrity: format!("sha256-{}", "0".repeat(64)), archive: false };
+        let release = Release { version: "1.2.3".into(), url: format!("http://127.0.0.1:{port}"), integrity: format!("sha256-{}", "0".repeat(64)), archive: ArchiveFormat::File };
         assert!(runtime.block_on(download(&release, &root.join("archive"), "fixture", &AtomicBool::new(false), &tokio::sync::Notify::new())).is_err());
         server.join().unwrap();
         assert_eq!(fs::read_to_string(current).unwrap(), "unchanged");
@@ -412,7 +454,7 @@ mod tests {
         let began = Arc::new(AtomicBool::new(false)); let accepted = began.clone(); let (release, wait) = mpsc::channel();
         let server = std::thread::spawn(move || { let (mut stream, _) = listener.accept().unwrap(); let mut request = [0;4096]; let _ = stream.read(&mut request); stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 10000\r\nConnection: close\r\n\r\na").unwrap(); accepted.store(true, Ordering::Release); let _ = wait.recv_timeout(Duration::from_secs(5)); });
         let cancel = Arc::new(AtomicBool::new(false)); let wake = Arc::new(tokio::sync::Notify::new());
-        let release_info = Release { version: "1.2.3".into(), url: format!("http://127.0.0.1:{port}"), integrity: "sha256-not-complete".into(), archive: false };
+        let release_info = Release { version: "1.2.3".into(), url: format!("http://127.0.0.1:{port}"), integrity: "sha256-not-complete".into(), archive: ArchiveFormat::File };
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let partial = root.join("partial");
         let (result, _) = runtime.block_on(async { tokio::join!(
@@ -431,8 +473,7 @@ pub(crate) fn open_login(kind: AgentRuntimeKind) -> Result<(), String> {
     #[cfg(windows)] {
         use std::os::windows::process::CommandExt;
         let path = executable.display().to_string().replace('\'', "''");
-        let args = if kind == AgentRuntimeKind::Codex { "login" } else { "auth login" };
-        let script = format!("& '{path}' {args}");
+        let script = additional::login_script(kind, &path)?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(script.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>());
         Command::new("powershell.exe").args(["-NoLogo", "-NoProfile", "-NoExit", "-EncodedCommand", &encoded]).creation_flags(0x00000010).spawn().map_err(|e| format!("无法打开 CLI 登录窗口：{e}"))?;
         Ok(())

@@ -271,6 +271,26 @@ fn health(
 ) -> Result<Value> {
     let records = sessions.list();
     let mut adapters = crate::skill_center::runtime_adapters()?;
+    // Builtin communication also supports ZCode CLI; this does not claim that
+    // Skill Center supports its general deployment/update workflow.
+    let native_roots = crate::communication_skill::runtime_roots()?;
+    for adapter in &mut adapters {
+        if let Some((_, root)) = native_roots.iter().find(|(runtime, _)| *runtime == adapter.runtime) {
+            adapter.global_root = root.display().to_string();
+        }
+    }
+    let zcode_root = native_roots.iter().find(|(runtime, _)| *runtime == "zcode_cli")
+        .context("缺少 ZCode CLI 通信 Skill 目录")?;
+    let home = dirs::home_dir().context("无法确定通信 Skill 目录")?;
+    adapters.push(crate::skill_center::RuntimeSkillAdapter {
+        runtime: "zcode_cli".into(),
+        label: "ZCode CLI".into(),
+        global_root: zcode_root.1.display().to_string(),
+        project_root: ".zcode/skills".into(),
+        discovery_roots: vec![home.join(".agents/skills").display().to_string()],
+        recursive_scan: false,
+        installed: crate::multi_agent::resolve_runtime_executable(crate::multi_agent::AgentRuntimeKind::ZCodeCli).is_some(),
+    });
     // OpenCode 也发现兼容的 Claude / Agents Skill 根；复用已有 adapter 的根定义。
     let shared = adapters
         .iter()
@@ -310,7 +330,7 @@ fn health(
         json!({"runtime": adapter.runtime, "label": adapter.label, "installed": adapter.installed,
             "skills": skills, "searchedRoots": roots, "supported": true})
     }).collect::<Vec<_>>();
-    for (kind, label) in [("zcode", "ZCode Desktop"), ("zcode_cli", "ZCode CLI"), ("deepseek_harness", "DeepSeek Harness")] {
+    for (kind, label) in [("zcode", "ZCode Desktop"), ("deepseek_harness", "DeepSeek Harness")] {
         runtimes.push(json!({"runtime": kind, "label": label, "installed": false, "skills": [], "searchedRoots": [], "supported": false}));
     }
     let views = records.iter().filter(|record| runtime(record).is_some()).map(|record| {

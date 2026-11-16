@@ -33,6 +33,7 @@ import type {
   TerminalShell,
 } from "../types";
 import { terminalPaneHeaderPresentation } from "./terminalPaneHeader";
+import { launchModeLabel } from "../runtimeLaunch";
 
 interface Props {
   sessionId: number;
@@ -42,6 +43,7 @@ interface Props {
   shell: TerminalShell | null;
   agentRuntimeKind?: AgentRuntimeKind | null;
   agentAvatarId?: string | null;
+  cliLaunchMode?: string | null;
   multiAgentProjectId?: string | null;
   multiAgentAgentId?: string | null;
   cwd: string;
@@ -226,6 +228,7 @@ export function TerminalPane({
   shell,
   agentRuntimeKind = null,
   agentAvatarId,
+  cliLaunchMode,
   multiAgentProjectId,
   multiAgentAgentId,
   cwd,
@@ -476,6 +479,7 @@ export function TerminalPane({
         <span className="pane-id">
           <strong>{header.title}</strong>
           {header.subtitle && <span>· {header.subtitle}</span>}
+          {cliLaunchMode && <span className="pane-launch-mode" title="创建此会话时选择的启动模式；运行中切换以 CLI 自身显示为准">· 启动：{launchModeLabel(agentRuntimeKind, cliLaunchMode)}</span>}
           {header.agentBadge && <span className="agent-runtime-badge">{header.agentBadge === "relay" ? "接力 Agent" : "协作 Agent"}</span>}
         </span>
         <span className={`pane-status ${status}`} title={STATUS_LABELS[status]}>

@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { AgentRuntimeKind } from "./types";
 import { isRetiredRuntime } from "./runtimeTaxonomy.ts";
 
-export interface RuntimePreferences { disabledRuntimes: AgentRuntimeKind[] }
+export interface RuntimePreferences { disabledRuntimes: AgentRuntimeKind[]; defaultLaunchModes?: Record<string, string> }
 const PREVIEW = new URLSearchParams(window.location.search).get("ui-preview") === "1";
 const STORAGE_KEY = "crewvela-runtime-preferences";
 let state: { prefs: RuntimePreferences; ready: boolean; error: string | null } = {
@@ -76,6 +76,7 @@ export async function setRuntimeEnabled(kind: AgentRuntimeKind, enabled: boolean
   pendingMutations += 1;
   try {
     const prefs = PREVIEW ? {
+      ...state.prefs,
       disabledRuntimes: enabled
         ? state.prefs.disabledRuntimes.filter((item) => item !== kind)
         : [...new Set([...state.prefs.disabledRuntimes, kind])],
@@ -97,5 +98,19 @@ export function useRuntimeAvailability() {
     return () => { subscribers.delete(notify); };
   }, () => state);
   useEffect(() => { if (!initialization) void refreshRuntimePreferences(); }, []);
-  return { ...snapshot, isRuntimeEnabled, refresh: refreshRuntimePreferences, setRuntimeEnabled };
+  return { ...snapshot, isRuntimeEnabled, refresh: refreshRuntimePreferences, setRuntimeEnabled, setRuntimeLaunchDefault };
+}
+
+export async function setRuntimeLaunchDefault(kind: string, mode: string): Promise<void> {
+  if (!state.ready) throw new Error(state.error ?? "Agent 配置尚未加载");
+  const mutationGeneration = ++generation;
+  pendingMutations += 1;
+  try {
+    const prefs = PREVIEW
+      ? { ...state.prefs, defaultLaunchModes: { ...state.prefs.defaultLaunchModes, [kind]: mode } }
+      : await invoke<RuntimePreferences>("set_runtime_launch_default", { kind, mode });
+    validatePreferences(prefs);
+    if (PREVIEW) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    if (mutationGeneration === generation) publish(prefs);
+  } finally { pendingMutations -= 1; }
 }

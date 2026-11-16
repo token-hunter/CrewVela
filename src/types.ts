@@ -257,6 +257,8 @@ export interface NewAutomation {
 }
 
 export interface SessionRecord {
+  /** Requested native CLI startup mode; not a live permission-mode observation. */
+  cliLaunchMode?: string | null;
   /** Session-scoped model override; omitted for legacy/local-default sessions. */
   launchModel?: string | null;
   modelAssignment?: { connectionId: string; model: string | null; source: string } | null;

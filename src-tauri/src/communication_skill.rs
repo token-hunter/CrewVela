@@ -1,9 +1,10 @@
 //! Update only recognized bundled communication guides; never overwrite custom skills.
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, fs, io::Write, path::Path};
+use std::{collections::HashSet, ffi::OsString, fs, io::Write, path::{Path, PathBuf}};
 
 const BUNDLED: &str = include_str!("../../skills/crewvela/SKILL.md");
+const ZCODE_COMMAND: &str = include_str!("../../skills/crewvela/zcode-command.md");
 // Exact previously shipped guides, including the shared guide installed before rebranding.
 const PREVIOUS: &[&str] = &[
     "95a418c70d0e7ef9a2d7fead6809cbef6297ae5a82b63dfe31bc5c45098f8384",
@@ -12,6 +13,7 @@ const PREVIOUS: &[&str] = &[
     "6aa6a621aaaa802ce8380bc4cdc3790418ea1eb225ae7e36646aaad3123e3edf",
     "346ba587667be5b65dd53af4cf869fc912070bbc506784ecbd800a0bef1eb633",
     "c0dc6d6011d52046a34c148e917b42466e50cb940ca0dbce055d43bdea6061e9",
+    "58b0819f9a1ea96e62fe6630d97f33457ccf1a618906daf7d6334553af50a7a2",
 ];
 
 #[derive(Debug, PartialEq)]
@@ -24,13 +26,40 @@ fn fingerprint(bytes: &[u8]) -> String {
 
 pub(crate) fn sync_installed() -> Result<()> {
     let home = dirs::home_dir().context("无法确定通信 Skill 安装目录")?;
-    sync_installed_at(&home)
+    sync_roots(&home, runtime_roots_at(&home, |key| std::env::var_os(key)))
 }
 
+/// Native discovery paths for the builtin guide, independent of Skill Center's
+/// supported deployment targets. Never replace a user's configured skill roots.
+pub(crate) fn runtime_roots() -> Result<Vec<(&'static str, PathBuf)>> {
+    let home = dirs::home_dir().context("无法确定通信 Skill 安装目录")?;
+    Ok(runtime_roots_at(&home, |key| std::env::var_os(key)))
+}
+
+fn runtime_roots_at(home: &Path, env: impl Fn(&str) -> Option<OsString>) -> Vec<(&'static str, PathBuf)> {
+    let configured = |key: &str, fallback: PathBuf| {
+        env(key).filter(|value| !value.is_empty()).map(PathBuf::from).unwrap_or(fallback)
+    };
+    let config = configured("XDG_CONFIG_HOME", home.join(".config"));
+    vec![
+        ("claude_code", configured("CLAUDE_CONFIG_DIR", home.join(".claude")).join("skills")),
+        ("codex", configured("CODEX_HOME", home.join(".codex")).join("skills")),
+        ("kimi_code", configured("KIMI_CODE_HOME", home.join(".kimi-code")).join("skills")),
+        ("pi", configured("PI_CODING_AGENT_DIR", home.join(".pi/agent")).join("skills")),
+        ("opencode", configured("OPENCODE_CONFIG_DIR", config.join("opencode")).join("skills")),
+        ("zcode_cli", home.join(".zcode/skills")),
+    ]
+}
+
+#[cfg(test)]
 fn sync_installed_at(home: &Path) -> Result<()> {
+    sync_roots(home, runtime_roots_at(home, |_| None))
+}
+
+fn sync_roots(home: &Path, roots: Vec<(&str, PathBuf)>) -> Result<()> {
     let mut seen = HashSet::new();
-    for directory in [".claude", ".agents", ".codex"] {
-        let parent = home.join(directory).join("skills/crewvela");
+    for root in std::iter::once(home.join(".agents/skills")).chain(roots.into_iter().map(|(_, root)| root)) {
+        let parent = root.join("crewvela");
         fs::create_dir_all(&parent)?;
         // Shared .agents/skills or skill directories may be junctions. Update their
         // actual target once, without replacing the user's discovery roots.
@@ -40,7 +69,7 @@ fn sync_installed_at(home: &Path) -> Result<()> {
         if sync_file(&path, PREVIOUS)? == Status::PreservedCustom {
             eprintln!("[crewvela] 保留自定义通信 Skill，请手动同步新版指南：{}", path.display());
         }
-        let previous = home.join(directory).join("skills").join(crate::brand::LEGACY_NAME).join("SKILL.md");
+        let previous = root.join(crate::brand::LEGACY_NAME).join("SKILL.md");
         if previous.exists() {
             let alias = BUNDLED.replacen("name: crewvela", &format!("name: {}", crate::brand::LEGACY_NAME), 1);
             match sync_content(&previous, PREVIOUS, &alias) {
@@ -49,6 +78,13 @@ fn sync_installed_at(home: &Path) -> Result<()> {
                 _ => {}
             }
         }
+    }
+    // ZCode 0.16's slash completion lists custom commands, not discovered skills.
+    // The alias loads the same guide through its native Skill tool.
+    let command = home.join(".zcode/commands/crewvela.md");
+    fs::create_dir_all(command.parent().unwrap())?;
+    if sync_content(&command, &[], ZCODE_COMMAND)? == Status::PreservedCustom {
+        eprintln!("[crewvela] 保留自定义 /crewvela 命令：{}；可使用 /skill crewvela", command.display());
     }
     Ok(())
 }
@@ -75,7 +111,8 @@ fn sync_content(path: &Path, previous: &[&str], content: &str) -> Result<Status>
         if hash == fingerprint(content.as_bytes()) { return Ok(Status::Current); }
         if !previous.contains(&hash.as_str()) { return Ok(Status::PreservedCustom); }
         if fs::metadata(path)?.permissions().readonly() { bail!("通信 Skill 为只读文件，保留原文：{}", path.display()); }
-        let backup = path.with_file_name(format!("SKILL.md.crewvela-backup-{hash}"));
+        let filename = path.file_name().context("通信指南缺少文件名")?.to_string_lossy();
+        let backup = path.with_file_name(format!("{filename}.crewvela-backup-{hash}"));
         match fs::OpenOptions::new().create_new(true).write(true).open(&backup) {
             Ok(mut file) => { file.write_all(old)?; file.sync_all()?; }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -108,6 +145,57 @@ fn sync_content(path: &Path, previous: &[&str], content: &str) -> Result<Status>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installs_all_six_native_skill_roots_and_zcode_command_idempotently() {
+        let root = std::env::temp_dir().join(format!("crewvela-six-skills-{}", uuid::Uuid::new_v4()));
+        for _ in 0..2 {
+            sync_installed_at(&root).unwrap();
+            let roots = runtime_roots_at(&root, |_| None);
+            assert_eq!(roots.len(), 6);
+            for (_, directory) in roots {
+                assert_eq!(fs::read_to_string(directory.join("crewvela/SKILL.md")).unwrap(), BUNDLED);
+            }
+            assert_eq!(fs::read_to_string(root.join(".agents/skills/crewvela/SKILL.md")).unwrap(), BUNDLED);
+            assert_eq!(fs::read_to_string(root.join(".zcode/commands/crewvela.md")).unwrap(), ZCODE_COMMAND);
+        }
+        let command = root.join(".zcode/commands/crewvela.md");
+        fs::write(&command, "custom command").unwrap();
+        let zcode = root.join(".zcode/skills/crewvela/SKILL.md");
+        fs::write(&zcode, "custom skill").unwrap();
+        sync_installed_at(&root).unwrap();
+        assert_eq!(fs::read_to_string(&command).unwrap(), "custom command");
+        assert_eq!(fs::read_to_string(&zcode).unwrap(), "custom skill");
+        assert!(ZCODE_COMMAND.contains("skills: [crewvela]"));
+        assert!(ZCODE_COMMAND.contains("$ARGUMENTS"));
+        assert!(root.canonicalize().unwrap().starts_with(std::env::temp_dir().canonicalize().unwrap()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn configured_native_homes_are_used_without_overwriting_configuration() {
+        let root = std::env::temp_dir().join(format!("crewvela-skill-homes-{}", uuid::Uuid::new_v4()));
+        let configured = root.join("custom");
+        let roots = runtime_roots_at(&root, |key| match key {
+            "CLAUDE_CONFIG_DIR" => Some(configured.join("claude").into_os_string()),
+            "CODEX_HOME" => Some(configured.join("codex").into_os_string()),
+            "KIMI_CODE_HOME" => Some(configured.join("kimi").into_os_string()),
+            "PI_CODING_AGENT_DIR" => Some(configured.join("pi").into_os_string()),
+            "XDG_CONFIG_HOME" => Some(configured.join("xdg").into_os_string()),
+            _ => None,
+        });
+        for (runtime, suffix) in [("claude_code", "claude"), ("codex", "codex"), ("kimi_code", "kimi"), ("pi", "pi"), ("opencode", "xdg/opencode")] {
+            assert_eq!(roots.iter().find(|(id, _)| *id == runtime).unwrap().1, configured.join(suffix).join("skills"));
+        }
+        sync_roots(&root, roots.clone()).unwrap();
+        for (_, directory) in roots {
+            assert_eq!(fs::read_to_string(directory.join("crewvela/SKILL.md")).unwrap(), BUNDLED);
+        }
+        let explicit = runtime_roots_at(&root, |key| (key == "OPENCODE_CONFIG_DIR").then(|| configured.join("opencode").into_os_string()));
+        assert_eq!(explicit.iter().find(|(id, _)| *id == "opencode").unwrap().1, configured.join("opencode/skills"));
+        assert!(root.canonicalize().unwrap().starts_with(std::env::temp_dir().canonicalize().unwrap()));
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn brand_migration_installs_new_skill_preserves_custom_legacy_and_updates_known_aliases() {

@@ -1,0 +1,71 @@
+// Real components with isolated IPC fixtures; does not install or log in to user CLIs.
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+import { mkdirSync, writeFileSync } from 'node:fs';
+const base = process.env.CREWVELA_UI_URL || 'http://127.0.0.1:1437';
+const out = '.scratch/runtime-install-three-20261116/ui';
+mkdirSync(out, { recursive: true });
+const browser = await chromium.launch({ channel: 'chrome' }), errors = [], results = [];
+const labels = { claude_code: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', kimi_code: 'Kimi Code', pi: 'Pi' };
+async function open(page, kind, query = '') {
+  await page.goto(`${base}/tests/fixtures/runtime-installer-ui.html?${query}`);
+  const dialog = page.getByRole('dialog', { name: '管理 Runtime', exact: true });
+  assert.equal(await dialog.getByRole('button', { name: '安装与版本', exact: true }).count(), 5);
+  const row = dialog.locator('[data-runtime-order]').filter({ has: page.getByRole('checkbox', { name: `启用 ${labels[kind]}`, exact: true }) });
+  await row.getByRole('button', { name: '安装与版本' }).click();
+  await dialog.getByRole('button', { name: '开始安装', exact: true }).waitFor();
+  return dialog;
+}
+try {
+  for (const kind of Object.keys(labels)) for (const theme of ['dark', 'light']) {
+    const width = theme === 'dark' ? 1365 : 600, height = theme === 'dark' ? 900 : 650;
+    const page = await browser.newPage({ viewport: { width, height } });
+    page.on('pageerror', error => errors.push(error.message));
+    const dialog = await open(page, kind, `theme=${theme}`);
+    const login = dialog.getByRole('button', { name: kind === 'pi' ? '打开 Pi 登录引导' : '打开 CLI 登录', exact: true });
+    await dialog.getByRole('button', { name: '开始安装', exact: true }).click();
+    await dialog.getByRole('progressbar', { name: '下载进度' }).waitFor();
+    assert.equal(await login.isDisabled(), true);
+    await page.evaluate(() => window.runtimeInstallerFixture.finish('failed'));
+    await dialog.getByRole('heading', { name: '安装未完成', exact: true }).waitFor();
+    await dialog.getByText('安装详情', { exact: true }).click();
+    await dialog.getByText(kind === 'opencode' || kind === 'codex' ? '官方 npm 平台包 SHA512' : kind === 'claude_code' ? '官方发行清单 SHA256' : '官方 GitHub 发行包 SHA256', { exact: true }).waitFor();
+    await dialog.getByRole('button', { name: '重试安装', exact: true }).click();
+    await dialog.getByRole('progressbar', { name: '下载进度' }).waitFor();
+    await dialog.getByRole('button', { name: '取消安装', exact: true }).click();
+    await dialog.getByRole('heading', { name: '安装已取消', exact: true }).waitFor();
+    await dialog.getByRole('button', { name: '重试安装', exact: true }).click();
+    await dialog.getByRole('progressbar', { name: '下载进度' }).waitFor();
+    await page.evaluate(() => window.runtimeInstallerFixture.finish('ready'));
+    await dialog.getByRole('heading', { name: `${labels[kind]} 安装已验证`, exact: true }).waitFor();
+    await login.click();
+    await dialog.getByText(/已打开原生 CLI 登录窗口/).waitFor();
+    if (kind === 'pi') await dialog.getByText(/进入 Pi 后输入 \/login/).waitFor();
+    await dialog.getByRole('button', { name: '重新检查', exact: true }).click();
+    if (['opencode', 'kimi_code', 'pi'].includes(kind)) await dialog.getByText('未验证，请在原生 CLI 中确认', { exact: true }).waitFor();
+    await dialog.getByText('安装详情', { exact: true }).click();
+    const metrics = await dialog.evaluate(el => {
+      const installer = el.querySelector('.runtime-installer'), b = el.getBoundingClientRect();
+      return { width: b.width, height: b.height, overflow: installer.scrollWidth > installer.clientWidth + 1 };
+    });
+    assert.equal(metrics.overflow, false); assert.ok(metrics.width <= 762); assert.ok(metrics.height <= height * .88 + 1);
+    await dialog.screenshot({ path: `${out}/${kind}-${theme}.png` });
+    const calls = await page.evaluate(() => window.runtimeInstallerFixture.calls);
+    assert.equal(calls.filter(c => c.command === 'runtime_install_start').length, 3);
+    for (const call of calls.filter(c => ['runtime_install_start', 'runtime_install_environment', 'runtime_open_login'].includes(c.command))) assert.equal(call.args.kind, kind);
+    await dialog.getByRole('button', { name: '返回 Runtime 列表' }).click();
+    assert.equal(await dialog.getByRole('checkbox', { name: `启用 ${labels[kind]}`, exact: true }).isChecked(), true);
+    await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    results.push({ kind, theme, ...metrics }); await page.close();
+  }
+  const page = await browser.newPage({ viewport: { width: 760, height: 650 } });
+  const dialog = await open(page, 'kimi_code', 'scenario=dependency');
+  await dialog.getByText(/Kimi Code 需要 Git for Windows/).waitFor();
+  assert.equal(await dialog.getByRole('button', { name: '开始安装', exact: true }).isDisabled(), true);
+  assert.equal(await page.evaluate(() => window.runtimeInstallerFixture.starts), 0);
+  await page.close();
+  assert.deepEqual(errors, []);
+  writeFileSync(`${out}/results.json`, JSON.stringify({ results, errors }, null, 2));
+  console.log(`PASS: ${results.length} runtime/theme cases; correct install/version/hash/login routing, failure/retry/cancel, unverified account state, dependency blocking and return/close. No real installation or login.`);
+} finally { await browser.close(); }

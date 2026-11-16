@@ -124,6 +124,7 @@ export function MultiTerminal({
             shell={session.shell}
             agentRuntimeKind={session.agentRuntimeKind ?? null}
             agentAvatarId={session.agentAvatarId}
+            cliLaunchMode={session.cliLaunchMode}
             multiAgentProjectId={session.multiAgentProjectId ?? null}
             multiAgentAgentId={session.multiAgentAgentId ?? null}
             cwd={session.cwd}

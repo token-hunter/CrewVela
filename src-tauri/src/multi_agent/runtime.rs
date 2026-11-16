@@ -524,6 +524,9 @@ pub(crate) fn resolve_runtime_executable(kind: AgentRuntimeKind) -> Option<PathB
 pub(crate) fn resolve_runtime_executable_checked(kind: AgentRuntimeKind) -> Result<PathBuf, String> {
     let definition = executable_definition(kind)
         .ok_or_else(|| format!("Runtime {} 不可用", kind.as_str()))?;
+    if matches!(definition.kind, AgentRuntimeKind::OpenCode | AgentRuntimeKind::KimiCode | AgentRuntimeKind::Pi) {
+        if let Some(path) = crate::runtime_installation::managed_executable(definition.kind).map_err(|error| error.to_string())? { return Ok(path); }
+    }
     if definition.kind == AgentRuntimeKind::Codex {
         return resolve_codex_definition(definition).map(|(path, _)| path);
     }
@@ -550,6 +553,13 @@ fn executable_definition(kind: AgentRuntimeKind) -> Option<&'static RuntimeDefin
 fn resolve_definition_executable(
     definition: &RuntimeDefinition,
 ) -> Option<(PathBuf, Option<String>)> {
+    if matches!(definition.kind, AgentRuntimeKind::OpenCode | AgentRuntimeKind::KimiCode | AgentRuntimeKind::Pi) {
+        match crate::runtime_installation::managed_executable(definition.kind) {
+            Ok(Some(path)) => return Some((path, None)),
+            Err(_) => return None,
+            Ok(None) => {},
+        }
+    }
     if definition.kind == AgentRuntimeKind::ZCode {
         return super::zcode::executable().ok().map(|path| (path, None));
     }

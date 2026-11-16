@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -13,6 +14,8 @@ use crate::sessions::{SessionKind, SessionRecord};
 pub struct RuntimePreferences {
     #[serde(default)]
     pub disabled_runtimes: Vec<AgentRuntimeKind>,
+    #[serde(default)]
+    pub default_launch_modes: BTreeMap<String, String>,
 }
 
 struct PolicyState {
@@ -158,6 +161,22 @@ impl RuntimePolicy {
         if !enabled {
             next.disabled_runtimes.push(kind);
         }
+        self.save(&next)?;
+        state.preferences = next.clone();
+        Ok(next)
+    }
+
+    fn set_launch_default(&self, kind: &str, mode: &str) -> Result<RuntimePreferences> {
+        crate::runtime_launch::validate(kind, mode)?;
+        let mut state = self.state.lock().map_err(|_| anyhow!("Runtime 设置锁已损坏"))?;
+        let mut next = state.preferences.clone();
+        next.default_launch_modes.insert(kind.into(), mode.into());
+        self.save(&next)?;
+        state.preferences = next.clone();
+        Ok(next)
+    }
+
+    fn save(&self, next: &RuntimePreferences) -> Result<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).context("创建 Runtime 设置目录失败")?;
         }
@@ -181,8 +200,7 @@ impl RuntimePolicy {
             let _ = std::fs::remove_file(&temp);
         }
         result?;
-        state.preferences = next.clone();
-        Ok(next)
+        Ok(())
     }
 }
 
@@ -241,6 +259,9 @@ pub(crate) fn get() -> Result<RuntimePreferences> {
         return result;
     }
     policy()?.preferences()
+}
+pub(crate) fn set_launch_default(kind: &str, mode: &str) -> Result<RuntimePreferences> {
+    policy()?.set_launch_default(kind, mode)
 }
 pub(crate) fn ensure_available(kind: AgentRuntimeKind) -> Result<()> {
     validate(kind, &get()?)
@@ -373,6 +394,29 @@ mod tests {
         assert!(policy.preferences().unwrap().disabled_runtimes.is_empty());
         assert!(policy.acquire(AgentRuntimeKind::Codex).is_ok());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn launch_defaults_survive_reload_and_runtime_switches_without_partial_writes() {
+        let path = temporary_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"disabledRuntimes":["codex"]}"#).unwrap();
+        let policy = RuntimePolicy::open_at(path.clone()).unwrap();
+        assert!(policy.preferences().unwrap().default_launch_modes.is_empty());
+        policy.set_launch_default("claude_code", "auto").unwrap();
+        policy.set_launch_default("pi", "read_tools").unwrap();
+        assert!(policy.set_launch_default("pi", "yolo").is_err());
+        policy.set_enabled(AgentRuntimeKind::Codex, true, || Ok(false)).unwrap();
+        let reloaded = RuntimePolicy::open_at(path.clone()).unwrap().preferences().unwrap();
+        assert_eq!(reloaded.default_launch_modes["claude_code"], "auto");
+        assert_eq!(reloaded.default_launch_modes["pi"], "read_tools");
+        assert!(reloaded.disabled_runtimes.is_empty());
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(policy.set_launch_default("claude_code", "yolo").is_err());
+        assert_eq!(policy.preferences().unwrap().default_launch_modes["claude_code"], "auto");
+        assert!(path.parent().unwrap().canonicalize().unwrap().starts_with(std::env::temp_dir().canonicalize().unwrap()));
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]

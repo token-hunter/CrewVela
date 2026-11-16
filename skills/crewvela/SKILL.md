@@ -1,6 +1,6 @@
 ---
 name: crewvela
-description: 在 CrewVela 中发现会话，通过 CLI 给 Claude Code、Codex、Kimi Code、Pi、OpenCode 的原会话发消息并回复。用于会话间通信、协作、通知和收到 CrewVela 会话消息时。
+description: 在 CrewVela 中发现会话，给 Claude Code、Codex、Kimi Code、ZCode CLI、Pi、OpenCode 的原会话发消息并回复。用户要求与其他 Agent 打招呼、交流或协作，以及收到 CrewVela 会话消息时使用。
 ---
 
 # CrewVela 会话通信

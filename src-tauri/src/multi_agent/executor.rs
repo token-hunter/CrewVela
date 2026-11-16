@@ -2115,7 +2115,7 @@ fn uses_posix_verification_shell(command: &str) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn git_bash_executable() -> Option<PathBuf> {
+pub(crate) fn git_bash_executable() -> Option<PathBuf> {
     git_bash_next_to(&which::which("git").ok()?, |candidate| candidate.is_file())
 }
 

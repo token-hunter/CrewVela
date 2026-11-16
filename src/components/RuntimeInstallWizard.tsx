@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, CheckCircle, Circle, WarningCircle, CaretDown, ArrowClockwise } from "@phosphor-icons/react";
 import type { AgentRuntimeKind } from "../types";
 import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
-import { downloadPercent, installationRunning, installationStep, type RuntimeEnvironment, type RuntimeInstallJob } from "../runtimeInstallation";
+import { downloadPercent, installationRunning, installationStep, runtimeInstallationInfo, type RuntimeEnvironment, type RuntimeInstallJob } from "../runtimeInstallation";
 import "../styles/runtime-installation.css";
 
 export function RuntimeInstallWizard({ kind, onBack }: {
@@ -24,6 +24,7 @@ export function RuntimeInstallWizard({ kind, onBack }: {
   const requestPending = useRef(false);
   const operationRevision = useRef(0);
   const label = RUNTIME_LABELS[kind];
+  const info = runtimeInstallationInfo(kind);
   const running = installationRunning(job);
   const busy = running || starting;
   const step = installationStep(job);
@@ -92,7 +93,7 @@ export function RuntimeInstallWizard({ kind, onBack }: {
   const phaseMessage = job?.message ?? (loading ? "正在检测本机 CLI 与官方版本…" : "验证通过后才切换入口，原安装保留。现有会话可继续运行。");
   return <div className="runtime-installer" aria-busy={busy}>
     <button type="button" className="runtime-install-back" disabled={busy} onClick={onBack}><ArrowLeft size={19} />返回 Runtime 列表</button>
-    <div className="runtime-install-identity"><img src={RUNTIME_LOGOS[kind]} alt="" /><div><h2>{environment?.executable ? "管理" : "安装"} {label}</h2><p>使用本机 CLI 配置，保留现有账号与模型</p></div></div>
+    <div className="runtime-install-identity"><img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><div><h2>{environment?.executable ? "管理" : "安装"} {label}</h2><p>使用本机 CLI 配置，保留现有账号与模型</p></div></div>
     <ol className="runtime-install-steps" aria-label="安装步骤">{["检查依赖", "安装", "验证", "登录"].map((title, index) => {
       const done = index < step || (index === 3 && environment?.auth === "authenticated" && !busy && installed);
       return <li key={title} className={done ? "done" : index === step ? "current" : ""} aria-current={index === step ? "step" : undefined}>
@@ -109,8 +110,8 @@ export function RuntimeInstallWizard({ kind, onBack }: {
       {environment?.updateError && !busy && <p className="runtime-install-note">官方版本暂未确认：{environment.updateError}</p>}
     </section>
     <dl className="runtime-install-facts">
-      <div><dt>依赖检查</dt><dd>{loading ? "正在检查…" : !environment ? "检查未完成，请重新检查" : environment.supported ? <><CheckCircle size={18} />当前平台支持，不需要 Node/npm</> : "此平台请使用官方安装方式"}</dd></div>
-      <div><dt>安装方式</dt><dd>官方{kind === "codex" ? "原生平台包" : "原生程序"} · 当前用户目录</dd></div>
+      <div><dt>依赖检查</dt><dd>{loading ? "正在检查…" : !environment ? "检查未完成，请重新检查" : <>{environment.supported && <CheckCircle size={18} />}{environment.dependencyMessage ?? (environment.supported ? "当前平台支持，不需要 Node/npm" : "此平台请使用官方安装方式")}</>}</dd></div>
+      <div><dt>安装方式</dt><dd>{info.method} · 当前用户目录</dd></div>
       <div><dt>原有配置</dt><dd>沿用本地配置</dd></div>
       {!busy && <><div><dt>版本</dt><dd>{loading ? "正在确认…" : environment?.version ?? "尚未确认"}{(job?.version ?? environment?.latestVersion) && <span className="runtime-install-latest">官方版本 {job?.version ?? environment?.latestVersion}</span>}</dd></div>
       <div><dt>登录状态</dt><dd>{environment?.auth === "authenticated" ? "已登录（未验证额度）" : environment?.auth === "login_required" ? "待登录" : "未验证，请在原生 CLI 中确认"}</dd></div></>}
@@ -120,16 +121,17 @@ export function RuntimeInstallWizard({ kind, onBack }: {
       <div><dt>当前路径</dt><dd>{environment?.executable ?? "未检测到可用 CLI"}</dd></div>
       <div><dt>安装目录</dt><dd>{environment?.installDirectory ?? "正在检测…"}</dd></div>
       {environment?.error && <div><dt>当前安装检查</dt><dd>{environment.error}</dd></div>}
-      <div><dt>文件校验</dt><dd>{kind === "codex" ? "官方 npm 平台包 SHA512" : "官方发行清单 SHA256"}</dd></div>
+      <div><dt>文件校验</dt><dd>{info.checksum}</dd></div>
+      {info.channel && <div><dt>发行渠道</dt><dd>{info.channel}</dd></div>}
       {busy && <div><dt>目标版本</dt><dd>{job?.version ?? "正在确认…"}</dd></div>}
     </dl></details>
-    {loginOpened && <p className="runtime-install-note" role="status">已打开原生 CLI 登录窗口。完成后点击“重新检查”，登录信息由 CLI 自行管理。</p>}
+    {loginOpened && <p className="runtime-install-note" role="status">已打开原生 CLI 登录窗口。{info.loginHint}登录信息由 CLI 自行管理。</p>}
     <footer className="runtime-install-footer">
       {busy ? <button className="btn secondary" disabled={starting || cancelling} onClick={() => void cancel()}>{cancelling ? "正在取消…" : "取消安装"}</button>
         : <button className="btn secondary" disabled={loading || !environment?.supported} onClick={() => void start()}>{failed || job?.phase === "cancelled" ? "重试安装" : installed ? "升级或修复安装" : "开始安装"}</button>}
       <span>{busy ? "关闭面板后继续，可返回查看" : installed ? "安装与登录状态分别确认" : "验证通过后可登录"}</span>
       {!busy && <button className="btn secondary" disabled={loading} onClick={() => void refresh()}><ArrowClockwise size={16} />重新检查</button>}
-      <button className="btn runtime-install-primary" disabled={!installed || busy || loginBusy} onClick={() => void login()}>{loginBusy ? "正在打开…" : "打开 CLI 登录"}</button>
+      <button className="btn runtime-install-primary" disabled={!installed || busy || loginBusy} onClick={() => void login()}>{loginBusy ? "正在打开…" : info.loginLabel}</button>
     </footer>
   </div>;
 }

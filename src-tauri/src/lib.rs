@@ -51,6 +51,7 @@ mod providers;
 mod pty;
 mod retired_integrations;
 mod runtime_preferences;
+mod runtime_launch;
 mod runtime_dependencies;
 mod runtime_admission;
 mod secrets;
@@ -174,6 +175,15 @@ async fn blocking_command<T: Send + 'static>(
 #[tauri::command]
 fn get_runtime_preferences() -> Result<runtime_preferences::RuntimePreferences, String> {
     runtime_preferences::get().map_err(to_err)
+}
+
+#[tauri::command]
+fn set_runtime_launch_default(kind: String, mode: String, app: AppHandle) -> Result<runtime_preferences::RuntimePreferences, String> {
+    let preferences = runtime_preferences::set_launch_default(&kind, &mode).map_err(to_err)?;
+    if let Err(error) = app.emit("runtime-preferences-changed", &preferences) {
+        eprintln!("[crewvela] 启动默认值已保存，但窗口通知失败：{error}");
+    }
+    Ok(preferences)
 }
 
 #[tauri::command]
@@ -772,7 +782,7 @@ async fn ma_check_runtime_updates() -> Result<Vec<RuntimeProbe>, String> {
 
 #[tauri::command]
 async fn ma_upgrade_runtime(kind: AgentRuntimeKind) -> Result<RuntimeUpgradeReceipt, String> {
-    if cfg!(windows) && matches!(kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex) {
+    if cfg!(windows) && matches!(kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex | AgentRuntimeKind::OpenCode | AgentRuntimeKind::KimiCode | AgentRuntimeKind::Pi) {
         let started = runtime_installation::start(kind)?;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
@@ -3060,6 +3070,13 @@ fn open_runtime_session_checked(
         .configure_runtime_resume(&mut command, record)
         .map_err(to_err)?;
     configure_runtime_communication(kind, &mut command, record, session_state)?;
+    // Handoffs own their permission contract. Never apply a launch preference
+    // over the constraints of a transferred session.
+    if switch_id.is_none() && !session_switch::is_handoff_target(&record.id).map_err(to_err)? {
+        if let Some(mode) = record.cli_launch_mode.as_deref() {
+            runtime_launch::configure(&mut command, kind.as_str(), mode).map_err(to_err)?;
+        }
+    }
     session_switch::configure_target(&mut command, record).map_err(to_err)?;
     if yolo {
         configure_yolo_runtime_command(kind, &mut command, record, session_state)?;
@@ -3265,16 +3282,18 @@ fn launch_runtime_session(
     runtime_kind: String,
     cwd: Option<String>,
     project_id: Option<String>,
+    launch_mode: Option<String>,
     pty_state: State<'_, PtyManager>,
     session_state: State<'_, SessionManager>,
 ) -> Result<SessionRecord, String> {
+    let mode = runtime_launch::resolve(&runtime_kind, launch_mode.as_deref(), &runtime_preferences::get().map_err(to_err)?.default_launch_modes).map_err(to_err)?;
     let cwd = runtime_project_cwd(cwd, project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
     let record = session_state
-        .create_runtime(NewRuntimeSession {
+        .create_runtime_with_launch_mode(NewRuntimeSession {
             runtime_kind,
             cwd,
             project_id,
-        })
+        }, &mode)
         .map_err(to_err)?;
     let lifecycle = session_state.lifecycle_lock(&record.id);
     let _guard = lifecycle.lock().unwrap();
@@ -6098,6 +6117,7 @@ pub fn run() {
         .invoke_handler({ let handler:fn(tauri::ipc::Invoke<tauri::Wry>)->bool=tauri::generate_handler![
             test_profile_info,
             get_runtime_preferences,
+            set_runtime_launch_default,
             set_runtime_enabled,
             skill_center_snapshot,
             skill_center_update_checks,

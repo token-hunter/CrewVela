@@ -400,6 +400,8 @@ pub struct SessionRecord {
     #[serde(default)]
     pub auto_mode: bool,
     #[serde(default)]
+    pub cli_launch_mode: Option<String>,
+    #[serde(default)]
     pub permission_mode: Option<PermissionMode>,
     #[serde(default, skip_serializing)]
     pub permission_mode_revision: u64,
@@ -756,6 +758,7 @@ impl SessionManager {
             yolo: input.yolo,
             auto_mode: input.auto_mode,
             permission_mode: None,
+            cli_launch_mode: None,
             permission_mode_revision: 0,
             approval_policy: ApprovalPolicy::default(),
             waiting_reason: None,
@@ -801,6 +804,7 @@ impl SessionManager {
             yolo: false,
             auto_mode: false,
             permission_mode: None,
+            cli_launch_mode: None,
             permission_mode_revision: 0,
             approval_policy: ApprovalPolicy::default(),
             waiting_reason: None,
@@ -827,12 +831,21 @@ impl SessionManager {
         self.create_runtime_with_id(input, uuid::Uuid::new_v4().to_string())
     }
 
+    pub(crate) fn create_runtime_with_launch_mode(&self, input: NewRuntimeSession, mode: &str) -> Result<SessionRecord> {
+        crate::runtime_launch::validate(&input.runtime_kind, mode)?;
+        self.create_runtime_with_mode(input, uuid::Uuid::new_v4().to_string(), Some(mode.into()))
+    }
+
     /// Reserved identity is persisted by the switch coordinator before this write.
     pub(crate) fn create_runtime_with_id(
         &self,
         input: NewRuntimeSession,
         id: String,
     ) -> Result<SessionRecord> {
+        self.create_runtime_with_mode(input, id, None)
+    }
+
+    fn create_runtime_with_mode(&self, input: NewRuntimeSession, id: String, launch_mode: Option<String>) -> Result<SessionRecord> {
         let kind: crate::multi_agent::AgentRuntimeKind =
             serde_json::from_value(serde_json::Value::String(input.runtime_kind.clone()))
                 .context("Runtime 类型无效")?;
@@ -889,6 +902,7 @@ impl SessionManager {
             yolo: false,
             auto_mode: false,
             permission_mode: None,
+            cli_launch_mode: launch_mode,
             permission_mode_revision: 0,
             approval_policy: ApprovalPolicy::default(),
             waiting_reason: None,
@@ -970,6 +984,7 @@ impl SessionManager {
             yolo: false,
             auto_mode: false,
             permission_mode: None,
+            cli_launch_mode: None,
             permission_mode_revision: 0,
             approval_policy: ApprovalPolicy::default(),
             waiting_reason: None,
@@ -2893,6 +2908,20 @@ fn now_nanos() -> u64 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn cli_launch_mode_is_immutable_after_assignment_and_survives_session_reload() {
+        let (path, events) = test_paths("cli-launch-mode");
+        let manager = SessionManager::open_at(path.clone(), events.clone()).unwrap();
+        let record = manager.create_runtime_with_launch_mode(NewRuntimeSession { runtime_kind: "codex".into(), cwd: ".".into(), project_id: None }, "read_only").unwrap();
+        assert_eq!(record.cli_launch_mode.as_deref(), Some("read_only"));
+        assert!(manager.create_runtime_with_launch_mode(NewRuntimeSession { runtime_kind: "codex".into(), cwd: ".".into(), project_id: None }, "invalid").is_err());
+        assert_eq!(manager.list().len(), 1);
+        let reopened = SessionManager::open_at(path.clone(), events).unwrap();
+        assert_eq!(reopened.get(&record.id).unwrap().cli_launch_mode.as_deref(), Some("read_only"));
+        assert!(path.parent().unwrap().canonicalize().unwrap().starts_with(std::env::temp_dir().canonicalize().unwrap()));
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
 
     #[test]
     fn terminal_shell_serialization_keeps_legacy_and_unix_sessions() {

@@ -5,9 +5,10 @@ import vm from "node:vm";
 import ts from "typescript";
 import * as taxonomy from "../src/runtimeTaxonomy.ts";
 import * as installation from "../src/runtimeInstallation.ts";
+import * as launch from "../src/runtimeLaunch.ts";
 import { reorderRuntimeOrder, persistRuntimeOrder, loadRuntimeOrder } from "../src/runtimePreferences.ts";
 
-const labels = { claude_code: "Claude Code", codex: "Codex", kimi_code: "Kimi Code", zcode: "ZCode Desktop", codex_chat: "Codex Chat" };
+const labels = { claude_code: "Claude Code", codex: "Codex", kimi_code: "Kimi Code", pi: "Pi", opencode: "OpenCode", zcode_cli: "ZCode CLI", zcode: "ZCode Desktop", codex_chat: "Codex Chat" };
 function harness() {
   const disabled = new Set(["kimi_code"]);
   const toggles = [];
@@ -28,7 +29,8 @@ function harness() {
       if (id === "@phosphor-icons/react") return { ArrowUp: "up-icon", ArrowDown: "down-icon", DotsSixVertical: "drag-icon", X: "close-icon" };
       if (id === "./RuntimeInstallWizard") return { RuntimeInstallWizard: "runtime-installer" };
       if (id === "../runtimeInstallation") return installation;
-      if (id === "../runtimeAvailability") return { useRuntimeAvailability: () => ({ ready: true, error: null, isRuntimeEnabled: (kind) => !disabled.has(kind), setRuntimeEnabled: async (...args) => toggles.push(args) }) };
+      if (id === "../runtimeLaunch") return launch;
+      if (id === "../runtimeAvailability") return { useRuntimeAvailability: () => ({ prefs: { disabledRuntimes: [...disabled] }, ready: true, error: null, isRuntimeEnabled: (kind) => !disabled.has(kind), setRuntimeEnabled: async (...args) => toggles.push(args) }) };
       if (id === "../runtimeLogos") return { RUNTIME_LABELS: labels, RUNTIME_LOGOS: {} };
       if (id === "../runtimeTaxonomy") return taxonomy;
       if (id === "./ui/Modal") return { Modal: "modal" };
@@ -88,19 +90,22 @@ test("排序保存错误在管理弹窗内展示，按钮不嵌套在开关标�
   }
 });
 
-test("安装与版本入口只为首批 CLI 提供，进入和返回不改变 Runtime 开关或排序", () => {
-  const h = harness(); const order = ["claude_code", "codex", "kimi_code"];
+test("五种 CLI 安装入口进入和返回不改变开关或排序，暂缓 ZCode CLI", () => {
+  const h = harness(); const order = ["claude_code", "codex", "kimi_code", "pi", "opencode", "zcode_cli"];
   const props = { order, onReorder() { assert.fail("opening installation must not reorder runtimes"); } };
   let tree = h.render(props);
   const entries = nodes(tree).filter(node => node.type === "button" && node.props.className?.includes("collab-runtime-install-entry"));
-  assert.equal(entries.length, 2);
-  entries[1].props.onClick(); tree = h.render(props);
-  const installer = nodes(tree).find(node => node.type === "runtime-installer");
-  assert.equal(installer.props.kind, "codex");
-  assert.deepEqual(h.toggles, []);
-  installer.props.onBack(); tree = h.render(props);
+  assert.equal(entries.length, 5);
+  for (const kind of order.slice(0, 5)) {
+    nodes(row(tree, kind)).find(node => node.type === "button" && node.props.className?.includes("collab-runtime-install-entry")).props.onClick();
+    tree = h.render(props);
+    const installer = nodes(tree).find(node => node.type === "runtime-installer");
+    assert.equal(installer.props.kind, kind);
+    assert.deepEqual(h.toggles, []);
+    installer.props.onBack(); tree = h.render(props);
+  }
   assert.ok(button(tree, "上移 Codex"));
-  assert.deepEqual(order, ["claude_code", "codex", "kimi_code"]);
+  assert.deepEqual(order, ["claude_code", "codex", "kimi_code", "pi", "opencode", "zcode_cli"]);
 });
 
 function row(tree, kind) {

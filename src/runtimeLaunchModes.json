@@ -1,0 +1,41 @@
+{
+  "claude_code": [
+    {"id":"cli_default","label":"CLI 默认","description":"沿用原生 CLI 配置。"},
+    {"id":"manual","label":"Manual","description":"原生 default 权限模式，需要时确认操作。"},
+    {"id":"accept_edits","label":"Accept Edits","description":"自动接受文件编辑，其他操作按原生权限确认。"},
+    {"id":"plan","label":"Plan","description":"原生规划模式。"},
+    {"id":"auto","label":"Auto","description":"原生 auto 模式，由 CLI 审核操作。"},
+    {"id":"yolo","label":"YOLO","description":"跳过原生权限确认。"}
+  ],
+  "codex": [
+    {"id":"cli_default","label":"CLI 默认","description":"沿用原生 CLI 配置。"},
+    {"id":"workspace","label":"工作区写入","description":"workspace-write 沙箱，需要时请求确认。"},
+    {"id":"read_only","label":"只读沙箱","description":"原生 read-only 沙箱，需要时请求确认。"},
+    {"id":"auto","label":"Approve for me","description":"原生自动审核，使用工作区写入沙箱。"},
+    {"id":"yolo","label":"YOLO","description":"跳过确认并关闭原生沙箱。"}
+  ],
+  "kimi_code": [
+    {"id":"cli_default","label":"CLI 默认","description":"沿用原生 CLI 配置。"},
+    {"id":"yolo","label":"Ask When Needed · --yolo","description":"常规操作自动执行，风险操作、提问和计划仍询问。"},
+    {"id":"auto","label":"Never Ask · --auto","description":"原生自动执行；规划模式的计划仍等待审阅。"},
+    {"id":"plan","label":"Plan","description":"原生规划模式；其他权限沿用原生配置。"}
+  ],
+  "zcode_cli": [
+    {"id":"cli_default","label":"CLI 默认","description":"沿用原生 CLI 配置。"},
+    {"id":"guarded","label":"Guarded","description":"原生 guarded 权限模式。"},
+    {"id":"build","label":"Build","description":"原生 build 权限模式。"},
+    {"id":"edit","label":"Edit","description":"原生 edit 权限模式。"},
+    {"id":"plan","label":"Plan","description":"原生 plan 权限模式。"},
+    {"id":"yolo","label":"YOLO","description":"原生 yolo 权限模式。"}
+  ],
+  "opencode": [
+    {"id":"cli_default","label":"CLI 默认","description":"沿用原生 CLI 配置与默认 Agent。"},
+    {"id":"build","label":"Build","description":"选择原生 build Agent，保留其配置权限。"},
+    {"id":"plan","label":"Plan","description":"选择原生 plan Agent，保留其配置权限。"},
+    {"id":"auto","label":"Auto","description":"原生 --auto 自动批准，明确拒绝的权限仍保留。"}
+  ],
+  "pi": [
+    {"id":"cli_default","label":"CLI 默认","description":"沿用原生工具、扩展及 MCP 配置。Pi 没有原生 YOLO 开关。"},
+    {"id":"read_tools","label":"仅文件读取工具","description":"仅启用 read、grep、find、ls，关闭自动扩展和 MCP。这是工具限制，不是系统沙箱。"}
+  ]
+}
