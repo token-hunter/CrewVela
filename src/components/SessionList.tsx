@@ -1,5 +1,5 @@
 import { sessionDisplayTitle, sessionDisplayProvider } from "../sessionCapabilities";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { sessionSwitchReason } from "../sessionSwitch";
 import { createPortal } from "react-dom";
 import { isSessionActive } from "../sessionCapabilities";
@@ -8,6 +8,7 @@ import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
 import { CaretDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 import { CircleIcon } from "@phosphor-icons/react/dist/csr/Circle";
+import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
 import { DotsThreeIcon } from "@phosphor-icons/react/dist/csr/DotsThree";
 import { FileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
 import { FolderIcon } from "@phosphor-icons/react/dist/csr/Folder";
@@ -47,6 +48,14 @@ const STATUS_LABELS: Record<SessionStatus, string> = {
 type SessionFilter = "running" | "all" | "stopped" | "favorites";
 
 interface Props {
+  bulkActions?: {
+    workspaceId: string;
+    workspaceName: string;
+    stopDisabled: boolean;
+    deleteDisabled: boolean;
+    onStop: () => void;
+    onDelete: () => void;
+  };
   sessions: SessionRecord[];
   projects: Project[];
   usages: Record<string, SessionUsage>;
@@ -107,6 +116,7 @@ function loadPins(key: string): Set<string> {
 }
 
 export function SessionList({
+  bulkActions,
   sessions,
   projects,
   usages,
@@ -144,6 +154,10 @@ export function SessionList({
   const [actionMenuInitialFocusIndex, setActionMenuInitialFocusIndex] = useState(0);
   const filterSelectRef = useRef<HTMLDivElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+  const filterMenuId = useId();
+  const filterInitialFocus = useRef<"selected" | "first" | "last">("selected");
+  const [filterMenuPosition, setFilterMenuPosition] = useState({ left: 8, top: 8, width: 260, maxHeight: 360 });
   const actionMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const actionMenuItemsRef = useRef<HTMLButtonElement[]>([]);
@@ -172,16 +186,44 @@ export function SessionList({
     }
   }, [collapsedProjects]);
 
+  useEffect(() => { setFilterMenuOpen(false); }, [bulkActions?.workspaceId]);
+  useLayoutEffect(() => {
+    if (!filterMenuOpen) return;
+    const place = () => {
+      const anchor = filterTriggerRef.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const width = Math.min(Math.max(anchor.width, 224), innerWidth - 16);
+      const desiredHeight = Math.min(filterMenuRef.current?.scrollHeight ?? 360, 400);
+      const below = innerHeight - anchor.bottom - 12, above = anchor.top - 12;
+      const flipped = below < desiredHeight && above > below;
+      const maxHeight = Math.max(40, Math.min(400, flipped ? above : below));
+      const height = Math.min(desiredHeight, maxHeight);
+      setFilterMenuPosition({ left: Math.max(8, Math.min(anchor.left, innerWidth - width - 8)), top: flipped ? anchor.top - height - 4 : anchor.bottom + 4, width, maxHeight });
+    };
+    place(); window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
+    const observer = new ResizeObserver(place);
+    if (filterTriggerRef.current) observer.observe(filterTriggerRef.current);
+    if (filterMenuRef.current) observer.observe(filterMenuRef.current);
+    return () => { observer.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [filterMenuOpen]);
+
   useEffect(() => {
     if (!filterMenuOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const options = filterMenuRef.current?.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]:not(:disabled)');
+      const target = filterInitialFocus.current === "last" ? options?.[options.length - 1] : filterInitialFocus.current === "first" ? options?.[0] : filterMenuRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]');
+      target?.focus();
+    });
 
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (!filterSelectRef.current?.contains(event.target as Node)) {
+    const closeOnOutsideClick = (event: Event) => {
+      if (!filterSelectRef.current?.contains(event.target as Node) && !filterMenuRef.current?.contains(event.target as Node)) {
         setFilterMenuOpen(false);
       }
     };
 
     const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      if (event.key === "Tab") { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); return; }
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
@@ -189,11 +231,14 @@ export function SessionList({
       filterTriggerRef.current?.focus();
     };
 
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsideClick, true);
+    document.addEventListener("focusin", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape, true);
     return () => {
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
+      cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", closeOnOutsideClick, true);
+      document.removeEventListener("focusin", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape, true);
     };
   }, [filterMenuOpen]);
 
@@ -416,8 +461,11 @@ export function SessionList({
   const selectedFilter = filters.find((item) => item.id === filter) ?? filters[0];
 
   const handleFilterMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target === filterTriggerRef.current && !filterMenuOpen && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault(); filterInitialFocus.current = event.key === "ArrowUp" ? "last" : "first"; setFilterMenuOpen(true); return;
+    }
     const options = Array.from(
-      filterSelectRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [],
+      filterMenuRef.current?.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]:not(:disabled)') ?? [],
     );
     if (options.length === 0) return;
 
@@ -760,9 +808,11 @@ export function SessionList({
           className="session-filter-trigger"
           type="button"
           aria-label={`会话状态：${selectedFilter.label}`}
-          aria-haspopup="listbox"
+          aria-haspopup="menu"
+          aria-controls={filterMenuOpen ? filterMenuId : undefined}
           aria-expanded={filterMenuOpen}
           onClick={() => {
+            filterInitialFocus.current = "selected";
             if (filterMenuOpen) setFilterMenuOpen(false);
             else setFilterMenuOpen(true);
           }}
@@ -782,32 +832,41 @@ export function SessionList({
           <CaretDownIcon className="session-filter-caret" size={14} weight="bold" />
         </button>
 
-        {filterMenuOpen && (
-          <div className="session-filter-menu" role="listbox" aria-label="会话状态筛选">
+        {filterMenuOpen && createPortal(
+          <div ref={filterMenuRef} id={filterMenuId} className="session-filter-menu" role="menu" aria-label="会话管理" style={filterMenuPosition}>
+            <div role="group" aria-label="查看范围">
             {filters.map((item) => (
               <button
                 key={item.id}
                 className={`session-filter-option${filter === item.id ? " active" : ""}`}
                 type="button"
-                role="option"
-                aria-selected={filter === item.id}
+                role="menuitemradio"
+                aria-checked={filter === item.id}
                 data-filter={item.id}
                 onClick={() => {
                   selectFilter(item.id);
                   filterTriggerRef.current?.focus();
                 }}
               >
-                {item.id === "favorites" ? (
-                  <StarIcon size={15} weight={filter === item.id ? "fill" : "regular"} />
+                {filter === item.id ? (
+                  <CheckIcon size={16} weight="bold" aria-hidden="true" />
+                ) : item.id === "favorites" ? (
+                  <StarIcon size={16} weight="regular" aria-hidden="true" />
                 ) : (
-                  <CircleIcon size={10} weight={item.id === "running" ? "fill" : "regular"} />
+                  <CircleIcon size={16} weight="regular" aria-hidden="true" />
                 )}
                 <span>{item.label}</span>
                 <strong className={`filter-count ${item.tone}`}>{item.count}</strong>
               </button>
             ))}
+            </div>
+            {bulkActions && <div role="group" aria-label="批量操作" aria-description={`仅作用于当前工作区「${bulkActions.workspaceName}」`}>
+                <button className="session-filter-option session-filter-action" type="button" role="menuitem" disabled={bulkActions.stopDisabled} title={`当前工作区「${bulkActions.workspaceName}」 · ${bulkActions.stopDisabled ? liveCount ? "操作暂不可用" : "暂无运行会话" : "停止运行中的会话"}`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onStop(); }}><StopIcon size={16} aria-hidden="true" /><span>停止运行会话</span></button>
+                <button className="session-filter-option session-filter-action" type="button" role="menuitem" disabled={bulkActions.deleteDisabled} title={`删除当前工作区「${bulkActions.workspaceName}」的全部会话`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onDelete(); }}><TrashIcon size={16} aria-hidden="true" /><span>删除全部会话</span></button>
+              </div>
+            }
           </div>
-        )}
+        , document.body)}
       </div>
 
       {!groupByProject && (

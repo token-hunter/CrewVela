@@ -7,7 +7,7 @@ try {
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   await page.goto(new URL("/tests/fixtures/app-session-async-ui.html", process.env.CREWVELA_UI_URL || "http://127.0.0.1:1432").href);
   await page.locator(".session-filter-trigger").click();
-  await page.getByRole("option", { name: /全部/ }).click();
+  await page.getByRole("menuitemradio", { name: /全部/ }).click();
   const one = page.locator(".session-item").filter({ hasText: "fixture-one" });
   const two = page.locator(".session-item").filter({ hasText: "fixture-two" });
   await one.click();
@@ -33,7 +33,7 @@ try {
   assert.match(await page.locator(".session-item.active").innerText(), /fixture-two/, "Escape cancels workspace rename without leaving the current session");
   await page.locator(".session-filter-trigger").click();
   await page.keyboard.press("Escape");
-  await page.getByRole("listbox", { name: "会话状态筛选" }).waitFor({ state: "detached" });
+  await page.getByRole("menu", { name: "会话管理" }).waitFor({ state: "detached" });
   assert.match(await page.locator(".session-item.active").innerText(), /fixture-two/);
   const search = page.getByPlaceholder("搜索标题 / 目录 / provider");
   await search.fill("fixture-two");
@@ -68,7 +68,7 @@ try {
   assert.deepEqual(errors, [], "storage failure must be visible without crashing App");
   await page.goto(new URL("/tests/fixtures/app-session-async-ui.html?retired-runtime=1", process.env.CREWVELA_UI_URL || "http://127.0.0.1:1432").href);
   await page.locator(".session-filter-trigger").click();
-  await page.getByRole("option", { name: /全部/ }).click();
+  await page.getByRole("menuitemradio", { name: /全部/ }).click();
   await page.locator(".session-item").filter({ hasText: "fixture-one" }).click();
   await page.getByText("该运行时已移除，历史记录已保留。请使用其他 Agent 新建会话。", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "恢复会话", exact: true }).count(), 0);

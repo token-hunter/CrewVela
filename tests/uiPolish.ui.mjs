@@ -61,13 +61,13 @@ try {
     await page.locator(".menu-backdrop").click({ position: { x: size.width - 5, y: size.height - 5 } });
     assert.equal(await menu.count(), 0);
 
-    // 更多工具 keeps the bulk actions and Help without duplicating 新建会话;
+    // 更多工具 keeps Help; workspace bulk actions live with session filters.
     // nothing in this menu opens the runtime list.
     const moreTools = page.getByRole("button", { name: "更多工具", exact: true });
     const toolsMenu = page.getByRole("menu", { name: "更多工具", exact: true });
     await moreTools.click();
     await toolsMenu.waitFor();
-    assert.deepEqual(await toolsMenu.getByRole("menuitem").allTextContents(), ["停止全部", "删除全部", "帮助"]);
+    assert.deepEqual(await toolsMenu.getByRole("menuitem").allTextContents(), ["帮助"]);
     await toolsMenu.getByRole("menuitem").first().hover();
     assert.equal(await menu.count(), 0);
     await page.locator(".menu-backdrop").click({ position: { x: size.width - 5, y: size.height - 5 } });
@@ -85,6 +85,13 @@ try {
     assert.equal(await toolsMenu.count(), 0);
 
     if (menusOnly) {
+      await page.locator('.session-filter-trigger').click();
+      const sessionMenu = page.getByRole('menu', { name: '会话管理', exact: true });
+      assert.equal(await sessionMenu.getByRole('menuitemradio').count(), 4);
+      assert.equal(await sessionMenu.getByRole('menuitem').count(), 2);
+      const sessionBounds = await sessionMenu.boundingBox();
+      assert.ok(sessionBounds.x >= 0 && sessionBounds.y >= 0 && sessionBounds.x + sessionBounds.width <= size.width && sessionBounds.y + sessionBounds.height <= size.height);
+      await page.keyboard.press('Escape');
       console.log(`PASS ${size.name}: menus only — direct Runtime entry, more-tools, Escape/outside click and selected session retained`);
       await context.close();
       continue;

@@ -1,15 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { CaretRight, Question, ShieldCheck, ArrowClockwise, Info, Stop, Trash } from "@phosphor-icons/react";
+import { CaretRight, Question, ShieldCheck, ArrowClockwise, Info } from "@phosphor-icons/react";
 import type { AppHelpSection } from "../appHelp";
 import "../styles/app-help.css";
 
 interface Props {
   trigger: RefObject<HTMLButtonElement>;
-  stopDisabled: boolean;
-  deleteDisabled: boolean;
-  onStop: () => void;
-  onDelete: () => void;
   onHelp: (section: AppHelpSection) => void;
   onClose: () => void;
 }
@@ -31,7 +27,7 @@ export function AppToolsMenu(props: Props) {
       const helpWidth = 224, helpHeight = help.current?.offsetHeight ?? 128;
       const right = left+width+4;
       const helpLeft = Math.max(8, Math.min(right+helpWidth <= innerWidth-8 ? right : left-helpWidth-4, innerWidth-helpWidth-8));
-      const offset = (helpButton.current?.offsetTop ?? 80);
+      const offset = (helpButton.current?.offsetTop ?? 0);
       setPosition({left,top,helpLeft,helpTop:Math.max(8,Math.min(top+offset-5,innerHeight-helpHeight-8))});
     };
     place(); window.addEventListener("resize",place); window.addEventListener("scroll",place,true);
@@ -68,9 +64,6 @@ export function AppToolsMenu(props: Props) {
   return createPortal(<>
     <div className="menu-backdrop app-tools-backdrop" onClick={() => close()} />
     <div className="unified-tools-menu app-tools-menu" role="menu" aria-label="更多工具" ref={root} style={{left:position.left,top:position.top}} onKeyDown={event=>navigate(event)}>
-      <button type="button" role="menuitem" className="danger" disabled={props.stopDisabled} onMouseEnter={()=>setHelpOpen(false)} onFocus={()=>setHelpOpen(false)} onClick={()=>{close();props.onStop();}}><Stop size={17} weight="fill" /><span>停止全部</span></button>
-      <button type="button" role="menuitem" className="danger" disabled={props.deleteDisabled} onMouseEnter={()=>setHelpOpen(false)} onFocus={()=>setHelpOpen(false)} onClick={()=>{close();props.onDelete();}}><Trash size={17} /><span>删除全部</span></button>
-      <div role="separator" className="unified-tools-menu-divider" />
       <button ref={helpButton} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={helpOpen} aria-controls={helpOpen?"app-help-submenu":undefined} className="app-help-root" onMouseEnter={()=>openHelp(false)} onClick={()=>openHelp(true)}><Question size={17} /><span>帮助</span><CaretRight size={13} /></button>
     </div>
     {helpOpen && <div ref={help} id="app-help-submenu" className="app-help-submenu" role="menu" aria-label="帮助" style={{left:position.helpLeft,top:position.helpTop}} onKeyDown={event=>navigate(event,true)}>

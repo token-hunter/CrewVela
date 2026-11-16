@@ -22,7 +22,7 @@ try {
   });
   await page.goto(new URL("/tests/fixtures/app-session-async-ui.html", base).href);
   await page.locator(".session-filter-trigger").click();
-  await page.getByRole("option", { name: /全部/ }).click();
+  await page.getByRole("menuitemradio", { name: /全部/ }).click();
   const items = page.locator(".session-item");
   await items.first().waitFor();
   assert.equal(await items.count(), 2);

@@ -2227,6 +2227,8 @@ export default function App() {
       style={appShellStyle}
     >
       <MemoAppSidebar
+        workspaceId={workspace.activeTabId}
+        workspaceName={workspace.tabs.find(tab => tab.id === workspace.activeTabId)?.title ?? "当前工作区"}
         sessions={tabSessions}
         projects={projects}
         usages={usages}

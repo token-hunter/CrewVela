@@ -11,7 +11,7 @@ try{
   await page.goto(`${base}/tests/fixtures/app-session-async-ui.html?app-help=1&theme=${theme}`);const trigger=page.getByRole('button',{name:'更多工具',exact:true});await trigger.waitFor();
   const open=async()=>{await trigger.click();await page.getByRole('menu',{name:'更多工具',exact:true}).getByRole('menuitem',{name:'帮助',exact:true}).click();await page.getByRole('menu',{name:'帮助',exact:true}).waitFor();};
   const select=async name=>{await open();await page.getByRole('menu',{name:'帮助',exact:true}).getByRole('menuitem',{name,exact:true}).click();};
-  await trigger.click();const root=page.getByRole('menu',{name:'更多工具',exact:true});assert.deepEqual(await root.getByRole('menuitem').allTextContents(),['停止全部','删除全部','帮助']);
+  await trigger.click();const root=page.getByRole('menu',{name:'更多工具',exact:true});assert.deepEqual(await root.getByRole('menuitem').allTextContents(),['帮助']);
   const help=root.getByRole('menuitem',{name:'帮助',exact:true});await help.focus();await page.keyboard.press('ArrowRight');const submenu=page.getByRole('menu',{name:'帮助',exact:true});await submenu.waitFor();
   assert.equal(await submenu.getByRole('menuitem').first().evaluate(e=>e===document.activeElement),true);await page.keyboard.press('ArrowDown');assert.equal(await submenu.getByRole('menuitem').nth(1).evaluate(e=>e===document.activeElement),true);
   const box=await submenu.boundingBox();assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=size.width&&box.y+box.height<=size.height,'Submenu stays in viewport');

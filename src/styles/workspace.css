@@ -296,11 +296,11 @@
 }
 
 .session-filter-menu {
-  position: absolute;
-  z-index: var(--z-drawer);
-  top: calc(100% + 4px);
-  right: 0;
-  left: 0;
+  position: fixed;
+  z-index: var(--z-popover-3);
+  box-sizing: border-box;
+  overflow: auto;
+  overscroll-behavior: contain;
   padding: 5px;
   border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-strong));
   border-radius: var(--radius-lg);
@@ -308,12 +308,22 @@
   box-shadow: 0 14px 34px rgba(1, 7, 13, 0.42);
 }
 
+.session-filter-menu > [role="group"] { display: grid; gap: 2px; }
+.session-filter-menu > [role="group"] + [role="group"] { margin-top: 2px; }
+.session-filter-option.session-filter-action { grid-template-columns: 18px minmax(0, 1fr); }
+.session-filter-option:disabled,
+.session-filter-option:disabled:hover { opacity: 1; color: var(--text-dim); cursor: not-allowed; background: transparent; }
+
 .session-filter-option {
+  box-sizing: border-box;
+  height: 38px;
   min-height: 38px;
   border-color: transparent;
   background: transparent;
   color: var(--text-dim);
 }
+
+.session-filter-option > svg { width: 16px; height: 16px; justify-self: center; }
 
 .session-filter-option:hover {
   background: var(--bg-hover);

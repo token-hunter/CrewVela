@@ -1,6 +1,7 @@
 import { terminalShells, shellLabel } from "../platform";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
 import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
@@ -41,6 +42,7 @@ import { CommunicationGuideButton } from "./CommunicationGuide";
 import { AutomationIcon } from "./AutomationIcon";
 import { AppToolsMenu } from "./AppToolsMenu";
 import { AppHelpDialog } from "./AppHelpDialog";
+import { Modal } from "./ui/Modal";
 import type { AppHelpSection } from "../appHelp";
 import { SidebarAttention } from "./SidebarAttention";
 import type { AttentionKind } from "../sidebarAttention";
@@ -68,6 +70,8 @@ const SIDEBAR_SHORTCUT_ICONS: Record<string, () => ReactNode> = {
 };
 
 interface Props {
+  workspaceId: string;
+  workspaceName: string;
   sessions: SessionRecord[];
   projects: Project[];
   usages: Record<string, SessionUsage>;
@@ -144,7 +148,18 @@ export function AppSidebar(props: Props) {
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
   }, [newMenuOpen, toolsMenuOpen]);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteRequest, setDeleteRequest] = useState<{ workspaceId: string; sessionIds: string[] } | null>(null);
+  const deleteCancelButton = useRef<HTMLButtonElement>(null);
+  const deleteConfirmed = useRef(false);
+  useEffect(() => { setDeleteRequest(null); }, [props.workspaceId]);
+  const deleteScopeCurrent = deleteRequest?.workspaceId === props.workspaceId
+    && deleteRequest.sessionIds.length === props.sessions.length
+    && props.sessions.every(session => deleteRequest.sessionIds.includes(session.id));
+  const requestDeleteAll = () => {
+    if (props.deleteAllDisabled) return;
+    deleteConfirmed.current = false;
+    setDeleteRequest({ workspaceId: props.workspaceId, sessionIds: props.sessions.map(session => session.id) });
+  };
   const [shortcuts, setShortcuts] = useState<SettingsSection[]>(() =>
     loadSidebarShortcuts(),
   );
@@ -242,8 +257,7 @@ export function AppSidebar(props: Props) {
           </span>
         </div>
 
-        {toolsMenuOpen && <AppToolsMenu trigger={toolsButtonRef} stopDisabled={props.stopAllDisabled} deleteDisabled={props.deleteAllDisabled}
-          onClose={closeToolsMenus} onStop={props.onStopAll} onDelete={() => setDeleteConfirmOpen(true)} onHelp={setHelpSection} />}
+        {toolsMenuOpen && <AppToolsMenu trigger={toolsButtonRef} onClose={closeToolsMenus} onHelp={setHelpSection} />}
       </header>
       <div className="sidebar-new-session-row">
         <button
@@ -340,6 +354,7 @@ export function AppSidebar(props: Props) {
 
       <div className="session-drawer unified-session-drawer">
         <SessionList
+          bulkActions={{ workspaceId: props.workspaceId, workspaceName: props.workspaceName, stopDisabled: props.stopAllDisabled, deleteDisabled: props.deleteAllDisabled, onStop: props.onStopAll, onDelete: requestDeleteAll }}
           sessions={props.sessions}
           projects={props.projects}
           usages={props.usages}
@@ -473,26 +488,28 @@ export function AppSidebar(props: Props) {
         <SidebarAttention sessions={props.sessions} onOpenSession={props.onOpenAttentionSession} />
       </footer>
 
-      {deleteConfirmOpen && (
-        <div className="editor-overlay" onClick={() => setDeleteConfirmOpen(false)}>
-          <div className="confirm-dialog" onClick={(event) => event.stopPropagation()}>
+      {deleteRequest?.workspaceId === props.workspaceId && createPortal(
+          <Modal overlayClassName="editor-overlay" className="confirm-dialog" ariaLabel="删除当前工作区全部会话" initialFocusRef={deleteCancelButton} closeOnOverlayClick onClose={() => setDeleteRequest(null)}>
             <div className="confirm-dialog-icon"><TrashIcon size={26} /></div>
-            <h2>删除全部会话</h2>
-            <p>将删除当前页签的全部会话，此操作不可撤销。</p>
+            <h2>删除当前工作区全部会话</h2>
+            <p>将删除「{props.workspaceName}」中的全部 {deleteRequest.sessionIds.length} 个会话，包含当前筛选中未显示的记录。此操作不可撤销。</p>
+            {!deleteScopeCurrent && <p role="alert">会话列表已变化，请取消并重新选择删除操作。</p>}
             <div className="actions">
-              <button className="btn" onClick={() => setDeleteConfirmOpen(false)}>取消</button>
+              <button ref={deleteCancelButton} className="btn" onClick={() => setDeleteRequest(null)}>取消</button>
               <button
                 className="btn danger-solid"
+                disabled={!deleteScopeCurrent || props.deleteAllDisabled}
                 onClick={() => {
-                  setDeleteConfirmOpen(false);
+                  if (!deleteScopeCurrent || props.deleteAllDisabled || deleteConfirmed.current) return;
+                  deleteConfirmed.current = true;
+                  setDeleteRequest(null);
                   props.onDeleteAll();
                 }}
               >
                 确认删除
               </button>
             </div>
-          </div>
-        </div>
+          </Modal>, document.body
       )}
       {helpSection && <AppHelpDialog key={helpSection} section={helpSection} onClose={() => setHelpSection(null)} />}
     </aside>
