@@ -16,3 +16,7 @@ test('明确分工需求生成现有计划提案，交流需求开启有界接�
  assert.equal(conversationRequestIntent('@Claude @Codex discuss this design'),'exchange');
  assert.equal(conversationRequestMode('Please work together to build this project','discussion'),'execution_plan');
 });
+test('分工调整是一次性请求，普通追问仍保持聊天',()=>{
+ for(const body of ['请调整分工：增加测试','生成分工：登录功能','更新分工：先处理页面','@Claude @Codex 帮我做登录页，先给分工。']) assert.equal(conversationRequestMode(body),'execution_plan');
+ for(const body of ['hi','这个分工的验收是什么意思','不要调整分工，先解释']) assert.equal(conversationRequestMode(body),'discussion');
+});

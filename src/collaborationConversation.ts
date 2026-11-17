@@ -7,7 +7,7 @@ export const CONVERSATION_STATUS: Record<ConversationStatus, string> = {
   unconfirmed: "结果未确认", needs_decision: "等待你补充",
 };
 /** Conservative routing: uncertain requests stay in chat; a plan still needs explicit execution approval. */
-export function conversationRequestMode(body: string, selectedMode: ConversationMode): ConversationMode {
+export function conversationRequestMode(body: string, selectedMode: ConversationMode = "discussion"): ConversationMode {
   if (selectedMode === "execution_plan") return selectedMode;
   const text = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
   if (/(?:不要|(?<!分)别|无需|不需要|暂不|先不|不准|只聊|讨论|聊聊|解释|如何|怎么|分析|评估|能否|是否|告诉我|是什么意思|示例)|\b(?:don't|do not|not yet|only discuss|explain|analy[sz]e|how to)\b/iu.test(text)) return "discussion";
@@ -16,7 +16,9 @@ export function conversationRequestMode(body: string, selectedMode: Conversation
     && /(?:开发|实现|编写|构建|修复|完成).{0,30}(?:项目|功能|程序|系统|应用|页面|任务|代码|bug)/iu.test(text);
   const teamEngineering = /\b(?:team|together|collaborate|split the work)\b/i.test(text)
     && /\b(?:build|implement|develop|fix)\b.{0,80}\b(?:project|feature|app|application|bug|code|page)\b/i.test(text);
-  return engineering || teamEngineering ? "execution_plan" : "discussion";
+  const explicitPlan = /^(?:请|帮我)?(?:生成|制定|调整|更新|重新生成)分工(?:[：:，,\s]|$)/u.test(text.trim())
+    || /(?:^|[，。；,;\n])\s*(?:请)?(?:先)?(?:给(?:我)?|生成|制定|安排)(?:一下|个|一份)?分工(?:[：:，,。！!；;\s]|$)/u.test(text.trim());
+  return engineering || teamEngineering || explicitPlan ? "execution_plan" : "discussion";
 }
 export function conversationRequestIntent(body: string): "chat" | "exchange" {
   const text = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");

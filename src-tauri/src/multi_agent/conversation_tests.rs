@@ -8,6 +8,8 @@ use crate::multi_agent::{
 mod natural_chat;
 #[path = "conversation_live_tests.rs"]
 mod live_chat;
+#[path = "conversation_views_tests.rs"]
+mod work_views;
 
 struct Fixture {
     store: MultiAgentStore,

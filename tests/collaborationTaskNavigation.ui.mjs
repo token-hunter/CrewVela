@@ -54,7 +54,9 @@ try{
  await settings(p).getByRole('button',{name:'协作记录与诊断：查看',exact:true}).click();
  assert.equal(await settings(p).getByRole('tab',{name:'协作记录',exact:true}).getAttribute('aria-selected'),'true','Privacy link is not hijacked by an old task request');
  await settings(p).getByRole('button',{name:'关闭设置',exact:true}).click();assert.equal(await editor.inputValue(),'保留我的草稿');
- await p.locator('.conversation-progress').getByRole('button',{name:'查看任务',exact:false}).click();await taskView(p);
+ await p.getByRole('tab',{name:'任务执行',exact:true}).click();
+ await p.getByRole('button',{name:'查看记录',exact:true}).click();
+ await p.getByRole('button',{name:'查看完整项目记录',exact:true}).click();await taskView(p);
  await p.evaluate(()=>{window.conversationMock.holdProject='A';});
  await p.waitForFunction(()=>window.conversationMock.pending.some(item=>item.command==='ma_snapshot'&&item.args.projectId==='A'));
  await p.evaluate(()=>window.conversationMock.openTasks('B'));await taskView(p,'B',1);

@@ -16,7 +16,7 @@ try {
     assert.equal(await page.getByRole('checkbox',{name:'Codex',exact:true}).isEnabled(),false);
     assert.match(await page.locator('.conversation-member-menu').innerText(),/用户接管/);
     await page.keyboard.press('Escape');
-    await page.getByRole('tab',{name:'聊天',exact:true}).click();
+    await page.getByRole('tab',{name:'团队聊天',exact:true}).click();
     const editor=page.getByRole('combobox',{name:'给团队发消息',exact:true});
     await editor.fill('@Codex hi');
     await page.getByRole('button',{name:'发送消息',exact:true}).click();

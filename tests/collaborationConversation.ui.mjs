@@ -17,7 +17,7 @@ async function fresh(extra = '', viewport = { width: 1122, height: 1402 }) {
 const calls = (page, command) => page.evaluate(command => window.conversationMock.calls.filter(item => item.command === command), command);
 try {
   const page = await fresh();
-  assert.equal(await page.getByRole('tab', { name: '聊天', exact: true }).getAttribute('aria-selected'), 'true');
+  assert.equal(await page.getByRole('tab', { name: '团队聊天', exact: true }).getAttribute('aria-selected'), 'true');
   await page.getByRole('button', { name: '查看任务 · 3', exact: true }).click();
   const settings = page.getByRole('dialog', { name: '设置', exact: true });
   await settings.locator('.collab-task-row').first().waitFor(); assert.equal(await settings.locator('.collab-task-row').count(), 3);
@@ -30,7 +30,7 @@ try {
   await page.getByRole('button', { name: '查看Codex的原会话', exact: true }).click();
   assert.deepEqual((await calls(page, 'fixture_open_session')).at(-1).args, { sessionId: 'session-codex' });
   const editor = page.getByRole('combobox', { name: '给团队发消息', exact: true });
-  await page.getByRole('tab', { name: '聊天', exact: true }).click();
+  await page.getByRole('tab', { name: '团队聊天', exact: true }).click();
   await editor.fill('@Cod');
   await page.getByRole('option', { name: /@Codex/ }).waitFor();
   await page.waitForFunction(() => document.querySelector('.multi-agent-mention-results [role="option"]')?.textContent.includes('@Codex'));
@@ -92,9 +92,11 @@ try {
   assert.equal(await editing.getByRole('combobox', { name: '给团队发消息', exact: true }).inputValue(), '新的未发送草稿');
 
   const planning = await fresh('plan=pending');
+  await planning.locator('.team-plan-contract summary').click();
   await planning.getByText('npm test', { exact: true }).waitFor();
-  await planning.getByRole('button', { name: '按此分工执行', exact: true }).evaluate(button => { button.click(); button.click(); });
-  await planning.getByRole('heading', { name: '分工已确认', exact: true }).waitFor();
+  await planning.getByRole('button', { name: '确认并开始执行', exact: true }).evaluate(button => { button.click(); button.click(); });
+  await planning.getByRole('region', { name: '工程任务', exact: true }).waitFor();
+  assert.equal(await planning.getByRole('tab',{name:'任务执行',exact:true}).getAttribute('aria-selected'),'true');
   assert.equal((await calls(planning, 'ma_conversation_execute_plan')).length, 1);
   assert.equal((await calls(planning, 'ma_apply_plan')).length, 0);
 
@@ -136,7 +138,7 @@ try {
     assert.equal(geometry.overflow, false); assert.ok(geometry.bottom <= size.height + 1, JSON.stringify({ theme, size, geometry }));
     assert.ok(Math.abs(geometry.area.width - geometry.wrapper.width) < 1, 'typing fills the editor width');
     assert.ok(Math.abs(geometry.area.height - geometry.wrapper.height) < 1, 'no unused strip below the textarea');
-    assert.ok(geometry.area.height >= 96, 'multiline input has sufficient default space');
+    assert.ok(geometry.area.height >= 64, 'the selected compact composer keeps multiline input space');
     assert.ok(geometry.actionsTop >= geometry.area.bottom - 1, 'recipient and send actions stay below the full-width editor');
     assert.notEqual(geometry.fill, 'rgba(0, 0, 0, 0)', 'typed text remains visible without the old transparent highlight overlay');
     assert.equal(geometry.fill, geometry.color); assert.notEqual(geometry.placeholder, 'rgba(0, 0, 0, 0)');

@@ -24,8 +24,8 @@ try {
     const page = await fresh(`theme=${theme}`, width);
     await page.waitForFunction(() => document.querySelector('.conversation-transcript').textContent.includes('拆解方案'));
     const before = await page.evaluate(() => structuredClone(window.conversationMock.chats.A));
-    await page.getByRole('tab', { name: '执行项目', exact: true }).click();
     await editor(page).fill('旧会话草稿');
+    await page.getByRole('tab', { name: '任务执行', exact: true }).click();
     await trigger(page).click();
     assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['新建会话', '清空讨论记录']);
     await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'menuitem' && document.activeElement?.textContent === '新建会话');
@@ -38,7 +38,7 @@ try {
     await page.keyboard.press('Enter');
     await page.waitForFunction(old => window.conversationMock.chats.A.conversation.id !== old, before.conversation.id);
     await page.waitForFunction(() => document.querySelector('textarea').value === '');
-    assert.equal(await page.getByRole('tab', { name: '聊天', exact: true }).getAttribute('aria-selected'), 'true');
+    assert.equal(await page.getByRole('tab', { name: '团队聊天', exact: true }).getAttribute('aria-selected'), 'true');
     assert.equal(await page.locator('.conversation-message').count(), 0);
     const after = await page.evaluate(() => ({ chat: window.conversationMock.chats.A, archived: window.conversationMock.archivedConversations, calls: window.conversationMock.calls }));
     assert.deepEqual(after.archived[0], before, 'old messages and plans are retained');

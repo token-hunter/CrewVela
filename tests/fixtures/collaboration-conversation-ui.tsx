@@ -15,6 +15,7 @@ import "../../src/styles.css";
 const params = new URLSearchParams(location.search);
 document.documentElement.dataset.theme = params.get("theme") === "light" ? "light" : "dark";
 document.documentElement.dataset.appearanceAccent = params.get("accent") ?? "clay";
+const dualViews = params.get("dual-views") === "1";
 const clock = new Date("2026-11-16T10:20:00+08:00").getTime();
 const agent = (id: string, name: string, runtimeKind: string, role: string, projectId = "A") => ({ id, projectId, name, runtimeKind, role, avatarId: null, enabled: true, description: "", persona: "efficient", personaCustom: "", model: null, permissionProfile: "default", maxConcurrency: 1, capabilities: [], createdAt: clock, updatedAt: clock });
 const agents = params.get("header") === "1"
@@ -33,6 +34,11 @@ const planned = [
   { key: "build", title: "列表与筛选", assigneeAgentId: "codex", reviewerAgentId: "kimi", workspaceMode: "worktree", writePaths: ["src/"], dependsOn: ["design"], description: "实现列表与筛选交互", acceptanceCriteria: "通过组件测试及构建", verificationCommand: "npm test" },
   { key: "review", title: "审查与测试", assigneeAgentId: "kimi", reviewerAgentId: null, workspaceMode: "read_only", writePaths: [], dependsOn: ["build"], description: "核对交互边界与回归", acceptanceCriteria: "记录检查结果和未验证项", verificationCommand: null },
 ];
+if (dualViews) {
+  projects[0].name = "登录功能改版";
+  ["Claude", "Codex", "Kimi"].forEach((name,index) => { agents[index].name=name; agents[index].avatarId=["orbit","block","sprout"][index] as any; });
+  ["登录页面","接口对接","测试与审查"].forEach((title,index) => { planned[index].title=title; planned[index].description=["登录表单与状态反馈","对接登录相关接口","功能验证与体验检查"][index]; planned[index].acceptanceCriteria="覆盖成功、失败和加载状态"; });
+}
 const emptyChat = (id: string): any => ({ conversation: { id: `conversation-${id}`, projectId: id, createdAt: clock }, messages: [], rounds: [], executionPlans: [], supportedDiscussionRuntimes: params.get("unsupported") === "1" ? ["claude_code", "codex"] : ["claude_code", "codex", "kimi_code", ...(params.get("header") === "1" ? ["zcode_cli"] : [])] });
 const message = (id: string, senderType: string, body: string, agentId: string | null = null, status = "completed", kind = "reply"): any => ({ id, projectId: "A", conversationId: "conversation-A", roundId: "round-1", replyToMessageId: "m1", taskId: null, runId: agentId ? `run-${agentId}` : null, agentId, senderType, kind, phase: "opinions", body, status, createdAt: clock + Number(id.slice(1) || 0) * 1000, updatedAt: clock });
 const chats: Record<string, any> = { A: emptyChat("A"), B: emptyChat("B") };
@@ -49,19 +55,25 @@ if (params.get("empty") !== "1") {
   ];
   chats.A.executionPlans = [{ id: "plan-1", projectId: "A", roundId: "round-1", messageId: "m3", summary: "按成员分工与依赖推进", tasks: planned, status: params.get("plan") === "pending" ? "pending" : "applied", taskIds: params.get("plan") === "pending" ? [] : ["t-design", "t-build", "t-review"], createdAt: clock }];
 }
+if (dualViews && params.get("empty") !== "1") {
+  chats.A.messages = [message("m1","user","@Claude @Codex 帮我做登录页，先给分工。",null,"completed","message"),message("m2","agent","我负责页面交互，Codex 对接接口，Kimi 做测试。","claude"),message("m3","agent","","claude","completed","plan")];
+  chats.A.executionPlans[0].summary="基于登录功能改版的需求，建议如下分工：";
+}
 const tasks = planned.map((task, index) => ({ ...task, id: `t-${task.key}`, projectId: "A", parentId: null, stage: index, status: ["done", "running", "blocked"][index], priority: 0, requiredCapabilities: [], maxAttempts: 2, retryBackoffSeconds: 1, nextRetryAt: null, createdAt: clock, updatedAt: clock }));
+if (dualViews) tasks.forEach((task,index)=>{task.status=["running","ready","blocked"][index];});
 if (params.get("internal") === "1") tasks.push({ ...tasks[0], id: "cli-message-conversation-internal", title: "讨论内部执行", status: "running", stage: 9 });
 if (params.get("header") === "1") { tasks.forEach(task=>{task.status="done";}); for(let i=tasks.length;i<28;i++) tasks.push({...tasks[0],id:`history-${i}`,title:`历史任务 ${i+1}`}); }
 const runHistory = params.get("evidence") === "1" ? [1,2].map(attempt=>({ id:`evidence-${attempt}`,projectId:"A",taskId:"t-build",agentId:"codex",attempt,status:"failed",sessionLocator:attempt===2?{stopUnverified:true}:null,leaseExpiresAt:0,lastHeartbeatAt:null,outputSummary:`尝试${attempt}输出`,error:attempt===2?"fixture 原进程停止状态待确认":"fixture 旧尝试失败",createdAt:clock+attempt,startedAt:clock,finishedAt:clock+attempt })) : [];
+if (dualViews) runHistory.push({id:"login-run",projectId:"A",taskId:"t-design",agentId:"claude",attempt:1,status:"running",sessionLocator:null,leaseExpiresAt:clock+60000,lastHeartbeatAt:clock,outputSummary:"开始实现登录页面",error:null,createdAt:clock,startedAt:clock,finishedAt:null});
 const runLogs = runHistory.flatMap(run=>Array.from({length:25},(_,seq)=>({seq,projectId:"A",taskId:run.taskId,runId:run.id,stream:"stdout",content:`尝试${run.attempt}日志${seq}`,createdAt:clock+seq})));
-const snapshot = (id: string): any => ({ project: projects.find(project => project.id === id), agents: id === "A" ? agents : [agent("b-codex", "文档 Codex", "codex", "worker", "B")], tasks: id === "A" && params.get("plan") !== "pending" ? tasks : params.get("task-link")==="1" ? [{...tasks[0],id:"b-task",projectId:"B",title:"文档任务",assigneeAgentId:"b-codex"}] : [], runs: id==="A"?runHistory:[], messages: [], events: [], dependencies: [{ taskId: "t-review", dependsOnTaskId: "t-build" }], agentSessions: (id === "A" ? agents : []).map(agent => ({ agentId: agent.id, appSessionId: `session-${agent.id}`, projectId: id, id: `agent-session-${agent.id}`, status: agent.id === "codex" ? "running" : "idle", controlMode: params.get("manual") === agent.id ? "manual" : "auto", currentTaskId: null, currentRunId: null, lastOutputAt: null, createdAt: clock, updatedAt: clock })), runLogs: id==="A"?runLogs:[], runtimeEvents: [], memories: [], instructions: [], artifacts: [], approvals: [], reviewDecisions: [], wakeups: [] });
+const snapshot = (id: string): any => ({ project: projects.find(project => project.id === id), agents: id === "A" ? agents : [agent("b-codex", "文档 Codex", "codex", "worker", "B")], tasks: id === "A" && (params.get("plan") !== "pending" || chats.A.executionPlans.some((plan:any)=>plan.status === "applied")) ? tasks : params.get("task-link")==="1" ? [{...tasks[0],id:"b-task",projectId:"B",title:"文档任务",assigneeAgentId:"b-codex"}] : [], runs: id==="A"?runHistory:[], messages: [], events: [], dependencies: [{ taskId: "t-review", dependsOnTaskId: "t-build" }], agentSessions: (id === "A" ? agents : []).map(agent => ({ agentId: agent.id, appSessionId: `session-${agent.id}`, projectId: id, id: `agent-session-${agent.id}`, status: agent.id === "codex" ? "running" : "idle", controlMode: params.get("manual") === agent.id ? "manual" : "auto", currentTaskId: null, currentRunId: null, lastOutputAt: null, createdAt: clock, updatedAt: clock })), runLogs: id==="A"?runLogs:[], runtimeEvents: [], memories: [], instructions: [], artifacts: [], approvals: [], reviewDecisions: [], wakeups: [] });
 const calls: Array<{ command: string; args: any }> = [];
 const pending: Array<{ command: string; args: any; resolve(value: any): void; reject(reason: Error): void }> = [];
 const receipts = new Map<string, string>();
 let failSend = params.get("fail") === "send";
 let failBeforeSave = params.get("fail") === "send-before-save";
 const mock = {
-  calls, pending, chats, projects, snapshot, archivedConversations: [] as any[], holdProject: "", holdSend: false, holdClear: false, holdNew: false, failClear: false, failNew: false,
+  calls, pending, chats, projects, snapshot, archivedConversations: [] as any[], holdProject: "", holdSend: false, holdClear: false, holdNew: false, failExecution: false, failApproval: false, failClear: false, failNew: false,
   release(command: string, value?: any, error?: string) { const index = pending.findIndex(item => item.command === command); if (index < 0) throw Error(`No pending ${command}`); const item = pending.splice(index, 1)[0]; if (error) item.reject(Error(error)); else item.resolve(value ?? (command === "ma_snapshot" ? snapshot(item.args.projectId) : chats[item.args.projectId ?? item.args.input.projectId])); },
   async invoke(command: string, args: any = {}) {
     calls.push({ command, args: structuredClone(args) });
@@ -110,8 +122,8 @@ const mock = {
       return structuredClone(chat);
     }
     if (command === "ma_conversation_control") { const chat = chats[args.projectId]; if (chat.rounds.length) chat.rounds[chat.rounds.length - 1].status = params.get("stopping") === "1" ? "stopping" : args.action === "pause" ? "paused" : "cancelled"; return structuredClone(chat); }
-    if (command === "ma_conversation_execute_plan") { const chat = chats[args.input.projectId]; const plan = chat.executionPlans.find((item: any) => item.id === args.input.planId); plan.status = "applied"; plan.taskIds = ["t-design", "t-build", "t-review"]; return structuredClone(chat); }
-    if (command === "ma_pause_project") { projects.find(project => project.id === args.projectId)!.status = "paused"; return { accepted: true, projectId: args.projectId }; }
+    if (command === "ma_conversation_execute_plan") { if(mock.failApproval) throw Error("隔离测试：分工确认失败"); const chat = chats[args.input.projectId]; const plan = chat.executionPlans.find((item: any) => item.id === args.input.planId); plan.status = "applied"; plan.taskIds = ["t-design", "t-build", "t-review"]; return structuredClone(chat); }
+    if (command === "ma_pause_project" || command === "ma_start_project") { if(mock.failExecution) return {accepted:false,message:"隔离测试：执行控制未确认"}; projects.find(project => project.id === args.projectId)!.status = command === "ma_pause_project" ? "paused" : "active"; return { accepted: true, projectId: args.projectId }; }
     if (command === "ma_confirm_run_stopped") { if(params.get("confirm-fails")==="1")throw Error("fixture 确认失败"); const run=runHistory.find(run=>run.id===args.runId);if(!run||args.confirmedStopped!==true)throw Error("Wrong run confirmation");run.sessionLocator=null;return null; }
     if (["ma_probe_runtimes","ma_check_runtime_updates"].includes(command)) return agents.map(agent=>({kind:agent.runtimeKind,installed:true,version:"fixture",capabilities:[],error:null}));
     if (command === "skill_center_snapshot") return {skillSets:[]};

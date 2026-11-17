@@ -30,7 +30,7 @@ try {
   for (const theme of ['dark','light']) for (const size of [{width:1015,height:1402},{width:780,height:1000},{width:390,height:844},{width:300,height:420}]) {
     const page=await fresh(`header=1&theme=${theme}`,size), trigger=page.locator('.conversation-members-trigger');
     const before=await geometry(page); assert.equal(before.overflow,false);assert.equal(before.headerOverflow,false);assert.ok(before.headerHeight<195,'Header stays below the old 205px wide layout while retaining the selected design typography');assert.equal(before.images,true);
-    assert.ok(before.project.font>=14&&before.project.font<=16,'Project selector remains body-sized across breakpoints');assert.ok(before.project.weight<=500);assert.ok(before.project.height>=26&&before.project.height<=30);assert.ok(before.project.width<=321);assert.equal(before.project.border,'0px');assert.equal(before.project.background,'rgba(0, 0, 0, 0)');assert.equal(before.project.caret,12);
+    assert.ok(before.project.font>=17&&before.project.font<=22,'Project heading follows the selected prototype across breakpoints');assert.ok(before.project.weight>=600);assert.ok(before.project.height===34);assert.ok(before.project.width<=321);assert.equal(before.project.border,'0px');assert.equal(before.project.background,'rgba(0, 0, 0, 0)');assert.equal(before.project.caret,12);
     assert.equal(await page.getByRole('combobox',{name:'协作项目',exact:true}).getAttribute('title'),'模型设置实测-20261115\n项目目录：/fixture/crewvela-model-live-e79907a4ca');
     assert.equal(await page.locator('.conversation-member-menu').count(),0);
     await trigger.click();const menu=page.locator('.conversation-member-menu');await menu.waitFor();
@@ -43,7 +43,8 @@ try {
     await page.screenshot({path:`${dir}/${theme}-${size.width}-open.png`});
     await page.keyboard.press('Escape');assert.equal(await menu.count(),0);assert.equal(await trigger.evaluate(el=>el===document.activeElement),true);
     await trigger.click();await page.locator('.conversation-header').click({position:{x:2,y:2}});assert.equal(await menu.count(),0);
-    await page.getByRole('tab',{name:'执行项目',exact:true}).click();
+    await page.getByRole('tab',{name:'任务执行',exact:true}).click();
+    await page.getByRole('tab',{name:'团队聊天',exact:true}).click();
     await page.locator('.conversation-target').click();
     const bottom=page.locator('.conversation-recipient-menu');assert.equal(await bottom.locator('input:checked').count(),2);
     await bottom.getByRole('checkbox').nth(2).check();await page.keyboard.press('Escape');

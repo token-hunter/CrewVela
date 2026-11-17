@@ -7,8 +7,11 @@ test('共享会话历史由后端提供，移除只清本地的假清空入口',
  assert.match(control,/ma_conversation_snapshot/);
  assert.match(control,/查看更早的/);
 });
+const planCard=readFileSync(new URL('../src/components/ConversationPlanCard.tsx',import.meta.url),'utf8');
+
 test('待执行分工公开命令与写入范围，只有显式执行按钮启动工程任务',()=>{
- assert.match(control,/task\.verificationCommand/); assert.match(control,/task\.writePaths/);
- assert.match(control,/按此分工执行/); assert.match(control,/ma_conversation_execute_plan/);
+ assert.match(control,/<ConversationPlanCard/);
+ assert.match(planCard,/task\.verificationCommand/); assert.match(planCard,/task\.writePaths/);
+ assert.match(planCard,/确认并开始执行/); assert.match(control,/ma_conversation_execute_plan/);
  assert.match(control,/clientRequestId/);
 });

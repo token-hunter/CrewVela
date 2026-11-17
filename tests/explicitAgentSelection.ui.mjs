@@ -22,7 +22,7 @@ try {
   const first = await page.evaluate(() => window.conversationMock.calls.find(item => item.command === 'ma_conversation_send').args.input);
   assert.deepEqual(first.participantAgentIds, ['kimi']); assert.equal(first.projectId, 'A');
   await page.getByRole('button', { name: /暂停讨论/ }).click();
-  await page.getByRole('button', { name: '继续讨论', exact: true }).waitFor();
+  await page.getByRole('button', { name: '继续输入', exact: true }).waitFor();
   await editor.fill('@');
   const mentions = page.locator('.multi-agent-mention-menu');
   await mentions.getByRole('option').first().waitFor();

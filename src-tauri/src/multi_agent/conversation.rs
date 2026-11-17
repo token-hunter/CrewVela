@@ -602,13 +602,13 @@ impl MultiAgentStore {
         tx.execute("INSERT INTO ma_conversation_rounds(id,project_id,client_message_id,request_json,status,data_json,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![round.id,round.project_id,input.client_message_id,request,round.status,serde_json::to_string(&round)?,stamp])?;
         let source = format!("{}:{}", if queued.is_some() { "interrupt" } else { "human" }, input.client_message_id);
         save_message(&tx, &source, &message)?;
-        // A newer human request invalidates unapplied older plans.
+        // Chat follow-ups preserve a pending proposal. Only an explicit new plan replaces it.
         for mut plan in rows::<ConversationExecutionPlan>(
             &tx,
             "SELECT data_json FROM ma_conversation_plans WHERE project_id=?1",
             &round.project_id,
         )? {
-            if plan.status == "pending" {
+            if plan.status == "pending" && round.mode == "execution_plan" {
                 plan.status = "superseded".into();
                 tx.execute(
                     "UPDATE ma_conversation_plans SET data_json=?2 WHERE id=?1",
@@ -746,7 +746,9 @@ impl MultiAgentStore {
             "SELECT data_json FROM ma_conversation_plans WHERE project_id=?1",
             &message.project_id,
         )? {
-            if plan.status == "pending" {
+            // Legacy pause-only interventions have no request mode and retain their
+            // conservative invalidation behavior. Durable chat requests keep the plan.
+            if plan.status == "pending" && message.queued_input.as_ref().is_none_or(|request| request.mode == "execution_plan") {
                 plan.status = "superseded".into();
                 tx.execute(
                     "UPDATE ma_conversation_plans SET data_json=?2 WHERE id=?1",
