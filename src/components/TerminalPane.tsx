@@ -35,6 +35,7 @@ import type {
 import { terminalPaneHeaderPresentation } from "./terminalPaneHeader";
 import { launchModeLabel } from "../runtimeLaunch";
 import { resolveTerminalTheme } from "../terminalPalette";
+import { useCliPtyWorking } from "../ptyPolling";
 
 interface Props {
   sessionId: number;
@@ -208,6 +209,8 @@ export function TerminalPane({
     relaySession,
     cwd,
   });
+  const cliPetKind = kind === "terminal" && header.runtimeKind && isCliPetRuntimeKind(header.runtimeKind) ? header.runtimeKind : null;
+  const cliWorking = useCliPtyWorking(cliPetKind && !preview ? sessionId : null);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -434,8 +437,8 @@ export function TerminalPane({
         </span>
         <div className="pane-head-actions">
           {header.runtimeKind === "claude_code" && <SessionPet status={status} />}
-          {kind === "terminal" && header.runtimeKind && isCliPetRuntimeKind(header.runtimeKind) && (
-            <CliSessionPet runtimeKind={header.runtimeKind} status={status} hidden={hidden} />
+          {cliPetKind && (
+            <CliSessionPet runtimeKind={cliPetKind} working={preview ? status === "running" : cliWorking} hidden={hidden} />
           )}
           {onViewSourceHistory && <button type="button" className="pane-switch-agent" title="回看接力历史" onClick={onViewSourceHistory}>原历史</button>}
           {onRelayDetails && <button type="button" className="pane-switch-agent" title="接力详情与恢复原会话" onClick={onRelayDetails}>接力详情</button>}

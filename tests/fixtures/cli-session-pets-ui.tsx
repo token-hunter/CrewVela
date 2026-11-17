@@ -3,6 +3,24 @@ import { createRoot } from "react-dom/client";
 import { TerminalPane } from "../../src/components/TerminalPane";
 import type { AgentRuntimeKind, AppTheme, SessionKind, SessionStatus, TerminalShell } from "../../src/types";
 import "../../src/styles.css";
+import { usePtyPolling } from "../../src/ptyPolling";
+import { DEFAULT_GENERAL_SETTINGS } from "../../src/generalSettings";
+
+const usePolledWork = new URLSearchParams(location.search).has("polled-work");
+const workFixture = { ids: [] as number[] };
+if (usePolledWork) Object.assign(window, {
+  cliWorkFixture: workFixture,
+  __TAURI_INTERNALS__: {
+    transformCallback: () => 1,
+    invoke: async (command: string) => {
+      if (command === "pty_poll_all") return { sessions: [], chunks: {}, workingCliPtyIds: workFixture.ids };
+      if (command === "general_settings_get") return { settings: DEFAULT_GENERAL_SETTINGS };
+      return 1;
+    },
+  },
+  __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener() {} },
+});
+const avoidFixtureSessionUpdates = () => {};
 
 interface HeaderCase {
   id: string;
@@ -60,7 +78,7 @@ function PreviewCase({
           cwd="C:\\workspace\\app"
           status={status}
           theme={"dark" satisfies AppTheme}
-          preview
+          preview={!usePolledWork}
           hidden={hidden}
           maximized={maximized}
           onSwitchAgent={() => {}}
@@ -73,6 +91,7 @@ function PreviewCase({
 }
 
 function Preview() {
+  usePtyPolling(avoidFixtureSessionUpdates, usePolledWork);
   const [status, setStatus] = useState<SessionStatus>("running");
   const [hidden, setHidden] = useState(false);
 

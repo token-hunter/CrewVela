@@ -5573,6 +5573,7 @@ fn set_all_permission_modes(
 struct PollResult {
     chunks: std::collections::HashMap<u32, pty::PtyChunk>,
     sessions: Vec<SessionRecord>,
+    working_cli_pty_ids: Vec<u32>,
 }
 
 fn mark_interactive_runtime_prompts(
@@ -5875,10 +5876,9 @@ fn pty_poll_all(
     action_queue.flush_ready(&session_state, &pty_state);
     // 文本已投递的会话补发提交回车（延迟到达的在本轮生效）。
     action_queue.flush_pending_submits(&session_state, &pty_state);
-    Ok(PollResult {
-        chunks,
-        sessions: session_state.list(),
-    })
+    let sessions = session_state.list();
+    let working_cli_pty_ids = session_state.working_cli_pty_ids(&sessions);
+    Ok(PollResult { chunks, sessions, working_cli_pty_ids })
 }
 
 #[tauri::command]
@@ -8538,6 +8538,154 @@ mod tests {
 
         let _ = pty.kill(pty_id);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cli_pets_follow_terminal_and_pi_turn_signals_without_changing_session_status() {
+        let (_root, sessions) = lifecycle_fixture();
+        for (index, (runtime, idle, working)) in [
+            ("codex", "\x1b]7501;state=idle:app=codex\x07", "\x1b]7501;state=working:app=codex\x07"),
+            ("kimi_code", "│ > ", "Thinking…\r\nesc to interrupt"),
+            ("opencode", "Build · MiniMax M3\r\nctrl+p commands", "Thinking…\r\nesc interrupt"),
+            ("zcode_cli", "Type a prompt", "Calling model…\r\nType to queue input\r\nesc to interrupt"),
+        ].into_iter().enumerate() {
+            let pty_id = index as u32 + 1;
+            let record = sessions.create_runtime(sessions::NewRuntimeSession {
+                runtime_kind: runtime.into(), cwd: ".".into(), project_id: None,
+            }).unwrap();
+            sessions.attach_runtime(&record.id, pty_id).unwrap();
+            let active = || sessions.working_cli_pty_ids(&sessions.list()).contains(&pty_id);
+            let output = |text: &str| mark_interactive_runtime_prompts(
+                &[(pty_id, pty::PtyChunk {
+                    app_session_id: record.id.clone(), data: format!("\x1b[2J\x1b[H{text}"),
+                    running: true, code: None,
+                })].into_iter().collect(), &sessions,
+            );
+            assert!(!active(), "{runtime} PTY attach is idle");
+            output(idle);
+            assert!(!active(), "{runtime} ready composer is idle");
+            output(working);
+            assert!(active(), "{runtime} accepted working evidence");
+            assert!(active(), "{runtime} remains working without fresh output");
+            output(idle);
+            assert!(!active(), "{runtime} returned to composer");
+            assert_eq!(sessions.get(&record.id).unwrap().status, SessionStatus::Running);
+            output(working);
+            output("Permission required · Allow once");
+            assert!(!active(), "{runtime} waits without playing the work motion");
+        }
+
+        let pi = sessions.create_runtime(sessions::NewRuntimeSession {
+            runtime_kind: "pi".into(), cwd: ".".into(), project_id: None,
+        }).unwrap();
+        let token = sessions.configure_pi_readiness(&mut Command::new("pi"), &pi.id).unwrap();
+        sessions.attach_runtime(&pi.id, 8).unwrap();
+        let active = || sessions.working_cli_pty_ids(&sessions.list()).contains(&8);
+        let event = |sequence, ready, working| serde_json::json!({
+            "_crewvela_app_session_id": pi.id, "session_id": pi.id, "hook_event_name": "RuntimePromptState",
+            "runtime_kind": "pi", "runtime_token": token, "runtime_sequence": sequence, "ready": ready,
+            "agent_working": working,
+        });
+        assert!(!active(), "Pi is idle at PTY attachment");
+        sessions.apply_hook_value(&event(1, false, false)).unwrap();
+        assert!(!active(), "Pi input preparation is not an Agent turn");
+        sessions.apply_hook_value(&event(2, false, true)).unwrap();
+        assert!(active(), "Pi emitted Agent start");
+        sessions.apply_hook_value(&event(3, true, false)).unwrap();
+        assert!(!active(), "Pi emitted settlement");
+        sessions.apply_hook_value(&event(2, false, true)).unwrap();
+        assert!(!active(), "old events cannot restart the work motion");
+    }
+
+    #[test]
+    #[ignore = "requires installed, signed-in CLIs; submits one short model request per runtime in a temporary workspace"]
+    fn cli_pets_verify_live_turns() {
+        use std::time::{Duration, Instant};
+        let root = std::env::temp_dir().join(format!("crewvela-cli-pet-live-{}", uuid::Uuid::new_v4()));
+        test_profile::initialize(&root).unwrap();
+        let selection = std::env::var("CREWVELA_CLI_PET_TEST_RUNTIMES").ok();
+        let runtimes = ["codex", "kimi_code", "opencode", "zcode_cli", "pi"].into_iter()
+            .filter(|runtime| selection.as_deref().is_none_or(|value| value.split(',').any(|item| item == *runtime)))
+            .collect::<Vec<_>>();
+        assert!(!runtimes.is_empty());
+        let mut failures = Vec::new();
+        std::thread::scope(|scope| {
+            let probes: Vec<_> = runtimes.iter().map(|&runtime| {
+                let dir = root.join(runtime);
+                (runtime, scope.spawn(move || -> anyhow::Result<()> {
+                    std::fs::create_dir_all(&dir)?;
+                    let sessions = SessionManager::open_at(dir.join("sessions.json"), dir.join("events"))?;
+                    let pty = PtyManager::new();
+                    let result = (|| -> anyhow::Result<()> {
+                        let cwd = if runtime == "kimi_code" {
+                            std::env::var("CREWVELA_CLI_PET_KIMI_CWD").unwrap_or_else(|_| dir.display().to_string())
+                        } else { dir.display().to_string() };
+                        let record = sessions.create_runtime(sessions::NewRuntimeSession {
+                            runtime_kind: runtime.into(), cwd, project_id: None,
+                        })?;
+                        let started = open_runtime_session(&record, &pty, &sessions).map_err(anyhow::Error::msg)?;
+                        let pty_id = started.pty_id.unwrap();
+                        pty.resize(pty_id, 38, 115)?;
+                        sessions.resize_runtime_prompt(&record.id, 38, 115);
+                        let save_screen = || -> anyhow::Result<()> {
+                            let tail = pty.transcript_tail(pty_id, 65536)?;
+                            let mut screen = vt100::Parser::new(
+                                std::num::NonZeroU16::new(38).unwrap(), std::num::NonZeroU16::new(115).unwrap(), 0);
+                            screen.process(&tail);
+                            std::fs::write(dir.join("screen.txt"), screen.screen().contents())?;
+                            Ok(())
+                        };
+                        let poll = || -> anyhow::Result<bool> {
+                            sessions.ingest_events()?;
+                            mark_interactive_runtime_prompts(&pty.poll_all(), &sessions);
+                            Ok(sessions.working_cli_pty_ids(&sessions.list()).contains(&pty_id))
+                        };
+                        let startup = Instant::now() + Duration::from_secs(18);
+                        while !sessions.is_ready_for_prompt(&record.id) && Instant::now() < startup {
+                            poll()?;
+                            std::thread::sleep(Duration::from_millis(60));
+                        }
+                        if !sessions.is_ready_for_prompt(&record.id) {
+                            save_screen()?;
+                            anyhow::bail!("idle composer was not recognized");
+                        }
+                        anyhow::ensure!(!poll()?, "the idle composer is animated as working");
+                        pty.write(pty_id, b"Reply with PET followed immediately by _OK. Do not use any tools.")?;
+                        std::thread::sleep(Duration::from_millis(350));
+                        pty.write(pty_id, b"\r")?;
+                        sessions.mark_terminal_submission(pty_id)?;
+                        let deadline = Instant::now() + Duration::from_secs(40);
+                        let mut worked = false;
+                        while pty.is_running(pty_id) && Instant::now() < deadline {
+                            let working = poll()?;
+                            worked |= working;
+                            let tail = pty.transcript_tail(pty_id, 65536)?;
+                            let replied = multi_agent::strip_terminal_control_sequences(&String::from_utf8_lossy(&tail)).contains("PET_OK");
+                            if replied && worked && !working {
+                                return Ok(());
+                            }
+                            std::thread::sleep(Duration::from_millis(45));
+                        }
+                        let tail = pty.transcript_tail(pty_id, 65536).unwrap_or_default();
+                        let replied = multi_agent::strip_terminal_control_sequences(&String::from_utf8_lossy(&tail)).contains("PET_OK");
+                        save_screen()?;
+                        anyhow::bail!("turn did not settle: observed working={worked}, still working={}, model replied={replied}, composer ready={}",
+                            sessions.working_cli_pty_ids(&sessions.list()).contains(&pty_id),
+                            sessions.is_ready_for_prompt(&record.id))
+                    })();
+                    let cleanup = pty.kill_all();
+                    result?;
+                    cleanup
+                }))
+            }).collect();
+            for (runtime, probe) in probes {
+                let result = probe.join().unwrap_or_else(|_| Err(anyhow::anyhow!("probe panicked")));
+                eprintln!("{runtime} CLI pet: {result:?}");
+                if result.is_err() { failures.push(runtime); }
+            }
+        });
+        if !failures.is_empty() { eprintln!("Isolated terminal screens: {}", root.display()); }
+        assert!(failures.is_empty(), "live probes with unverified transitions: {failures:?}");
     }
 
     #[test]

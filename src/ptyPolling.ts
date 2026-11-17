@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { PollResult, SessionRecord } from "./types";
 import { sessionDisplayTitle } from "./sessionCapabilities";
@@ -8,6 +8,23 @@ const subscribers = new Set<(sessions: SessionRecord[]) => void>();
 let timer: ReturnType<typeof setInterval> | null = null;
 let polling = false;
 let signature = "";
+let workingCliPtys = new Set<number>();
+const cliWorkListeners = new Set<() => void>();
+
+function setWorkingCliPtys(ids: number[]) {
+  if (ids.length === workingCliPtys.size && ids.every(id => workingCliPtys.has(id))) return;
+  workingCliPtys = new Set(ids);
+  for (const listener of cliWorkListeners) listener();
+}
+
+function subscribeCliWork(listener: () => void) {
+  cliWorkListeners.add(listener);
+  return () => { cliWorkListeners.delete(listener); };
+}
+
+export function useCliPtyWorking(ptyId: number | null): boolean {
+  return useSyncExternalStore(subscribeCliWork, () => ptyId !== null && workingCliPtys.has(ptyId));
+}
 
 export function subscribePtyPolling(onSessions: (sessions: SessionRecord[]) => void): () => void {
   // 每个订阅实例独立，两个视图传入同一 callback 也不能互相取消。
@@ -20,6 +37,7 @@ export function subscribePtyPolling(onSessions: (sessions: SessionRecord[]) => v
       polling = true;
       try {
         const result = await invoke<PollResult>("pty_poll_all");
+        setWorkingCliPtys(result.workingCliPtyIds ?? []);
         window.dispatchEvent(new CustomEvent("pty:chunk", { detail: result.chunks }));
         const next = result.sessions.map(session => [session.id, session.status, session.ptyId,
           sessionDisplayTitle(session), session.updatedAt]).flat().join("|");

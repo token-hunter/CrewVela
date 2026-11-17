@@ -109,7 +109,10 @@ try {
 
   await page.getByTestId("set-idle").click();
   for (const pet of await pets.all()) {
-    assert.equal(await pet.getAttribute("data-status"), "idle", "non-running statuses use a static pose");
+    assert.equal(await pet.getAttribute("data-status"), "idle", "non-running statuses use the idle action");
+    const motion = await pet.evaluate(element => element.getAnimations({ subtree: true }).map(animation => animation.animationName));
+    assert.equal(motion.length, 1, "each pet plays a single idle action");
+    assert.match(motion[0], /-(standby|stargaze|rest|blink)$/);
   }
   assert.equal(await sampleAnimation.evaluate(element => getComputedStyle(element).animationName), "none", "stopping removes active animation");
   await page.screenshot({ path: "output/playwright/cli-session-pets-idle.png", fullPage: true });
@@ -143,6 +146,19 @@ try {
   await narrowCase.locator(".pane-maximize").click();
   await narrowCase.locator(".pane-close").click();
   assert.equal(await narrowCase.getAttribute("data-closed"), "true", "close remains clickable at 300px");
+  await page.goto(new URL("?polled-work=1", page.url()).href);
+  await page.waitForFunction(() => [...document.querySelectorAll(".cli-session-pet")].length === 5
+    && [...document.querySelectorAll(".cli-session-pet")].every(pet => pet.dataset.status === "idle"));
+  const codex = page.locator(".cli-session-pet[data-runtime='codex']");
+  assert.match(await page.locator("[data-case='codex'] .pane-status").innerText(), /运行中/);
+  await page.evaluate(() => { window.cliWorkFixture.ids = [1]; });
+  await page.locator(".cli-session-pet[data-runtime='codex'][data-status='running']").waitFor();
+  assert.equal(await page.locator(".cli-session-pet[data-status='running']").count(), 1);
+  await page.evaluate(() => { window.cliWorkFixture.ids = [2, 3, 4, 5]; });
+  await page.waitForFunction(() => document.querySelectorAll(".cli-session-pet[data-status='running']").length === 4);
+  assert.equal(await codex.getAttribute("data-status"), "idle");
+  await page.evaluate(() => { window.cliWorkFixture.ids = []; });
+  await page.waitForFunction(() => document.querySelectorAll(".cli-session-pet[data-status='running']").length === 0);
   console.log("PASS: five CLI pets; Claude and unsupported panes; dimensions and button hit areas; running, idle, hidden and reduced-motion behavior");
   console.log("Screenshots: output/playwright/cli-session-pets-running.png, output/playwright/cli-session-pets-hidden.png, output/playwright/cli-session-pets-idle.png");
 } finally {

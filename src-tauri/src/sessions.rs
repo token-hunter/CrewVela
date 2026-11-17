@@ -579,7 +579,7 @@ pub struct SessionManager {
     /// TUI dialogs/busy frames are independent of hook-level SessionStatus.
     /// Dispatch consumes readiness but must not erase a still-visible blocker.
     runtime_prompt_blockers: Arc<Mutex<HashMap<String, RuntimePromptBlocker>>>,
-    runtime_bridge_tokens: Arc<Mutex<HashMap<String, (String, u64)>>>,
+    runtime_bridge_tokens: Arc<Mutex<HashMap<String, (String, u64, bool)>>>,
     runtime_bridge_errors: Arc<Mutex<HashMap<String, String>>>,
     active_background_sessions: Arc<Mutex<HashSet<String>>>,
     pending_first_prompts: Arc<Mutex<HashMap<String, String>>>,
@@ -632,6 +632,8 @@ enum RuntimePromptBlocker {
 struct RuntimePromptBuffer {
     raw: String,
     zcode_screen: Option<vt100::Parser>,
+    opencode_screen: Option<vt100::Parser>,
+    opencode_working: bool,
     awaiting_composer_change: bool,
 }
 
@@ -640,9 +642,16 @@ impl From<&str> for RuntimePromptBuffer {
 }
 
 impl RuntimePromptBuffer {
+    fn new_screen() -> vt100::Parser {
+        vt100::Parser::new(std::num::NonZeroU16::new(24).unwrap(), std::num::NonZeroU16::new(80).unwrap(), 0)
+    }
+
     fn zcode_screen(&mut self) -> &mut vt100::Parser {
-        self.zcode_screen.get_or_insert_with(|| vt100::Parser::new(
-            std::num::NonZeroU16::new(24).unwrap(), std::num::NonZeroU16::new(80).unwrap(), 0))
+        self.zcode_screen.get_or_insert_with(Self::new_screen)
+    }
+
+    fn opencode_screen(&mut self) -> &mut vt100::Parser {
+        self.opencode_screen.get_or_insert_with(Self::new_screen)
     }
 }
 
@@ -1722,7 +1731,7 @@ impl SessionManager {
         self.runtime_bridge_tokens
             .lock()
             .unwrap()
-            .insert(id.to_string(), (token.clone(), 0));
+            .insert(id.to_string(), (token.clone(), 0, false));
         self.ready_for_prompt.lock().unwrap().remove(id);
         let inbox = self.runtime_inbox_dir(id);
         fs::create_dir_all(&inbox)?;
@@ -1843,7 +1852,7 @@ impl SessionManager {
             &self.get(id).ok_or_else(|| anyhow!("会话不存在: {id}"))?,
         )?;
         let tokens = self.runtime_bridge_tokens.lock().unwrap();
-        let Some((token, _)) = tokens.get(id) else {
+        let Some((token, _, _)) = tokens.get(id) else {
             return Ok(false);
         };
         let directory = self.runtime_inbox_dir(id);
@@ -1934,7 +1943,7 @@ impl SessionManager {
             return Ok(None);
         };
         let mut tokens = self.runtime_bridge_tokens.lock().unwrap();
-        let Some((expected, last)) = tokens.get_mut(id) else {
+        let Some((expected, last, working)) = tokens.get_mut(id) else {
             return Ok(None);
         };
         if expected != token || sequence <= *last {
@@ -2016,6 +2025,7 @@ impl SessionManager {
             }
         }
         *last = sequence;
+        *working = !ready && event.get("agent_working").and_then(serde_json::Value::as_bool) == Some(true);
         session.updated_at = now_millis();
         let updated = session.clone();
         self.save(&data)?;
@@ -2432,6 +2442,34 @@ impl SessionManager {
         self.runtime_prompt_blockers.lock().unwrap().contains_key(id)
     }
 
+    /// A live terminal is not necessarily executing an Agent turn. Keep this
+    /// display projection separate from the persisted status and delivery gate.
+    pub(crate) fn working_cli_pty_ids(&self, sessions: &[SessionRecord]) -> Vec<u32> {
+        let bridge = self.runtime_bridge_tokens.lock().unwrap();
+        let buffers = self.runtime_prompt_buffers.lock().unwrap();
+        let blockers = self.runtime_prompt_blockers.lock().unwrap();
+        sessions.iter().filter_map(|session| {
+            let pty_id = session.pty_id?;
+            if session.kind != SessionKind::Terminal || session.retired_agent_runtime
+                || matches!(session.status, SessionStatus::Waiting | SessionStatus::Error | SessionStatus::Stopped) {
+                return None;
+            }
+            let kind = session.agent_runtime_kind.as_deref();
+            let working = match kind {
+                Some("codex" | "kimi_code" | "zcode_cli" | "opencode" | "pi") if session.runtime_command_host => {
+                    session.status == SessionStatus::Running
+                }
+                Some("pi") => bridge.get(&session.id).is_some_and(|(_, _, working)| *working),
+                Some("opencode") => buffers.get(&session.id).is_some_and(|state| state.opencode_working),
+                Some("codex" | "kimi_code" | "zcode_cli") => {
+                    blockers.get(&session.id) == Some(&RuntimePromptBlocker::Busy)
+                }
+                _ => false,
+            };
+            working.then_some(pty_id)
+        }).collect()
+    }
+
     fn approval_lock(&self, id: &str) -> Arc<Mutex<()>> {
         self.approval_gates.lock().unwrap().entry(id.to_string()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
     }
@@ -2599,10 +2637,29 @@ impl SessionManager {
         // cursor/footer fragments need not redraw its entire input composer.
         // Explicit blockers and unknown replacement screens still revoke it.
         let session = self.get(id);
-        let is_codex = session.as_ref().is_some_and(|session| session.agent_runtime_kind.as_deref() == Some("codex"));
+        let kind = session.as_ref().and_then(|session| session.agent_runtime_kind.as_deref());
+        let is_codex = kind == Some("codex");
+        let is_opencode = kind == Some("opencode");
         let completed_codex = is_codex && session.is_some_and(|session| session.status == SessionStatus::Completed);
         let mut buffers = self.runtime_prompt_buffers.lock().unwrap();
-        let buffer = &mut buffers.entry(id.to_string()).or_default().raw;
+        let state = buffers.entry(id.to_string()).or_default();
+        if is_opencode {
+            // A conversation uses an empty composer instead of the welcome
+            // placeholder; a completed turn erases the live interrupt control.
+            let parser = state.opencode_screen();
+            parser.process(data.as_bytes());
+            let visible = parser.screen().contents();
+            if crate::multi_agent::interactive_runtime_prompt_busy(&visible) {
+                state.opencode_working = true;
+            } else {
+                let visible = visible.to_ascii_lowercase();
+                if (visible.contains("ctrl+p") && visible.contains("commands"))
+                    || crate::multi_agent::interactive_runtime_prompt_blocked(&visible) {
+                    state.opencode_working = false;
+                }
+            }
+        }
+        let buffer = &mut state.raw;
         buffer.push_str(data);
         if buffer.len() > 32_768 {
             let mut start = buffer.len() - 32_768;
@@ -2684,15 +2741,22 @@ impl SessionManager {
             // unchanged idle screen cannot authorize a second paste.
             state.awaiting_composer_change = crate::multi_agent::interactive_runtime_prompt_ready(
                 crate::multi_agent::AgentRuntimeKind::ZCodeCli, &state.zcode_screen().screen().contents());
+        } else if let Some(state) = buffers.get_mut(id).filter(|state| state.opencode_screen.is_some()) {
+            state.raw.clear();
         } else {
             buffers.remove(id);
         }
     }
 
     pub(crate) fn resize_runtime_prompt(&self, id: &str, rows: u16, cols: u16) {
-        if !self.get(id).is_some_and(|session| session.agent_runtime_kind.as_deref() == Some("zcode_cli")) { return; }
+        let kind = self.get(id).and_then(|session| session.agent_runtime_kind);
+        let screen: fn(&mut RuntimePromptBuffer) -> &mut vt100::Parser = match kind.as_deref() {
+            Some("zcode_cli") => RuntimePromptBuffer::zcode_screen,
+            Some("opencode") => RuntimePromptBuffer::opencode_screen,
+            _ => return,
+        };
         let (Some(rows), Some(cols)) = (std::num::NonZeroU16::new(rows.min(512)), std::num::NonZeroU16::new(cols.min(512))) else { return; };
-        self.runtime_prompt_buffers.lock().unwrap().entry(id.to_string()).or_default().zcode_screen().set_size(rows, cols);
+        screen(self.runtime_prompt_buffers.lock().unwrap().entry(id.to_string()).or_default()).set_size(rows, cols);
     }
 
     pub fn set_runtime_command_host(&self, id: &str, enabled: bool) -> Result<()> {
@@ -4477,7 +4541,7 @@ mod tests {
                 .runtime_bridge_tokens
                 .lock()
                 .unwrap()
-                .insert(record.id.clone(), ("launch".into(), 0));
+                .insert(record.id.clone(), ("launch".into(), 0, false));
             fs::create_dir_all(manager.runtime_locator_path(&record.id).parent().unwrap()).unwrap();
             let file = path.parent().unwrap().join("original-pi-session.jsonl");
             fs::write(&file, "history preserved").unwrap();

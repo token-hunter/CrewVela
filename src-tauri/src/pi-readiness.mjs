@@ -39,7 +39,7 @@ export default function crewvelaReadiness(pi) {
   const timerKey = Symbol.for('crewvela.pi-inbox-timer');
   const clockKey = Symbol.for('crewvela.pi-event-clock');
   if (globalThis[timerKey]) clearInterval(globalThis[timerKey]);
-  let ctx, settled = false, prompts = 0, sequence = 0, inflight, lastReportedReady;
+  let ctx, settled = false, agentWorking = false, prompts = 0, sequence = 0, inflight, lastReportedReady;
   const atomicWrite = (target, value) => {
     const temporary = `${target}.${randomUUID()}.tmp`;
     try {
@@ -65,6 +65,7 @@ export default function crewvelaReadiness(pi) {
         runtime_sequence: (sequence = Math.max(sequence + 1, Number(process.hrtime.bigint() / 1000n))),
         runtime_session_locator: ctx?.sessionManager?.getSessionFile?.(),
         ready,
+        agent_working: agentWorking && prompts === 0,
         message_error: error,
         turn_completion: completion,
         _crewvela_queued_at: now,
@@ -126,7 +127,7 @@ export default function crewvelaReadiness(pi) {
     }
   };
   pi.on('session_start', (_event, context) => {
-    ctx = context; settled = true; prompts = 0;
+    ctx = context; settled = true; agentWorking = false; prompts = 0;
     fs.mkdirSync(inbox, { recursive: true });
     // Recover claimed deliveries by inspecting the current session, never by invoking them again.
     const unresolved = fs.readdirSync(inbox).filter(name => name.endsWith('.processing.json'))
@@ -141,10 +142,10 @@ export default function crewvelaReadiness(pi) {
   // Input can fail model/auth preflight without any agent run or settlement event.
   // Only actual agent_start changes the settlement latch; the official idle/pending API gates delivery.
   pi.on('input', (_event, context) => { ctx = context; report(false); return { action: 'continue' }; });
-  pi.on('agent_start', (_event, context) => { ctx = context; settled = false; report(false); });
+  pi.on('agent_start', (_event, context) => { ctx = context; settled = false; agentWorking = true; report(false); });
   // agent_end may precede retries/compaction/continuation; only settlement is final.
   pi.on('agent_settled', (_event, context) => {
-    ctx = context; settled = true;
+    ctx = context; settled = true; agentWorking = false;
     // Pair actual input with assistant output only after retries and continuations settle.
     let completion;
     if (ctx.isIdle() && !ctx.hasPendingMessages()) {
@@ -166,7 +167,7 @@ export default function crewvelaReadiness(pi) {
   pi.on('ui_prompt_start', (_event, context) => { ctx = context; prompts++; report(false); });
   pi.on('ui_prompt_end', (_event, context) => { ctx = context; prompts = Math.max(0, prompts - 1); report(true); });
   pi.on('session_shutdown', (_event, context) => {
-    ctx = context; settled = false; report(false);
+    ctx = context; settled = false; agentWorking = false; report(false);
     clearInterval(globalThis[timerKey]); delete globalThis[timerKey];
   });
   globalThis[timerKey] = setInterval(poll, 100);

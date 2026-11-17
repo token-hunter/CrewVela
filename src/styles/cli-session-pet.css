@@ -35,6 +35,63 @@
   shape-rendering: crispEdges;
 }
 
+.cli-session-pet.is-running .pet-idle-only,
+.cli-session-pet.is-idle .pet-pi-token,
+.cli-session-pet.is-idle .pet-codex-prompt {
+  display: none;
+}
+
+.cli-session-pet.is-idle .pet-codex-idle-cursor {
+  animation: cli-codex-standby 2.8s steps(1, end) infinite;
+}
+
+.cli-session-pet.is-idle .pet-kimi-held-star {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cli-kimi-stargaze 4.4s ease-in-out infinite;
+}
+
+.cli-session-pet.is-idle .pet-zcode-body {
+  transform-origin: center bottom;
+  animation: cli-zcode-rest 4s ease-in-out infinite;
+}
+
+.cli-session-pet.is-idle .pet-opencode-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cli-opencode-blink 4.9s steps(1, end) infinite;
+}
+
+.cli-session-pet.is-idle .pet-pi-head {
+  animation: cli-pi-rest 3.9s ease-in-out infinite;
+}
+
+@keyframes cli-codex-standby {
+  0%, 57%, 100% { opacity: .85; }
+  62%, 88% { opacity: .2; }
+}
+
+@keyframes cli-kimi-stargaze {
+  0%, 20%, 100% { transform: translate(-2px, 2px) scale(.8); opacity: .7; }
+  42%, 58% { transform: translate(-2px, 0) scale(1); opacity: 1; }
+  78% { transform: translate(-2px, 2px) scale(.8); opacity: .7; }
+}
+
+@keyframes cli-zcode-rest {
+  0%, 12%, 84%, 100% { transform: scaleY(.86); }
+  44%, 56% { transform: scaleY(.98); }
+}
+
+@keyframes cli-opencode-blink {
+  0%, 9%, 56%, 66%, 100% { transform: scaleY(1); }
+  5%, 61% { transform: scaleY(.3); }
+}
+
+@keyframes cli-pi-rest {
+  0%, 20%, 82%, 100% { transform: rotate(0deg); }
+  47%, 58% { transform: rotate(10deg); }
+}
+
 .cli-session-pet .pet-codex-hand,
 .cli-session-pet .pet-kimi-flying-star,
 .cli-session-pet .pet-kimi-catch-arm,

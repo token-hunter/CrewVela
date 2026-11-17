@@ -365,6 +365,7 @@ export interface GitBranchOption {
 }
 
 export interface PollResult {
+  workingCliPtyIds?: number[];
   chunks: Record<string, PtyChunk>;
   sessions: SessionRecord[];
 }

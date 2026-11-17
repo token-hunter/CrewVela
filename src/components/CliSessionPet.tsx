@@ -1,4 +1,4 @@
-import type { AgentRuntimeKind, SessionStatus } from "../types";
+import type { AgentRuntimeKind } from "../types";
 import "../styles/cli-session-pet.css";
 
 export type CliPetRuntimeKind = Extract<
@@ -8,7 +8,7 @@ export type CliPetRuntimeKind = Extract<
 
 interface Props {
   runtimeKind: CliPetRuntimeKind;
-  status: SessionStatus;
+  working: boolean;
   hidden: boolean;
 }
 
@@ -40,7 +40,8 @@ function CodexPet() {
       <path d="M13 3h25v2h3v15h-3v2H13v-2h-3V5h3z" fill="#f2efff" />
       <rect x="13" y="6" width="25" height="13" fill="#6f5be8" />
       <rect x="15" y="8" width="21" height="9" fill="#365be4" />
-      <path d="m20 10 3 3-3 3m6 0h5" fill="none" stroke="#fff" strokeWidth="2" />
+      <path className="pet-codex-prompt" d="m20 10 3 3-3 3m6 0h5" fill="none" stroke="#fff" strokeWidth="2" />
+      <path className="pet-codex-idle-cursor pet-idle-only" d="M21 14h8v2h-8z" fill="#cff8ff" />
       <path className="pet-codex-hand pet-codex-hand-left" d="M10 19h4v4h-4z" fill="#b9a8ff" />
       <path className="pet-codex-hand pet-codex-hand-right" d="M37 19h4v4h-4z" fill="#b9a8ff" />
       <rect x="17" y="25" width="22" height="2" fill="#e4e8f2" />
@@ -102,8 +103,7 @@ function OpenCodePet() {
     <svg viewBox="0 0 56 32" aria-hidden="true" focusable="false">
       <path d="M16 3h23v3h3v17h-3v3H16v-3h-3V6h3z" fill="#f4f0e8" />
       <rect x="17" y="7" width="21" height="13" fill="#181a1e" />
-      <rect x="20" y="11" width="2" height="3" fill="#f4f0e8" />
-      <rect x="31" y="11" width="2" height="3" fill="#f4f0e8" />
+      <path className="pet-opencode-eyes" d="M20 11h2v3h-2zm11 0h2v3h-2z" fill="#f4f0e8" />
       <rect className="pet-opencode-cursor" x="25" y="17" width="5" height="2" fill="#d6d0c5" />
       <path d="M17 24h6v4h-6zm15 0h6v4h-6z" fill="#dcd6ca" />
       <g className="pet-opencode-bracket pet-opencode-bracket-left">
@@ -131,6 +131,10 @@ function PiPet() {
         <rect x="37" y="15" width="7" height="7" fill="#a6ea37" />
         <path d="M38 16h2v2h-2z" fill="#dcff7f" />
       </g>
+      <g className="pet-pi-idle-token pet-idle-only">
+        <rect x="39" y="23" width="7" height="7" fill="#a6ea37" />
+        <path d="M40 24h2v2h-2z" fill="#dcff7f" />
+      </g>
       <path className="pet-pi-catch-spark" d="M46 19h2v2h-2z" fill="#c8ff66" />
     </svg>
   );
@@ -144,16 +148,15 @@ const PET_DRAWINGS: Record<CliPetRuntimeKind, () => React.JSX.Element> = {
   pi: PiPet,
 };
 
-export function CliSessionPet({ runtimeKind, status, hidden }: Props) {
-  const running = status === "running";
+export function CliSessionPet({ runtimeKind, working, hidden }: Props) {
   const Drawing = PET_DRAWINGS[runtimeKind];
-  const description = `${PET_NAMES[runtimeKind]}${running ? "正在执行" : "待命"}`;
+  const description = `${PET_NAMES[runtimeKind]}${working ? "正在执行" : "待命"}`;
 
   return (
     <span
-      className={`cli-session-pet cli-session-pet--${runtimeKind}${running ? " is-running" : " is-idle"}${hidden ? " is-hidden" : ""}`}
+      className={`cli-session-pet cli-session-pet--${runtimeKind}${working ? " is-running" : " is-idle"}${hidden ? " is-hidden" : ""}`}
       data-runtime={runtimeKind}
-      data-status={running ? "running" : "idle"}
+      data-status={working ? "running" : "idle"}
       data-hidden={hidden}
       role="img"
       aria-label={description}
