@@ -82,6 +82,9 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [mentionCursor, setMentionCursor] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionMultiple, setMentionMultiple] = useState(false);
+  const [mentionSelection, setMentionSelection] = useState<string[]>([]);
+  useEffect(() => { if (!mentionOpen) { setMentionMultiple(false); setMentionSelection([]); } }, [mentionOpen]);
   const [showOlder, setShowOlder] = useState(false);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [clearConfirmation, setClearConfirmation] = useState<{ projectId: string; projectName: string; expectedConversationId: string; expectedMessageIds: string[] } | null>(null);
@@ -161,7 +164,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const agents = useMemo(() => snapshot?.agents.filter(agent => agent.projectId === projectId && agent.enabled) ?? [], [snapshot, projectId]);
   const supported = conversation?.supportedDiscussionRuntimes ?? [];
   const manualMembers = useMemo(() => new Set(snapshot?.agentSessions.filter(session => session.projectId === projectId && session.controlMode === "manual").map(session => session.agentId) ?? []), [snapshot, projectId]);
-  useEffect(() => { if (!active) { setMembersOpen(null); setHistoryMenuOpen(false); setClearConfirmation(null); } }, [active]);
+  useEffect(() => { if (!active) { setMembersOpen(null); setHistoryMenuOpen(false); setClearConfirmation(null); setMentionOpen(false); } }, [active]);
   useEffect(() => {
     if (!historyMenuOpen) return;
     const frame = requestAnimationFrame(() => historyMenu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus());
@@ -294,6 +297,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   };
   const submit = async (event?: FormEvent, bodyOverride?: string, requestPlan = false) => {
     event?.preventDefault();
+    if (mentionOpen && mentionMultiple) return;
     if (mutation.current || !projectId || !healthy || !active || !runtimeReady || runtimeError || pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")) return;
     const body = (bodyOverride ?? draft).trim();
     if (!body || Array.from(body).length > 32000) { setOperationError("请输入 1–32000 字符的消息。"); return; }
@@ -376,15 +380,35 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const mentionSegments = useMemo(() => mentionTextSegments(draft, agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => conversationMentionToken(agent, agents))), [draft, agents, supported, isRuntimeEnabled]);
   const highlightMentions = !composingMention && mentionSegments.some(segment => segment.mention);
   const mentionMatch = draft.slice(0, mentionCursor).match(/(?:^|\s)@([^@\n]*)$/u);
-  const mentionOptions: AgentMentionOption[] = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && (!mentionMatch?.[1] || conversationMentionToken(agent, agents).toLocaleLowerCase().includes(mentionMatch[1].toLocaleLowerCase()))).sort((a, b) => Number(b.name.toLocaleLowerCase().startsWith(mentionMatch?.[1]?.toLocaleLowerCase() ?? "")) - Number(a.name.toLocaleLowerCase().startsWith(mentionMatch?.[1]?.toLocaleLowerCase() ?? ""))).map(agent => ({ key: agent.id, kind: "agent", agentId: agent.id, token: conversationMentionToken(agent, agents), description: ROLE[agent.role] ?? agent.role, section: "具体 Agent", runtimeKind: agent.runtimeKind, avatarId: agent.avatarId }));
+  const mentionCandidates: AgentMentionOption[] = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => ({ key: agent.id, kind: "agent", agentId: agent.id, token: conversationMentionToken(agent, agents), description: ROLE[agent.role] ?? agent.role, section: "具体 Agent", runtimeKind: agent.runtimeKind, avatarId: agent.avatarId }));
+  const mentionOptions = mentionCandidates.filter(option => !mentionMatch?.[1] || option.token.toLocaleLowerCase().includes(mentionMatch[1].toLocaleLowerCase())).sort((a, b) => Number(b.token.slice(1).toLocaleLowerCase().startsWith(mentionMatch?.[1]?.toLocaleLowerCase() ?? "")) - Number(a.token.slice(1).toLocaleLowerCase().startsWith(mentionMatch?.[1]?.toLocaleLowerCase() ?? "")));
+  const selectedMentionOptions = mentionCandidates.filter(option => mentionSelection.includes(option.key));
+  const toggleMentionSelection = (option: AgentMentionOption) => setMentionSelection(keys => keys.includes(option.key) ? keys.filter(key => key !== option.key) : [...keys, option.key]);
   const insertMention = (option: AgentMentionOption) => {
     const prefix = draft.slice(0, mentionCursor).replace(/@[^@\n]*$/u, option.token + " ");
     const next = prefix + draft.slice(mentionCursor); changeDraft(next); setMentionOpen(false);
     if (option.agentId) setSelected(ids => [...new Set([...ids, option.agentId!])]);
     requestAnimationFrame(() => { editor.current?.focus(); editor.current?.setSelectionRange(prefix.length, prefix.length); });
   };
-  const allMentionsSelected = mentionOptions.length > 0 && mentionOptions.every(option => hasMentionToken(draft, option.token));
+  const insertSelectedMentions = () => {
+    if (!mentionMatch || !selectedMentionOptions.length) return;
+    const before = draft.slice(0, mentionCursor).replace(/@[^@\n]*$/u, "");
+    const after = draft.slice(mentionCursor);
+    const tokens = selectedMentionOptions.filter(option => !hasMentionToken(before + after, option.token)).map(option => option.token);
+    const prefix = before + (tokens.length ? tokens.join(" ") + " " : "");
+    changeDraft(prefix + after);
+    setMentionCursor(prefix.length);
+    setSelected(ids => [...new Set([...ids, ...selectedMentionOptions.map(option => option.agentId!)])]);
+    setMentionOpen(false);
+    requestAnimationFrame(() => { editor.current?.focus(); editor.current?.setSelectionRange(prefix.length, prefix.length); });
+  };
+  const allMentionsSelected = mentionOptions.length > 0 && mentionOptions.every(option => mentionMultiple ? mentionSelection.includes(option.key) : hasMentionToken(draft, option.token));
   const selectAllMentions = () => {
+    if (mentionMultiple) {
+      const keys = mentionOptions.map(option => option.key);
+      setMentionSelection(current => allMentionsSelected ? current.filter(key => !keys.includes(key)) : [...new Set([...current, ...keys])]);
+      return;
+    }
     const withoutQuery = draft.slice(0, mentionCursor).replace(/@[^@\n]*$/u, "") + draft.slice(mentionCursor);
     const next = selectMentionTokens(withoutQuery, mentionOptions.map(option => option.token), !allMentionsSelected);
     const ids = mentionOptions.map(option => option.agentId!);
@@ -465,18 +489,19 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       <ResizableConversationComposer onSubmit={event => void submit(event)}>
         <div className="conversation-editor multi-agent-composer-editor" data-highlighted={highlightMentions}>
           {highlightMentions && <ConversationMentionHighlight textareaRef={editor} segments={mentionSegments}/> }
-          <textarea ref={editor} onCompositionStart={() => setComposingMention(true)} onCompositionEnd={() => setComposingMention(false)} aria-label={discussing ? "给团队插话" : "给团队发消息"} role="combobox" aria-expanded={mentionOpen && !!mentionMatch && mentionOptions.length > 0} aria-controls="conversation-mentions" aria-activedescendant={mentionOpen && mentionOptions.length ? `conversation-mentions-option-${Math.min(mentionIndex, mentionOptions.length - 1)}` : undefined} value={draft} placeholder="给团队发消息，@ 指定成员" disabled={!projectId} onChange={event => { changeDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionOpen(true); }} onSelect={event => { if (event.currentTarget.selectionStart !== mentionCursor) { setMentionCursor(event.currentTarget.selectionStart); setMentionOpen(true); } }} onKeyDown={event => {
+          <textarea ref={editor} onCompositionStart={() => setComposingMention(true)} onCompositionEnd={() => setComposingMention(false)} aria-label={discussing ? "给团队插话" : "给团队发消息"} role="combobox" aria-expanded={mentionOpen && !!mentionMatch && (mentionOptions.length > 0 || mentionMultiple)} aria-controls="conversation-mentions" aria-activedescendant={mentionOpen && mentionOptions.length ? `conversation-mentions-option-${Math.min(mentionIndex, mentionOptions.length - 1)}` : undefined} value={draft} placeholder="给团队发消息，@ 指定成员" disabled={!projectId} onChange={event => { changeDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionOpen(true); }} onSelect={event => { if (event.currentTarget.selectionStart !== mentionCursor) { setMentionCursor(event.currentTarget.selectionStart); setMentionOpen(true); } }} onKeyDown={event => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-            if (mentionOpen && mentionMatch && mentionOptions.length) {
+            if (mentionOpen && mentionMatch && (mentionOptions.length || mentionMultiple)) {
               if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setMentionOpen(false); return; }
-              if (["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); setMentionIndex(value => (value + (event.key === "ArrowDown" ? 1 : -1) + mentionOptions.length) % mentionOptions.length); return; }
-              if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); insertMention(mentionOptions[Math.min(mentionIndex, mentionOptions.length - 1)]); return; }
+              if (mentionOptions.length && ["ArrowDown", "ArrowUp"].includes(event.key)) { event.preventDefault(); setMentionIndex(value => (value + (event.key === "ArrowDown" ? 1 : -1) + mentionOptions.length) % mentionOptions.length); return; }
+              if (mentionMultiple && mentionOptions.length && event.key === " ") { event.preventDefault(); toggleMentionSelection(mentionOptions[Math.min(mentionIndex, mentionOptions.length - 1)]); return; }
+              if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); if (mentionMultiple) insertSelectedMentions(); else insertMention(mentionOptions[Math.min(mentionIndex, mentionOptions.length - 1)]); return; }
             }
             if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); }
           }} />
-          {mentionOpen && mentionMatch && mentionOptions.length > 0 && <AgentMentionMenu id="conversation-mentions" options={mentionOptions} activeIndex={Math.min(mentionIndex, mentionOptions.length - 1)} onHighlight={setMentionIndex} onSelect={insertMention} allSelected={allMentionsSelected} onSelectAll={selectAllMentions} />}
+          {mentionOpen && mentionMatch && (mentionOptions.length > 0 || mentionMultiple) && <AgentMentionMenu id="conversation-mentions" options={mentionOptions} activeIndex={Math.min(mentionIndex, mentionOptions.length - 1)} onHighlight={setMentionIndex} onSelect={mentionMultiple ? toggleMentionSelection : insertMention} allSelected={allMentionsSelected} onSelectAll={selectAllMentions} multiple={mentionMultiple} selectedKeys={mentionSelection} selectedCount={selectedMentionOptions.length} onMultipleChange={() => { setMentionMultiple(value => !value); setMentionSelection([]); }} onConfirm={insertSelectedMentions} />}
         </div>
-        <div className="conversation-composer-actions"><button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"} aria-controls={membersOpen === "composer" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}><User size={16} /><span>{`已选 ${selected.length} 位成员`}</span><CaretDown size={12} /></button>{!!conversation?.archivedTaskRules?.length && <label className="conversation-task-rule">本次规则<select aria-label="本次规则" title={conversation.archivedTaskRules.find(rule => rule.id === archivedRuleId)?.instructions ?? "仅在本条请求生效，不自动延续到下一条"} value={archivedRuleId} disabled={busy || !!pending} onChange={event => setArchivedRuleId(event.target.value)}><option value="">无附加规则</option>{conversation.archivedTaskRules.map(rule => <option key={rule.id} value={rule.id}>{rule.agentId ? agents.find(agent => agent.id === rule.agentId)?.name ?? "历史成员" : "项目"} · {rule.label} · {new Date(rule.createdAt).toLocaleString("zh-CN")}</option>)}</select></label>}<button type="button" className="conversation-text-button team-generate-plan" disabled={busy || !healthy || !active || !runtimeReady || !!runtimeError || !draft.trim() || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button><button type="submit" className="conversation-send" aria-label={discussing ? "发送插话" : "发送消息"} disabled={busy || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || !draft.trim() || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}><PaperPlaneTilt size={21} weight="fill" /></button></div>
+        <div className="conversation-composer-actions"><button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"} aria-controls={membersOpen === "composer" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}><User size={16} /><span>{`已选 ${selected.length} 位成员`}</span><CaretDown size={12} /></button>{!!conversation?.archivedTaskRules?.length && <label className="conversation-task-rule">本次规则<select aria-label="本次规则" title={conversation.archivedTaskRules.find(rule => rule.id === archivedRuleId)?.instructions ?? "仅在本条请求生效，不自动延续到下一条"} value={archivedRuleId} disabled={busy || !!pending} onChange={event => setArchivedRuleId(event.target.value)}><option value="">无附加规则</option>{conversation.archivedTaskRules.map(rule => <option key={rule.id} value={rule.id}>{rule.agentId ? agents.find(agent => agent.id === rule.agentId)?.name ?? "历史成员" : "项目"} · {rule.label} · {new Date(rule.createdAt).toLocaleString("zh-CN")}</option>)}</select></label>}<button type="button" className="conversation-text-button team-generate-plan" disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !draft.trim() || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button><button type="submit" className="conversation-send" aria-label={discussing ? "发送插话" : "发送消息"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || !draft.trim() || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}><PaperPlaneTilt size={21} weight="fill" /></button></div>
         {membersOpen === "composer" && <div id={membersId} ref={membersMenu} className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>参与成员</strong><button type="button" onClick={() => { const eligible = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id)).map(agent => agent.id); setSelected(selected.length === eligible.length ? [] : eligible); }}>全选 / 取消全选</button></header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || (manualMembers.has(agent.id) && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? " · 用户接管中" : ""}</small></span></label>)}</div>}
       </ResizableConversationComposer>
     </footer></div>

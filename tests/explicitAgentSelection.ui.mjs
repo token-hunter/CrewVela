@@ -18,10 +18,11 @@ try {
   assert.equal(await picker.isVisible(), true);
   await picker.getByRole('checkbox').nth(1).uncheck();
   await page.locator('.conversation-target').click(); await editor.press('Enter');
-  await page.getByRole('button', { name: /暂停讨论/ }).waitFor();
+  await page.getByRole('combobox', { name: '给团队插话', exact: true }).waitFor();
   const first = await page.evaluate(() => window.conversationMock.calls.find(item => item.command === 'ma_conversation_send').args.input);
   assert.deepEqual(first.participantAgentIds, ['kimi']); assert.equal(first.projectId, 'A');
-  await page.getByRole('button', { name: /暂停讨论/ }).click();
+  await page.getByRole('button', { name: '讨论记录操作', exact: true }).click();
+  await page.getByRole('menuitem', { name: '暂停讨论', exact: true }).click();
   await page.getByRole('button', { name: '继续输入', exact: true }).waitFor();
   await editor.fill('@');
   const mentions = page.locator('.multi-agent-mention-menu');

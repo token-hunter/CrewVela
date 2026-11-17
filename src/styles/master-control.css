@@ -354,7 +354,7 @@
   font-weight: 500;
 }
 
-.multi-agent-control .multi-agent-mention-option {
+.multi-agent-mention-menu .multi-agent-mention-option {
   display: grid;
   grid-template-columns: 24px minmax(0, 1.1fr) minmax(0, 1fr) 28px 14px;
   align-items: center;
@@ -372,8 +372,8 @@
   text-align: left;
 }
 
-.multi-agent-control .multi-agent-mention-option:hover { background: var(--bg-hover); }
-.multi-agent-control .multi-agent-mention-option.active {
+.multi-agent-mention-menu .multi-agent-mention-option:hover { background: var(--bg-hover); }
+.multi-agent-mention-menu .multi-agent-mention-option.active {
   background: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
 }
 
@@ -410,6 +410,13 @@
 .multi-agent-mention-option.active > .multi-agent-mention-enter { opacity: 1; }
 .multi-agent-mention-footer { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; padding: 9px 10px 3px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; }
 .multi-agent-mention-footer kbd { font: inherit; }
+.multi-agent-mention-menu .multi-agent-mention-option.multiple { grid-template-columns: 16px 24px minmax(0, 1.1fr) minmax(0, 1fr); }
+.multi-agent-mention-check { box-sizing: border-box; width: 15px; height: 15px; border: 1px solid var(--border-strong); border-radius: 3px; display: grid; place-items: center; font-size: 12px; line-height: 1; }
+.multi-agent-mention-option.multiple[aria-selected="true"] .multi-agent-mention-check { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.multi-agent-mention-option.multiple :is(.multi-agent-mention-enter, .multi-agent-mention-count) { display: none; }
+.multi-agent-mention-header > button, .multi-agent-mention-footer > button { flex-shrink: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--text); font-size: 12px; }
+.multi-agent-mention-header > button:first-of-type { margin-left: auto; }
+.multi-agent-mention-footer > button { margin-left: auto; color: var(--accent); }
 
 .multi-agent-target-picker {
   position: static;
