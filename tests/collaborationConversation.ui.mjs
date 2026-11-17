@@ -152,9 +152,11 @@ try {
   const resizing = await fresh('empty=1&members=many', { width: 780, height: 540 });
   const resizeEditor = resizing.getByRole('combobox', { name: '给团队发消息', exact: true });
   const original = await resizeEditor.boundingBox();
-  await resizing.mouse.move(original.x + original.width - 4, original.y + original.height - 4); await resizing.mouse.down();
-  await resizing.mouse.move(original.x + original.width - 4, original.y + original.height + 60, { steps: 10 }); await resizing.mouse.up();
-  const expanded = await resizeEditor.boundingBox(); assert.ok(expanded.height > original.height + 30, 'manual resizing changes the actual textarea, not only an ignored inline height');
+  const border = await resizing.locator('.conversation-composer-resizer[data-edge="n"]').boundingBox();
+  await resizing.mouse.move(border.x + border.width / 2, border.y + border.height / 2); await resizing.mouse.down();
+  await resizing.mouse.move(border.x + border.width / 2, border.y - 60, { steps: 10 }); await resizing.mouse.up();
+  const expanded = await resizeEditor.boundingBox(); assert.ok(expanded.height > original.height + 30, 'resizing the entire input area also expands the actual textarea');
+  assert.equal(await resizeEditor.evaluate(el => getComputedStyle(el).resize), 'none', 'the native diagonal resize glyph is removed');
   await resizing.locator('.conversation-target').click();
   const resizedRecipients = await resizing.locator('.conversation-recipient-menu').boundingBox(); assert.ok(resizedRecipients.y >= 0 && resizedRecipients.y + resizedRecipients.height <= 541);
   assert.deepEqual(errors, []);

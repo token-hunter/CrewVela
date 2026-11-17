@@ -1,0 +1,20 @@
+.conversation-composer-slot { display: flow-root; width: 100%; min-width: 0; }
+.conversation-composer.multi-agent-composer.resizable-conversation-composer { box-sizing: border-box; max-width: 100%; }
+.collaboration-conversation .conversation-composer.resizable-conversation-composer textarea { resize: none; }
+.collaboration-conversation .resizable-conversation-composer[data-sized="true"] .conversation-editor { flex: 1; min-height: 0; }
+.collaboration-conversation .resizable-conversation-composer[data-sized="true"] textarea { flex: 1 1 0; height: 100%; min-height: 0; max-height: none; }
+.resizable-conversation-composer .conversation-composer-actions { flex: none; flex-wrap: wrap; }
+.resizable-conversation-composer .team-generate-plan { white-space: nowrap; }
+.collaboration-conversation button.conversation-composer-resizer { position: absolute; z-index: 2; display: block; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; touch-action: none; user-select: none; }
+.conversation-composer-resizer:is([data-edge="n"],[data-edge="s"]) { left: 12px; right: 12px; height: 8px; }
+.conversation-composer-resizer[data-edge="n"] { top: -3px; }
+.conversation-composer-resizer[data-edge="s"] { bottom: -3px; }
+.conversation-composer-resizer:is([data-edge="w"],[data-edge="e"]) { top: 12px; bottom: 12px; width: 8px; }
+.conversation-composer-resizer[data-edge="w"] { left: -3px; }
+.conversation-composer-resizer[data-edge="e"] { right: -3px; }
+.conversation-composer-resizer:is([data-edge="nw"],[data-edge="ne"],[data-edge="sw"],[data-edge="se"]) { width: 14px; height: 14px; }
+.conversation-composer-resizer:is([data-edge="nw"],[data-edge="ne"]) { top: -3px; }
+.conversation-composer-resizer:is([data-edge="sw"],[data-edge="se"]) { bottom: -3px; }
+.conversation-composer-resizer:is([data-edge="nw"],[data-edge="sw"]) { left: -3px; }
+.conversation-composer-resizer:is([data-edge="ne"],[data-edge="se"]) { right: -3px; }
+.collaboration-conversation button.conversation-composer-resizer:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
