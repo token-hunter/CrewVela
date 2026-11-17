@@ -2,7 +2,7 @@
 .team-work-views .team-chat-panel { display:flex; flex:1; min-height:0; flex-direction:column; }
 .team-work-views [hidden] { display:none !important; }
 .team-work-views .conversation-header { padding:14px 34px 0; }
-.team-work-views .conversation-heading select { height:34px; font-size:22px; font-weight:650; letter-spacing:-.3px; }
+.team-work-views .conversation-heading select { height:34px; font-size:18px; font-weight:650; letter-spacing:-.3px; }
 .team-work-views .conversation-context-row { margin-top:6px; margin-bottom:6px; }
 .team-work-views .conversation-members .conversation-members-trigger { min-height:40px; font-size:15px; }
 .team-work-views .conversation-member-preview img { width:26px; height:26px; }
