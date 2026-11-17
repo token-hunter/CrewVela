@@ -9,7 +9,7 @@
 - `flow.png`、`visibility.png`、`manifest.json`：保留的上一版中点数据与原始素材 SHA256，供回溯和对照。
 - `generation.json`：内置工具模式、最终提示词与源图审计记录。
 - `motion-0.webp` 至 `motion-7.webp`：运行时动作图集。前两格仍是原始端点像素，随后按需包含已经检查的原生高清中间姿态；每格 887px，具体行列见新清单。
-- `motion-flow.png`、`motion-visibility.png`、`motion-manifest.json`：连续姿态路径、每个短段在 0/0.25/0.5/0.75/1 的位移/遮挡、局部道具或手部的对应数据。图集最大边不超过 4096px，运行时也检查实际 GPU 限制。
+- `motion-flow.webp`、`motion-visibility.webp`、`motion-manifest.json`：连续姿态路径、每个短段在 0/0.25/0.5/0.75/1 的位移/遮挡、局部道具或手部的对应数据。两张数据图采用无损 WebP，导出时逐字节校验。位移图保留全部四个通道，遮挡图在 RGB 中保留相同的灰度值。图集最大边不超过 4096px，运行时也检查实际 GPU 限制。
 
 新增母版保存在本目录的 `transition-sources/`，其生成来源记录见 `transition-sources/generation.json`。失败试验、低分辨率候选和未采用身体补图不属于产品素材。个别生成母版宽 1773px；仅在明确全透明的右边界补 1 列透明画布，并在清单记录原尺寸及 `transparentPaddingRight`，不缩放角色像素。
 

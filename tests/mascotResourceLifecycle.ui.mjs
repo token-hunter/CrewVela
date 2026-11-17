@@ -70,10 +70,10 @@ try{
   const requests=[];reduced.on('request',r=>requests.push({url:r.url(),type:r.resourceType()}));
   await reduced.goto(`${base}/tests/fixtures/native-mascot-ui.html?kind=claude_chat`);
   await reduced.locator('.native-clawd[data-renderer="static-paused"]').waitFor();
-  assert.equal(requests.some(r=>['image','fetch'].includes(r.type)&&(/(?:flow|visibility)\.png/.test(r.url)||/(?:action|motion)-\d\.webp/.test(r.url))),false,'reduced-motion initial load does not request animation textures (Vite URL import modules are scripts)');
+  assert.equal(requests.some(r=>['image','fetch'].includes(r.type)&&(/(?:flow|visibility)\.(?:png|webp)/.test(r.url)||/(?:action|motion)-\d\.webp/.test(r.url))),false,'reduced-motion initial load does not request animation textures (Vite URL import modules are scripts)');
   await reduced.close();
   const missing=await browser.newPage();
-  await missing.route('**/*flow.png*',route=>route.request().resourceType()==='image'?route.abort():route.continue());
+  await missing.route('**/motion-flow.webp*',route=>route.request().resourceType()==='image'?route.abort():route.continue());
   await missing.goto(`${base}/tests/fixtures/native-mascot-ui.html?kind=claude_chat`);
   await missing.locator('.native-clawd[data-renderer="static-fallback"]').waitFor();
   assert.equal(await missing.locator('.native-clawd').isDisabled(),true);

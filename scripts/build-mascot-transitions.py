@@ -79,6 +79,15 @@ def motion_arc(a,b,encoded,masks,scale):
     distances=np.array([max(.0001,float(np.mean(np.abs(right-left))*255))for left,right in zip(pictures,pictures[1:])])
     cumulative=np.r_[0,np.cumsum(distances)];return (cumulative/cumulative[-1]).tolist(),float(cumulative[-1])
 
+def save_exact_webp(image, path):
+    # With lossless WebP, quality controls encoder effort rather than fidelity.
+    # Preserve RGB under zero alpha too: all four flow channels contain data.
+    image.save(path, lossless=True, exact=True, method=6, quality=100)
+    with Image.open(path) as encoded:
+        if encoded.size != image.size or encoded.convert(image.mode).tobytes() != image.tobytes():
+            raise ValueError(f'Lossless packing changed pixels: {path}')
+
+
 def build(stem,config,model):
     target=ROOT/'src/assets/mascots-hd'/stem
     output=ROOT/'.scratch/mascot-overlap-fix/staged'/stem;output.mkdir(parents=True,exist_ok=True)
@@ -107,9 +116,7 @@ def build(stem,config,model):
         if max(columns*n,rows*n)>4096:raise ValueError(f'Action atlas exceeds portable 4096px limit: {stem}/{row}')
         packed=Image.new('RGBA',(columns*n,rows*n))
         for index,frame in enumerate(frames[1:]):packed.paste(frame,((index%columns)*n,(index//columns)*n))
-        packed.save(output/f'motion-{row}.webp',lossless=True,exact=True,method=6)
-        exported=Image.open(output/f'motion-{row}.webp').convert('RGBA')
-        if not np.array_equal(np.array(exported),np.array(packed)):raise ValueError('Lossless packing changed pixels')
+        save_exact_webp(packed, output/f'motion-{row}.webp')
         layouts.append({'columns':columns,'rows':rows,'count':count,'framePixels':n});actions.append(frames)
         first=entry.get('toFirst',[0,1]);second=entry.get('firstToSecond',[1,2])
         if first[0]!=0 or first[-1]!=1 or second[0]!=1 or second[-1]!=2:raise ValueError(f'Invalid authored route {stem}/{row}')
@@ -150,8 +157,8 @@ def build(stem,config,model):
         matte=np.clip(np.rint(cv2.warpPerspective(g['mask'],cv2.getPerspectiveTransform(corners,destination),(TILE,TILE),flags=cv2.INTER_LINEAR)*255),0,255).astype('uint8')
         r,c=divmod(cursor,COLUMNS);visibility_png[r*stride:(r+1)*stride,c*stride:(c+1)*stride]=cv2.copyMakeBorder(matte,PAD,PAD,PAD,PAD,cv2.BORDER_REPLICATE)
         rigid_guides[f'{row}:{index}']['maskTile']=cursor;cursor+=1
-    cv2.imwrite(str(output/'motion-flow.png'),cv2.cvtColor(vectors_png,cv2.COLOR_RGBA2BGRA),[cv2.IMWRITE_PNG_COMPRESSION,9])
-    cv2.imwrite(str(output/'motion-visibility.png'),visibility_png,[cv2.IMWRITE_PNG_COMPRESSION,9])
+    save_exact_webp(Image.fromarray(vectors_png), output/'motion-flow.webp')
+    save_exact_webp(Image.fromarray(visibility_png).convert('RGB'), output/'motion-visibility.webp')
     route_stops={}
     for key,route in routes.items():
         row=key.split(':')[0]
@@ -162,7 +169,7 @@ def build(stem,config,model):
     (output/'motion-manifest.json').write_text(json.dumps(manifest,separators=(',',':'))+'\n',encoding='utf-8')
     # Publish only after every image, route and numerical field has succeeded.
     # The manifest is last; callers should verify after this command completes.
-    for name in [*[f'motion-{row}.webp'for row in range(8)],'motion-flow.png','motion-visibility.png','motion-manifest.json']:
+    for name in [*[f'motion-{row}.webp'for row in range(8)],'motion-flow.webp','motion-visibility.webp','motion-manifest.json']:
         shutil.copyfile(output/name,target/name)
 
 if __name__=='__main__':
