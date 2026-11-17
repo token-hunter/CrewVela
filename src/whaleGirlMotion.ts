@@ -11,6 +11,11 @@ export const WHALE_GIRL_MOTIONS = [
   { name: "点头", duration: 1800, frames: [0, 1, 1, 2, 3] },
 ] as const;
 
+// HD pairs share a single rest drawing. The two tail extremes should alternate
+// directly, rather than repeatedly holding two identical outward-tail rests.
+export const WHALE_GIRL_HD_MOTIONS = WHALE_GIRL_MOTIONS.map((entry, row) =>
+  row === 1 ? { ...entry, frames: [0, 1, 2, 1] } : entry);
+
 export function whaleGirlFrame(motion: number, elapsed: number): number {
   return spriteMascotFrame(WHALE_GIRL_MOTIONS[motion], elapsed);
 }

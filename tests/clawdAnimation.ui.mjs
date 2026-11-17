@@ -15,11 +15,12 @@ try {
   await page.locator('select').selectOption('claude_chat');
   const mascot = page.locator('.native-clawd');
   await mascot.waitFor();
+  await page.locator('.native-clawd[data-renderer="flow"]').waitFor();
   await page.evaluate(async () => {
     const image = new Image();
     image.src = getComputedStyle(document.querySelector('.native-clawd-sprite')).backgroundImage.slice(5, -2);
     await image.decode();
-    if (!image.naturalWidth || image.naturalHeight !== image.naturalWidth * 2) throw Error('Invalid 4 x 8 atlas');
+    if (image.naturalWidth < 768 || image.naturalHeight !== image.naturalWidth) throw Error('Invalid HD rest image');
   });
   await mascot.screenshot({ path: `${dir}/idle.png` });
   const motions = ['眨眼', '敲键盘', '歪头', '扶眼镜', '思考', '伸懒腰', '挥手', '点头确认'];
@@ -35,11 +36,12 @@ try {
     assert.equal(await mascot.getAttribute('data-motion'), name);
     // Start at the same first frame, even when the automatic loop was already on this gesture.
     for (let i = 0; i < 8; i++) await mascot.click();
-    const poses = new Set([await mascot.locator('span').getAttribute('style')]);
+    await page.clock.runFor(300); // Finish the continuous manual action bridge.
+    const poses = new Set([await mascot.locator('canvas').evaluate(canvas => canvas.toDataURL())]);
     const peaks = [3940, 800, 600, 1100, 1800, 1600, 900, 800];
     for (let elapsed = 0; elapsed < peaks[motions.indexOf(name)]; elapsed += 80) {
       await page.clock.runFor(80);
-      poses.add(await mascot.locator('span').getAttribute('style'));
+      poses.add(await mascot.locator('canvas').evaluate(canvas => canvas.toDataURL()));
     }
     assert.ok(poses.size >= 2, `${name}: actually advances through different frames`);
     await mascot.screenshot({ path: `${dir}/gesture-${motions.indexOf(name) + 1}.png` });

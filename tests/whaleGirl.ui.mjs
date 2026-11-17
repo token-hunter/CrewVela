@@ -14,11 +14,12 @@ try {
   await page.locator('select').selectOption('deepseek_harness');
   const mascot = page.locator('.native-whale-girl');
   await mascot.waitFor();
+  await page.locator('.native-whale-girl[data-renderer="flow"]').waitFor();
   await page.evaluate(async () => {
     const image = new Image();
     image.src = getComputedStyle(document.querySelector('.native-whale-girl-sprite')).backgroundImage.slice(5, -2);
     await image.decode();
-    if (!image.naturalWidth || image.naturalHeight !== image.naturalWidth * 2) throw Error('Invalid 4 x 8 atlas');
+    if (image.naturalWidth < 768 || image.naturalHeight !== image.naturalWidth) throw Error('Invalid HD rest image');
   });
   const motions = ['眨眼', '摆尾', '挥手', '轻跳', '歪头', '思考', '伸懒腰', '点头'];
   const seen = new Set();
@@ -33,9 +34,10 @@ try {
     assert.equal(await mascot.getAttribute('data-motion'), name);
     // Start at the same first frame, even when the automatic loop was already on this gesture.
     for (let i = 0; i < 8; i++) await mascot.click();
-    const before = await mascot.locator('span').getAttribute('style');
+    await page.clock.runFor(300);
+    const before = await mascot.locator('canvas').evaluate(canvas => canvas.toDataURL());
     await page.clock.runFor(name === '眨眼' ? 2180 : 900);
-    assert.notEqual(await mascot.locator('span').getAttribute('style'), before, `${name}: frames change`);
+    assert.notEqual(await mascot.locator('canvas').evaluate(canvas => canvas.toDataURL()), before, `${name}: actual pixels change`);
     await mascot.screenshot({ path: `${dir}/gesture-${motions.indexOf(name) + 1}.png` });
   }
   await page.getByLabel('播放动画').uncheck();

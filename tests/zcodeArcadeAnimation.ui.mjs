@@ -15,11 +15,12 @@ try {
   await page.locator('select').selectOption('zcode');
   const mascot = page.locator('.native-zcode-arcade');
   await mascot.waitFor();
+  await page.locator('.native-zcode-arcade[data-renderer="flow"]').waitFor();
   await page.evaluate(async () => {
     const image = new Image();
     image.src = getComputedStyle(document.querySelector('.native-zcode-arcade-sprite')).backgroundImage.slice(5, -2);
     await image.decode();
-    if (!image.naturalWidth || image.naturalHeight !== image.naturalWidth * 2) throw Error('Invalid 4 x 8 atlas');
+    if (image.naturalWidth < 768 || image.naturalHeight !== image.naturalWidth) throw Error('Invalid HD rest image');
   });
   await mascot.screenshot({ path: `${dir}/idle.png` });
   const motions = ['摇杆漂移', '手柄翻接', '蹲身闪避', '扳机瞄准', '蓄力出招', '耳麦报点', '节奏踏步', '通关亮牌'];
@@ -35,11 +36,12 @@ try {
     assert.equal(await mascot.getAttribute('data-motion'), name);
     // Start at the same first frame, even when the automatic loop was already on this gesture.
     for (let i = 0; i < 8; i++) await mascot.click();
-    const poses = new Set([await mascot.locator('span').getAttribute('style')]);
+    await page.clock.runFor(300);
+    const poses = new Set([await mascot.locator('canvas').evaluate(canvas => canvas.toDataURL())]);
     const peaks = [1200, 800, 900, 1200, 1800, 1000, 1200, 1700];
     for (let elapsed = 0; elapsed < peaks[motions.indexOf(name)]; elapsed += 80) {
       await page.clock.runFor(80);
-      poses.add(await mascot.locator('span').getAttribute('style'));
+      poses.add(await mascot.locator('canvas').evaluate(canvas => canvas.toDataURL()));
     }
     assert.ok(poses.size >= 2, `${name}: actually advances through different frames`);
     await mascot.screenshot({ path: `${dir}/gesture-${motions.indexOf(name) + 1}.png` });
