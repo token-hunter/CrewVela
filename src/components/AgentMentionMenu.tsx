@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ArrowElbowDownLeftIcon } from "@phosphor-icons/react/dist/csr/ArrowElbowDownLeft";
+import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
 import { RobotIcon } from "@phosphor-icons/react/dist/csr/Robot";
 import type { AgentRuntimeKind } from "../types";
 import { AgentAvatar } from "./AgentAvatar";
@@ -11,6 +12,7 @@ export interface AgentMentionOption {
   description: string;
   section: "群组" | "具体 Agent" | "终端会话";
   runtimeKind?: AgentRuntimeKind;
+  runtimeLabel?: string;
   avatarId?: string | null;
   agentId?: string;
   sessionId?: string;
@@ -28,7 +30,7 @@ export function AgentMentionMenu({ id, options, activeIndex, onHighlight, onSele
   multiple?: boolean;
   selectedKeys?: readonly string[];
   selectedCount?: number;
-  onMultipleChange?: () => void;
+  onMultipleChange?: (enabled: boolean) => void;
   onConfirm?: () => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -44,11 +46,16 @@ export function AgentMentionMenu({ id, options, activeIndex, onHighlight, onSele
 
   return <div className="multi-agent-mention-menu">
     <div className="multi-agent-mention-header">
-      <strong>选择具体 Agent</strong>
-      {onMultipleChange && <button type="button" aria-pressed={multiple} onMouseDown={(event) => event.preventDefault()} onClick={onMultipleChange}>{multiple ? "单选" : "多选"}</button>}
-      <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onSelectAll}>
-        {allSelected ? "取消全选" : "全选"}
-      </button>
+      <strong>选择成员</strong>
+      <div className="multi-agent-mention-controls">
+        {onMultipleChange && <div className="multi-agent-mention-modes" role="group" aria-label="成员选择模式">
+          <button type="button" aria-pressed={!multiple} onMouseDown={(event) => event.preventDefault()} onClick={() => onMultipleChange(false)}>单选</button>
+          <button type="button" aria-pressed={multiple} onMouseDown={(event) => event.preventDefault()} onClick={() => onMultipleChange(true)}>多选</button>
+        </div>}
+        <button type="button" className="multi-agent-mention-select-all" disabled={!options.length} onMouseDown={(event) => event.preventDefault()} onClick={onSelectAll}>
+          {allSelected ? "取消全选" : "全选"}
+        </button>
+      </div>
     </div>
     <div ref={listRef} id={id} className="multi-agent-mention-results" role="listbox" aria-label="选择协作 Agent" aria-multiselectable={multiple}>
       {!options.length && <p>没有匹配的成员</p>}
@@ -58,30 +65,41 @@ export function AgentMentionMenu({ id, options, activeIndex, onHighlight, onSele
         return <div className="multi-agent-mention-section" role="group" aria-label={section} key={section}>
           {items.map((option) => {
             const index = options.indexOf(option);
-            const description = option.description;
+            const checked = selectedKeys.includes(option.key);
             return <button
               key={option.key} id={`${id}-option-${index}`} type="button" role="option"
-              aria-selected={multiple ? selectedKeys.includes(option.key) : index === activeIndex}
+              aria-selected={multiple ? checked : index === activeIndex}
               className={`multi-agent-mention-option${index === activeIndex ? " active" : ""}${multiple ? " multiple" : ""}`}
               title={`${option.token} · ${option.description}`}
               onMouseDown={(event) => event.preventDefault()}
               onMouseMove={() => onHighlight(index)} onClick={() => onSelect(option)}
             >
-              {multiple && <span className="multi-agent-mention-check" aria-hidden="true">{selectedKeys.includes(option.key) ? "✓" : ""}</span>}
+              {multiple && <span className="multi-agent-mention-check" aria-hidden="true">{checked && <CheckIcon size={13} weight="bold" />}</span>}
               {option.runtimeKind
                 ? <AgentAvatar className="ma-mention-avatar" avatarId={option.avatarId} runtimeKind={option.runtimeKind} decorative />
                 : <RobotIcon className="ma-mention-avatar" aria-hidden="true" />}
-              <strong className="multi-agent-mention-name">{option.token}</strong>
-              <span className="multi-agent-mention-description">{description}</span>
-              <em className="multi-agent-mention-count" aria-label={typeof option.targetCount === "number" ? `${option.targetCount} 个实例` : undefined}>
-                {option.targetCount}
-              </em>
-              <ArrowElbowDownLeftIcon className="multi-agent-mention-enter" size={14} aria-hidden="true" />
+              <span className="multi-agent-mention-identity">
+                <strong className="multi-agent-mention-name">{option.token}</strong>
+                {option.runtimeLabel && <small className="multi-agent-mention-runtime">{option.runtimeLabel}</small>}
+              </span>
+              <span className="multi-agent-mention-description">{option.description}</span>
+              {!multiple && <ArrowElbowDownLeftIcon className="multi-agent-mention-enter" size={14} aria-hidden="true" />}
             </button>;
           })}
         </div>;
       })}
     </div>
-    <div className="multi-agent-mention-footer"><span><kbd>↑↓</kbd> 选择</span>{multiple && <span><kbd>Space</kbd> 勾选</span>}<span><kbd>Enter</kbd> 插入</span><span><kbd>Esc</kbd> 关闭</span>{multiple && <button type="button" disabled={!selectedCount} onMouseDown={(event) => event.preventDefault()} onClick={onConfirm}>插入所选（{selectedCount}）</button>}</div>
+    <div className="multi-agent-mention-footer">
+      <div className="multi-agent-mention-summary">
+        {multiple && <strong role="status">已选 {selectedCount} 位成员</strong>}
+        <div className="multi-agent-mention-shortcuts">
+          <span><kbd>↑↓</kbd> 移动</span>
+          {multiple && <span><kbd>Space</kbd> 勾选</span>}
+          <span><kbd>Enter</kbd> 插入</span>
+          <span><kbd>Esc</kbd> 关闭</span>
+        </div>
+      </div>
+      {multiple && <button type="button" className="multi-agent-mention-confirm" disabled={!selectedCount} onMouseDown={(event) => event.preventDefault()} onClick={onConfirm}>插入所选</button>}
+    </div>
   </div>;
 }

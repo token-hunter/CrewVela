@@ -17,9 +17,15 @@ try {
   await page.locator(".conversation-target").waitFor();
   const menu = page.locator(".multi-agent-mention-menu");
   await editor.fill("@");
-  await menu.getByRole("button", { name: "多选", exact: true }).click();
+  await menu.getByText("选择成员", { exact: true }).waitFor();
+  const modes = menu.getByRole("group", { name: "成员选择模式" });
+  assert.equal(await modes.getByRole("button", { name: "单选", pressed: true }).count(), 1);
+  await modes.getByRole("button", { name: "多选", exact: true }).click();
+  assert.equal(await modes.getByRole("button", { name: "多选", pressed: true }).count(), 1);
   assert.equal(await menu.getByRole("listbox").getAttribute("aria-multiselectable"), "true");
-  await menu.getByRole("option").nth(0).click();
+  const firstMember = menu.getByRole("option").first();
+  await firstMember.getByText("Claude Code", { exact: true }).waitFor();
+  await firstMember.click();
   await menu.getByRole("option").nth(1).click();
   assert.equal(await menu.getByRole("option", { selected: true }).count(), 2);
   assert.equal(await page.getByRole("button", { name: "发送消息", exact: true }).isEnabled(), false, "勾选未确认前不能按旧成员选择发送");
@@ -27,8 +33,9 @@ try {
   await menu.getByRole("option").nth(0).click();
   await menu.getByRole("option").nth(2).click();
   assert.equal(await menu.getByRole("option", { selected: true }).count(), 2);
+  await menu.getByRole("status").getByText("已选 2 位成员", { exact: true }).waitFor();
   await page.screenshot({ path: `${out}/multiple-dark.png` });
-  await menu.getByRole("button", { name: "插入所选（2）", exact: true }).click();
+  await menu.getByRole("button", { name: "插入所选", exact: true }).click();
   assert.equal(await editor.inputValue(), "@模型验收-Codex @聊天-ZCodeCLI ");
   assert.deepEqual(await page.locator(".conversation-mention-highlight mark").allTextContents(), ["@模型验收-Codex", "@聊天-ZCodeCLI"]);
   assert.equal(await page.evaluate(() => window.conversationMock.calls.filter(c => c.command === "ma_conversation_send").length), 0);
@@ -57,11 +64,23 @@ try {
 
   await editor.fill("@");
   await menu.getByRole("button", { name: "多选", exact: true }).click();
+  await menu.getByRole("option").nth(1).click();
+  await menu.getByRole("button", { name: "多选", exact: true }).click();
+  await menu.getByRole("status").getByText("已选 1 位成员", { exact: true }).waitFor();
+  await menu.getByRole("button", { name: "单选", exact: true }).click();
+  assert.equal(await menu.getByRole("listbox").getAttribute("aria-multiselectable"), "false");
+  assert.equal(await menu.getByRole("button", { name: "插入所选" }).count(), 0);
+  await menu.getByRole("option").first().click();
+  assert.equal(await editor.inputValue(), "@模型验收-Claude ");
+  checks.push("选中模式保持勾选，切回单选可直接插入");
+
+  await editor.fill("@");
+  await menu.getByRole("button", { name: "多选", exact: true }).click();
   await menu.getByRole("button", { name: "全选", exact: true }).click();
   assert.equal(await menu.getByRole("option", { selected: true }).count(), 4);
   await menu.getByRole("button", { name: "取消全选", exact: true }).click();
   assert.equal(await menu.getByRole("option", { selected: true }).count(), 0);
-  assert.equal(await menu.getByRole("button", { name: "插入所选（0）", exact: true }).isEnabled(), false);
+  assert.equal(await menu.getByRole("button", { name: "插入所选", exact: true }).isEnabled(), false);
   await menu.getByRole("option").first().click();
   await editor.press("Escape");
   assert.equal(await editor.inputValue(), "@");
@@ -74,7 +93,7 @@ try {
   await menu.getByRole("option").first().click();
   await editor.pressSequentially("不存在");
   await menu.getByText("没有匹配的成员", { exact: true }).waitFor();
-  assert.equal(await menu.getByRole("button", { name: "插入所选（1）", exact: true }).isEnabled(), true);
+  assert.equal(await menu.getByRole("button", { name: "插入所选", exact: true }).isEnabled(), true);
   await editor.press("Enter");
   assert.equal(await editor.inputValue(), "@模型验收-Codex ");
   checks.push("过滤无结果仍能确认已选成员，不会把 Enter 误当发送");
@@ -87,7 +106,7 @@ try {
   await menu.getByRole("option").nth(0).click();
   await editor.pressSequentially("Codex");
   await menu.getByRole("option").first().click();
-  await menu.getByRole("button", { name: "插入所选（2）", exact: true }).click();
+  await menu.getByRole("button", { name: "插入所选", exact: true }).click();
   assert.equal(await editor.inputValue(), "前文\n@模型验收-Claude @模型验收-Codex  尾文");
   await page.waitForFunction(position => document.querySelector('.conversation-composer textarea').selectionStart === position, "前文\n@模型验收-Claude @模型验收-Codex ".length);
   checks.push("过滤保持已选成员身份，插入保留前后正文、换行与正确光标");
@@ -96,7 +115,7 @@ try {
   await menu.getByRole("button", { name: "多选", exact: true }).click();
   await menu.getByRole("option").first().click();
   await menu.getByRole("option").nth(1).click();
-  await menu.getByRole("button", { name: "插入所选（2）", exact: true }).click();
+  await menu.getByRole("button", { name: "插入所选", exact: true }).click();
   assert.equal(await editor.inputValue(), "@模型验收-Claude\n@模型验收-Codex ");
   checks.push("批量插入不重复已有的完整 @成员");
 
