@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { SettingsGroup, SettingSwitch, SettingsActions } from "./ui/RuntimeSettings";
+import { TerminalFontPicker } from "./TerminalFontPicker";
+import { TerminalFontPreview } from "./TerminalFontPreview";
+import type { AppTheme } from "../types";
 
 import {
   DEFAULT_GENERAL_SETTINGS,
@@ -24,7 +27,7 @@ const UI_PREVIEW = new URLSearchParams(window.location.search).get("ui-preview")
 
 const FONT_SIZE_OPTIONS = Array.from({ length: MAX_TERMINAL_FONT_SIZE - MIN_TERMINAL_FONT_SIZE + 1 }, (_, i) => MIN_TERMINAL_FONT_SIZE + i);
 
-export function GeneralSettingsPanel() {
+export function GeneralSettingsPanel({ theme = "dark" }: { theme?: AppTheme }) {
   const [status, setStatus] = useState<GeneralSettingsStatus | null>(
     UI_PREVIEW ? GENERAL_SETTINGS_PREVIEW : null,
   );
@@ -100,8 +103,9 @@ export function GeneralSettingsPanel() {
         <div className="workspace-section workspace-terminal">
           <SettingsGroup title="终端">
             <div className="runtime-field">
-              <label htmlFor="general-terminal-font">字体<small>留空使用默认终端字体。</small></label>
-              <input id="general-terminal-font" value={draft.terminalFontFamily} placeholder="Cascadia Code" onChange={e => setDraft({ ...draft, terminalFontFamily: e.target.value })} />
+              <label htmlFor="general-terminal-font">字体<small>留空使用默认字体，备用字体以逗号分隔。</small></label>
+              <TerminalFontPicker value={draft.terminalFontFamily} preview={UI_PREVIEW}
+                onChange={terminalFontFamily => setDraft(current => ({ ...current, terminalFontFamily }))} />
             </div>
             <div className="runtime-field">
               <label htmlFor="general-terminal-font-size">字号<small>保存后即时应用到终端。</small></label>
@@ -109,6 +113,7 @@ export function GeneralSettingsPanel() {
                 {FONT_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size} px</option>)}
               </select>
             </div>
+            <TerminalFontPreview fontFamily={draft.terminalFontFamily} fontSize={draft.terminalFontSize} theme={theme} />
           </SettingsGroup>
         </div>
         <div className="workspace-section workspace-advanced">

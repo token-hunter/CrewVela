@@ -31,6 +31,7 @@ mod runtime_communication_acceptance_tests;
 mod zcode_communication_acceptance_tests;
 mod control;
 pub mod general_settings;
+mod terminal_fonts;
 mod git_source_control;
 mod keep_awake;
 mod kimi_title_summary;
@@ -6232,6 +6233,7 @@ pub fn run() {
             app_help::app_check_update,
             app_help::app_data_directory,
             general_settings::general_settings_save,
+            terminal_fonts::terminal_fonts_list,
             send_windows_unpacked_notification,
             list_projects,
             create_project,

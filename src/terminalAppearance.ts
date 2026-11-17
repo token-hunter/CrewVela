@@ -10,29 +10,21 @@ import {
   MIN_TERMINAL_FONT_SIZE,
   type GeneralSettings,
 } from "./generalSettings";
+import { isGenericTerminalFont, quoteTerminalFontName, splitTerminalFontFamilies, terminalFontName } from "./terminalFonts";
 
 export const FALLBACK_FONT_FAMILY = '"Cascadia Code", Consolas, monospace';
-const GENERIC_FAMILIES = /^(monospace|serif|sans-serif|cursive|fantasy|system-ui)$/i;
 
 /** 用户输入 → xterm fontFamily：
  * - 空 → 默认栈；
  * - 单个字体名（含空格未加引号）→ 自动加引号；
- * - 已是字体栈（含逗号或已带引号）→ 原样保留；
+ * - 字体栈 → 保留字体顺序，统一处理引号；
  * - 结尾没有通用族时补 ", monospace" 兜底。 */
 export function resolveFontFamily(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return FALLBACK_FONT_FAMILY;
-  const parts = trimmed
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      if (/^["']/.test(part) || GENERIC_FAMILIES.test(part)) return part;
-      return `"${part.replace(/["']/g, "")}"`;
-    });
-  if (parts.length === 0) return FALLBACK_FONT_FAMILY;
-  const hasGeneric = parts.some((part) => GENERIC_FAMILIES.test(part));
-  return hasGeneric ? parts.join(", ") : `${parts.join(", ")}, monospace`;
+  const parts = splitTerminalFontFamilies(raw);
+  if (!parts.length) return FALLBACK_FONT_FAMILY;
+  const families = parts.map(part => isGenericTerminalFont(part) ? part : quoteTerminalFontName(terminalFontName(part)));
+  if (!parts.some(isGenericTerminalFont)) families.push("monospace");
+  return families.join(", ");
 }
 
 export function clampFontSize(size: number): number {

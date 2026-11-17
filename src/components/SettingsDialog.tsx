@@ -413,7 +413,7 @@ export function SettingsDialog({
                 embedded
               />
             ) : activeSection === "generalSettings" ? (
-              <GeneralSettingsPanel />
+              <GeneralSettingsPanel theme={resolveBaseTheme(resolvedAppearanceTheme)} />
             ) : activeSection === "git" ? (
               <GitSettingsPanel />
             ) : activeSection === "browserControl" ? (
