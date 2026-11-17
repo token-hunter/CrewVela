@@ -1040,6 +1040,12 @@ fn ma_run_logs(
 }
 
 #[tauri::command]
+async fn ma_run_log_history(project_id: String, run_id: String, limit: u32, state: State<'_, MultiAgentStore>) -> Result<Vec<multi_agent::RunLogEntry>, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.logs_for_run(&project_id, &run_id, limit).map_err(to_err)).await
+}
+
+#[tauri::command]
 fn ma_activity_events(
     project_id: String,
     after_seq: Option<i64>,
@@ -6323,6 +6329,7 @@ pub fn run() {
             ai_memory::ai_memory_session_badges,
             ma_clear_conversation,
             ma_run_logs,
+            ma_run_log_history,
             ma_activity_events,
             ma_runtime_events,
             ma_send_message,

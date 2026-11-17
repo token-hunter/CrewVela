@@ -129,7 +129,10 @@ const mock = {
       chats.A.rounds[0].status="running";chats.A.messages.find((item:any)=>item.id==="a1").status="running";
       return {interventionId:"permission-current",projectId:"A",resumeProject:false,message:"已批准本次工具操作"};
     }
-    if (command === "ma_snapshot") { const result=snapshot(args.projectId); if(params.get("activity")==="1"&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} return structuredClone(result); }
+    if (command === "ma_snapshot") { const result=snapshot(args.projectId); if(params.get("activity")==="1"&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} if(params.has("logs-only"))result.runLogs=[]; return structuredClone(result); }
+    if (command === "ma_run_log_history") {
+      return structuredClone(runLogs.filter(log => log.projectId === args.projectId && log.runId === args.runId).slice(-args.limit));
+    }
     if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
     if (command === "ma_conversation_history") {
       const current = chats[args.projectId];

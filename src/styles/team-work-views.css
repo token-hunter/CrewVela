@@ -49,6 +49,10 @@
 .team-work-views .team-plan-adjust { color:var(--text-dim); }
 .team-tasks-panel { flex:1; min-height:0; overflow:auto; padding:28px; scrollbar-width:thin; }
 .conversation-task-view { display:flex; flex-direction:column; gap:18px; min-width:0; }
+.team-task-discussion { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; font-size:13px; color:var(--text-dim); }
+.team-task-discussion time { margin-inline-start:6px; white-space:nowrap; }
+.team-run-picker { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:13px; }
+.team-run-picker select { color:var(--text); background:var(--bg-elev); border:1px solid var(--border-strong); border-radius:6px; padding:5px 8px; }
 .team-task-list { border:1px solid var(--border); border-radius:12px; overflow:hidden; }
 .team-work-views button.team-task-row { display:grid; grid-template-columns:minmax(110px,1.1fr) minmax(75px,.65fr) minmax(40px,.55fr) auto; gap:14px; align-items:center; box-sizing:border-box; width:100%; padding:13px 18px; text-align:left; border:1px solid transparent; background:transparent; color:var(--text); font-size:17px; }
 .team-work-views button.team-task-row + .team-task-row { border-top-color:var(--border); }

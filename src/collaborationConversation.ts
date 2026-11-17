@@ -20,6 +20,11 @@ export function conversationRequestMode(body: string, selectedMode: Conversation
     || /(?:^|[，。；,;\n])\s*(?:请)?(?:先)?(?:给(?:我)?|生成|制定|安排)(?:一下|个|一份)?分工(?:[：:，,。！!；;\s]|$)/u.test(text.trim());
   return engineering || teamEngineering || explicitPlan ? "execution_plan" : "discussion";
 }
+export function hasConversationPlanGoal(body: string, mentionTokens: readonly string[]): boolean {
+  const goal = [...mentionTokens].sort((a, b) => b.length - a.length)
+    .reduce((text, token) => replaceMentionToken(text, token, ""), body);
+  return /[\p{L}\p{N}]/u.test(goal);
+}
 export function conversationRequestIntent(body: string): "chat" | "exchange" {
   const text = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
   if (/(?:不要|(?<!分)别|无需|不需要|先不).{0,8}(?:互聊|互相|讨论|交流|回应)|\b(?:don't|do not|no need to).{0,12}(?:discuss|debate|exchange)/iu.test(text)) return "chat";

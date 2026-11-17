@@ -1808,6 +1808,23 @@ impl MultiAgentStore {
         list_run_logs_with(&connection, project_id, limit)
     }
 
+    pub fn logs_for_run(&self, project_id: &str, run_id: &str, limit: u32) -> Result<Vec<RunLogEntry>> {
+        let connection = self.connection.lock().unwrap();
+        let run = get_run_with(&connection, run_id)?;
+        if run.project_id != project_id {
+            return Err(anyhow!("未找到该项目的执行记录"));
+        }
+        let mut statement = connection.prepare(
+            "SELECT seq, project_id, run_id, task_id, agent_id, stream, content, created_at
+             FROM ma_run_logs WHERE project_id=?1 AND run_id=?2 ORDER BY seq DESC LIMIT ?3",
+        )?;
+        let mut entries = statement
+            .query_map(params![project_id, run_id, limit.clamp(1, 2_000)], run_log_from_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        entries.reverse();
+        Ok(entries)
+    }
+
     pub fn append_run_log(&self, run_id: &str, stream: &str, content: &str) -> Result<()> {
         let content = content.trim_end_matches(['\r', '\n']);
         if content.trim().is_empty() {

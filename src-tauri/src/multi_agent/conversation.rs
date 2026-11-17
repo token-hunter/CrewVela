@@ -2177,13 +2177,29 @@ impl MultiAgentStore {
         if !super::executor::is_git_worktree(std::path::Path::new(&root)) {
             bail!("执行计划需要 Git 工作区以创建独立 Worktree；不会降级为共享写入");
         }
-        let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_runs WHERE project_id=?1 AND status IN ('queued','starting','running','waiting_input','waiting_approval'))",[&input.project_id],|r|r.get(0))?;
+        let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_runs WHERE project_id=?1
+            AND (status IN ('queued','starting','running','waiting_input','waiting_approval')
+                 OR json_extract(session_locator_json,'$.stopUnverified')=1))",[&input.project_id],|r|r.get(0))?;
         if active {
-            bail!("项目仍有活动执行，请先完成或暂停，避免并发写入与任务交接冲突");
+            bail!("项目仍有活动执行或未确认停止的执行，请先处理后再开始新分工");
         }
-        let pending:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_tasks WHERE project_id=?1 AND id NOT LIKE 'cli-message-%' AND status NOT IN ('done','cancelled'))",[&input.project_id],|r|r.get(0))?;
-        if pending {
-            bail!("项目已有未完成任务，请先处理现有分工，再执行新计划");
+        // Failed/cancelled dependencies and their blocked descendants cannot run
+        // until explicitly recovered. They do not stop an independent plan.
+        let pending: u32 = tx.query_row(
+            "WITH RECURSIVE stopped(id) AS (
+                SELECT id FROM ma_tasks WHERE project_id=?1 AND status IN ('failed','cancelled')
+                UNION
+                SELECT task.id FROM stopped
+                JOIN ma_task_dependencies dep ON dep.depends_on_task_id=stopped.id
+                JOIN ma_tasks task ON task.id=dep.task_id
+                WHERE task.project_id=?1 AND task.status='blocked'
+             )
+             SELECT COUNT(*) FROM ma_tasks WHERE project_id=?1 AND id NOT LIKE 'cli-message-%'
+               AND status NOT IN ('done','cancelled') AND id NOT IN (SELECT id FROM stopped)",
+            [&input.project_id], |row| row.get(0),
+        )?;
+        if pending > 0 {
+            bail!("项目还有 {pending} 项待执行或待处理的工程任务，请先处理后再开始新分工");
         }
         let ids = plan
             .tasks

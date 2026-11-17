@@ -2,16 +2,18 @@ import { useState } from "react";
 import { ArrowBendUpLeft, CheckCircle, Circle, ClockCounterClockwise, FileText, LinkSimple, Pause, Play, PlayCircle, Target, User, WarningCircle } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
-import { TASK_STATUS } from "../collaborationConversation";
-import type { ConversationExecutionPlan, MultiAgentSnapshot, MultiAgentTask } from "../types";
+import { TaskRunRecords } from "./TaskRunRecords";
+import { CONVERSATION_STATUS, TASK_STATUS } from "../collaborationConversation";
+import type { ConversationExecutionPlan, ConversationRound, MultiAgentSnapshot, MultiAgentTask } from "../types";
 
 const running = (task: MultiAgentTask) => ["claimed", "running"].includes(task.status);
 const statusLabel = (task: MultiAgentTask, pendingDependency: boolean) => ["draft", "ready"].includes(task.status) ? "待执行" : task.status === "blocked" ? pendingDependency ? "等待依赖" : "等待处理" : TASK_STATUS[task.status] ?? task.status;
 
-export function ConversationTaskView({ snapshot, tasks, plans, selectedId, blocked, onSelect, onExecution, onChat, onFullRecords, onRefresh }: {
+export function ConversationTaskView({ snapshot, tasks, plans, discussion, selectedId, blocked, onSelect, onExecution, onChat, onFullRecords, onRefresh }: {
   snapshot: MultiAgentSnapshot | null;
   tasks: MultiAgentTask[];
   plans: ConversationExecutionPlan[];
+  discussion?: ConversationRound;
   selectedId: string | null;
   blocked: boolean;
   onSelect: (id: string) => void;
@@ -21,31 +23,39 @@ export function ConversationTaskView({ snapshot, tasks, plans, selectedId, block
   onRefresh: () => void;
 }) {
   const [recordTask, setRecordTask] = useState<string | null>(null);
-  const task = tasks.find(item => item.id === selectedId) ?? tasks.find(running) ?? tasks[0];
+  const orderedTasks = [...tasks].sort((left, right) => Number(running(right)) - Number(running(left))
+    || right.updatedAt - left.updatedAt || right.createdAt - left.createdAt);
+  const task = tasks.find(item => item.id === selectedId) ?? orderedTasks.find(running);
   const agents = snapshot?.agents ?? [];
   const label = (item: MultiAgentTask) => statusLabel(item, (snapshot?.dependencies ?? []).some(dependency => dependency.taskId === item.id && snapshot?.tasks.find(other => other.id === dependency.dependsOnTaskId)?.status !== "done"));
   const assignee = agents.find(agent => agent.id === task?.assigneeAgentId);
   const plan = plans.find(item => item.taskIds.includes(task?.id ?? ""));
   const runs = (snapshot?.runs ?? []).filter(run => run.taskId === task?.id).sort((a, b) => a.createdAt - b.createdAt);
-  const latest = runs[runs.length - 1];
   const dependencies = (snapshot?.dependencies ?? []).filter(item => item.taskId === task?.id).map(item => snapshot?.tasks.find(other => other.id === item.dependsOnTaskId)?.title ?? "历史前置任务");
-  const logs = (snapshot?.runLogs ?? []).filter(log => log.taskId === task?.id && log.runId === latest?.id);
   const paused = snapshot?.project.status === "paused";
-  const resumable = paused && tasks.some(item => !["done", "cancelled"].includes(item.status));
+  const schedulingControl = <button type="button" className="team-execution-control"
+    disabled={blocked || !tasks.some(item => !["done", "cancelled", "failed"].includes(item.status))}
+    onClick={() => onExecution(paused ? "resume" : "pause")}>
+    {paused ? <Play size={18} /> : <Pause size={18} />}{paused ? "继续项目调度" : "暂停项目调度"}
+  </button>;
   return <section className="conversation-task-view" aria-label="工程任务">
-    {paused && <p className="team-execution-paused" role="status">调度已暂停；已有运行的停止状态以执行记录为准。</p>}
-    {!snapshot ? <p role="status">正在读取任务…</p> : !task ? <div className="team-tasks-empty"><p>暂无工程任务</p><button type="button" className="conversation-text-button" onClick={() => onChat()}>返回团队聊天</button></div> : <>
-      <div className="team-task-list" aria-label="项目任务">{tasks.map(item => {
+    {discussion && <div className="team-task-discussion">
+      <span>团队聊天 · {CONVERSATION_STATUS[discussion.status]} <time dateTime={new Date(discussion.updatedAt).toISOString()}>{new Date(discussion.updatedAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}</time></span>
+      <button type="button" className="conversation-text-button" onClick={() => onChat(discussion.userMessageId)}>查看本轮聊天</button>
+    </div>}
+    {paused && <p className="team-execution-paused" role="status">项目调度已暂停。继续调度会执行已就绪的任务。</p>}
+    {!snapshot ? <p role="status">正在读取任务…</p> : !tasks.length ? <div className="team-tasks-empty"><p>暂无工程任务</p><button type="button" className="conversation-text-button" onClick={() => onChat()}>返回团队聊天</button></div> : <>
+      <div className="team-task-list" aria-label="项目任务">{orderedTasks.map(item => {
         const member = agents.find(agent => agent.id === item.assigneeAgentId);
         const Icon = item.status === "done" ? CheckCircle : item.status === "failed" ? WarningCircle : running(item) ? PlayCircle : item.status === "blocked" ? LinkSimple : Circle;
-        return <button type="button" className={`team-task-row ${item.status}`} key={item.id} aria-pressed={item.id === task.id} onClick={() => onSelect(item.id)}>
+        return <button type="button" className={`team-task-row ${item.status}`} key={item.id} aria-pressed={item.id === task?.id} onClick={() => onSelect(item.id)}>
           <span className="team-task-title"><Icon size={20} /><strong>{item.title}</strong></span>
           <span className="team-task-agent">{member && <AgentAvatar avatarId={member.avatarId} runtimeKind={member.runtimeKind} decorative />}<span>{member?.name ?? "未分配"}</span></span>
           <span className={`team-task-meter ${item.status}`} role="progressbar" aria-label={`${item.title}执行状态`} aria-valuetext={label(item)} {...(item.status === "done" ? { "aria-valuenow": 100 } : {})}><span /></span>
           <span className={`team-task-status ${item.status}`}>{label(item)}</span>
         </button>;
       })}</div>
-      <article className="team-task-detail" aria-label={`任务详情 ${task.title}`}>
+      {task ? <article className="team-task-detail" aria-label={`任务详情 ${task.title}`}>
         <header><h2>{task.title}</h2><span className={`team-task-status ${task.status}`}>{label(task)}</span></header>
         <dl className="team-task-facts"><div><dt><User size={17} />负责人</dt><dd>{assignee && <AgentAvatar avatarId={assignee.avatarId} runtimeKind={assignee.runtimeKind} decorative />}{assignee?.name ?? "未分配"}</dd></div>
           <div><dt><Target size={17} />范围</dt><dd>{task.description || "未填写任务范围"}</dd></div>
@@ -59,14 +69,14 @@ export function ConversationTaskView({ snapshot, tasks, plans, selectedId, block
         </section>
         {runs.filter(run => run.sessionLocator?.stopUnverified === true).map(run => <UnverifiedRunNotice key={run.id} run={run} taskTitle={task.title} onConfirmed={onRefresh} />)}
         {recordTask === task.id && <section className="team-task-records" aria-label="任务执行记录"><h3><ClockCounterClockwise size={17} />执行记录</h3>
-          {latest ? <><p>执行编号：{latest.id}</p>{latest.outputSummary && <p>{latest.outputSummary}</p>}{latest.error && <p role="alert">{latest.error}</p>}{logs.length ? <pre>{logs.map(log => log.content).join("\n")}</pre> : <p>暂无可见运行日志。</p>}</> : <p>暂无运行记录。</p>}
+          <TaskRunRecords key={task.id} runs={runs} />
           {onFullRecords && <button type="button" className="conversation-text-button" onClick={onFullRecords}>查看完整项目记录</button>}
         </section>}
-        <footer className="team-task-actions"><button type="button" className="team-execution-control" title={paused ? "继续当前项目的工程调度" : "暂停当前项目的工程执行"} disabled={blocked || (paused ? !resumable : !tasks.some(item => !["done", "cancelled"].includes(item.status)))} onClick={() => onExecution(paused ? "resume" : "pause")}>{paused ? <Play size={18} /> : <Pause size={18} />}{paused ? "继续执行" : "暂停执行"}</button>
+        <footer className="team-task-actions">{schedulingControl}
           <button type="button" className="conversation-text-button team-record-button" aria-expanded={recordTask === task.id} onClick={() => setRecordTask(value => value === task.id ? null : task.id)}><FileText size={18} />查看记录</button>
           <button type="button" className="conversation-text-button team-related-chat" onClick={() => onChat(plan?.messageId)}><ArrowBendUpLeft size={17} />{plan ? "回到相关聊天" : "返回团队聊天"}</button>
         </footer>
-      </article>
+      </article> : <footer className="team-task-actions"><span>选择任务查看详情</span>{schedulingControl}</footer>}
     </>}
   </section>;
 }

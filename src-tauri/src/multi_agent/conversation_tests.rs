@@ -928,6 +928,24 @@ fn plan_approval_atomically_creates_scoped_existing_tasks_once() {
         plan_id: plan.id.clone(),
         client_request_id: "approval-1".into(),
     };
+    let make_task = |title| fixture.store.create_task(serde_json::from_value(json!({
+        "projectId": fixture.project, "title": title, "assigneeAgentId": fixture.agents[0], "maxAttempts": 1,
+    })).unwrap()).unwrap();
+    let failed = make_task("旧任务");
+    let dependent = make_task("依赖旧任务");
+    fixture.store.add_dependency(crate::multi_agent::AddDependencyInput {
+        task_id: dependent.id.clone(), depends_on_task_id: failed.id.clone(),
+    }).unwrap();
+    assert!(fixture.store.apply_conversation_plan(&input).unwrap_err().to_string().contains("2 项"));
+    let old_run = fixture.store.claim_task(ClaimTaskInput {
+        task_id: failed.id.clone(), agent_id: fixture.agents[0].clone(), lease_seconds: 120,
+    }).unwrap();
+    assert!(fixture.store.apply_conversation_plan(&input).is_err());
+    fixture.store.fail_run_permanently(&old_run.id, "old failure", Some(json!({"stopUnverified":true}))).unwrap();
+    assert!(fixture.store.apply_conversation_plan(&input).unwrap_err().to_string().contains("未确认停止"));
+    fixture.store.connection.lock().unwrap().execute(
+        "UPDATE ma_runs SET session_locator_json=NULL WHERE id=?1", [&old_run.id],
+    ).unwrap();
     let tasks = fixture.store.apply_conversation_plan(&input).unwrap();
     assert_eq!(tasks.len(), 1);
     assert_eq!(
@@ -935,6 +953,8 @@ fn plan_approval_atomically_creates_scoped_existing_tasks_once() {
         tasks
     );
     let snapshot = fixture.store.snapshot(&fixture.project).unwrap();
+    assert_eq!(snapshot.tasks.iter().find(|t| t.id == failed.id).unwrap().status, crate::multi_agent::TaskStatus::Failed);
+    assert_eq!(snapshot.tasks.iter().find(|t| t.id == dependent.id).unwrap().status, crate::multi_agent::TaskStatus::Blocked);
     let task = snapshot.tasks.iter().find(|t| t.id == tasks[0]).unwrap();
     assert_eq!(task.workspace_mode, WorkspaceMode::Worktree);
     assert_eq!(
@@ -956,6 +976,24 @@ fn plan_approval_atomically_creates_scoped_existing_tasks_once() {
     let mut again = input;
     again.client_request_id = "approval-2".into();
     assert!(fixture.store.apply_conversation_plan(&again).is_err());
+}
+
+#[test]
+fn run_log_history_finds_old_output_outside_project_snapshot_and_checks_project() {
+    let fixture = Fixture::new();
+    fixture.run(&Replies::default());
+    let snapshot = fixture.store.snapshot(&fixture.project).unwrap();
+    let old = &snapshot.runs[0];
+    let other = &snapshot.runs[1];
+    fixture.store.append_run_log(&old.id, "stdout", "older saved output").unwrap();
+    for index in 0..101 {
+        fixture.store.append_run_log(&other.id, "stdout", &format!("newer output {index}")).unwrap();
+    }
+    assert!(fixture.store.snapshot(&fixture.project).unwrap().run_logs.iter().all(|item| item.run_id != old.id));
+    let old_logs = fixture.store.logs_for_run(&fixture.project, &old.id, 200).unwrap();
+    assert_eq!(old_logs.last().unwrap().content, "older saved output");
+    assert!(old_logs.iter().all(|item| item.run_id == old.id));
+    assert!(fixture.store.logs_for_run("another-project", &old.id, 200).is_err());
 }
 
 #[test]
