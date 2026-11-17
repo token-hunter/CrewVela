@@ -66,7 +66,7 @@ impl Fixture {
         }
     }
     fn input(&self) -> ConversationSendInput {
-        ConversationSendInput { native_capabilities: false,
+        ConversationSendInput { native_capabilities: false, expected_conversation_id: None,
             project_id: self.project.clone(),
             client_message_id: "user-1".into(),
             body: "Discuss the project".into(),
@@ -200,7 +200,7 @@ fn controlled_reply(body: &str, control: Value) -> String {
 }
 
 fn interjection(input: &ConversationSendInput) -> ConversationInterruptInput {
-    ConversationInterruptInput { native_capabilities: None, project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
+    ConversationInterruptInput { native_capabilities: None, expected_conversation_id: input.expected_conversation_id.clone(), project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
         body: input.body.clone(), participant_agent_ids: Some(input.participant_agent_ids.clone()), mode: Some(input.mode.clone()),
         intent: Some(input.intent.clone()), max_rounds: Some(input.max_rounds), max_duration_seconds: Some(input.max_duration_seconds), task_rules: input.task_rules.clone() }
 }
@@ -315,6 +315,60 @@ fn new_conversation_preserves_old_evidence_and_isolates_new_context_durably() {
     let prompts = executor.prompts.lock().unwrap();
     assert!(prompts[0].contains("NEW_SESSION_ONLY"));
     assert!(!prompts[0].contains("Discuss the project") && !prompts[0].contains("Actual fixture reply"));
+}
+
+#[test]
+fn conversation_history_restores_each_context_and_keeps_cleared_records_hidden() {
+    let fixture = Fixture::new();
+    let old = fixture.run(&Replies::default());
+    let fresh = fixture.store.new_conversation(clear_input(&old)).unwrap();
+    let switch = |from: &ConversationSnapshot, to: &ConversationSnapshot| ConversationSwitchInput {
+        project_id: fixture.project.clone(),
+        expected_conversation_id: from.conversation.id.clone(),
+        conversation_id: to.conversation.id.clone(),
+    };
+    let mut input = fixture.input();
+    input.client_message_id = "new-session-request".into();
+    input.body = "Only in the new session".into();
+    input.expected_conversation_id = Some(old.conversation.id.clone());
+    assert!(fixture.store.begin_conversation(input.clone()).unwrap_err().to_string().contains("已变化"));
+    assert!(fixture.store.interrupt_conversation(interjection(&input)).unwrap_err().to_string().contains("已变化"));
+    input.expected_conversation_id = Some(fresh.conversation.id.clone());
+    let latest = fixture.run_input(input, &Replies::default());
+
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    let entries = reopened.conversation_history(&fixture.project).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().any(|item| item.id == old.conversation.id && !item.current && !item.legacy
+        && item.preview.as_deref() == Some("Discuss the project")));
+    assert!(entries.iter().any(|item| item.id == latest.conversation.id && item.current));
+    assert!(reopened.switch_conversation(switch(&old, &old)).is_err());
+    let restored = reopened.switch_conversation(switch(&latest, &old)).unwrap();
+    assert_eq!(restored.conversation.created_at, old.conversation.created_at);
+    assert_eq!(restored.messages.iter().map(|message| &message.id).collect::<Vec<_>>(),
+        old.messages.iter().map(|message| &message.id).collect::<Vec<_>>());
+    let mut resumed_input = fixture.input();
+    resumed_input.client_message_id = "resumed-session-request".into();
+    resumed_input.body = "Continue the old discussion".into();
+    resumed_input.expected_conversation_id = Some(old.conversation.id.clone());
+    let executor = Replies::default();
+    let continued = fixture.run_input(resumed_input, &executor);
+    let prompts = executor.prompts.lock().unwrap();
+    assert!(prompts[0].contains("Discuss the project"));
+    assert!(!prompts[0].contains("Only in the new session"));
+    assert_eq!(reopened.switch_conversation(switch(&old, &latest)).unwrap().messages[0].body, "Only in the new session");
+    let empty = reopened.clear_conversation(clear_input(&latest)).unwrap();
+    assert!(reopened.switch_conversation(switch(&empty, &latest)).is_err());
+    assert!(reopened.conversation_history(&fixture.project).unwrap().iter().all(|entry| entry.id != latest.conversation.id));
+    assert!(reopened.conversation_history("another-project").is_err());
+
+    // Simulate a pre-history database where the rotated messages had no catalog entry.
+    reopened.connection.lock().unwrap().execute("DELETE FROM ma_conversation_history WHERE id=?1", [&old.conversation.id]).unwrap();
+    let migrated = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    let history = migrated.conversation_history(&fixture.project).unwrap();
+    assert!(history.iter().any(|entry| entry.id == old.conversation.id && entry.legacy));
+    assert!(history.iter().all(|entry| entry.id != latest.conversation.id));
+    assert_eq!(migrated.switch_conversation(switch(&empty, &old)).unwrap().messages.len(), continued.messages.len());
 }
 
 #[test]
@@ -1082,7 +1136,7 @@ fn pausing_queued_discussion_does_not_stop_or_pause_member_business_project() {
         std::thread::sleep(Duration::from_millis(5));
     }
     ConversationSupervisor::default()
-        .control(&fixture.store, &fixture.project, "pause")
+        .control(&fixture.store, &fixture.project, "pause", None)
         .unwrap();
     thread.join().unwrap();
     let snapshot = fixture.store.snapshot(&fixture.project).unwrap();

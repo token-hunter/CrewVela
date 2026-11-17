@@ -87,7 +87,7 @@ fn durable_interruption_preserves_chat_plan_but_invalidates_for_explicit_replann
         fixture.store.begin_conversation(active).unwrap();
         fixture
             .store
-            .interrupt_conversation(ConversationInterruptInput { native_capabilities: None,
+            .interrupt_conversation(ConversationInterruptInput { native_capabilities: None, expected_conversation_id: None,
                 project_id: fixture.project.clone(),
                 client_message_id: "interruption".into(),
                 body: "new request".into(),

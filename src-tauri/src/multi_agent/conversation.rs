@@ -157,6 +157,8 @@ pub struct ConversationSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct ConversationSendInput {
     pub project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_conversation_id: Option<String>,
     pub client_message_id: String,
     pub body: String,
     pub participant_agent_ids: Vec<String>,
@@ -187,6 +189,8 @@ fn default_duration() -> u32 {
 #[serde(rename_all = "camelCase")]
 pub struct ConversationInterruptInput {
     pub project_id: String,
+    #[serde(default)]
+    pub expected_conversation_id: Option<String>,
     pub client_message_id: String,
     pub body: String,
     #[serde(default)]
@@ -217,6 +221,25 @@ pub struct ConversationClearInput {
     pub project_id: String,
     pub expected_conversation_id: String,
     pub expected_message_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationHistoryEntry {
+    pub id: String,
+    pub created_at: i64,
+    pub last_message_at: Option<i64>,
+    pub preview: Option<String>,
+    pub current: bool,
+    pub legacy: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationSwitchInput {
+    pub project_id: String,
+    pub expected_conversation_id: String,
+    pub conversation_id: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Turn {
@@ -256,7 +279,18 @@ pub(super) fn migrate(connection: &Connection) -> Result<()> {
         plan_id TEXT NOT NULL REFERENCES ma_conversation_plans(id) ON DELETE CASCADE,
         write_paths_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS ma_conversation_native_events (
-        source_key TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES ma_runs(id) ON DELETE CASCADE);")?;
+        source_key TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES ma_runs(id) ON DELETE CASCADE);
+      CREATE TABLE IF NOT EXISTS ma_conversation_history (
+        id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES ma_projects(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL, disposition TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS ma_conversation_history_project ON ma_conversation_history(project_id);
+      CREATE INDEX IF NOT EXISTS ma_conversation_messages_thread ON ma_conversation_messages(
+        project_id, json_extract(data_json,'$.conversationId'), created_at);
+      INSERT OR IGNORE INTO ma_conversation_history(id,project_id,created_at,disposition)
+        SELECT json_extract(m.data_json,'$.conversationId'),m.project_id,MIN(m.created_at),'legacy'
+        FROM ma_conversation_messages m JOIN ma_conversations c ON c.project_id=m.project_id
+        WHERE json_extract(m.data_json,'$.conversationId') <> c.id
+        GROUP BY m.project_id,json_extract(m.data_json,'$.conversationId');")?;
     let has_start_state = connection
         .prepare("PRAGMA table_info(ma_conversation_plans)")?
         .query_map([], |r| r.get::<_, String>(1))?
@@ -486,6 +520,39 @@ fn validate_client_id(value: &str) -> Result<()> {
     Ok(())
 }
 
+fn ensure_conversation_can_change(connection: &Connection, project_id: &str, operation: &str) -> Result<()> {
+    let active: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM ma_conversation_rounds WHERE project_id=?1
+             AND status IN ('queued','running','waiting_approval','stopping','unconfirmed'))
+         OR EXISTS(SELECT 1 FROM ma_runs r JOIN ma_conversation_turns t ON t.task_id=r.task_id
+             JOIN ma_conversation_rounds d ON d.id=t.round_id WHERE d.project_id=?1
+             AND (r.status IN ('queued','starting','running','waiting_input','waiting_approval')
+                  OR r.session_locator_json LIKE '%\"stopUnverified\":true%'))
+         OR EXISTS(SELECT 1 FROM ma_conversation_messages m JOIN ma_conversations c ON c.project_id=m.project_id
+             WHERE m.project_id=?1 AND json_extract(m.data_json,'$.conversationId')=c.id
+             AND json_extract(m.data_json,'$.status')='queued' AND json_type(m.data_json,'$.queuedInput')='object')",
+        [project_id], |row| row.get(0),
+    )?;
+    if active { bail!("讨论正在进行或停止尚未确认，暂不能{operation}"); }
+    Ok(())
+}
+
+fn remember_conversation(connection: &Connection, conversation: &CollaborationConversation, disposition: &str) -> Result<()> {
+    connection.execute(
+        "INSERT INTO ma_conversation_history(id,project_id,created_at,disposition) VALUES(?1,?2,?3,?4)
+         ON CONFLICT(id) DO UPDATE SET disposition=excluded.disposition",
+        params![conversation.id, conversation.project_id, conversation.created_at, disposition],
+    )?;
+    Ok(())
+}
+
+fn ensure_active_conversation(expected: Option<&str>, current: &CollaborationConversation) -> Result<()> {
+    if expected.is_some_and(|expected| expected != current.id) {
+        bail!("当前会话已变化，请先切回原会话");
+    }
+    Ok(())
+}
+
 impl MultiAgentStore {
     pub fn conversation_snapshot(&self, project_id: &str) -> Result<ConversationSnapshot> {
         let connection = self.connection.lock().unwrap();
@@ -495,31 +562,82 @@ impl MultiAgentStore {
     /// Rotate the public history boundary atomically. Task/run evidence and native
     /// sessions remain intact; old projections and prompts keep their old boundary.
     pub fn clear_conversation(&self, input: ConversationClearInput) -> Result<ConversationSnapshot> {
-        self.rotate_conversation(input, "清空记录")
+        self.rotate_conversation(input, "清空记录", "cleared")
     }
 
     /// Start an independent public conversation without deleting the previous evidence.
     /// Reuse the same activity and snapshot guards as clearing the current history.
     pub fn new_conversation(&self, input: ConversationClearInput) -> Result<ConversationSnapshot> {
-        self.rotate_conversation(input, "新建会话")
+        self.rotate_conversation(input, "新建会话", "saved")
     }
 
-    fn rotate_conversation(&self, input: ConversationClearInput, operation: &str) -> Result<ConversationSnapshot> {
+    fn rotate_conversation(&self, input: ConversationClearInput, operation: &str, disposition: &str) -> Result<ConversationSnapshot> {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let conversation = conversation_with(&tx, &input.project_id)?;
-        let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_conversation_rounds WHERE project_id=?1 AND status IN ('queued','running','waiting_approval','stopping','unconfirmed')) OR EXISTS(SELECT 1 FROM ma_runs r JOIN ma_conversation_turns t ON t.task_id=r.task_id JOIN ma_conversation_rounds d ON d.id=t.round_id WHERE d.project_id=?1 AND (r.status IN ('queued','starting','running','waiting_input','waiting_approval') OR r.session_locator_json LIKE '%\"stopUnverified\":true%'))", [&input.project_id], |r| r.get(0))?;
-        if active { bail!("讨论正在进行或停止尚未确认，暂不能{operation}"); }
+        ensure_conversation_can_change(&tx, &input.project_id, operation)?;
         let current = snapshot_with(&tx, &input.project_id)?;
         let expected: HashSet<_> = input.expected_message_ids.iter().collect();
         let actual: HashSet<_> = current.messages.iter().map(|message| &message.id).collect();
         if conversation.id != input.expected_conversation_id || expected != actual {
             bail!("讨论记录已变化，请刷新后重试{operation}");
         }
+        remember_conversation(&tx, &conversation, disposition)?;
         tx.execute("UPDATE ma_conversations SET id=?2,created_at=?3 WHERE project_id=?1", params![input.project_id, id(), now()])?;
         let result = snapshot_with(&tx, &input.project_id)?;
         tx.commit()?;
         Ok(result)
+    }
+
+    pub fn conversation_history(&self, project_id: &str) -> Result<Vec<ConversationHistoryEntry>> {
+        let connection = self.connection.lock().unwrap();
+        let conversation = conversation_with(&connection, project_id)?;
+        let mut statement = connection.prepare(
+            "WITH sessions(id,created_at,disposition) AS (
+                SELECT id,created_at,disposition FROM ma_conversation_history
+                    WHERE project_id=?1 AND id<>?2 AND disposition<>'cleared'
+                UNION ALL SELECT ?2,?3,'current'
+             )
+             SELECT s.id,s.created_at,s.disposition,
+                (SELECT MAX(m.created_at) FROM ma_conversation_messages m
+                    WHERE m.project_id=?1 AND json_extract(m.data_json,'$.conversationId')=s.id) AS last_message_at,
+                (SELECT SUBSTR(TRIM(json_extract(m.data_json,'$.body')),1,80)
+                    FROM ma_conversation_messages m WHERE m.project_id=?1
+                    AND json_extract(m.data_json,'$.conversationId')=s.id
+                    AND json_extract(m.data_json,'$.senderType')='user'
+                    ORDER BY m.created_at,m.rowid LIMIT 1) AS preview
+             FROM sessions s ORDER BY COALESCE(last_message_at,s.created_at) DESC,s.created_at DESC,s.id",
+        )?;
+        let entries = statement.query_map(params![project_id, conversation.id, conversation.created_at], |row| {
+            let disposition: String = row.get(2)?;
+            Ok(ConversationHistoryEntry {
+                id: row.get(0)?, created_at: row.get(1)?, last_message_at: row.get(3)?, preview: row.get(4)?,
+                current: disposition == "current", legacy: disposition == "legacy",
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(entries)
+    }
+
+    pub fn switch_conversation(&self, input: ConversationSwitchInput) -> Result<ConversationSnapshot> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current = conversation_with(&tx, &input.project_id)?;
+        if current.id != input.conversation_id {
+            if current.id != input.expected_conversation_id {
+                bail!("当前会话已变化，请刷新后再切换");
+            }
+            ensure_conversation_can_change(&tx, &input.project_id, "切换会话")?;
+            let created_at: i64 = tx.query_row(
+                "SELECT created_at FROM ma_conversation_history WHERE project_id=?1 AND id=?2 AND disposition<>'cleared'",
+                params![input.project_id, input.conversation_id], |row| row.get(0),
+            ).optional()?.context("该会话已不可用")?;
+            remember_conversation(&tx, &current, "saved")?;
+            tx.execute("UPDATE ma_conversations SET id=?2,created_at=?3 WHERE project_id=?1",
+                params![input.project_id, input.conversation_id, created_at])?;
+        }
+        let snapshot = snapshot_with(&tx, &input.project_id)?;
+        tx.commit()?;
+        Ok(snapshot)
     }
 
     /// A retry with the same id returns the original round and never restarts it.
@@ -552,6 +670,7 @@ impl MultiAgentStore {
             if !same_request(&previous, &input) { bail!("相同消息 ID 已用于不同内容"); } return Ok((decode(round)?,false));
         }
         let conversation = conversation_with(&tx, &input.project_id)?;
+        ensure_active_conversation(input.expected_conversation_id.as_deref(), &conversation)?;
         let queued = tx.query_row("SELECT data_json FROM ma_conversation_messages WHERE project_id=?1 AND source_key=?2",
             params![input.project_id, format!("interrupt:{}", input.client_message_id)], |row| row.get::<_, String>(0)).optional()?
             .map(decode::<ConversationMessage>).transpose()?;
@@ -651,7 +770,9 @@ impl MultiAgentStore {
         // Chat follow-ups preserve a pending proposal. Only an explicit new plan replaces it.
         for mut plan in rows::<ConversationExecutionPlan>(
             &tx,
-            "SELECT data_json FROM ma_conversation_plans WHERE project_id=?1",
+            "SELECT p.data_json FROM ma_conversation_plans p JOIN ma_conversation_rounds r ON r.id=p.round_id
+             JOIN ma_conversations c ON c.project_id=p.project_id
+             WHERE p.project_id=?1 AND json_extract(r.data_json,'$.conversationId')=c.id",
             &round.project_id,
         )? {
             if plan.status == "pending" && round.mode == "execution_plan" {
@@ -675,8 +796,12 @@ impl MultiAgentStore {
         project: &str,
         status: &str,
         reason: &str,
+        expected_conversation_id: Option<&str>,
     ) -> Result<Option<String>> {
         let connection = self.connection.lock().unwrap();
+        if expected_conversation_id.is_some() {
+            ensure_active_conversation(expected_conversation_id, &conversation_with(&connection, project)?)?;
+        }
         refresh_round_wait_state(&connection, project)?;
         let active=rows::<ConversationRound>(&connection,"SELECT data_json FROM ma_conversation_rounds WHERE project_id=?1 AND status IN ('queued','running','waiting_approval','stopping','unconfirmed')",project)?;
         let Some(mut round) = active.into_iter().next() else {
@@ -697,6 +822,7 @@ impl MultiAgentStore {
         let body = bounded_text(&input.body, "人工插话")?;
         let queued_input = if let Some(participants) = input.participant_agent_ids {
             let mut request = ConversationSendInput {
+                expected_conversation_id: input.expected_conversation_id.clone(),
                 project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
                 body: body.clone(), participant_agent_ids: participants,
                 mode: input.mode.unwrap_or_else(|| "discussion".into()),
@@ -738,6 +864,7 @@ impl MultiAgentStore {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let conversation = conversation_with(&tx, &input.project_id)?;
+        ensure_active_conversation(input.expected_conversation_id.as_deref(), &conversation)?;
         // The transaction is the final identity and manual-control gate, including concurrent retries.
         if let Some(raw) = tx.query_row("SELECT data_json FROM ma_conversation_messages WHERE project_id=?1 AND source_key=?2", params![input.project_id, source], |r| r.get::<_, String>(0)).optional()? {
             let previous: ConversationMessage = decode(raw)?;
@@ -791,7 +918,9 @@ impl MultiAgentStore {
         }
         for mut plan in rows::<ConversationExecutionPlan>(
             &tx,
-            "SELECT data_json FROM ma_conversation_plans WHERE project_id=?1",
+            "SELECT p.data_json FROM ma_conversation_plans p JOIN ma_conversation_rounds r ON r.id=p.round_id
+             JOIN ma_conversations c ON c.project_id=p.project_id
+             WHERE p.project_id=?1 AND json_extract(r.data_json,'$.conversationId')=c.id",
             &message.project_id,
         )? {
             // Legacy pause-only interventions have no request mode and retain their
@@ -1104,14 +1233,14 @@ impl ConversationSupervisor {
         }
         Ok(())
     }
-    pub fn control(&self, store: &MultiAgentStore, project: &str, action: &str) -> Result<()> {
+    pub fn control(&self, store: &MultiAgentStore, project: &str, action: &str, expected_conversation_id: Option<&str>) -> Result<()> {
         let active = self.active.lock().unwrap();
         let target = match action {
             "pause" => "paused",
             "cancel" => "cancelled",
             _ => bail!("只支持暂停或取消"),
         };
-        store.request_conversation_stop(project, target, "用户停止讨论")?;
+        store.request_conversation_stop(project, target, "用户停止讨论", expected_conversation_id)?;
         store.settle_queued_conversation_inputs(project, if action == "cancel" { "cancelled" } else { "needs_decision" })?;
         if let Some(flag) = active.get(project) {
             flag.store(true, Ordering::Release);
@@ -1127,7 +1256,7 @@ impl ConversationSupervisor {
             .cloned()
             .collect::<Vec<_>>();
         for project in projects {
-            self.control(store, &project, "pause")?;
+            self.control(store, &project, "pause", None)?;
         }
         let deadline = Instant::now() + Duration::from_secs(10);
         while !self.active.lock().unwrap().is_empty() && Instant::now() < deadline {
@@ -1470,6 +1599,7 @@ impl DeadlineGuard {
                         &round.project_id,
                         "needs_decision",
                         "讨论达到时间上限，已请求停止当前成员",
+                        Some(&round.conversation_id),
                     );
                     cancelled.store(true, Ordering::Release);
                     break;

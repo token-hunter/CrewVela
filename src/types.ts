@@ -931,6 +931,14 @@ export interface CollaborationConversation {
   projectId: string;
   createdAt: number;
 }
+export interface ConversationHistoryEntry {
+  id: string;
+  createdAt: number;
+  lastMessageAt: number | null;
+  preview: string | null;
+  current: boolean;
+  legacy: boolean;
+}
 export interface ConversationMessage {
   id: string;
   /** Present on human messages; server id is separate and stable across retries. */
@@ -1060,6 +1068,7 @@ export interface ConversationSnapshot {
 export interface ConversationSendInput {
   nativeCapabilities?: boolean;
   projectId: string;
+  expectedConversationId?: string;
   clientMessageId: string;
   body: string;
   participantAgentIds: string[];

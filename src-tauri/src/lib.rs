@@ -1111,6 +1111,18 @@ fn ma_conversation_new(input: multi_agent::ConversationClearInput, state: State<
 }
 
 #[tauri::command]
+async fn ma_conversation_history(project_id: String, state: State<'_, MultiAgentStore>) -> Result<Vec<multi_agent::conversation::ConversationHistoryEntry>, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.conversation_history(&project_id).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_conversation_switch(input: multi_agent::conversation::ConversationSwitchInput, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.switch_conversation(input).map_err(to_err)).await
+}
+
+#[tauri::command]
 fn ma_conversation_send(input: multi_agent::ConversationSendInput,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
@@ -1137,10 +1149,10 @@ fn ma_conversation_interrupt(input: multi_agent::ConversationInterruptInput,
 }
 
 #[tauri::command]
-fn ma_conversation_control(project_id: String, action: String,
+fn ma_conversation_control(project_id: String, action: String, expected_conversation_id: Option<String>,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
 ) -> Result<multi_agent::ConversationSnapshot, String> {
-    supervisor.control(state.inner(), &project_id, &action).map_err(to_err)?;
+    supervisor.control(state.inner(), &project_id, &action, expected_conversation_id.as_deref()).map_err(to_err)?;
     state.conversation_snapshot(&project_id).map_err(to_err)
 }
 
@@ -6321,6 +6333,8 @@ pub fn run() {
             ma_conversation_migration_apply,
             ma_conversation_clear,
             ma_conversation_new,
+            ma_conversation_history,
+            ma_conversation_switch,
             ma_conversation_send,
             ma_conversation_interrupt,
             ma_conversation_control,

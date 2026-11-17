@@ -87,6 +87,16 @@
 .conversation-clear-dialog button:disabled { opacity: .45; cursor: not-allowed; }
 .conversation-clear-dialog button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .conversation-clear-dialog .conversation-clear-confirm { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.conversation-history-dialog { width: min(440px, calc(100vw - 32px)); }
+.conversation-history-list { display: grid; gap: 5px; padding: 0; margin: 0 0 12px; list-style: none; }
+.conversation-history-list button { display: grid; gap: 2px; width: 100%; padding: 7px 10px; text-align: left; }
+.conversation-history-list button:not(:disabled):hover { background: var(--bg-hover); }
+.conversation-history-list button[aria-current] { opacity: 1; background: var(--bg-hover); }
+.conversation-history-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.conversation-history-list span, .conversation-legacy-history p { color: var(--text-dim); font-size: 12px; }
+.conversation-legacy-history { margin-bottom: 12px; }
+.conversation-legacy-history summary { cursor: pointer; padding: 4px 0; }
+.conversation-legacy-history p { margin: 4px 0 8px; }
 .conversation-modes button { min-height: 48px; padding: 8px 8px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-dim); font-size: 15px; }
 .conversation-modes button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
 .conversation-error { display: flex; flex: none; align-items: flex-start; gap: 8px; max-height: 150px; margin: 12px 26px 0; padding: 10px 12px; overflow: auto; border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border)); border-radius: 7px; background: color-mix(in srgb, var(--danger) 6%, var(--bg-elev)); color: var(--danger); font-size: 13px; overflow-wrap: anywhere; }

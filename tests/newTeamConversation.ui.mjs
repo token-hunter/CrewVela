@@ -8,6 +8,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const errors = [];
 const trigger = page => page.getByRole('button', { name: '讨论记录操作', exact: true });
 const newItem = page => page.getByRole('menuitem', { name: '新建会话', exact: true });
+const historyItem = page => page.getByRole('menuitem', { name: '历史会话', exact: true });
 const clearItem = page => page.getByRole('menuitem', { name: '清空讨论记录', exact: true });
 const editor = page => page.locator('textarea');
 async function fresh(query = '', width = 780) {
@@ -19,6 +20,11 @@ async function fresh(query = '', width = 780) {
   return page;
 }
 async function create(page) { await trigger(page).click(); await newItem(page).click(); }
+async function history(page) {
+  await trigger(page).click();
+  await historyItem(page).click();
+  return page.getByRole('dialog', { name: '历史会话', exact: true });
+}
 try {
   for (const theme of ['dark', 'light']) for (const width of [780, 320]) {
     const page = await fresh(`theme=${theme}`, width);
@@ -27,8 +33,10 @@ try {
     await editor(page).fill('旧会话草稿');
     await page.getByRole('tab', { name: '任务执行', exact: true }).click();
     await trigger(page).click();
-    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['新建会话', '清空讨论记录']);
+    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['新建会话', '历史会话', '清空讨论记录']);
     await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'menuitem' && document.activeElement?.textContent === '新建会话');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await historyItem(page).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('ArrowDown');
     assert.equal(await clearItem(page).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('Home');
@@ -52,8 +60,31 @@ try {
     assert.equal(await clearItem(page).isDisabled(), true);
     await page.keyboard.press('Escape');
     await page.screenshot({ path: `${out}/new-${theme}-${width}.png`, fullPage: true });
+    await editor(page).fill('新会话草稿');
+    const list = await history(page);
+    await list.getByText('空白会话', { exact: true }).waitFor();
+    assert.equal(await list.locator('button[aria-current]').count(), 1);
+    await page.screenshot({ path: `${out}/history-${theme}-${width}.png`, fullPage: true });
+    await list.locator('.conversation-history-list button:not([aria-current])').click();
+    await page.locator('.conversation-transcript').getByText(/拆解方案/).waitFor();
+    assert.equal(await editor(page).inputValue(), '旧会话草稿');
+    await (await history(page)).getByRole('button', { name: /空白会话/ }).click();
+    await list.waitFor({ state: 'detached' });
+    assert.equal(await page.locator('.conversation-message').count(), 0);
+    assert.equal(await editor(page).inputValue(), '新会话草稿');
+    assert.equal(await page.evaluate(() => window.conversationMock.calls.filter(c => c.command === 'ma_conversation_switch').length), 2);
     await page.close();
   }
+  const legacy = await fresh('legacy-history=1');
+  await create(legacy);
+  await legacy.locator('.conversation-message').first().waitFor({ state: 'detached' });
+  const legacyList = await history(legacy);
+  const legacyGroup = legacyList.locator('.conversation-legacy-history');
+  await legacyGroup.locator('summary').click();
+  assert.equal(await legacyGroup.locator('p').isVisible(), true);
+  await legacyGroup.getByRole('button').click();
+  await legacy.locator('.conversation-transcript').getByText(/拆解方案/).waitFor();
+  await legacy.close();
   const running = await fresh('running=1'); await trigger(running).click(); assert.equal(await newItem(running).isDisabled(), true); await running.close();
   const pending = await fresh('fail=send-before-save');
   await editor(pending).fill('未确认的发送'); await editor(pending).press('Enter');

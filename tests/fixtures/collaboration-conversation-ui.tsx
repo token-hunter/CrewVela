@@ -131,6 +131,24 @@ const mock = {
     }
     if (command === "ma_snapshot") { const result=snapshot(args.projectId); if(params.get("activity")==="1"&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} return structuredClone(result); }
     if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
+    if (command === "ma_conversation_history") {
+      const current = chats[args.projectId];
+      const archived = mock.archivedConversations.filter(chat => chat.conversation.projectId === args.projectId);
+      return [current, ...archived].map((chat, index) => ({
+        ...chat.conversation, current: index === 0, legacy: index > 0 && params.has("legacy-history"),
+        lastMessageAt: chat.messages.at(-1)?.createdAt ?? null,
+        preview: chat.messages.find((message: any) => message.senderType === "user")?.body ?? null,
+      }));
+    }
+    if (command === "ma_conversation_switch") {
+      const input = args.input, chat = chats[input.projectId];
+      if (input.expectedConversationId !== chat.conversation.id) throw Error("当前会话已变化");
+      const index = mock.archivedConversations.findIndex(item => item.conversation.projectId === input.projectId && item.conversation.id === input.conversationId);
+      if (index < 0) throw Error("该会话已不可用");
+      const [target] = mock.archivedConversations.splice(index, 1, structuredClone(chat));
+      chats[input.projectId] = target;
+      return structuredClone(target);
+    }
     if (command === "ma_conversation_new") {
       if (mock.failNew) throw Error("隔离测试：新建会话失败，原记录保留");
       const input = args.input, chat = chats[input.projectId];
