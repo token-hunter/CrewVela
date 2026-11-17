@@ -17,6 +17,10 @@ try {
  assert.equal(await claude.getByRole('button',{name:'收起活动',exact:true}).getAttribute('aria-expanded'),'true');
  await claude.getByText('读取 src/api/auth.ts',{exact:true}).waitFor();
  await claude.getByText(/调度心跳正常/).waitFor();
+ const details=claude.locator('.member-activity-details'),body=claude.locator('.conversation-message-body');
+ assert.equal(await details.evaluate((element)=>!!(element.compareDocumentPosition(element.parentElement.querySelector('.conversation-message-body'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,'activity details must precede the reply in reading order');
+ const detailsBox=await details.boundingBox(),bodyBox=await body.boundingBox();
+ assert.ok(detailsBox.y+detailsBox.height<=bodyBox.y+1,'activity timeline must appear above the real reply');
  await codex.getByText('45秒未收到新活动，需核实').waitFor();
  assert.equal(await codex.locator('.member-activity-spin').count(),0);
  assert.equal(await pi.locator('.member-activity-spin').count(),0);
@@ -35,11 +39,13 @@ try {
  assert.equal(await claude.locator('.member-activity-state .member-activity-spin').count(),0);
  await page.evaluate(()=>{const m=window.conversationMock;m.activityApprovals.length=0;const message=m.chats.A.messages.find(x=>x.id==='a1');message.status='completed';message.updatedAt=Date.now();m.runHistory.find(x=>x.id==='run-claude').status='succeeded';m.runHistory.find(x=>x.id==='run-claude').finishedAt=Date.now();});
  await claude.locator('.member-activity-state').getByText('已完成',{exact:true}).waitFor();
+ assert.ok((await details.boundingBox()).y+(await details.boundingBox()).height<=(await body.boundingBox()).y+1,'completed activity must remain above the reply');
  assert.equal(await claude.locator('.member-activity-spin').count(),0);
  assert.equal(await claude.getByRole('button',{name:'停止本轮团队回复'}).count(),0);
  // Keyboard collapse, reduced-motion, wrapping, composer visibility.
  await claude.getByRole('button',{name:'收起活动'}).focus();await page.keyboard.press('Enter');
  assert.equal(await claude.locator('.member-activity-details').count(),0);
+ assert.equal(await body.isVisible(),true,'collapsing activity must keep the reply visible');
  await page.emulateMedia({reducedMotion:'reduce'});
  await page.setViewportSize({width:390,height:844});
  await claude.getByRole('button',{name:'查看活动'}).click();
