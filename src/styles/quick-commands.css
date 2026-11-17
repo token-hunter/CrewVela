@@ -23,7 +23,7 @@
 .quick-center-tabs button { flex-shrink: 0; white-space: nowrap; border: 0; border-radius: 0; padding: 10px 3px; border-bottom: 2px solid transparent; }
 .quick-center-tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
 .quick-center-body { display: grid; grid-template-columns: minmax(200px, 31.5%) minmax(0, 1fr); min-height: 0; max-height: min(620px, calc(100dvh - 190px)); margin-top: 24px; border-top: 1px solid var(--border); }
-.quick-center-library { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--border); }
+.quick-center-library { display: flex; flex-direction: column; container-type: inline-size; min-width: 0; min-height: 0; border-right: 1px solid var(--border); }
 .quick-center-list { flex: 1; min-height: 0; padding: 16px 16px 16px 0; overflow: auto; scrollbar-width: thin; }
 .quick-center-library-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; flex-shrink: 0; min-height: 78px; margin-right: 16px; padding: 16px 0; border-top: 1px solid var(--border); }
 .quick-center-workspace { display: flex; flex-direction: column; container-type: inline-size; min-width: 0; min-height: 0; padding-left: 24px; }
@@ -101,30 +101,24 @@
   .quick-center-targets { grid-template-columns: 1fr; }
   .quick-center-scope-row { gap: 10px; }
 }
-/* Only the selected Quick Commands page uses the larger dual-column frame. */
-.settings-native-overlay.settings-quick-commands-overlay { padding: 6px 14px; }
-.settings-quick-commands-overlay > .settings-dialog.settings-quick-commands { width: min(1480px, calc(100vw - 28px)); height: min(1040px, calc(100dvh - 12px)); grid-template: 64px minmax(0, 1fr) / 290px minmax(0, 1fr); }
-.settings-quick-commands-overlay > .settings-dialog.settings-quick-commands .settings-content { overflow: hidden; scrollbar-gutter: auto; }
-.settings-quick-commands-overlay > .settings-dialog.settings-quick-commands .settings-content > .settings-content-inner { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 26px 22px 0; }
-.settings-quick-commands-overlay > .settings-dialog.settings-quick-commands .settings-heading h2 { font-size: 32px; }
-.settings-quick-commands-overlay > .settings-dialog.settings-quick-commands .settings-heading p { font-size: 16px; }
-.settings-quick-commands .settings-window-header { font-size: 20px; }
-.settings-quick-commands .settings-nav-group .settings-nav-item { min-height: 40px; font-size: 17px; }
-.settings-quick-commands .quick-center-toolbar { flex-shrink: 0; }
-.settings-quick-commands .quick-center-toolbar :is(.quick-center-search, button) { min-height: 44px; }
-@media (max-width: 1000px) {
-  .settings-quick-commands-overlay > .settings-dialog.settings-quick-commands { grid-template: 56px minmax(0, 1fr) / 200px minmax(0, 1fr); }
-  .quick-center-embedded .quick-center-body { grid-template-columns: minmax(175px, 31.5%) minmax(0, 1fr); }
+@container (max-width: 360px) {
   .quick-center-library-footer { align-content: center; gap: 6px; }
-  .quick-center-library-footer .quick-center-default { border-left: 0; padding-left: 0; }
+  .quick-center-library-footer .quick-center-default { border-left: 0; padding-left: 0; font-size: 12px; gap: 6px; }
+  .quick-center-library-footer .quick-center-default select { max-width: 100px; font-size: 12px; }
+  .quick-center-embedded .quick-center-create { font-size: 13px; }
+}
+/* Keep the two scrolling columns within the shared settings frame. */
+.settings-native .settings-content:has(> [data-settings-section="quickCommands"]) { overflow: hidden; }
+.settings-native-overlay > .settings-dialog.settings-native .settings-content > [data-settings-section="quickCommands"] { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.quick-center-embedded .quick-center-toolbar { flex-shrink: 0; }
+.quick-center-embedded .quick-center-toolbar :is(.quick-center-search, button) { min-height: 44px; }
+@media (max-width: 1000px) {
+  .quick-center-embedded .quick-center-body { grid-template-columns: minmax(175px, 31.5%) minmax(0, 1fr); }
   .quick-center-embedded .quick-center-detail-heading h3 { font-size: 18px; }
   .quick-center-embedded .quick-center-tabs { gap: 16px; min-height: 48px; font-size: 14px; }
   .quick-center-embedded .quick-center-list-row > button:first-child { min-height: 64px; gap: 8px; padding: 8px; font-size: 14px; }
   .quick-center-embedded .quick-center-list-row small { font-size: 12px; }
   .quick-center-embedded .quick-center-favorite { padding: 4px; }
-  .quick-center-embedded .quick-center-create { font-size: 13px; }
-  .quick-center-library-footer .quick-center-default { font-size: 12px; gap: 6px; }
-  .quick-center-library-footer .quick-center-default select { max-width: 100px; font-size: 12px; }
 }
 @media (max-width: 760px) {
   .quick-center-modal { padding: 18px; }
@@ -138,8 +132,6 @@
   .quick-center-footer { align-items: end; }
 }
 @media (max-width: 720px) {
-  .settings-quick-commands-overlay > .settings-dialog.settings-quick-commands { width: calc(100vw - 16px); grid-template-columns: 64px minmax(0, 1fr); }
-  .settings-quick-commands-overlay > .settings-dialog.settings-quick-commands .settings-content > .settings-content-inner { padding: 18px 12px 0; }
-  .settings-quick-commands .quick-center-toolbar { gap: 6px; }
-  .settings-quick-commands .quick-center-toolbar > button { padding: 6px; font-size: 12px; }
+  .quick-center-embedded .quick-center-toolbar { gap: 6px; }
+  .quick-center-embedded .quick-center-toolbar > button { padding: 6px; font-size: 12px; }
 }

@@ -1,20 +1,29 @@
 // Run against Vite: node tests/quickCommandsSettingsLayout.ui.mjs
 // 设置 > 快捷指令：搜索框是单层边框并与「重新检测」同一行，不重复页面标题已有的说明，
-// 且在 820×540 最小窗口里分类页签仍在首屏可见。
+// 切换分类时窗口、标题栏和导航位置不变，短窗口的页签仍在首屏可见。
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
 const base = process.env.CREWVELA_UI_URL || "http://127.0.0.1:1420";
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 try {
-  for (const [width, height] of [[1280, 800], [820, 540]]) {
+  for (const [width, height] of [[1500, 1050], [1280, 800], [820, 540], [390, 844]]) {
     const page = await browser.newPage({ viewport: { width, height } });
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
     await page.goto(`${base}/?ui-preview=1`);
     await page.getByRole("button", { name: "设置", exact: true }).click();
-    await page.locator(".settings-nav-item").filter({ hasText: "快捷指令" }).click();
+    const nav = page.getByRole("navigation", { name: "设置分类" });
+    const frame = async () => {
+      const boxes = await Promise.all([".settings-dialog", ".settings-window-header", ".settings-nav"].map(selector => page.locator(selector).boundingBox()));
+      assert.ok(boxes.every(Boolean));
+      return boxes;
+    };
+    await nav.getByRole("button", { name: "常规", exact: true }).click();
+    const before = await frame();
+    await nav.getByRole("button", { name: "快捷指令", exact: true }).click();
     await page.locator(".quick-center-embedded .quick-center-tabs").waitFor();
+    assert.deepEqual(await frame(), before, `${width}x${height}: 快捷指令沿用相同的窗口、标题栏和导航尺寸`);
 
     const m = await page.evaluate(() => {
       const input = document.querySelector(".quick-center-search > input");
@@ -38,10 +47,12 @@ try {
     assert.equal(m.sameRow, true, `「重新检测」 must share the search row (${where})`);
     assert.equal(m.duplicatedIntro, false, `page heading already explains the page (${where})`);
     assert.equal(m.tabsVisible, true, `category tabs must be visible without scrolling (${where})`);
+    await nav.getByRole("button", { name: "外观", exact: true }).click();
+    assert.deepEqual(await frame(), before, `${width}x${height}: 离开快捷指令时窗口不跳动`);
     assert.deepEqual(pageErrors.filter((message) => !/transformCallback|__TAURI/.test(message)), []);
     await page.close();
   }
-  console.log("PASS: quick command settings use a single-border search row, no duplicated intro, and keep tabs on the first screen");
+  console.log("PASS: settings frame stays fixed when switching sections at four viewport sizes, with the search and tabs accessible");
 } finally {
   await browser.close();
 }

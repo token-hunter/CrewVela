@@ -290,8 +290,8 @@ export function SettingsDialog({
   }[activeSection];
   return (
     <Modal
-      overlayClassName={`dialog-overlay settings-overlay settings-native-overlay${activeSection === "quickCommands" ? " settings-quick-commands-overlay" : ""}`}
-      className={`settings-dialog settings-native${activeSection === "quickCommands" ? " settings-quick-commands" : ""}`}
+      overlayClassName="dialog-overlay settings-overlay settings-native-overlay"
+      className="settings-dialog settings-native"
       onClose={onClose}
       closeOnOverlayClick
       labelledBy="settings-dialog-title"
