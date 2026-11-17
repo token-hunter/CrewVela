@@ -8,7 +8,7 @@ import { MultiAgentControl } from "./MultiAgentControl";
 import { hasOpenModal } from "./ui/Modal";
 import { saveControlSurface, type ControlSurface } from "../controlSurface";
 import type { QuickContext } from "../quickCommands";
-import type { ProviderConfig, SessionRecord } from "../types";
+import type { ConversationOriginalSession, ProviderConfig, SessionRecord } from "../types";
 
 interface Props {
   quickContext?: QuickContext;
@@ -26,13 +26,12 @@ interface Props {
   initialSurface?: ControlSurface;
   isolatedSurface?: boolean;
   onSurfaceChange?: (surface: ControlSurface) => void;
-  onOpenMultiAgentWorkspace?: (projectId: string) => void;
-  onOpenSession?: (sessionId: string) => void | Promise<void>;
+  onOpenSession?: (sessionId: string | null, original?: ConversationOriginalSession) => void | Promise<void>;
   onOpenProjectSettings?: (projectId?: string, target?: "tasks") => void;
 }
 
 /** Shared dock/detached shell. General commands remain available from their own application entry. */
-export function ControlSidebar({ open, active, variant = "docked", sessions, defaultCwd, onClose, onDetach, onDock, onSurfaceChange, isolatedSurface = false, onOpenMultiAgentWorkspace, onOpenSession, onOpenProjectSettings }: Props) {
+export function ControlSidebar({ open, active, variant = "docked", sessions, defaultCwd, onClose, onDetach, onDock, onSurfaceChange, isolatedSurface = false, onOpenSession, onOpenProjectSettings }: Props) {
   const [interventionsOpen, setInterventionsOpen] = useState(false);
   const [interventionCount, setInterventionCount] = useState(0);
   const [focusedProject, setFocusedProject] = useState<{ id: string; request: number } | null>(null);
@@ -65,7 +64,7 @@ export function ControlSidebar({ open, active, variant = "docked", sessions, def
         </div>
       </header>
       <InterventionCenter open={interventionsOpen} onClose={() => setInterventionsOpen(false)} onCountChange={setInterventionCount} onOpenProject={id => { setInterventionsOpen(false); setFocusedProject(value => ({ id, request: (value?.request ?? 0) + 1 })); }} />
-      <div className="control-multi-agent-surface"><MultiAgentControl sessions={sessions} active={isActive} defaultCwd={defaultCwd} focusedProjectId={focusedProject?.id} focusedProjectRequest={focusedProject?.request} onOpenWorkspace={onOpenMultiAgentWorkspace} onOpenSession={onOpenSession} onOpenProjectSettings={onOpenProjectSettings} /></div>
+      <div className="control-multi-agent-surface"><MultiAgentControl sessions={sessions} active={isActive} defaultCwd={defaultCwd} focusedProjectId={focusedProject?.id} focusedProjectRequest={focusedProject?.request} onOpenSession={onOpenSession} onOpenProjectSettings={onOpenProjectSettings} /></div>
     </aside>
   </div>;
 }

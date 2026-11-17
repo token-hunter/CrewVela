@@ -2828,6 +2828,7 @@ fn execute_preferred_acp(
                 session_locator: serde_json::json!({
                     "adapter": "acp",
                     "protocol": "acp-v1",
+                    "runtimeKind": request.agent.runtime_kind,
                     "cwd": request.cwd,
                     "sessionId": result.session_id,
                     "agentName": result.agent_name,

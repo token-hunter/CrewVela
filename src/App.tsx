@@ -24,6 +24,7 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AppAppearance,
@@ -38,6 +39,7 @@ import type {
   TerminalShell,
   InterventionRecord,
   AgentRuntimeKind,
+  ConversationOriginalSession,
 } from "./types";
 import {
   loadAppearance,
@@ -451,6 +453,7 @@ export default function App() {
   const [transcriptFor, setTranscriptFor] = useState<SessionRecord | null>(
     null,
   );
+  const [originalTranscript, setOriginalTranscript] = useState<ConversationOriginalSession | null>(null);
   const [controlOpen, setControlOpen] = useState(false);
   const [multiAgentWorkspaceProjectId, setMultiAgentWorkspaceProjectId] =
     useState<string | null>(UI_PREVIEW && new URLSearchParams(window.location.search).get("workspace-preview") === "1" ? "preview-collaboration-project" : null);
@@ -1242,6 +1245,25 @@ export default function App() {
     }
   }, [isRuntimeEnabled, refreshSessions, sessions, sidebarTerminalIds, showError, switchRecords, visitedNativeSessions]);
 
+  const openConversationSession = useCallback((id: string | null, original?: ConversationOriginalSession) => {
+    if (original) {
+      setTranscriptFor(null);
+      setOriginalTranscript(original);
+      return;
+    }
+    const session = displaySessions.find(item => item.id === id);
+    if (!session) throw Error("原会话已移除或仍在加载。");
+    setOriginalTranscript(null);
+    if (!isPtySession(session) || session.runtimeCommandHost) {
+      setTranscriptFor(session);
+      return;
+    }
+    setTranscriptFor(null);
+    selectTab(tabOf(session.id));
+    setMultiAgentWorkspaceProjectId(null);
+    setSelectedSessionId(session.id);
+  }, [displaySessions, selectTab, tabOf]);
+
   useEffect(() => {
     if (UI_PREVIEW) return;
     let disposed = false;
@@ -1251,8 +1273,13 @@ export default function App() {
     };
     window.addEventListener("crewvela-automation-open-session", openAutomationSession);
     const subscriptions = [
-      listen<{ sessionId: string }>("crewvela-conversation-open-session", event => {
-        if (!disposed && event.payload?.sessionId) void selectSession(event.payload.sessionId);
+      listen<{ sessionId: string | null; original?: ConversationOriginalSession }>("crewvela-conversation-open-session", event => {
+        if (disposed || !event.payload) return;
+        try { openConversationSession(event.payload.sessionId, event.payload.original); }
+        catch (error) { showError(`打开原会话失败：${String(error)}`); }
+        const main = getCurrentWindow();
+        void main.show().then(() => main.setFocus())
+          .catch(error => showError(`显示主窗口失败：${String(error)}`));
       }),
       listen<{ projectId?: string; target?: "tasks" }>("crewvela-conversation-open-settings", event => {
         if (disposed) return;
@@ -1263,7 +1290,7 @@ export default function App() {
     ];
     for (const subscription of subscriptions) void subscription.catch(error => { if (!disposed) showError(`协作窗口事件监听失败：${String(error)}`); });
     return () => { disposed = true; window.removeEventListener("crewvela-automation-open-session", openAutomationSession); for (const subscription of subscriptions) void subscription.then(unlisten => unlisten()).catch(error => console.error("释放协作窗口监听失败：", error)); };
-  }, [openSettingsSection, openCollaborationTasks, selectSession, showError]);
+  }, [openSettingsSection, openCollaborationTasks, openConversationSession, selectSession, showError]);
 
   const renameSession = useCallback(async (session: SessionRecord) => {
     const title = window.prompt("会话标题", session.title)?.trim();
@@ -2568,8 +2595,7 @@ export default function App() {
                         isolatedSurface={tab !== "multi_agent"}
                         initialSurface={tab === "multi_agent" ? controlSurface : "multi_agent"}
                         onSurfaceChange={tab === "multi_agent" ? handleControlSurfaceChange : undefined}
-                        onOpenMultiAgentWorkspace={setMultiAgentWorkspaceProjectId}
-                        onOpenSession={selectSession}
+                        onOpenSession={openConversationSession}
                         onOpenProjectSettings={(projectId, target) => { if (target === "tasks" && projectId) { openCollaborationTasks(projectId); return; } openSettingsSection("collaboration"); setCollaborationInitialProjectId(projectId); }}
                       />
                       </div>
@@ -2632,7 +2658,7 @@ export default function App() {
             />
           )}
           {switchFor && <SessionSwitchDialog source={switchFor} initialTarget={switchTarget} sourcePosition={Math.max(0, displaySessions.findIndex((session) => session.id === switchFor.id))} record={switchDraft} preview={UI_PREVIEW} onRecord={handleSwitchRecord} onClose={() => setSwitchFor(null)} />}
-          {transcriptFor && (
+          {originalTranscript ? <TranscriptViewer key={originalTranscript.runId} original={originalTranscript} onClose={() => setOriginalTranscript(null)} /> : transcriptFor && (
             <TranscriptViewer
               session={transcriptFor}
               relayHistory={switchRecords.some((item) => item.source.id === transcriptFor.id)}

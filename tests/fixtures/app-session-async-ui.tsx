@@ -13,6 +13,12 @@ let sessions: SessionRecord[] = ["one", "two"].map((id, i) => ({
   titleLocked: true, exitCode: 0, lastError: null, createdAt: i, updatedAt: i,
 }));
 const bulkFixture = new URLSearchParams(location.search).get("bulk-actions");
+const originalRunFixture = new URLSearchParams(location.search).has("original-run");
+if (originalRunFixture) {
+  sessions[0] = { ...sessions[0], title: "Claude 原终端", agentRuntimeKind: "claude_code",
+    multiAgentProjectId: "A", multiAgentAgentId: "agent-A", status: "running", ptyId: 1,
+    runtimeCommandHost: new URLSearchParams(location.search).has("command-host") };
+}
 if (bulkFixture) {
   sessions = [
     { ...sessions[0], status: "running", ptyId: 1 }, sessions[1],
@@ -66,6 +72,7 @@ const api = {
     fail(message:string) { const entry=api.help.pending.shift(); if(!entry)throw Error("No pending app update check"); entry.reject(new Error(message)); },
   },
   calls, pending, rejectProviderDelete: true,
+  originalRunReads: [] as unknown[],
   rejectSwitchDismiss: false, switchCommands: [] as string[],
   usages: {} as Record<string, unknown>,
   switchRecords: [] as unknown[],
@@ -83,6 +90,42 @@ const api = {
     }
   },
   async invoke(command: string, args?: Record<string, unknown>) {
+    if (originalRunFixture) {
+      if (command === "ma_snapshot") {
+        const snapshot = navigationSnapshot(String(args?.projectId));
+        return {
+          ...snapshot,
+          agents: snapshot.agents.map(agent => ({ ...agent, runtimeKind: "claude_code" })),
+          runs: ["old", "unavailable", "live"].map(id => ({ id, projectId: "A", taskId: "task-A", agentId: "agent-A",
+            status: id === "live" ? "running" : "succeeded", startedAt: Date.now() - 7000,
+            finishedAt: id === "live" ? null : Date.now() - 4000, sessionLocator: id === "live" ? { ptyId: 1 } : null })),
+          agentSessions: [{ projectId: "A", agentId: "agent-A", appSessionId: "one", currentRunId: "live" }],
+        };
+      }
+      if (command === "ma_conversation_snapshot") {
+        const { conversation } = navigationConversation(String(args?.projectId));
+        const entry = { projectId: conversation.projectId, conversationId: conversation.id,
+          phase: "chat", status: "completed", createdAt: Date.now() - 8000, updatedAt: Date.now() - 4000 };
+        return {
+          conversation, rounds: [], executionPlans: [], supportedDiscussionRuntimes: ["claude_code"],
+          messages: [
+            { ...entry, id: "prompt", senderType: "user", kind: "message", body: "原始用户消息" },
+            ...["old", "unavailable", "live"].map((id, index) => ({ ...entry, id, runId: id,
+              senderType: "agent", kind: "reply", taskId: "task-A", agentId: "agent-A", replyToMessageId: "prompt",
+              body: id === "live" ? "" : `保存的群聊回复 ${id}`, status: id === "live" ? "running" : "completed",
+              createdAt: entry.createdAt + 1 + index })),
+          ],
+        };
+      }
+      if (command === "ma_conversation_run_transcript") {
+        api.originalRunReads.push(args);
+        if (args?.runId !== "old") throw Error("原生会话记录不存在");
+        return [{ role: "assistant", text: "从 Claude 原会话读取的历史正文", at: null }];
+      }
+      if (command === "ma_list_projects") return structuredClone(navigationProjects);
+      if (command === "ma_list_interventions") return [];
+      if (command === "get_runtime_preferences") return { disabledRuntimes: [] };
+    }
     if (location.search.includes('cli-launch')) {
       if (command === 'list_projects') return [{id:'fixture-project',name:'Fixture project',path:'C:\\fixture',createdAt:0}, {id:'second-project',name:'Second project',path:'D:\\Second 项目',createdAt:0}];
       if (command === 'plugin:dialog|open') {
@@ -210,5 +253,6 @@ if (location.search.includes("handoff-recovery")) {
 Object.assign(window, { appSessionMock: api });
 if(new URLSearchParams(location.search).has("app-help"))localStorage.setItem("crewvela-appearance",JSON.stringify({theme:new URLSearchParams(location.search).get("theme")==="light"?"light":"dark",accent:new URLSearchParams(location.search).get("accent")??"clay",followSystem:false}));
 localStorage.setItem("crewvela-notification-settings-v1", JSON.stringify({ enabled: false }));
-localStorage.setItem("crewvela-workspace-tabs", JSON.stringify({ tabs: [{ id: "a", title: new URLSearchParams(location.search).get("workspace-name") ?? "工作区 A" }, { id: "b", title: "工作区 B" }], activeTabId: "a", assignments: { one: "a", two: "a", ...(bulkFixture ? { three: "a", four: "a", other: "b" } : {}) } }));
+if (originalRunFixture) localStorage.setItem("crewvela-multi-agent-project", "A");
+localStorage.setItem("crewvela-workspace-tabs", JSON.stringify({ tabs: [{ id: "a", title: new URLSearchParams(location.search).get("workspace-name") ?? "工作区 A" }, { id: "b", title: "工作区 B" }], activeTabId: "a", assignments: { one: originalRunFixture ? "b" : "a", two: "a", ...(bulkFixture ? { three: "a", four: "a", other: "b" } : {}) } }));
 createRoot(document.getElementById("root")!).render(<App />);

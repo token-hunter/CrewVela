@@ -90,9 +90,8 @@ export function ControlWindow() {
         onClose={closeWindow}
         onDock={dockWindow}
         onSessionsChange={handleSessionsChange}
-        onOpenSession={async sessionId => { await emit("crewvela-conversation-open-session", { sessionId }); }}
+        onOpenSession={async (sessionId, original) => { await emit("crewvela-conversation-open-session", { sessionId, original }); }}
         onOpenProjectSettings={(projectId, target) => { void emit("crewvela-conversation-open-settings", { projectId, target }).catch(reason => setError(`打开协作设置失败：${String(reason)}`)); }}
-        onOpenMultiAgentWorkspace={projectId => { void emit("multi-agent-workspace-open", { projectId }).catch(reason => setError(`打开协作工作台失败：${String(reason)}`)); }}
       />
     </main>
   );

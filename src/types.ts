@@ -952,6 +952,15 @@ export interface ConversationMessage {
   /** Durable interjection. queued waits for stop; needs_decision requires explicit retry. */
   queuedInput?: ConversationSendInput | null;
 }
+
+export interface ConversationOriginalSession {
+  projectId: string;
+  runId: string;
+  agentName: string;
+  request: string;
+  reply: string;
+  error: string | null;
+}
 export interface ConversationRound {
   id: string;
   projectId: string;

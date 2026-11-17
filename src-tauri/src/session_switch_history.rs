@@ -35,11 +35,37 @@ pub(crate) fn read(
         let home = std::env::var_os("CODEX_HOME")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".codex"));
-        return codex(record, &locator, &home);
+        return codex(&record.cwd, &locator, &home);
     }
     bail!("{kind} 原生历史读取尚无精确可验证适配；宿主终端记录作为补充资料")
 }
-fn codex(record: &SessionRecord, locator: &str, home: &Path) -> Result<Vec<TranscriptMessage>> {
+pub(crate) fn read_conversation_run(locator: &Value) -> Result<Vec<TranscriptMessage>> {
+    let cwd = locator["cwd"].as_str().filter(|cwd| !cwd.is_empty()).context("本次运行尚未记录工作目录")?;
+    let runtime = locator["runtimeKind"].as_str().or_else(|| match locator["adapter"].as_str() {
+        Some("acp") => match locator["agentName"].as_str() {
+            Some("Claude Agent" | "Claude Code" | "Claude Code Agent") => Some("claude_code"),
+            Some("Codex" | "Codex Agent") => Some("codex"),
+            _ => None,
+        },
+        adapter => adapter,
+    });
+    match runtime {
+        Some("claude_code") => {
+            let id = locator["sessionId"].as_str().context("本次运行尚未记录 Claude 会话 ID")?;
+            let path = crate::usage::claude_transcript_path(&home("CLAUDE_CONFIG_DIR", ".claude")?, cwd, id)
+                .context("Claude 会话 ID 无效")?;
+            crate::transcript::read_transcript_file(&path, 200)
+        }
+        Some("codex") => {
+            let id = locator["threadId"].as_str().or_else(|| locator["sessionId"].as_str())
+                .filter(|id| !id.is_empty()).context("本次运行尚未记录 Codex 会话 ID")?;
+            codex(cwd, id, &home("CODEX_HOME", ".codex")?)
+        }
+        _ => bail!("此运行未提供可回看的原生会话记录"),
+    }
+}
+
+fn codex(expected_cwd: &str, locator: &str, home: &Path) -> Result<Vec<TranscriptMessage>> {
     let mut pending = vec![home.join("sessions")];
     let mut visited = 0;
     while let Some(path) = pending.pop() {
@@ -63,7 +89,7 @@ fn codex(record: &SessionRecord, locator: &str, home: &Path) -> Result<Vec<Trans
                         .as_str()
                         .context("Codex 历史缺少目录")?;
                     if Path::new(cwd).canonicalize()?
-                        != Path::new(&record.cwd).canonicalize()?
+                        != Path::new(expected_cwd).canonicalize()?
                     {
                         bail!("Codex 历史目录身份不匹配");
                     }
@@ -439,16 +465,16 @@ mod tests {
         let user = serde_json::json!({"type":"response_item", "payload":{"role":"user", "content":[{"type":"input_text","text":"exact history"}]}}).to_string();
         std::fs::write(&target, format!("{meta}\n{user}\n")).unwrap();
         std::fs::write(directory.join("z-bad-neighbor.jsonl"), "{broken neighbor\n").unwrap();
-        let messages = codex(&record, "exact-id", &root).unwrap();
+        let messages = codex(&record.cwd, "exact-id", &root).unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].text, "exact history");
         std::fs::write(&target, format!("{meta}\n{{broken target\n")).unwrap();
-        assert!(codex(&record, "exact-id", &root).is_err());
+        assert!(codex(&record.cwd, "exact-id", &root).is_err());
         std::fs::write(&target, "{broken session_meta\n").unwrap();
-        assert!(codex(&record, "exact-id", &root).is_err());
+        assert!(codex(&record.cwd, "exact-id", &root).is_err());
         let wrong = serde_json::json!({"type":"session_meta", "payload":{"id":"exact-id", "cwd":directory}});
         std::fs::write(&target, format!("{wrong}\n{user}\n")).unwrap();
-        assert!(codex(&record, "exact-id", &root).is_err());
+        assert!(codex(&record.cwd, "exact-id", &root).is_err());
         drop(sessions);
         std::fs::remove_dir_all(root).unwrap();
     }

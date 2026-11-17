@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -56,16 +56,24 @@ fn project_slug(cwd: &str) -> String {
 
 /// 推导会话的 transcript 路径；终端会话（无 claude session id）返回 None。
 pub fn transcript_path(session: &SessionRecord) -> Option<PathBuf> {
-    if session.claude_session_id.is_empty() {
+    let root = dirs::home_dir()?.join(".claude");
+    claude_transcript_path(&root, &session.cwd, &session.claude_session_id)
+}
+
+pub(crate) fn claude_transcript_path(root: &Path, cwd: &str, session_id: &str) -> Option<PathBuf> {
+    if session_id.is_empty() || !session_id.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')) {
         return None;
     }
-    let home = dirs::home_dir()?;
-    Some(
-        home.join(".claude")
-            .join("projects")
-            .join(project_slug(&session.cwd))
-            .join(format!("{}.jsonl", session.claude_session_id)),
-    )
+    // Windows canonicalize() can store an extended path in the run locator.
+    // Claude's project slug is based on the usual drive or UNC path.
+    let unc;
+    let cwd = if let Some(path) = cwd.strip_prefix(r"\\?\UNC\") {
+        unc = format!(r"\\{path}");
+        &unc
+    } else {
+        cwd.strip_prefix(r"\\?\").unwrap_or(cwd)
+    };
+    Some(root.join("projects").join(project_slug(cwd)).join(format!("{session_id}.jsonl")))
 }
 
 /// 从一行 transcript 提取 usage；非 assistant 消息或无 usage 返回 None。
@@ -200,6 +208,20 @@ mod tests {
             "C--example-crewvela"
         );
         assert_eq!(project_slug("/home/user/demo"), "-home-user-demo");
+    }
+
+    #[test]
+    fn claude_run_transcript_handles_windows_extended_paths_and_rejects_path_ids() {
+        let root = Path::new(".claude");
+        assert_eq!(
+            claude_transcript_path(root, r"\\?\C:\example\crewvela", "session-a"),
+            claude_transcript_path(root, r"C:\example\crewvela", "session-a"),
+        );
+        assert_eq!(
+            claude_transcript_path(root, r"\\?\UNC\server\share\crewvela", "session-a"),
+            claude_transcript_path(root, r"\\server\share\crewvela", "session-a"),
+        );
+        assert!(claude_transcript_path(root, "C:/example", "../other").is_none());
     }
 
     #[test]

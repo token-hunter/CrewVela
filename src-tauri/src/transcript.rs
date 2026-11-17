@@ -125,7 +125,11 @@ pub fn read_transcript(
 ) -> Result<Vec<TranscriptMessage>> {
     let path = transcript_path(session)
         .ok_or_else(|| anyhow!("该会话没有 claude transcript（终端会话不支持回看）"))?;
-    let file = std::fs::File::open(&path)
+    read_transcript_file(&path, max_messages)
+}
+
+pub(crate) fn read_transcript_file(path: &std::path::Path, max_messages: usize) -> Result<Vec<TranscriptMessage>> {
+    let file = std::fs::File::open(path)
         .with_context(|| format!("找不到会话记录文件: {}", path.display()))?;
     read_tail(file, max_messages)
 }

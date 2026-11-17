@@ -21,7 +21,7 @@ import { RUNTIME_LABELS } from "../runtimeLogos";
 import { visibleProjectTasks } from "../collaborationTasks";
 import { hasMentionToken, mentionTextSegments, selectMentionTokens } from "../multiAgentMention";
 import { useRuntimeAvailability } from "../runtimeAvailability";
-import type { AgentProfile, ConversationExecutionPlan, ConversationMode, ConversationSendInput, ConversationSnapshot, ConversationTaskRules, MultiAgentProject, MultiAgentSnapshot, SessionRecord } from "../types";
+import type { AgentProfile, ConversationExecutionPlan, ConversationMessage, ConversationMode, ConversationOriginalSession, ConversationSendInput, ConversationSnapshot, ConversationTaskRules, MultiAgentProject, MultiAgentSnapshot, SessionRecord } from "../types";
 import "../styles/collaboration-conversation.css";
 import "../styles/team-work-views.css";
 import "../styles/conversation-member-activity.css";
@@ -33,8 +33,7 @@ interface Props {
   defaultCwd: string | null;
   focusedProjectId?: string | null;
   focusedProjectRequest?: number;
-  onOpenWorkspace?: (projectId: string) => void;
-  onOpenSession?: (sessionId: string) => void | Promise<void>;
+  onOpenSession?: (sessionId: string | null, original?: ConversationOriginalSession) => void | Promise<void>;
   onOpenProjectSettings?: (projectId?: string, target?: "tasks") => void;
 }
 const PROJECT_KEY = "crewvela-multi-agent-project";
@@ -53,7 +52,7 @@ function storedPending(id: string): PendingSend | null {
 function projectFromStorage(): string | null { return stored(PROJECT_KEY) || null; }
 
 /** One persisted project conversation. It deliberately has no general-command or global-broadcast route. */
-export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, onOpenWorkspace, onOpenSession, onOpenProjectSettings }: Props) {
+export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, onOpenSession, onOpenProjectSettings }: Props) {
   const { ready: runtimeReady, error: runtimeError, prefs: runtimePrefs, isRuntimeEnabled, refresh: refreshAvailability } = useRuntimeAvailability();
   const [projects, setProjects] = useState<MultiAgentProject[]>([]);
   const [projectId, setProjectId] = useState<string | null>(focusedProjectId ?? projectFromStorage);
@@ -371,11 +370,28 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     } catch (reason) { if (mounted.current && currentProject.current === id && generation.current === epoch) setOperationError(String(reason)); }
     finally { mutation.current = false; if (mounted.current) setBusy(false); if (mounted.current && currentProject.current === id && generation.current === epoch) void refresh(); }
   };
-  const openAgentSession = async (agentId: string) => {
-    const id = snapshot?.agentSessions.find(session => session.agentId === agentId)?.appSessionId
-      ?? sessions.find(session => session.multiAgentProjectId === projectId && session.multiAgentAgentId === agentId && !session.retiredAgentRuntime)?.id;
-    if (!id || !onOpenSession) { if (projectId && onOpenWorkspace) onOpenWorkspace(projectId); else setError("原会话尚未建立，可在任务详情中查看启动状态。"); return; }
-    try { await onOpenSession(id); } catch (reason) { setError(`打开原会话失败：${String(reason)}`); }
+  const openAgentSession = async (message: ConversationMessage, agentName: string) => {
+    const belongsToAgent = (item: SessionRecord) => item.multiAgentProjectId === message.projectId
+      && item.multiAgentAgentId === message.agentId && !item.retiredAgentRuntime;
+    const binding = snapshot?.agentSessions.find(item => item.projectId === message.projectId && item.agentId === message.agentId);
+    const session = sessions.find(item => item.id === binding?.appSessionId && belongsToAgent(item))
+      ?? sessions.find(belongsToAgent);
+    const run = snapshot?.runs.find(item => item.projectId === message.projectId && item.id === message.runId);
+    // The host is reused across turns. Only show its terminal when it belongs to this run.
+    const terminalMatches = session?.ptyId != null && !session.runtimeCommandHost
+      && (!message.runId || (session.id === binding?.appSessionId && binding.currentRunId === message.runId));
+    const original: ConversationOriginalSession | undefined = message.runId && !terminalMatches ? {
+      projectId: message.projectId,
+      runId: message.runId,
+      agentName,
+      request: messages.find(item => item.id === message.replyToMessageId)?.body ?? "",
+      reply: message.senderType === "agent" ? message.body : run?.outputSummary ?? "",
+      error: run?.error ?? (message.senderType === "system" ? message.body : null),
+    } : undefined;
+    const id = session?.id ?? binding?.appSessionId ?? null;
+    if ((!id && !original) || !onOpenSession) { setOperationError("原会话记录暂不可用。"); return; }
+    setOperationError("");
+    try { await onOpenSession(id, original); } catch (reason) { setOperationError(`打开原会话失败：${String(reason)}`); }
   };
   const mentionSegments = useMemo(() => mentionTextSegments(draft, agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => conversationMentionToken(agent, agents))), [draft, agents, supported, isRuntimeEnabled]);
   const highlightMentions = !composingMention && mentionSegments.some(segment => segment.mention);
@@ -459,20 +475,21 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       {visibleMessages.map((message, index) => {
         const agent = agents.find(item => item.id === message.agentId) ?? snapshot?.agents.find(item => item.id === message.agentId);
         const plan = conversation?.executionPlans.find(item => item.messageId === message.id);
-        if (message.senderType === "system") return <div className={`conversation-event ${message.status}`} key={message.id}><span className="conversation-status-dot" /><p>{message.body || CONVERSATION_STATUS[message.status]}</p>{message.agentId && <button type="button" className="conversation-text-button" onClick={() => void openAgentSession(message.agentId!)}>查看原会话<ArrowSquareOut size={13} /></button>}</div>;
+        const openOriginal = message.agentId ? () => void openAgentSession(message, agent?.name ?? "历史成员") : undefined;
+        if (message.senderType === "system") return <div className={`conversation-event ${message.status}`} key={message.id}><span className="conversation-status-dot" /><p>{message.body || CONVERSATION_STATUS[message.status]}</p>{openOriginal && <button type="button" className="conversation-text-button" onClick={openOriginal}>查看原会话<ArrowSquareOut size={13} /></button>}</div>;
         const previous = visibleMessages[index - 1];
         const continuation = !!plan && previous?.senderType === "agent" && previous.agentId === message.agentId;
         return <article className={`conversation-message ${message.senderType} ${message.status}${continuation ? " plan-continuation" : ""}`} key={message.id} data-message-id={message.id}>
           {agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar">{message.senderType === "user" ? <User size={21} /> : <Robot size={21} />}</span>}
           <div className="conversation-message-content"><header><strong>{message.senderType === "user" ? "我" : agent?.name ?? "历史成员"}</strong></header>
-            {!plan && (message.senderType === "agent" ? <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={conversationMemberActivity(message,snapshot?.runs.find(run=>run.id===message.runId),activityEvents,snapshot?.approvals ?? [],activityNow)} now={activityNow} onOpen={message.runId && message.agentId ? ()=>void openAgentSession(message.agentId!) : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"}>{message.body ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity> : message.body ? <ConversationMarkdown body={message.body}/> : null)}
+            {!plan && (message.senderType === "agent" ? <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={conversationMemberActivity(message,snapshot?.runs.find(run=>run.id===message.runId),activityEvents,snapshot?.approvals ?? [],activityNow)} now={activityNow} onOpen={message.runId ? openOriginal : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"}>{message.body ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity> : message.body ? <ConversationMarkdown body={message.body}/> : null)}
             {message.queuedInput && <div className="conversation-progress"><span>{message.status === "queued" ? "等待前一轮确认停止后发送" : message.status === "cancelled" ? "这条消息尚未发送，已取消" : "这条消息尚未发送，等待你确认继续"}</span>{message.status === "needs_decision" && <button type="button" className="conversation-text-button" disabled={busy || !!pending || !healthy || !active || discussing} onClick={() => void mutationCall("ma_conversation_send", { input: message.queuedInput }).then(() => refresh()).catch(() => {})}>继续发送</button>}</div>}
             {plan && renderPlan(plan)}
             {message.senderType === "agent" && message.runId && <ConversationApprovalRequests
               approvals={(snapshot?.approvals ?? []).filter(approval => approval.projectId === message.projectId && approval.runId === message.runId && approval.status === "pending" && approval.approvalType === "runtime_permission" && (!message.taskId || approval.taskId === message.taskId))}
               disabled={busy || !active || !healthy || message.roundId !== round?.id || round?.status === "stopping"}
               onChanged={() => void refresh()}
-              onOpen={message.agentId ? () => void openAgentSession(message.agentId!) : undefined}
+              onOpen={openOriginal}
               onStop={message.roundId === round?.id && discussing ? () => void control("cancel") : undefined}
             />}
             {!plan && !!message.body.trim() && <ConversationMessageCopy body={message.body}/>}

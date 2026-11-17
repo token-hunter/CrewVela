@@ -642,6 +642,15 @@ impl MultiAgentStore {
         get_run_with(&connection, &run_id)
     }
 
+    pub(crate) fn conversation_run_locator(&self, project_id: &str, run_id: &str) -> Result<serde_json::Value> {
+        let connection = self.connection.lock().unwrap();
+        let run = get_run_with(&connection, run_id)?;
+        if run.project_id != project_id || !super::conversation::is_conversation_task(&run.task_id) {
+            return Err(anyhow!("未找到该项目的群聊运行"));
+        }
+        run.session_locator.context("本次运行尚未记录原会话")
+    }
+
     pub fn update_run(&self, input: UpdateRunInput) -> Result<AgentRun> {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;

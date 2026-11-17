@@ -1077,6 +1077,15 @@ fn ma_conversation_snapshot(project_id: String, state: State<'_, MultiAgentStore
 }
 
 #[tauri::command]
+async fn ma_conversation_run_transcript(project_id: String, run_id: String, state: State<'_, MultiAgentStore>) -> Result<Vec<TranscriptMessage>, String> {
+    let store = state.inner().clone();
+    blocking_command(move || {
+        let locator = store.conversation_run_locator(&project_id, &run_id).map_err(to_err)?;
+        session_switch_history::read_conversation_run(&locator).map_err(to_err)
+    }).await
+}
+
+#[tauri::command]
 fn ma_conversation_policy_set(input: multi_agent::conversation::ConversationPolicySetInput, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
     state.conversation_policy_set(input).map_err(to_err)
 }
@@ -6306,6 +6315,7 @@ pub fn run() {
             ma_runtime_events,
             ma_send_message,
             ma_conversation_snapshot,
+            ma_conversation_run_transcript,
             ma_conversation_policy_set,
             ma_conversation_migration_preview,
             ma_conversation_migration_apply,
