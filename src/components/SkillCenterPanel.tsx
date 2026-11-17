@@ -101,6 +101,18 @@ const PREVIEW_SNAPSHOT: Snapshot = {
   runtimes: previewRuntimes.map(([runtime, label, projectRoot]) => ({ runtime, label, projectRoot, globalRoot: `~/${projectRoot}`, discoveryRoots: [], recursiveScan: false, installed: true })),
 };
 
+function positionSkillToolsMenu(details: HTMLDetailsElement | null) {
+  if (!details?.open) return;
+  const menu = details.querySelector<HTMLElement>(".skill-center-actions");
+  if (!menu) return;
+  menu.style.left = "0px";
+  const bounds = details.closest(".skill-card-library")?.getBoundingClientRect();
+  const rect = menu.getBoundingClientRect();
+  const right = Math.min(window.innerWidth, bounds?.right ?? window.innerWidth) - 8;
+  const left = Math.max(0, bounds?.left ?? 0) + 8;
+  menu.style.left = `${Math.max(left - rect.left, Math.min(0, right - rect.right))}px`;
+}
+
 export function SkillCenterPanel({ projects }: Props) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
@@ -112,6 +124,15 @@ export function SkillCenterPanel({ projects }: Props) {
   const [showSaveSet, setShowSaveSet] = useState(false);
   const importMenu = useRef<HTMLDetailsElement>(null);
   const toolsMenu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      if (toolsMenu.current?.open && event.target instanceof Node && !toolsMenu.current.contains(event.target)) toolsMenu.current.open = false;
+    };
+    const resize = () => positionSkillToolsMenu(toolsMenu.current);
+    document.addEventListener("pointerdown", outside, true);
+    window.addEventListener("resize", resize);
+    return () => { document.removeEventListener("pointerdown", outside, true); window.removeEventListener("resize", resize); };
+  }, []);
   const [showRuntimeDetails, setShowRuntimeDetails] = useState(false);
   const [scope, setScope] = useState<"global" | "project" | "task">("global");
   const [projectPath, setProjectPath] = useState(projects[0]?.path ?? "");
@@ -351,8 +372,11 @@ export function SkillCenterPanel({ projects }: Props) {
         {scope === "project" && <label>项目<select value={projectPath} onChange={(event) => setProjectPath(event.target.value)}><option value="">选择项目</option>{projects.map((project) => <option key={project.id} value={project.path}>{project.name}</option>)}</select></label>}
         {scope === "task" && <><label>独立工作目录<input value={taskWorkspacePath} onChange={(event) => setTaskWorkspacePath(event.target.value)} placeholder="任务 Worktree 绝对路径" /></label><button className="btn" type="button" onClick={() => void run(async () => { const path = await open({ directory: true, title: "选择任务 Worktree" }); if (typeof path === "string") setTaskWorkspacePath(path); })}>选择目录</button><label>任务 ID<input value={taskId} onChange={(event) => setTaskId(event.target.value)} placeholder="可选" /></label><label>Agent ID<input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="可选" /></label></>}
         {activeTab === "matrix" && <><span className="skill-library-count">{visibleAssets.length === snapshot.assets.length ? `${snapshot.assets.length} 个 Skills` : `${visibleAssets.length} / ${snapshot.assets.length} 个 Skills`}</span><label className="skill-library-select-all"><input type="checkbox" aria-label="选择当前列表全部 Skill" disabled={!visibleAssets.length} checked={!!visibleAssets.length && selectedSkills.length === visibleAssets.length} ref={input => { if (input) input.indeterminate = selectedSkills.length > 0 && selectedSkills.length < visibleAssets.length; }} onChange={event => setSelectedSkillIds(new Set(event.target.checked ? visibleAssets.map(asset => asset.id) : []))} />全选</label></>}
-        <details className="skill-tools-menu" ref={toolsMenu} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
-          <summary aria-label="更多 Skill 操作">更多<CaretDown size={14} /></summary>
+        <details className="skill-tools-menu" ref={toolsMenu} onToggle={event => positionSkillToolsMenu(event.currentTarget)} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); } }}>
+          <summary aria-label="更多 Skill 操作" onClick={event => {
+            event.preventDefault();
+            if (toolsMenu.current) { toolsMenu.current.open = !toolsMenu.current.open; positionSkillToolsMenu(toolsMenu.current); }
+          }}>更多<CaretDown size={14} /></summary>
           <div className="skill-center-actions" onClick={() => { if (toolsMenu.current) toolsMenu.current.open = false; }}>
             <button className="btn" onClick={() => setActiveTab("updates")}><ArrowClockwise />版本更新</button>
             <button className="btn" onClick={() => setActiveTab("sets")}><Package />配置集{snapshot.skillSets.length > 0 && <span>{snapshot.skillSets.length}</span>}</button>
