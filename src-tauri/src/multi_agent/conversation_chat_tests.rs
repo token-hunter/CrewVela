@@ -1,6 +1,58 @@
 use super::*;
 
 #[test]
+fn group_permission_resumes_only_its_waiting_run_and_never_starts_the_project() {
+    let fixture = Fixture::new();
+    let (round, _) = fixture.store.begin_conversation(fixture.input()).unwrap();
+    let turn = prepare_turn(&fixture.store, &round.id, 0, "chat", 0, &fixture.agents[0]).unwrap();
+    let run = fixture.store.claim_task(ClaimTaskInput { task_id: turn.task_id.clone(), agent_id: fixture.agents[0].clone(), lease_seconds: 60 }).unwrap();
+    let other = fixture.store.create_task(CreateTaskInput {
+        project_id: fixture.project.clone(), parent_id: None, stage: 0, title: "未授权启动的工程任务".into(), description: String::new(), acceptance_criteria: "等待执行".into(), verification_command: None,
+        assignee_agent_id: Some(fixture.agents[1].clone()), reviewer_agent_id: None, workspace_mode: WorkspaceMode::ReadOnly, priority: 0, required_capabilities: vec![], max_attempts: 1, retry_backoff_seconds: 1,
+    }).unwrap();
+    fixture.store.connection.lock().unwrap().execute("UPDATE ma_projects SET status='paused' WHERE id=?1", [&fixture.project]).unwrap();
+    let approval = fixture.store.request_approval(crate::multi_agent::RequestApprovalInput { project_id: fixture.project.clone(), task_id: Some(turn.task_id.clone()), run_id: Some(run.id.clone()), approval_type: "runtime_permission".into(), summary: "确认当前命令".into() }).unwrap();
+    let governance = crate::multi_agent::governance::CollaborationGovernance::new(fixture.store.clone());
+    let item = governance.list_interventions().unwrap().into_iter().find(|item| item.metadata["approvalId"] == approval.id).unwrap();
+    for _ in 0..2 {
+        let receipt = governance.resolve(crate::multi_agent::ResolveInterventionInput { intervention_id: item.id.clone(), action: crate::multi_agent::InterventionAction::Approve, response: None, agent_id: None, snooze_minutes: None }).unwrap();
+        assert!(!receipt.resume_project, "group permission cannot start engineering scheduler, including repeated approvals");
+    }
+    let snapshot = fixture.store.snapshot(&fixture.project).unwrap();
+    assert_eq!(snapshot.project.status, ProjectStatus::Paused);
+    assert_eq!(snapshot.runs.iter().find(|r|r.id==run.id).unwrap().status, RunStatus::Running);
+    assert_eq!(snapshot.approvals.iter().find(|a|a.id==approval.id).unwrap().status,"approved");
+    assert_eq!(snapshot.tasks.iter().find(|t|t.id==other.id).unwrap().status, other.status);
+    assert!(!snapshot.runs.iter().any(|r|r.task_id==other.id));
+}
+
+#[test]
+fn malformed_turn_metadata_is_recovered_without_human_intervention_or_replaying_members() {
+    for footer in [r#"{action:done}"#,r#"{\"action\":\"done\"}"#,r#"{"action":"done","reason":"nothing else"}"#] {
+        let fixture=Fixture::new();
+        let mut input=fixture.input();input.intent="exchange".into();
+        let executor=ScriptedReplies::new(vec![format!("这是已经收到的真实回复。{TURN_CONTROL_OPEN}{footer}{TURN_CONTROL_CLOSE}"),"第二位成员的真实回复。".into()]);
+        let snapshot=fixture.run_input(input,&executor);
+        assert_eq!(snapshot.rounds[0].status,"completed","format errors are not a user decision");
+        let calls=executor.calls.lock().unwrap();assert_eq!(calls.len(),2);
+        assert_eq!(calls[0].0,fixture.agents[0]);assert_eq!(calls[1].0,fixture.agents[1]);
+        assert!(snapshot.messages.iter().any(|m|m.body=="这是已经收到的真实回复。"));
+        assert!(snapshot.messages.iter().all(|m|!m.body.contains(TURN_CONTROL_OPEN)));
+    }
+}
+
+#[test]
+fn malformed_control_without_any_public_reply_is_a_visible_failure() {
+    let fixture=Fixture::new();
+    let executor=ScriptedReplies::new(vec![format!("{TURN_CONTROL_OPEN}{{action:done}}{TURN_CONTROL_CLOSE}")]);
+    let snapshot=fixture.run(&executor);
+    assert_eq!(snapshot.rounds[0].status,"failed");
+    assert!(snapshot.rounds[0].stop_reason.as_ref().unwrap().contains("未返回可用正文"));
+    assert_eq!(executor.calls.lock().unwrap().len(),1);
+    assert!(snapshot.messages.iter().all(|m|!m.body.contains(TURN_CONTROL_OPEN)));
+}
+
+#[test]
 fn hi_calls_selected_members_once_and_keeps_original_scope_constraints() {
     let fixture = Fixture::new();
     let constraint = "仅执行指定模型验收；不调用工具，不修改文件，不访问其他项目";
@@ -18,7 +70,9 @@ fn hi_calls_selected_members_once_and_keeps_original_scope_constraints() {
     let calls = executor.calls.lock().unwrap();
     assert_eq!(calls.len(), 2);
     assert!(calls[0].1.contains(constraint));
-    assert!(calls[0].1.contains("安全、权限、职责和范围限制继续有效"));
+    assert!(calls[0].1.contains("尚未迁移的明确旧限制仍须遵守"));
+    assert_eq!(snapshot.rounds[0].member_policies[&fixture.agents[0]].boundary.tools, "none");
+    assert_eq!(snapshot.rounds[0].member_policies[&fixture.agents[1]].boundary.tools, "research");
     assert!(!calls[0].1.contains("先给出你自己的观点、依据、风险和待确认事项"));
     assert_eq!(fixture.store.agent_profile(&fixture.agents[0]).unwrap().description, constraint);
     assert_eq!(fixture.store.snapshot(&fixture.project).unwrap().project.goal, "模型验收专用背景");
@@ -144,10 +198,12 @@ fn invalid_handoff_never_dispatches_an_unselected_or_same_member() {
         let mut input = fixture.input();
         input.intent = "exchange".into();
         let target = if target == "SELF" { fixture.agents[0].as_str() } else { target };
-        let executor = ScriptedReplies::new(vec![controlled_reply("这段实际回复保留。", json!({"action":"continue","nextAgentId":target,"hasNewInformation":true}))]);
+        let executor = ScriptedReplies::new(vec![controlled_reply("这段实际回复保留。", json!({"action":"continue","nextAgentId":target,"hasNewInformation":true})),"被选中的另一位成员回应。".into()]);
         let snapshot = fixture.run_input(input, &executor);
-        assert_eq!(snapshot.rounds[0].status, "needs_decision");
-        assert_eq!(executor.calls.lock().unwrap().len(), 1);
+        assert_eq!(snapshot.rounds[0].status, "completed");
+        let calls=executor.calls.lock().unwrap();
+        assert_eq!(calls.len(),2);
+        assert_eq!(calls[0].0,fixture.agents[0]);assert_eq!(calls[1].0,fixture.agents[1]);
         assert_eq!(snapshot.messages[1].body, "这段实际回复保留。");
     }
 }

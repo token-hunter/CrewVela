@@ -814,8 +814,9 @@ fn runtime_install_cancel(id: String) -> Result<(), String> { runtime_installati
 fn runtime_open_login(kind: AgentRuntimeKind) -> Result<(), String> { runtime_installation::open_login(kind) }
 
 #[tauri::command]
-fn ma_list_projects(state: State<'_, MultiAgentStore>) -> Result<Vec<MultiAgentProject>, String> {
-    state.list_projects().map_err(to_err)
+async fn ma_list_projects(state: State<'_, MultiAgentStore>) -> Result<Vec<MultiAgentProject>, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.list_projects().map_err(to_err)).await
 }
 
 #[tauri::command]
@@ -911,6 +912,9 @@ fn ma_update_agent(
     let _lifecycle = state.agent_lifecycle_guard();
     ensure_member_terminal_idle(&sessions, &input.agent_id)?;
     let previous = state.agent_profile(&input.agent_id).map_err(to_err)?;
+    if previous.runtime_kind != input.runtime_kind && !input.runtime_kind.is_collaboration_cli() {
+        return Err("切换协作成员请选择 CLI 执行引擎；ZCode Desktop 只保留已有成员兼容".into());
+    }
     // Hold all old session lifecycle locks through profile mutation/retirement,
     // so a UI resume cannot attach another old-runtime PTY after cleanup.
     let mut old_ids: Vec<_> = if previous.runtime_kind != input.runtime_kind {
@@ -1002,11 +1006,12 @@ fn ma_enqueue_wakeup(
 }
 
 #[tauri::command]
-fn ma_snapshot(
+async fn ma_snapshot(
     project_id: String,
     state: State<'_, MultiAgentStore>,
 ) -> Result<MultiAgentSnapshot, String> {
-    state.snapshot(&project_id).map_err(to_err)
+    let store = state.inner().clone();
+    blocking_command(move || store.snapshot(&project_id).map_err(to_err)).await
 }
 
 #[tauri::command]
@@ -1066,6 +1071,21 @@ fn ma_send_message(
 #[tauri::command]
 fn ma_conversation_snapshot(project_id: String, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
     state.conversation_snapshot(&project_id).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_conversation_policy_set(input: multi_agent::conversation::ConversationPolicySetInput, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
+    state.conversation_policy_set(input).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_conversation_migration_preview(input: multi_agent::conversation::ConversationMigrationPreviewInput, state: State<'_, MultiAgentStore>) -> Result<multi_agent::conversation::ConversationMigrationPreview, String> {
+    state.conversation_migration_preview(input).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_conversation_migration_apply(input: multi_agent::conversation::ConversationMigrationApplyInput, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
+    state.conversation_migration_apply(input).map_err(to_err)
 }
 
 #[tauri::command]
@@ -2137,6 +2157,10 @@ fn validate_coordinator_plan(plan: &CoordinatorPlan) -> Result<(), String> {
     let mut existing_agent_ids = HashSet::new();
     for agent in &plan.agents {
         agent.runtime_kind.ensure_available().map_err(to_err)?;
+        if !agent.runtime_kind.is_collaboration_cli()
+            && !(agent.runtime_kind == AgentRuntimeKind::ZCode && agent.existing_agent_id.as_deref().is_some_and(|id| !id.trim().is_empty())) {
+            return Err("新增协作成员仅支持七个 CLI；ZCode Desktop 仅兼容已有成员，不能自动替换".into());
+        }
         if agent.key.trim().is_empty() || !agent_keys.insert(agent.key.clone()) {
             return Err(format!("Agent key 为空或重复：{}", agent.key));
         }
@@ -6277,6 +6301,9 @@ pub fn run() {
             ma_runtime_events,
             ma_send_message,
             ma_conversation_snapshot,
+            ma_conversation_policy_set,
+            ma_conversation_migration_preview,
+            ma_conversation_migration_apply,
             ma_conversation_clear,
             ma_conversation_new,
             ma_conversation_send,
@@ -8629,6 +8656,17 @@ mod tests {
             required_plan_text(Some("贪吃蛇"), "项目名称").unwrap(),
             "贪吃蛇"
         );
+    }
+
+    #[test]
+    fn cli_plan_admission_rejects_new_desktop_but_keeps_explicit_existing_member() {
+        for kind in [AgentRuntimeKind::ZCode,AgentRuntimeKind::ClaudeChat,AgentRuntimeKind::CodexChat,AgentRuntimeKind::KimiChat,AgentRuntimeKind::PiChat,AgentRuntimeKind::OpenCodeChat] {
+            let mut plan=cross_runtime_plan(true);plan.agents[0].runtime_kind=kind;
+            assert!(validate_coordinator_plan(&plan).unwrap_err().contains("CLI"));
+        }
+        let mut plan=cross_runtime_plan(true);plan.intent=multi_agent::CoordinatorIntent::AddTasks;
+        plan.agents[0].runtime_kind=AgentRuntimeKind::ZCode;plan.agents[0].existing_agent_id=Some("original-desktop-member".into());
+        assert!(validate_coordinator_plan(&plan).is_ok());
     }
 
     fn cross_runtime_plan(with_reviews: bool) -> CoordinatorPlan {

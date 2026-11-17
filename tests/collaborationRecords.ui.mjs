@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
+import { mkdirSync } from "node:fs";
+mkdirSync('.scratch/collaboration-records-collapsed',{recursive:true});
 const browser=await chromium.launch({channel:"chrome",headless:true});
 try {
   const page=await browser.newPage({viewport:{width:1100,height:900}});
@@ -12,8 +14,32 @@ try {
   await records.getByText("A投递正文",{exact:true}).waitFor();
   assert.equal(await records.getByText("B投递正文",{exact:true}).count(),0);
   assert.equal(await records.getByText("foreign投递正文",{exact:true}).count(),0);
+  assert.equal(await records.locator('pre').count(),0,'all records must be collapsed on entry');
+  assert.equal(await records.locator('button[aria-expanded="true"]').count(),0);
+  const rows=records.locator('button[aria-expanded]');
+  await rows.nth(0).click();await rows.nth(1).click();
+  assert.equal(await records.locator('pre').count(),2,'each row can be expanded independently');
+  await rows.nth(0).click();assert.equal(await records.locator('pre').count(),1,'collapsing one row keeps another open');
+  await rows.nth(1).click();assert.equal(await records.locator('pre').count(),0);
+  await rows.first().focus();await page.keyboard.press('Enter');
+  assert.equal(await records.locator('pre').count(),1);
+  await page.getByRole('tab',{name:'概览',exact:true}).click();
+  await page.getByRole('tab',{name:'协作记录',exact:true}).click();
+  await records.getByText('A投递正文',{exact:true}).waitFor();
+  assert.equal(await records.locator('pre').count(),0,'re-entering records starts collapsed');
+  // A newly fetched first row must not expand; manual choices survive refresh.
+  const manual=records.locator('article').filter({hasText:'A项目完整消息'});
+  await manual.locator('button[aria-expanded]').click();
+  await page.evaluate(()=>{window.recordMock.extraDeliveries=[{id:'A-new',at:Date.now()+1000,fromSessionId:null,toSessionId:'A-session',body:'刷新新增记录',kind:'direct'}];});
+  const added=records.locator('article').filter({hasText:'刷新新增记录'});await added.waitFor();
+  assert.equal(await added.locator('button[aria-expanded]').getAttribute('aria-expanded'),'false');
+  assert.equal(await manual.locator('button[aria-expanded]').getAttribute('aria-expanded'),'true');
+  await manual.locator('button[aria-expanded]').click();
+  await page.evaluate(()=>{window.recordMock.extraDeliveries=[];});await added.waitFor({state:'detached'});
   await page.getByRole("searchbox",{name:"搜索记录"}).fill("第二行正文");
   assert.equal(await records.locator("article").count(),1);
+  assert.equal(await records.locator('pre').count(),0,'filtering must not auto-expand the first result');
+  await records.locator('button[aria-expanded]').click();
   assert.equal(await records.locator("pre").innerText(),"A项目完整消息\n第二行正文");
   await records.locator("button[aria-expanded]").click();
   assert.equal(await records.locator("pre").count(),0);
@@ -21,6 +47,8 @@ try {
   await records.getByText("没有符合条件的记录").waitFor();
   await page.getByRole("searchbox",{name:"搜索记录"}).fill("");
   await page.getByRole("combobox",{name:"记录类型"}).selectOption("全部");
+  assert.equal(await records.locator('pre').count(),0,'clearing filters keeps records collapsed');
+  await page.screenshot({path:'.scratch/collaboration-records-collapsed/collapsed.png'});
   await page.evaluate(()=>{window.recordMock.failDelivery=true;});
   await records.getByRole("alert").filter({hasText:"fixture delivery failure"}).waitFor();
   assert.equal(await records.locator("article").count(),3,"a projection failure must not hide the loaded history");
@@ -36,6 +64,7 @@ try {
   assert.doesNotMatch(await records.innerText(),/旧项目延迟正文/);
   await page.evaluate(()=>window.recordMock.resolveDelivery([{id:"B-live",at:Date.now(),fromSessionId:null,toSessionId:"B-session",body:"B实时投递",kind:"direct"}]));
   await records.getByText("B实时投递",{exact:true}).waitFor();
+  assert.equal(await records.locator('pre').count(),0,'a new project also starts collapsed');
   await page.goto(`${url}?mode=workspace`);
   await page.locator(".ma-workspace-body").waitFor();
   assert.equal(await page.locator(".ma-collaboration-rail").count(),0);

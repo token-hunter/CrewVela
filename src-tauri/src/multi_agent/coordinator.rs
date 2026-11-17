@@ -582,7 +582,7 @@ pub fn interpret_collaboration_message_streaming(
 
     let system_prompt = r#"你是 CrewVela Multi-Agent 项目协调器。你只生成结构化、可审计的控制计划，不直接修改文件或声称任务已经执行。
 
-支持的 Runtime 只有 claude_code、codex、kimi_code、pi、opencode、deepseek_harness、zcode、zcode_cli；角色只有 orchestrator、worker、reviewer、integrator。
+新成员 Runtime 只有七个 CLI 执行引擎：claude_code、codex、kimi_code、pi、opencode、deepseek_harness（dsh）、zcode_cli；角色只有 orchestrator、worker、reviewer、integrator。zcode 仅兼容当前项目已有 ZCode Desktop 成员，使用时必须填写对应 existingAgentId，不得新建或自动替换为 zcode_cli。独立 Chat 界面不是新的协作成员类型。
 
 规则：
 1. 新项目需求使用 plan_project；向已有项目追加任务使用 add_tasks；启动、暂停、恢复、取消、查看分别使用 start_project、pause_project、resume_project、cancel_project、inspect_project；重试任务、重派任务、批准任务分别使用 retry_task、reassign_task、approve_task。
@@ -651,6 +651,8 @@ pub fn interpret_collaboration_message_streaming(
         )
     };
 
+    let mut execution_runtimes = super::COLLABORATION_CLI_RUNTIMES.iter().map(|runtime| runtime.as_str()).collect::<Vec<_>>();
+    if snapshot.is_some_and(|project| project.agents.iter().any(|agent| agent.runtime_kind == AgentRuntimeKind::ZCode)) { execution_runtimes.push("zcode"); }
     let schema = serde_json::json!({
         "type": "object",
         "additionalProperties": false,
@@ -669,7 +671,7 @@ pub fn interpret_collaboration_message_streaming(
                     "type": "object", "additionalProperties": false,
                     "properties": {
                         "key": {"type": "string"}, "name": {"type": "string"},
-                        "runtimeKind": {"type": "string", "enum": ["claude_code", "codex", "kimi_code", "pi", "opencode", "deepseek_harness", "zcode", "zcode_cli"]},
+                        "runtimeKind": {"type": "string", "enum": execution_runtimes},
                         "role": {"type": "string", "enum": ["orchestrator", "worker", "reviewer", "integrator"]},
                         "description": {"type": "string"}, "model": {"type": ["string", "null"]},
                         "permissionProfile": {"type": "string", "enum": ["default", "auto", "yolo"]},
@@ -1183,6 +1185,10 @@ fn parse_plan_value(value: &serde_json::Value, context: &str) -> Result<Coordina
             bail!("{context}：agents[{index}].runtimeKind 不受支持：{}；输出片段：{}",
                 value["agents"][index]["runtimeKind"], text_excerpt(&value.to_string()));
         }
+        if !agent.runtime_kind.is_collaboration_cli()
+            && !(agent.runtime_kind == AgentRuntimeKind::ZCode && agent.existing_agent_id.as_deref().is_some_and(|id| !id.trim().is_empty())) {
+            bail!("{context}：新增协作成员仅支持七个 CLI；ZCode Desktop 只能引用已有成员，独立 Chat 不用于协作执行");
+        }
     }
     if plan.requested_runtimes.iter().any(|kind| kind.is_retired()) {
         bail!("{context}：requestedRuntimes 包含已移除或未知 Runtime；输出片段：{}", text_excerpt(&value.to_string()));
@@ -1453,6 +1459,20 @@ mod tests {
         let plan = parse_plan(&structured_plan("opencode")).unwrap();
 
         assert_eq!(plan.agents[0].runtime_kind.as_str(), "opencode");
+    }
+
+    #[test]
+    fn cli_plan_admission_keeps_legacy_desktop_only_as_an_existing_member() {
+        for runtime in ["zcode","claude_chat","codex_chat","kimi_chat","pi_chat","opencode_chat"] {
+            assert!(parse_plan(&structured_plan(runtime)).unwrap_err().to_string().contains("CLI"));
+        }
+        for runtime in super::super::COLLABORATION_CLI_RUNTIMES {
+            assert!(parse_plan(&structured_plan(runtime.as_str())).is_ok());
+        }
+        let mut old:serde_json::Value=serde_json::from_str(&structured_plan("zcode")).unwrap();
+        old["structured_output"]["intent"]=serde_json::json!("add_tasks");
+        old["structured_output"]["agents"][0]["existingAgentId"]=serde_json::json!("original-desktop-member");
+        assert_eq!(parse_plan(&old.to_string()).unwrap().agents[0].runtime_kind,super::AgentRuntimeKind::ZCode);
     }
 
     #[test]

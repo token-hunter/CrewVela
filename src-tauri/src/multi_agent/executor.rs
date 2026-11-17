@@ -9,7 +9,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 
 use crate::acp::{execute_managed_acp, ManagedAcpKind, ManagedAcpMode, ManagedAcpOutcome, UnverifiedStop};
 use crate::pty::PtyManager;
@@ -682,6 +682,7 @@ impl AgentTerminalHost {
         let started = Instant::now();
         let mut capture = RuntimeStreamCapture::default();
         let mut marker_window = VecDeque::new();
+        let mut activity_capture = super::conversation_activity::CapturedActivity::default();
         let outcome = loop {
             if cancelled.load(Ordering::Acquire) {
                 self.interrupt_visible_runtime(
@@ -695,6 +696,11 @@ impl AgentTerminalHost {
             }
             let (next_cursor, bytes) = self.pty.transcript_since(pty_id, cursor)?;
             cursor = next_cursor;
+            if kind == AgentRuntimeKind::Pi && super::conversation::is_conversation_task(&request.task.id) {
+                if let Err(error) = activity_capture.poll(&runtime_files.output_path, &request.store, &request.run_id) {
+                    eprintln!("[crewvela] Pi 活动捕获失败：{error:#}");
+                }
+            }
             if !bytes.is_empty() {
                 capture.append(&bytes);
                 marker_window.extend(bytes.iter().copied());
@@ -908,6 +914,22 @@ fn powershell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
+fn windows_native_argument(value: &str) -> String {
+    // Windows PowerShell 5.1 serializes native argv itself. Preserve embedded
+    // JSON quotes, empty arguments and trailing backslashes using CRT quoting.
+    let mut result = String::from("\"");
+    let mut slashes = 0;
+    for ch in value.chars() {
+        if ch == '\\' { slashes += 1; continue; }
+        result.push_str(&"\\".repeat(if ch == '"' { slashes * 2 + 1 } else { slashes }));
+        result.push(ch);
+        slashes = 0;
+    }
+    result.push_str(&"\\".repeat(slashes * 2));
+    result.push('"');
+    result
+}
+
 fn posix_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
@@ -961,7 +983,7 @@ fn powershell_runtime_script(
     let executable = powershell_quote(&command.get_program().to_string_lossy());
     let arguments = command
         .get_args()
-        .map(|argument| powershell_quote(&argument.to_string_lossy()))
+        .map(|argument| if kind==AgentRuntimeKind::ZCodeCli { powershell_quote(&windows_native_argument(&argument.to_string_lossy())) } else { powershell_quote(&argument.to_string_lossy()) })
         .collect::<Vec<_>>()
         .join(" ");
     let invocation = match prompt_path {
@@ -1668,8 +1690,9 @@ pub(super) fn execute_run(
     let mut agent = agent;
     agent.model = None;
     let mut task = task;
-    task.workspace_mode = execution_workspace_mode(&task, agent.runtime_kind);
     let discussion = super::conversation::is_conversation_task(&task.id);
+    let native_discussion = discussion && store.conversation_task_policy(&task.id, &agent.id)?.uses_native_capabilities();
+    task.workspace_mode = if native_discussion { WorkspaceMode::SharedWrite } else { execution_workspace_mode(&task, agent.runtime_kind) };
     if let Err(error) = if discussion && agent.runtime_kind == AgentRuntimeKind::Pi { Ok(()) } else { validate_readonly_runtime(task.workspace_mode, agent.runtime_kind) } {
         store.fail_run_permanently(&run_id, &error.to_string(), None)?;
         return Err(error);
@@ -1694,7 +1717,10 @@ pub(super) fn execute_run(
     } else {
         validated_resume_locator(&project, &task, resume_locator)
     };
-    let workspace = if message_turn {
+    let workspace = if native_discussion {
+        let path = PathBuf::from(&project.root_path);
+        if path.is_dir() { Ok(path) } else { Err(anyhow!("群聊项目目录不存在")) }
+    } else if message_turn {
         (|| -> Result<PathBuf> {
             let cwd = message_workspace_at(&crate::providers::config_dir()?, &task.id)?;
             std::fs::create_dir_all(&cwd)?;
@@ -2588,20 +2614,32 @@ fn managed_acp_mode(
     }
 }
 
+fn native_conversation(request: &RuntimeRequest) -> Result<bool> {
+    Ok(super::conversation::is_conversation_task(&request.task.id) && request.store.conversation_task_policy(&request.task.id, &request.agent.id)?.uses_native_capabilities())
+}
+
 fn execute_preferred_acp(
     kind: ManagedAcpKind,
     locator_keys: &[&str],
     request: &RuntimeRequest,
     cancelled: &AtomicBool,
 ) -> Result<Option<RuntimeResult>> {
+    let discussion = super::conversation::is_conversation_task(&request.task.id);
+    let research_policy = if discussion {
+        let policy = request.store.conversation_task_policy(&request.task.id, &request.agent.id)?;
+        if policy.uses_native_capabilities() { None } else { Some(policy) }
+    } else { None };
+    let native_discussion = discussion && research_policy.is_none();
+    if research_policy.is_some() && kind != ManagedAcpKind::ClaudeCode {
+        bail!("{} 暂不能强制执行完整群聊工具白名单与读取边界；请使用已适配的 Claude 或 Pi。未启动模型，也未降级为 YOLO；明确授权的工程任务仍可使用此 Runtime", request.agent.runtime_kind.as_str());
+    }
     if kind != ManagedAcpKind::DeepSeekHarness && request_requires_session_cli(request)? {
         return Ok(None);
     }
     let resume_session_id = locator_string(request.resume_locator.as_ref(), locator_keys);
-    let mode = managed_acp_mode(
-        request.task.workspace_mode,
-        request.agent.permission_profile,
-    );
+    let mode = if native_discussion && request.agent.permission_profile == PermissionProfile::Default { ManagedAcpMode::Inherit } else { managed_acp_mode(
+        request.task.workspace_mode, request.agent.permission_profile,
+    ) };
     let deepseek_policy = match mode {
         ManagedAcpMode::ReadOnly => "read-only",
         ManagedAcpMode::FullAccess => "danger-full-access",
@@ -2643,23 +2681,21 @@ fn execute_preferred_acp(
         None,
     )?;
     let permission_handler: Option<crate::acp::ManagedPermissionHandler> =
-        if kind == ManagedAcpKind::DeepSeekHarness && mode == ManagedAcpMode::Default {
+        if (kind == ManagedAcpKind::DeepSeekHarness || native_discussion) && matches!(mode, ManagedAcpMode::Default | ManagedAcpMode::Inherit) {
             let store = request.store.clone();
             let project_id = request.project.id.clone();
             let task_id = request.task.id.clone();
             let run_id = request.run_id.clone();
             Some(Box::new(move |value, cancellation| {
-                let title = value
-                    .pointer("/params/toolCall/title")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("Agent 工具调用");
+                let title = runtime_permission_title(&value);
                 let approval = store.request_approval(super::RequestApprovalInput {
                     project_id: project_id.clone(),
                     task_id: Some(task_id.clone()),
                     run_id: Some(run_id.clone()),
                     approval_type: "runtime_permission".into(),
                     summary: format!(
-                        "DeepSeek Harness 请求执行：{title}\n{}",
+                        "{} {title}\n{}",
+                        format!("{kind:?}"),
                         runtime_permission_details(
                             value
                                 .pointer("/params/toolCall/rawInput")
@@ -2674,7 +2710,7 @@ fn execute_preferred_acp(
                         break Err(anyhow!("ACP Agent 任务已取消"));
                     }
                     if start.elapsed() > Duration::from_secs(30 * 60) {
-                        break Err(anyhow!("DeepSeek Harness 权限审批等待超时"));
+                        break Err(anyhow!("CLI 权限审批等待超时"));
                     }
                     let snapshot = match store.snapshot(&project_id) {
                         Ok(snapshot) => snapshot,
@@ -2709,8 +2745,7 @@ fn execute_preferred_acp(
         } else {
             None
         };
-    let discussion = super::conversation::is_conversation_task(&request.task.id);
-    let mcp_url = if discussion { String::new() } else { format!("{}/mcp", request.collaboration.endpoint) };
+    let mcp_url = if research_policy.as_ref().is_some_and(|p| !p.allows_tools()) { String::new() } else { format!("{}/mcp", request.collaboration.endpoint) };
     let event_store = request.store.clone();
     let event_run = request.run_id.clone();
     let update_handler: Option<Box<dyn FnMut(&serde_json::Value) + Send>> = if discussion { Some(Box::new(move |update| {
@@ -2720,10 +2755,24 @@ fn execute_preferred_acp(
                     eprintln!("[crewvela] 公共讨论回复持久化失败：{error:#}");
                 }
             }
+        } else if update.get("sessionUpdate").and_then(serde_json::Value::as_str) == Some("agent_thought_chunk")
+            && update.pointer("/content/text").and_then(serde_json::Value::as_str).is_some_and(|text| !text.is_empty()) {
+            if let Err(error) = event_store.append_runtime_event(super::AppendRuntimeEventInput {run_id:event_run.clone(),event_type:"analysis_activity".into(),payload:serde_json::json!({})}) {
+                eprintln!("[crewvela] 分析活动状态持久化失败：{error:#}");
+            }
+        } else if matches!(update.get("sessionUpdate").and_then(serde_json::Value::as_str), Some("tool_call" | "tool_call_update")) {
+            if let Err(error) = event_store.append_runtime_event(super::AppendRuntimeEventInput {run_id:event_run.clone(),event_type:"tool_protocol".into(),payload:update.clone()}) {
+                eprintln!("[crewvela] 研究工具协议事件持久化失败：{error:#}");
+            }
         }
     })) } else { None };
     request.store.mark_acp_execution(&request.run_id)?;
-    let outcome = execute_managed_acp(
+    let outcome = if let Some(policy) = &research_policy {
+        request.store.append_runtime_event(super::AppendRuntimeEventInput { run_id: request.run_id.clone(), event_type: "conversation_policy".into(), payload: serde_json::to_value(policy)? })?;
+        crate::acp::execute_managed_research_acp(kind, &session.id, &request.cwd.display().to_string(),
+            &render_task_prompt(request), &mcp_url, &request.collaboration.token,
+            policy.allows_tools(), cancelled, update_handler)
+    } else { execute_managed_acp(
         kind,
         &session.id,
         &request.cwd.display().to_string(),
@@ -2731,15 +2780,12 @@ fn execute_preferred_acp(
         &render_task_prompt(request),
         &mcp_url,
         &request.collaboration.token,
-        managed_acp_mode(
-            request.task.workspace_mode,
-            request.agent.permission_profile,
-        ),
+        mode,
         cancelled,
         None,
         permission_handler,
         update_handler,
-    );
+    ) };
     let outcome = match outcome {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -2792,7 +2838,7 @@ fn execute_preferred_acp(
             }))
         }
         ManagedAcpOutcome::Unavailable(reason) => {
-            if discussion { return Err(anyhow!("只读讨论 ACP 未就绪，不降级为权限不同的执行路径：{reason}")); }
+            if discussion { return Err(anyhow!("群聊 ACP 未就绪，未更换权限或切换供应商：{reason}")); }
             if kind == ManagedAcpKind::DeepSeekHarness {
                 request.terminal_host.sessions.mark_agent_activity(
                     &session.id,
@@ -2837,6 +2883,12 @@ impl AgentRuntimeAdapter for ZCodeAdapter {
         self.0
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if self.0 == AgentRuntimeKind::ZCodeCli && native_conversation(request)? {
+            // Use the real CLI's own account/config/tool stack, rather than a
+            // Desktop Account Host that cannot decrypt the CLI's credentials.
+            let command = super::zcode::native_cli_prompt_command(&request.cwd, &render_task_prompt(request), if request.agent.permission_profile == PermissionProfile::Yolo { "yolo" } else { "build" })?;
+            return execute_command(self.0, command, None, request, cancelled);
+        }
         let label = if self.0 == AgentRuntimeKind::ZCodeCli {
             "ZCode CLI"
         } else {
@@ -2848,7 +2900,7 @@ impl AgentRuntimeAdapter for ZCodeAdapter {
             )
             .into());
         }
-        if request.agent.permission_profile == PermissionProfile::Auto {
+        if request.agent.permission_profile == PermissionProfile::Auto && !native_conversation(request)? {
             require_isolated_auto_approval(request, label)?;
         }
         super::zcode::model_selection(None)
@@ -3089,6 +3141,21 @@ fn validate_deepseek_resume(
     Ok(())
 }
 
+fn runtime_permission_title(value: &serde_json::Value) -> String {
+    let call = &value["params"]["toolCall"];
+    let tool = call.pointer("/_meta/claudeCode/toolName").and_then(serde_json::Value::as_str);
+    let operation = match (tool, call["kind"].as_str()) {
+        (Some("WebSearch"), _) | (_, Some("search")) => "请求搜索",
+        (Some("WebFetch"), _) | (_, Some("fetch")) => "请求访问网页",
+        (_, Some("read")) => "请求读取文件",
+        (_, Some("execute")) => "请求运行命令",
+        (_, Some("edit")) => "请求修改文件",
+        (_, Some("delete")) => "请求删除文件",
+        _ => "请求执行工具",
+    };
+    format!("{operation}：{}", call["title"].as_str().unwrap_or("Agent 工具调用"))
+}
+
 fn runtime_permission_details(value: &serde_json::Value) -> String {
     fn redact(value: &serde_json::Value) -> serde_json::Value {
         match value {
@@ -3239,7 +3306,8 @@ fn configure_codex_base(command: &mut Command, request: &RuntimeRequest) -> Resu
     if !(needs_cli && request.task.workspace_mode == WorkspaceMode::ReadOnly) {
         command.arg("-C").arg(external_command_path(&request.cwd));
     }
-    let settings = if super::conversation::is_conversation_task(&request.task.id) {
+    let native = native_conversation(request)?;
+    let settings = if super::conversation::is_conversation_task(&request.task.id) && !native {
         CodexPermissionSettings::ReadOnly
     } else if request.task.id.starts_with("cli-message-") {
         CodexPermissionSettings::Sandboxed {
@@ -3251,7 +3319,7 @@ fn configure_codex_base(command: &mut Command, request: &RuntimeRequest) -> Resu
             request.agent.permission_profile,
         )
     };
-    if !(needs_cli && request.task.workspace_mode == WorkspaceMode::ReadOnly) {
+    if !(needs_cli && request.task.workspace_mode == WorkspaceMode::ReadOnly) && !(native && request.agent.permission_profile == PermissionProfile::Default) {
         match settings {
             CodexPermissionSettings::ReadOnly => {
                 command.args(["-s", "read-only", "-a", "never"]);
@@ -3301,7 +3369,8 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
         }
         let mut command = runtime_command(self.kind())?;
         configure_collaboration_mcp(&mut command, request)?;
-        let (permission_mode, skip_permissions) = if request.task.id.starts_with("cli-message-") {
+        let native = native_conversation(request)?;
+        let (permission_mode, skip_permissions) = if request.task.id.starts_with("cli-message-") && !native {
             ("dontAsk", false)
         } else {
             claude_permission_settings(
@@ -3355,12 +3424,11 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
             })
             .collect::<HashMap<_, _>>();
         let settings_json = crate::pty::build_settings_json(&environment, &hook_command);
-        configure_claude_interactive(
-            &mut command,
-            permission_mode,
-            skip_permissions,
-            &settings_json,
-        );
+        if native && request.agent.permission_profile == PermissionProfile::Default {
+            command.arg("--settings").arg(&settings_json);
+        } else {
+            configure_claude_interactive(&mut command, permission_mode, skip_permissions, &settings_json);
+        }
         command.current_dir(external_command_path(&request.cwd));
         request.terminal_host.execute_native(
             self.kind(),
@@ -3447,7 +3515,11 @@ impl AgentRuntimeAdapter for KimiCodeAdapter {
     }
 
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
-        let _mcp_config = KimiMcpConfigGuard::install(request)?;
+        if native_conversation(request)? {
+            return execute_preferred_acp(ManagedAcpKind::Kimi, &["sessionId", "session_id"], request, cancelled)?
+                .context("Kimi 群聊原生 ACP 未就绪");
+        }
+        let _mcp_config = if native_conversation(request)? { None } else { Some(KimiMcpConfigGuard::install(request)?) };
         let mut command = runtime_command(self.kind())?;
         configure_collaboration_mcp(&mut command, request)?;
         command.args(["--output-format", "stream-json"]);
@@ -3584,8 +3656,31 @@ impl AgentRuntimeAdapter for PiAdapter {
             std::fs::File::create(&session)?;
         }
         let mut command = runtime_command(self.kind())?;
+        if native_conversation(request)? {
+            command.args(["--print", "--mode", "json", "--session"]).arg(&session);
+            return execute_command(self.kind(), command, Some(render_task_prompt(request)), request, cancelled);
+        }
         if super::conversation::is_conversation_task(&request.task.id) {
+            let mut version_command = runtime_command(self.kind())?;
+            version_command.arg("--version");
+            let version = crate::title_summary::run_cli_with_timeout(version_command, None, Duration::from_secs(10), 16 * 1024, "Pi 群聊能力检查")?;
+            let version_text = String::from_utf8_lossy(&version.stdout);
+            if !version.status.success() || version_text.trim() != "1.5.0" {
+                bail!("Pi {} 尚未验证群聊扩展隔离契约（需要 1.5.0），拒绝扩大权限", version_text.trim());
+            }
+            let policy = request.store.conversation_task_policy(&request.task.id, &request.agent.id)?;
+            request.store.append_runtime_event(super::AppendRuntimeEventInput { run_id: request.run_id.clone(), event_type: "conversation_policy".into(), payload: serde_json::to_value(&policy)? })?;
             command.args(["--no-tools", "--no-extensions", "--no-mcp", "--no-context-files", "--no-skills", "--no-prompt-templates"]);
+            if policy.allows_tools() {
+                let extension = request.cwd.join("crewvela-conversation-research.mjs");
+                std::fs::write(&extension, include_str!("../pi-conversation-research.mjs"))?;
+                command.arg("-e").arg(extension);
+                let names = super::conversation::research::tools(&policy).iter()
+                    .filter_map(|tool| tool["name"].as_str()).collect::<Vec<_>>().join(",");
+                command.arg("--tools").arg(names);
+                command.env("CREWVELA_RESEARCH_URL", format!("{}/mcp", request.collaboration.endpoint));
+                command.env("CREWVELA_RESEARCH_TOKEN", &request.collaboration.token);
+            }
             command.args(["--print", "--mode", "json", "--session"]).arg(&session);
             return execute_command(self.kind(), command, Some(render_task_prompt(request)), request, cancelled);
         }
@@ -3629,6 +3724,10 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         AgentRuntimeKind::OpenCode
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if native_conversation(request)? {
+            return execute_preferred_acp(ManagedAcpKind::OpenCode, &["sessionId", "sessionID"], request, cancelled)?
+                .context("OpenCode 群聊原生 ACP 未就绪");
+        }
         let mut command = runtime_command(self.kind())?;
         command.args(["run", "--format", "json"]);
         let dangerous_permissions = uses_dangerous_runtime_permissions(
@@ -3785,7 +3884,9 @@ fn execute_command(
             runtime_failure_message(kind, &stdout, "")
         ));
     }
-    let summary = if kind == AgentRuntimeKind::Pi && super::conversation::is_conversation_task(&request.task.id) {
+    let summary = if kind == AgentRuntimeKind::ZCodeCli && native_conversation(request)? {
+        native_zcode_cli_output(&stdout)?
+    } else if kind == AgentRuntimeKind::Pi && super::conversation::is_conversation_task(&request.task.id) {
         conversation_pi_output(&stdout)?
     } else { normalize_output(kind, &stdout) };
     if summary.trim().is_empty() {
@@ -4073,6 +4174,15 @@ fn read_stream_live<R: Read>(
             );
         } else {
             let decoded = String::from_utf8_lossy(&line);
+            if stream == "stdout" {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(decoded.trim()) {
+                    if let Some(payload) = super::conversation_activity::stream_signal(&value) {
+                        if let Err(error) = store.append_runtime_event(super::AppendRuntimeEventInput { run_id: run_id.clone(), event_type: "agent_activity".into(), payload }) {
+                            eprintln!("[crewvela] CLI 活动状态持久化失败：{error:#}");
+                        }
+                    }
+                }
+            }
             if let Some(display) = present_runtime_log(kind, &decoded, stream) {
                 let _ = store.append_run_log(&run_id, stream, &display);
             }
@@ -4586,6 +4696,16 @@ pub(super) fn conversation_pi_output(raw: &str) -> Result<String> {
     }
     if replies.is_empty() { return Err(anyhow!("Pi 未返回可核验的 assistant message_end，公共会话不会显示终端日志或用户提示词作为回复")); }
     Ok(replies.join("\n"))
+}
+
+fn native_zcode_cli_output(raw: &str) -> Result<String> {
+    let plain = strip_terminal_control_sequences(raw);
+    // PTY combines the CLI's stderr startup notice with its pretty JSON result.
+    let start = plain.find('{').context("ZCode CLI 未返回 JSON 结果")?;
+    let value: serde_json::Value = serde_json::from_str(plain[start..].trim()).context("ZCode CLI 返回的不是有效 JSON，未当作成功回复")?;
+    if !value.get("sessionId").is_some_and(serde_json::Value::is_string) || !value.get("turnId").is_some_and(serde_json::Value::is_string) { return Err(anyhow!("ZCode CLI 结果缺少会话或轮次身份")); }
+    value.get("response").and_then(serde_json::Value::as_str).map(str::trim).filter(|text| !text.is_empty()).map(str::to_string)
+        .ok_or_else(|| anyhow!("ZCode CLI 没有返回已确认的回复正文，请查看原会话状态"))
 }
 
 fn normalize_output(kind: AgentRuntimeKind, raw: &str) -> String {
@@ -5288,6 +5408,16 @@ fn workspace_content_hash(cwd: &std::path::Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_zcode_cli_json_preserves_only_confirmed_reply() {
+        let valid = r#"{"sessionId":"s","turnId":"t","response":"actual reply"}"#;
+        assert_eq!(super::native_zcode_cli_output(valid).unwrap(), "actual reply");
+        assert_eq!(super::native_zcode_cli_output(&format!("startup notice\r\n{valid}")).unwrap(), "actual reply");
+        assert!(super::native_zcode_cli_output(r#"{"response":"unscoped"}"#).is_err());
+        assert!(super::native_zcode_cli_output(r#"{"sessionId":"s","turnId":"t","response":""}"#).is_err());
+        assert!(super::native_zcode_cli_output("not a reply").is_err());
+    }
+
 
     #[cfg(unix)]
     #[test]
@@ -5935,12 +6065,12 @@ mod tests {
             AgentRuntimeKind::ZCode,
             AgentRuntimeKind::ZCodeCli,
         ] {
-            store
+            let agent = store
                 .create_agent(super::super::CreateAgentInput {
                     avatar_id: None,
                     project_id: project.id.clone(),
                     name: runtime_kind.as_str().into(),
-                    runtime_kind,
+                    runtime_kind: if runtime_kind == AgentRuntimeKind::ZCode { AgentRuntimeKind::ZCodeCli } else { runtime_kind },
                     role: AgentRole::Worker,
                     description: String::new(),
                     model: None,
@@ -5950,6 +6080,11 @@ mod tests {
                 persona: Default::default(),
                 persona_custom: String::new(),})
                 .unwrap();
+            if runtime_kind == AgentRuntimeKind::ZCode {
+                // Seed a record from the old catalog; the new member API must
+                // reject Desktop while all retained receivers remain usable.
+                store.connection.lock().unwrap().execute("UPDATE ma_agents SET runtime_kind='zcode' WHERE id=?1",[&agent.id]).unwrap();
+            }
         }
         let sessions =
             SessionManager::open_at(root.join("sessions.json"), root.join("events")).unwrap();
@@ -6007,6 +6142,20 @@ mod tests {
         host.prepare_project_sessions(&store, &project.id).unwrap();
         assert_eq!(sessions.list().len(), 8);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn zcode_powershell_launch_preserves_json_quotes_and_full_native_arguments() {
+        let root=std::env::temp_dir().join(format!("crewvela argv {}",uuid::Uuid::new_v4()));std::fs::create_dir_all(&root).unwrap();
+        let args=vec!["{\"action\":\"done\",\"nextAgentId\":null}".to_string(),"two words".into(),"".into(),"C:\\with spaces\\".into(),"中文\n第二行 '$HOME' ` & %PATH%".into(),"a\\\"b".into()];
+        let mut command=Command::new(which::which("node").unwrap());command.args(["-e","process.stdout.write(JSON.stringify(process.argv.slice(1)))"]).args(&args);
+        let output=root.join("output.jsonl");let exit=root.join("exit.txt");let script=root.join("launch.ps1");
+        std::fs::write(&script,format!("\u{feff}{}",powershell_runtime_script(AgentRuntimeKind::ZCodeCli,&command,None,&output,&exit,"__ARGV_DONE__"))).unwrap();
+        let result=Command::new("powershell.exe").args(["-NoProfile","-ExecutionPolicy","Bypass","-File"]).arg(&script).output().unwrap();
+        assert!(result.status.success(),"{}",String::from_utf8_lossy(&result.stderr));
+        let actual:Vec<String>=serde_json::from_str(std::fs::read_to_string(&output).unwrap().trim()).unwrap();
+        assert_eq!(actual,args,"the CLI must receive the original JSON and user prompt without quote loss");
     }
 
     #[test]

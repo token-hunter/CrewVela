@@ -13,6 +13,28 @@ export function hasMentionToken(value: string, token: string): boolean {
   return mentionExpression(token, "iu").test(value);
 }
 
+export interface MentionTextSegment { text: string; mention: boolean }
+/** Use the same complete-token boundaries as routing. Longer names win overlaps. */
+export function mentionTextSegments(value: string, tokens: readonly string[]): MentionTextSegment[] {
+  const ranges: Array<{start:number;end:number}> = [];
+  for (const token of new Set(tokens.filter(Boolean))) {
+    for (const match of value.matchAll(mentionExpression(token,"giu"))) {
+      const start = match.index! + match[1].length;
+      ranges.push({start,end:start+match[2].length});
+    }
+  }
+  ranges.sort((a,b)=>a.start-b.start || b.end-a.end);
+  const segments: MentionTextSegment[] = [];
+  let cursor = 0;
+  for (const range of ranges) {
+    if (range.start < cursor) continue;
+    if (range.start > cursor) segments.push({text:value.slice(cursor,range.start),mention:false});
+    segments.push({text:value.slice(range.start,range.end),mention:true}); cursor=range.end;
+  }
+  if (cursor < value.length) segments.push({text:value.slice(cursor),mention:false});
+  return segments;
+}
+
 export function replaceMentionToken(
   value: string,
   token: string,

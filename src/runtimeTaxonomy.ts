@@ -21,12 +21,14 @@ export const CHAT_RUNTIMES: readonly AgentRuntimeKind[] = [
   "zcode",
 ];
 
-/** 协作中心可调度的 Runtime：CLI 终端全家 + DeepSeek Harness / ZCode Desktop 两个两栖原生聊天。 */
+/** 新协作成员使用的 CLI 执行引擎；会话展示分类独立，dsh 仍保留原生聊天界面。 */
 export const COLLABORATION_RUNTIMES: readonly AgentRuntimeKind[] = [
   ...TERMINAL_RUNTIMES,
   "deepseek_harness",
-  "zcode",
 ];
+
+/** Existing members retain their original execution path; never create or silently remap one. */
+export function isLegacyCollaborationRuntime(kind: AgentRuntimeKind): boolean { return kind === "zcode"; }
 
 export type RuntimeCategory = "terminal" | "chat";
 

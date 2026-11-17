@@ -1503,6 +1503,20 @@ impl Projection {
     }
 }
 
+/// Retain the installed CLI's own authentication, tools and settings. Reuse
+/// native launcher discovery so a long role/context prompt never goes via cmd.exe.
+pub(super) fn native_cli_prompt_command(cwd: &Path, prompt: &str, mode: &str) -> Result<Command> {
+    let base = launch(&runtime_executable(super::domain::AgentRuntimeKind::ZCodeCli)?)?;
+    let mut args = base.get_args().map(ToOwned::to_owned).collect::<Vec<_>>();
+    if args.len() < 2 || args[args.len()-2] != "app-server" || args[args.len()-1] != "--stdio" { bail!("ZCode CLI 原生启动契约已变化，未更换登录或权限配置"); }
+    args.truncate(args.len()-2);
+    let mut command = Command::new(base.get_program()); command.args(args);
+    for (key,value) in base.get_envs() { if let Some(value) = value { command.env(key,value); } else { command.env_remove(key); } }
+    #[cfg(windows)] { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
+    command.arg("--cwd").arg(crate::acp::normalize_harness_path(cwd)?).args(["--mode",mode,"--json","--no-color","--prompt",prompt]);
+    Ok(command)
+}
+
 pub(super) fn execute(
     kind: super::domain::AgentRuntimeKind,
     cwd: &Path,

@@ -256,12 +256,12 @@ fn require_verifiable_project_runs(
 }
 
 #[tauri::command]
-pub fn collaboration_health(
-    sessions: State<'_, SessionManager>,
-    ptys: State<'_, PtyManager>,
-    queue: State<'_, SessionActionQueue>,
-) -> Result<Value, String> {
-    health(sessions.inner(), ptys.inner(), queue.inner()).map_err(|error| error.to_string())
+pub async fn collaboration_health(app: tauri::AppHandle) -> Result<Value, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        health(app.state::<SessionManager>().inner(), app.state::<PtyManager>().inner(), app.state::<SessionActionQueue>().inner())
+            .map_err(|error| error.to_string())
+    }).await.map_err(|error| error.to_string())?
 }
 
 fn health(

@@ -34,7 +34,16 @@ pub enum AgentRuntimeKind {
     Unsupported,
 }
 
+/// New collaboration members execute CLI engines. Session UI categories remain independent.
+pub const COLLABORATION_CLI_RUNTIMES: [AgentRuntimeKind; 7] = [
+    AgentRuntimeKind::ClaudeCode, AgentRuntimeKind::Codex, AgentRuntimeKind::KimiCode,
+    AgentRuntimeKind::Pi, AgentRuntimeKind::OpenCode, AgentRuntimeKind::ZCodeCli,
+    AgentRuntimeKind::DeepSeekHarness,
+];
+
 impl AgentRuntimeKind {
+    pub fn is_collaboration_cli(self) -> bool { COLLABORATION_CLI_RUNTIMES.contains(&self) }
+    pub fn supports_existing_collaboration(self) -> bool { self.is_collaboration_cli() || self == Self::ZCode }
     pub fn is_retired(self) -> bool {
         matches!(self, Self::OhMyPi | Self::MiniMaxCode | Self::Unsupported)
     }

@@ -228,6 +228,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     UI_PREVIEW ? PREVIEW_RUNTIMES : [],
   );
   const [error, setError] = useState<string | null>(null);
+  const [loadingErrors, setLoadingErrors] = useState<Record<string, string>>({});
   const [projectsLoading, setProjectsLoading] = useState(!UI_PREVIEW);
   const [creatingProject, setCreatingProject] = useState(false);
   const [skillSets, setSkillSets] = useState<SuggestedSkillSet[]>([]);
@@ -307,9 +308,11 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   const selectionRef = useRef(selectedProjectId);
   const snapshotRequest = useRef(0);
   const selectProject = useCallback((projectId: string | null) => {
-    selectionRef.current = projectId;
-    snapshotRequest.current += 1;
-    setSelectedProjectId(projectId);
+    if (selectionRef.current !== projectId) {
+      selectionRef.current = projectId;
+      snapshotRequest.current += 1;
+      setSelectedProjectId(projectId);
+    }
     selectCollaborationProject(projectId);
   }, []);
 
@@ -317,23 +320,12 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     if (UI_PREVIEW) return;
     let cancelled = false;
     setProjectsLoading(true);
-    Promise.all([
-      invoke<MultiAgentProject[]>("ma_list_projects"),
-      invoke<RuntimeProbe[]>("ma_probe_runtimes"),
-      invoke<{ skillSets: SuggestedSkillSet[] }>("skill_center_snapshot"),
-    ])
-      .then(([nextProjects, nextRuntimes, skillCenter]) => {
+    setLoadingErrors({});
+    // Project content must not wait for CLI discovery, network updates or skill scans.
+    void invoke<MultiAgentProject[]>("ma_list_projects")
+      .then((nextProjects) => {
         if (cancelled) return;
         setProjects(nextProjects);
-        setRuntimes(nextRuntimes);
-        setCheckingRuntimes(true);
-        runtimeCheckInFlight.current = true;
-        const checkSequence = ++runtimeCheckSequence.current;
-        void invoke<RuntimeProbe[]>("ma_check_runtime_updates")
-          .then((checked) => { if (!cancelled && checkSequence === runtimeCheckSequence.current) setRuntimes(checked); })
-          .catch(() => undefined)
-          .finally(() => { if (!cancelled && checkSequence === runtimeCheckSequence.current) { runtimeCheckInFlight.current = false; setCheckingRuntimes(false); } });
-        setSkillSets(skillCenter.skillSets);
         const storedProjectId = (() => {
           try {
             return initialProjectId ?? window.localStorage.getItem(PROJECT_STORAGE_KEY);
@@ -355,8 +347,34 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
       .finally(() => {
         if (!cancelled) setProjectsLoading(false);
       });
+    let firstFrame = 0, backgroundFrame = 0;
+    const reportBackgroundError = (source: string, reason: unknown) => {
+      if (!cancelled) setLoadingErrors(current => ({ ...current, [source]: String(reason) }));
+    };
+    firstFrame = requestAnimationFrame(() => {
+      backgroundFrame = requestAnimationFrame(() => {
+        if (cancelled) return;
+        setCheckingRuntimes(true);
+        runtimeCheckInFlight.current = true;
+        const checkSequence = ++runtimeCheckSequence.current;
+        void invoke<RuntimeProbe[]>("ma_probe_runtimes")
+          .then(next => { if (!cancelled && checkSequence === runtimeCheckSequence.current) setRuntimes(next); })
+          .catch(reason => reportBackgroundError("运行环境检测", reason))
+          .then(() => {
+            if (cancelled || checkSequence !== runtimeCheckSequence.current) return;
+            return invoke<RuntimeProbe[]>("ma_check_runtime_updates")
+              .then(next => { if (!cancelled && checkSequence === runtimeCheckSequence.current) setRuntimes(next); })
+              .catch(reason => reportBackgroundError("更新检查", reason));
+          })
+          .finally(() => { if (!cancelled && checkSequence === runtimeCheckSequence.current) { runtimeCheckInFlight.current = false; setCheckingRuntimes(false); } });
+        void invoke<{ skillSets: SuggestedSkillSet[] }>("skill_center_snapshot")
+          .then(next => { if (!cancelled) setSkillSets(next.skillSets); })
+          .catch(reason => reportBackgroundError("Skill 配置", reason));
+      });
+    });
     return () => {
       cancelled = true;
+      cancelAnimationFrame(firstFrame); cancelAnimationFrame(backgroundFrame);
       snapshotRequest.current += 1;
       runtimeCheckSequence.current += 1;
     };
@@ -477,7 +495,10 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     setCheckingRuntimes(true);
     try {
       const checked = await invoke<RuntimeProbe[]>("ma_check_runtime_updates");
-      if (sequence === runtimeCheckSequence.current) { setRuntimes(checked); setError(null); }
+      if (sequence === runtimeCheckSequence.current) {
+        setRuntimes(checked); setError(null);
+        setLoadingErrors(current => { const next = { ...current }; delete next["运行环境检测"]; delete next["更新检查"]; return next; });
+      }
     } catch (reason) {
       if (sequence === runtimeCheckSequence.current) setError(`检查 Runtime 更新失败：${String(reason)}`);
     } finally {
@@ -575,10 +596,11 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   const enabledAgents = agents.filter((agent) => availability.isRuntimeEnabled(agent.runtimeKind));
   const memberCount = currentSnapshot && availability.ready ? enabledAgents.length : "—";
   const hiddenMemberCount = availability.ready ? agents.length - enabledAgents.length : 0;
-  const activity = [...(currentSnapshot?.events ?? [])].sort((a, b) => b.createdAt - a.createdAt);
+  const activity = useMemo(() => [...(currentSnapshot?.events ?? [])].sort((a, b) => b.createdAt - a.createdAt), [currentSnapshot?.events]);
   const sessionName = (id: string) => health?.sessions.find((item) => item.id === id)?.title ?? agents.find((item) => item.id === id)?.name ?? currentSnapshot?.tasks.find((item) => item.id === id)?.title ?? id;
   return <div className="collaboration-settings-panel collab-overview-page collab-task-first">
     <header className="collab-page-header"><div><h2>协作中心</h2><p>管理团队、任务与协作通信</p></div><div className="collab-guide-actions"><CommunicationGuideButton scope="project" projectId={selectedProjectId} className="btn secondary communication-workspace-entry" /><button className="btn secondary" disabled={!currentSnapshot} onClick={() => void openWorkspace()}><ArrowSquareOutIcon size={16} />打开工作台</button></div></header>
+    {Object.entries(loadingErrors).map(([source, message]) => <p role="alert" key={source}>{source}失败：{message}</p>)}
     {error && <p role="alert" className="collaboration-settings-error">{error}</p>}
     <section className="collab-project-toolbar">
       <div className="collab-project-picker"><select aria-label="当前项目" value={selectedProjectId ?? ""} disabled={!projects.length} onChange={(event) => selectProject(event.target.value || null)}>{!selectedProjectId && <option value="" disabled={projects.length > 0}>{projects.length ? "请选择协作项目" : "暂无协作项目"}</option>}{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
@@ -623,7 +645,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
           onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", kind); setDraggingRuntime(kind); }}
           onDragEnd={() => { setDraggingRuntime(null); setDropTarget(null); }}>⠿</span>
         <details className="collab-runtime-chip" onToggle={(event) => alignRuntimePopover(event.currentTarget)}><summary><img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><span>{RUNTIME_LABELS[kind]}</span><i className={runtime?.installed ? runtime.error ? "warning" : "installed" : "missing"} /></summary>
-        <div className="collab-runtime-popover"><strong>{RUNTIME_LABELS[kind]}</strong><p>{runtime?.installed ? "命令可发现" : "未发现命令"} · {runtimeVersion(runtime?.version)}</p><p>{runtime?.error ?? runtime?.updateError ?? (runtime?.latestVersion ? "最新版本 " + runtimeVersion(runtime.latestVersion) : "更新状态尚未确认")}</p>
+        <div className="collab-runtime-popover"><strong>{RUNTIME_LABELS[kind]}</strong><p>{!runtime ? "检测结果尚未返回" : runtime.installed ? "命令可发现" : "未发现命令"} · {runtimeVersion(runtime?.version)}</p><p>{runtime?.error ?? runtime?.updateError ?? (runtime?.latestVersion ? "最新版本 " + runtimeVersion(runtime.latestVersion) : "更新状态尚未确认")}</p>
         <div className="collab-runtime-reorder-controls" aria-label={`${RUNTIME_LABELS[kind]} 位置调整`}><button type="button" aria-label={`将 ${RUNTIME_LABELS[kind]} 左移`} title="左移" disabled={index === 0} onClick={() => moveVisibleRuntime(kind, -1)}>←</button><button type="button" aria-label={`将 ${RUNTIME_LABELS[kind]} 右移`} title="右移" disabled={index === visibleRuntimeOrder.length - 1} onClick={() => moveVisibleRuntime(kind, 1)}>→</button></div>
         {upgradeResults[kind] && <p role="status">{upgradeResults[kind]?.message}</p>}
         {runtime?.updateAvailable && <button className="btn secondary" disabled={checkingRuntimes || upgradingRuntimes.has(kind)} onClick={() => { if (UI_PREVIEW) return; if (runtime.canAutoUpdate) void upgradeRuntime(kind); else void navigator.clipboard.writeText(runtime.updateCommand ?? "").catch((reason) => setError(`复制升级命令失败：${String(reason)}`)); }}>{upgradingRuntimes.has(kind) ? "升级中…" : runtime.canAutoUpdate ? "升级运行时" : "复制命令"}</button>}</div></details></div>;
@@ -649,7 +671,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
         const owner = agents.find((agent) => agent.id === task.assigneeAgentId);
         return <div className={"collab-task-row" + (task.status === "running" ? " selected" : "")} key={task.id}><strong><i className={"task-mark " + task.status}>{task.status === "done" ? "✓" : ""}</i>{task.title}</strong><span className="collab-task-owner">{owner && <AgentAvatar avatarId={owner.avatarId} runtimeKind={owner.runtimeKind} decorative />}{owner?.name ?? "未指派"}</span><span className={"collab-status " + task.status}><i />{TASK_STATUS_LABELS[task.status]}</span><time>{formatDateTime(task.updatedAt)}</time><details className="collab-task-menu"><summary aria-label={task.title + "操作"}>⋯</summary><div><button onClick={() => showTask(task)}>查看任务详情</button>{!["done","waiting_approval","in_review"].includes(task.status) && <button onClick={() => requestHandoff(task.id)}>交接此任务</button>}{task.status === "in_review" && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_approve_task")}>批准交付</button>}{["failed","cancelled","changes_requested"].includes(task.status) && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_retry_task")}>重试任务</button>}</div></details></div>;
       })}</div>)}
-      {!taskSnapshot?.tasks.some((task) => taskMatchesFilter(task.status, filter)) && <p className="collab-empty">{taskSnapshot?.tasks.length ? "当前筛选暂无任务" : "暂无协作任务"}</p>}</section>
+      {!taskSnapshot?.tasks.some((task) => taskMatchesFilter(task.status, filter)) && <p className="collab-empty">{projectsLoading || (selectedProjectId && !currentSnapshot) ? "正在加载项目任务…" : taskSnapshot?.tasks.length ? "当前筛选暂无任务" : "暂无协作任务"}</p>}</section>
       <details className="collab-activity-disclosure"><summary><CaretRightIcon size={16} aria-hidden="true" /><strong>最近活动</strong><span>{activity.length} 条活动 · {health?.handoffs.length ?? 0} 条交接</span></summary><aside className="collab-side-panels"><section className="collab-activity-panel"><header><h3>最近活动</h3><button onClick={() => setTab("records")}>查看全部活动</button></header><div>{activity.slice(0,4).map((event) => <article key={event.seq}><i className={String(event.payload.tone ?? "")} /><time>{formatDateTime(event.createdAt)}</time><p>{activityLabel(event.eventType)}{eventTask(event) && <button onClick={() => showTask(eventTask(event)!)}> · {eventTask(event)!.title}</button>}</p></article>)}{!activity.length && <p className="collab-empty">暂无活动记录</p>}</div></section>
       <section className="collab-handoff-panel"><header><h3>交接记录</h3></header>{health?.handoffs.slice(0,3).map((record) => <article key={record.id}><div><p>{sessionName(record.sourceId)} → {sessionName(record.targetId)}</p><small>{HANDOFF_LABELS[record.state] ?? record.state} · {record.consequence}</small></div><button onClick={() => requestHandoff(undefined,record.id)}>查看</button></article>)}{!health?.handoffs.length && <p className="collab-empty">暂无交接记录</p>}</section></aside></details></div>
       <p className="collab-sync-note"><ArrowClockwiseIcon size={16} />任务依赖与执行状态自动同步</p>

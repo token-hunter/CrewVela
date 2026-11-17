@@ -1,0 +1,8 @@
+.conversation-message-actions { display:flex; justify-content:flex-end; align-items:center; gap:7px; margin-top:5px; min-height:28px; font-size:12px; line-height:1.4; }
+.conversation-copy-action { position:relative; display:inline-flex; flex:none; }
+.collaboration-conversation .conversation-copy-button { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px; padding:5px; border:0; border-radius:6px; background:transparent; color:var(--text-dim); cursor:pointer; }
+.collaboration-conversation .conversation-copy-button:hover:not(:disabled),.collaboration-conversation .conversation-copy-button:focus-visible { color:var(--text); background:var(--bg-hover); }
+.conversation-copy-feedback { color:var(--success); }
+.conversation-copy-error { color:var(--danger); overflow-wrap:anywhere; min-width:0; }
+.conversation-copy-tooltip { position:absolute; bottom:calc(100% + 7px); right:0; z-index:var(--z-popover,20); padding:6px 9px; border-radius:8px; color:var(--bg-elev); background:var(--text); box-shadow:0 4px 16px #0002; white-space:nowrap; pointer-events:none; opacity:0; visibility:hidden; }
+.conversation-copy-action:has(button:hover) .conversation-copy-tooltip,.conversation-copy-action:has(button:focus-visible) .conversation-copy-tooltip { opacity:1; visibility:visible; }

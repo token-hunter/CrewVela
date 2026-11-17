@@ -5,7 +5,23 @@ import {
   hasMentionToken,
   toggleMentionToken,
   selectMentionTokens,
+  mentionTextSegments,
 } from "../src/multiAgentMention.ts";
+
+test('highlighting preserves exact text, line breaks and complete member handles',()=>{
+ const value='请 @模型验收-Claude 和 @聊天-ZCodeCLI\n检查接口';
+ const parts=mentionTextSegments(value,['@模型验收-Claude','@聊天-ZCodeCLI']);
+ assert.equal(parts.map(p=>p.text).join(''),value);
+ assert.deepEqual(parts.filter(p=>p.mention).map(p=>p.text),['@模型验收-Claude','@聊天-ZCodeCLI']);
+});
+test('highlighting excludes email, unknown targets and partial handles',()=>{
+ const value='mail@Codex @Codex-2 @Unknown @Code';
+ assert.equal(mentionTextSegments(value,['@Codex']).some(p=>p.mention),false);
+});
+test('long names, regex characters, case and repeated mentions retain original spelling',()=>{
+ const value='@Claude Code @codex @Codex @dev[1]';
+ assert.deepEqual(mentionTextSegments(value,['@Claude','@Claude Code','@Codex','@dev[1]']).filter(p=>p.mention).map(p=>p.text),['@Claude Code','@codex','@Codex','@dev[1]']);
+});
 
 test("target menu adds an Agent mention without changing the prompt", () => {
   assert.deepEqual(toggleMentionToken("实现登录页", "@ClaudeCode"), {

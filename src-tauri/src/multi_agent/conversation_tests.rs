@@ -10,6 +10,10 @@ mod natural_chat;
 mod live_chat;
 #[path = "conversation_views_tests.rs"]
 mod work_views;
+#[path = "conversation_policy_tests.rs"]
+mod research_policy;
+#[path = "conversation_activity_tests.rs"]
+mod activity;
 
 struct Fixture {
     store: MultiAgentStore,
@@ -62,7 +66,7 @@ impl Fixture {
         }
     }
     fn input(&self) -> ConversationSendInput {
-        ConversationSendInput {
+        ConversationSendInput { native_capabilities: false,
             project_id: self.project.clone(),
             client_message_id: "user-1".into(),
             body: "Discuss the project".into(),
@@ -71,6 +75,7 @@ impl Fixture {
             intent: "chat".into(),
             max_rounds: 1,
             max_duration_seconds: 60,
+            task_rules: None,
         }
     }
     fn run(&self, executor: &impl DiscussionExecutor) -> ConversationSnapshot {
@@ -195,9 +200,9 @@ fn controlled_reply(body: &str, control: Value) -> String {
 }
 
 fn interjection(input: &ConversationSendInput) -> ConversationInterruptInput {
-    ConversationInterruptInput { project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
+    ConversationInterruptInput { native_capabilities: None, project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
         body: input.body.clone(), participant_agent_ids: Some(input.participant_agent_ids.clone()), mode: Some(input.mode.clone()),
-        intent: Some(input.intent.clone()), max_rounds: Some(input.max_rounds), max_duration_seconds: Some(input.max_duration_seconds) }
+        intent: Some(input.intent.clone()), max_rounds: Some(input.max_rounds), max_duration_seconds: Some(input.max_duration_seconds), task_rules: input.task_rules.clone() }
 }
 impl DiscussionExecutor for Replies {
     fn execute(
@@ -348,7 +353,7 @@ fn clear_history_is_durable_project_scoped_and_preserves_execution_evidence() {
     // Engineering execution may continue; clearing never stops or resets it.
     let before = fixture.store.snapshot(&fixture.project).unwrap();
     let other = fixture.store.create_project(CreateProjectInput {name:"Other".into(),goal:"unrelated".into(),root_path:fixture.root.display().to_string(),default_branch:"main".into()}).unwrap();
-    fixture.store.interrupt_conversation(ConversationInterruptInput {project_id: other.id.clone(),client_message_id:"other-message".into(),body:"KEEP_OTHER_PROJECT".into(),..Default::default()}).unwrap();
+    fixture.store.interrupt_conversation(ConversationInterruptInput { native_capabilities: None,project_id: other.id.clone(),client_message_id:"other-message".into(),body:"KEEP_OTHER_PROJECT".into(),..Default::default()}).unwrap();
     let other_before = fixture.store.conversation_snapshot(&other.id).unwrap();
     let current = fixture.store.conversation_snapshot(&fixture.project).unwrap();
     assert!(!current.messages.is_empty());
@@ -400,7 +405,7 @@ fn clear_history_rejects_active_discussions_and_stale_confirmation() {
     assert!(fixture.store.clear_conversation(clear_input(&initial)).unwrap_err().to_string().contains("暂不能清空"));
     let connection = fixture.store.connection.lock().unwrap();
     connection.execute("UPDATE ma_runs SET status='succeeded' WHERE id=?1",[&run]).unwrap(); drop(connection);
-    fixture.store.interrupt_conversation(ConversationInterruptInput {project_id: fixture.project.clone(),client_message_id:"arrived-after-confirm".into(),body:"NEW_MESSAGE_AFTER_CONFIRM".into(),..Default::default()}).unwrap();
+    fixture.store.interrupt_conversation(ConversationInterruptInput { native_capabilities: None,project_id: fixture.project.clone(),client_message_id:"arrived-after-confirm".into(),body:"NEW_MESSAGE_AFTER_CONFIRM".into(),..Default::default()}).unwrap();
     assert!(fixture.store.clear_conversation(clear_input(&initial)).unwrap_err().to_string().contains("已变化"));
     let latest = fixture.store.conversation_snapshot(&fixture.project).unwrap();
     let cleared = fixture.store.clear_conversation(clear_input(&latest)).unwrap();
@@ -623,7 +628,7 @@ impl DiscussionExecutor for StopDuringRun {
             bail!("unconfirmed");
         }
         if self.interrupt {
-            store.interrupt_conversation(ConversationInterruptInput {
+            store.interrupt_conversation(ConversationInterruptInput { native_capabilities: None,
                 project_id: project,
                 client_message_id: "interjection".into(),
                 body: "human correction".into(),
@@ -914,7 +919,7 @@ fn old_plan_is_invalidated_by_new_human_instruction() {
         .unwrap();
     fixture
         .store
-        .interrupt_conversation(ConversationInterruptInput {
+        .interrupt_conversation(ConversationInterruptInput { native_capabilities: None,
             project_id: fixture.project.clone(),
             client_message_id: "changed-goal".into(),
             body: "Do something else".into(),

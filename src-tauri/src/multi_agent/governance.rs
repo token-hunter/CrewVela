@@ -94,8 +94,10 @@ impl CollaborationGovernance {
                 } else {
                     self.approve_runtime_request(&intervention)?;
                 }
-                resume_project = true;
-                "已批准并继续项目".to_string()
+                // A conversation permission unblocks its existing worker. It
+                // must never start unrelated engineering work in this project.
+                resume_project = !super::conversation::is_conversation_task(task_id);
+                if resume_project { "已批准并继续项目" } else { "已批准本次工具操作，原会话将继续执行" }.to_string()
             }
             InterventionAction::Retry => {
                 let task_id = intervention

@@ -2,7 +2,7 @@ import type { AgentProfile, ConversationMessage, ConversationMode, ConversationR
 import { hasMentionToken, replaceMentionToken } from "./multiAgentMention.ts";
 
 export const CONVERSATION_STATUS: Record<ConversationStatus, string> = {
-  queued: "已排队", running: "正在回复", waiting_approval: "等待你处理", stopping: "正在停止",
+  queued: "已排队", running: "正在回复", waiting_approval: "等待工具授权", stopping: "正在停止",
   completed: "回复结束", failed: "失败", cancelled: "已取消", paused: "已暂停",
   unconfirmed: "结果未确认", needs_decision: "等待你补充",
 };

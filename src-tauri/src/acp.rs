@@ -74,6 +74,7 @@ impl ManagedAcpKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ManagedAcpMode {
+    Inherit,
     ReadOnly,
     Default,
     Auto,
@@ -83,6 +84,7 @@ pub(crate) enum ManagedAcpMode {
 impl ManagedAcpMode {
     fn candidates(self) -> &'static [&'static str] {
         match self {
+            Self::Inherit => &[],
             Self::ReadOnly => &["read-only", "plan"],
             Self::Default => &["agent", "default"],
             Self::Auto => &[
@@ -107,6 +109,13 @@ pub(crate) struct ManagedAcpResult {
     pub session_id: String,
     pub agent_name: String,
     pub agent_version: String,
+}
+
+/// A conversation uses only the host's authenticated research gateway. Native tools,
+/// user MCPs and executable configuration are not part of this permission ceiling.
+#[derive(Clone, Copy)]
+pub(crate) struct ManagedResearchPolicy {
+    pub tools_enabled: bool,
 }
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -203,6 +212,7 @@ pub(crate) struct AcpConnection {
     agent_version: String,
     full_permissions: bool,
     auto_approve_permissions: bool,
+    single_use_permissions: bool,
     read_only_crewvela_mcp_calls: HashSet<String>,
     last_start_resumed: bool,
     commands: Vec<AcpCommand>,
@@ -466,6 +476,28 @@ impl AcpConnection {
         command_override: Option<Command>,
         lease_kind_override: Option<crate::multi_agent::AgentRuntimeKind>,
     ) -> Result<Self> {
+        Self::spawn_for_with_cli_identity_policy(adapter, cwd, resume_session_id, mcp_servers,
+            mode_candidates, auto_approve_permissions, strict_mode, process_id, app_session_id,
+            command_override, lease_kind_override, None)
+    }
+
+    fn spawn_for_with_cli_identity_policy(
+        adapter: ManagedAcpKind,
+        cwd: &str,
+        resume_session_id: Option<&str>,
+        mcp_servers: Vec<Value>,
+        mode_candidates: &[&str],
+        auto_approve_permissions: bool,
+        strict_mode: bool,
+        process_id: Arc<AtomicU32>,
+        app_session_id: Option<&str>,
+        command_override: Option<Command>,
+        lease_kind_override: Option<crate::multi_agent::AgentRuntimeKind>,
+        research: Option<ManagedResearchPolicy>,
+    ) -> Result<Self> {
+        if research.is_some() && (adapter != ManagedAcpKind::ClaudeCode || resume_session_id.is_some()) {
+            return Err(anyhow!("此 Runtime 暂不能强制执行完整群聊工具白名单；受控研究需要独立的 Claude ACP 会话，不能降级为宽松权限"));
+        }
         // 默认租约跟随适配器对应的 PTY Runtime（辅助进程语义）；四个原生聊天
         // 持独立启停开关，由聊天包装显式传入 chat kind 覆盖。
         let kind = lease_kind_override.unwrap_or(match adapter {
@@ -496,7 +528,24 @@ impl AcpConnection {
             Some(command) => command,
             None => adapter_command(adapter)?,
         };
-        if adapter == ManagedAcpKind::DeepSeekHarness {
+        if research.is_some() {
+            // Isolation must not silently switch the user's existing model provider.
+            // Import only inert authentication/model environment values, never hooks,
+            // plugins, arbitrary settings or credential helper commands.
+            let directory = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from)
+                .or_else(|| dirs::home_dir().map(|root| root.join(".claude")))
+                .context("无法找到 Claude 用户认证配置目录")?;
+            let path = directory.join("settings.json");
+            match std::fs::read_to_string(&path) {
+                Ok(source) => {
+                    let settings: Value = serde_json::from_str(source.trim_start_matches('\u{feff}')).context("Claude 用户配置不是有效JSON；未使用不同供应商兜底")?;
+                    command.envs(research_provider_env(&settings)?);
+                },
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+                Err(error) => return Err(error).context("读取 Claude 既有认证配置失败，未改变供应商"),
+            }
+        }
+        if adapter == ManagedAcpKind::DeepSeekHarness && !mode_candidates.is_empty() {
             let mode = match mode_candidates.first().copied() {
                 Some("read-only") => "read-only",
                 Some("agent-full-access") if auto_approve_permissions => "danger-full-access",
@@ -504,7 +553,7 @@ impl AcpConnection {
             };
             command.env("DSH_PERMISSION_MODE", mode);
         }
-        if let Some(app_session_id) = app_session_id {
+        if let Some(app_session_id) = app_session_id.filter(|_| research.is_none()) {
             configure_session_cli_identity(&mut command, app_session_id)?;
             if adapter == ManagedAcpKind::Codex {
                 configure_codex_acp_cli_identity(&mut command, app_session_id)?;
@@ -567,6 +616,7 @@ impl AcpConnection {
             commands: Vec::new(),
             process_id,
             permission_handler: None,
+            single_use_permissions: false,
             config_options: Vec::new(),
             context_usage: None,
             context_usage_reported: false,
@@ -646,6 +696,9 @@ impl AcpConnection {
                 .unwrap_or_default()
                 .to_string();
         }
+        if research.is_some() && connection.agent_version != "0.63.0" {
+            return Err(anyhow!("Claude ACP {} 尚未验证群聊工具白名单契约（需要 0.63.0），拒绝扩大权限", connection.agent_version));
+        }
 
         let can_load = initialized
             .pointer("/agentCapabilities/loadSession")
@@ -680,11 +733,7 @@ impl AcpConnection {
                     connection
                         .request(
                             "session/load",
-                            json!({
-                                "sessionId": session_id,
-                                "cwd": cwd,
-                                "mcpServers": mcp_servers.clone()
-                            }),
+                            { let mut params=managed_session_params(adapter,cwd,&mcp_servers,research,mode_candidates.is_empty());params["sessionId"]=json!(session_id);params },
                             START_TIMEOUT,
                             None,
                         )
@@ -708,7 +757,7 @@ impl AcpConnection {
             Some(session) => session,
             None => connection.request(
                 "session/new",
-                json!({ "cwd": cwd, "mcpServers": mcp_servers.clone() }),
+                managed_session_params(adapter,cwd,&mcp_servers,research,mode_candidates.is_empty()),
                 START_TIMEOUT,
                 None,
             )?,
@@ -1139,7 +1188,7 @@ impl AcpConnection {
             {
                 self.read_only_crewvela_mcp_calls.remove(tool_call_id);
             }
-            let option = if allow && self.adapter_kind == ManagedAcpKind::DeepSeekHarness {
+            let option = if allow && (self.adapter_kind == ManagedAcpKind::DeepSeekHarness || self.single_use_permissions) {
                 value
                     .pointer("/params/options")
                     .and_then(Value::as_array)
@@ -1719,6 +1768,135 @@ impl AcpManager {
     }
 }
 
+fn research_session_params(cwd: &str, servers: &[Value], research: Option<ManagedResearchPolicy>) -> Value {
+    let Some(policy) = research else { return json!({"cwd":cwd,"mcpServers":servers}); };
+    json!({"cwd":cwd,"mcpServers":if policy.tools_enabled { servers.to_vec() } else { Vec::new() },
+        "_meta":{"claudeCode":{"options":{
+            "tools":[], "settingSources":[], "strictMcpConfig":true,
+            "settings":{"disableAllHooks":true},
+            "disallowedTools":["Bash","Edit","Write","NotebookEdit","Agent","Task","Skill","WebSearch","WebFetch","Read","Glob","Grep"],
+            "extraArgs":{"disable-slash-commands":""}
+        }}}})
+}
+
+fn managed_session_params(adapter: ManagedAcpKind,cwd:&str,servers:&[Value],research:Option<ManagedResearchPolicy>,native_group:bool)->Value {
+    let mut params=research_session_params(cwd,servers,research);
+    if adapter==ManagedAcpKind::ClaudeCode && native_group && research.is_none() {
+        // Native SDK session grants: preserve user/project/local ask+deny rules,
+        // account/model/settings and the full tool set. Never bypass permissions.
+        params["_meta"]=json!({"claudeCode":{"options":{"allowedTools":["WebSearch","WebFetch"]}}});
+    }
+    params
+}
+
+fn research_provider_env(settings: &Value) -> Result<HashMap<String, String>> {
+    const KEYS: &[&str] = &["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
+        "ANTHROPIC_REASONING_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_EFFORT_LEVEL",
+        "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+        "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_PROFILE",
+        "GOOGLE_APPLICATION_CREDENTIALS", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID",
+        "ANTHROPIC_FOUNDRY_API_KEY", "ANTHROPIC_FOUNDRY_RESOURCE", "ANTHROPIC_FOUNDRY_BASE_URL"];
+    let mut result = HashMap::new();
+    if let Some(environment) = settings.get("env").and_then(Value::as_object) {
+        for (key, value) in environment {
+            let model_alias = key.starts_with("ANTHROPIC_DEFAULT_") && (key.ends_with("_MODEL") || key.ends_with("_MODEL_NAME"))
+                && key.chars().all(|ch| ch.is_ascii_uppercase() || ch == '_');
+            if KEYS.contains(&key.as_str()) || model_alias {
+                result.insert(key.clone(), value.as_str().ok_or_else(|| anyhow!("Claude 认证或模型环境配置必须为字符串：{key}"))?.to_string());
+            }
+        }
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod conversation_policy_tests {
+    use super::*;
+    #[test]
+    fn native_group_approval_selects_allow_once_and_never_persists_permissions() {
+        let root=std::env::temp_dir().join(format!("crewvela-once-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let script=root.join("adapter.cjs");
+        std::fs::write(&script,r#"
+const rl=require('node:readline').createInterface({input:process.stdin});let promptId;
+const send=(id,result)=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\n');
+rl.on('line',line=>{const f=JSON.parse(line);
+ if(f.result&&f.id==='permission'){
+  process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'fixture',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(f.result.outcome)}}}})+'\n');send(promptId,{stopReason:'end_turn'});return;
+ }
+ if(f.method==='initialize')send(f.id,{protocolVersion:1,agentCapabilities:{}});
+ else if(f.method==='session/new')send(f.id,{sessionId:'fixture'});
+ else if(f.method==='session/prompt'){
+  promptId=f.id;
+  const options=[{optionId:'persistent',kind:'allow_always'},...(f.params.prompt[0].text==='once'?[{optionId:'single',kind:'allow_once'}]:[])];
+  process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:'permission',method:'session/request_permission',params:{sessionId:'fixture',toolCall:{toolCallId:'tool-1',title:'Test command',kind:'execute'},options}})+'\n');
+ }else if(f.id!==undefined)send(f.id,{});
+});
+"#).unwrap();
+        let mut command=Command::new("node");command.arg(&script);
+        let mut connection=AcpConnection::spawn_for_with_cli_identity(ManagedAcpKind::ClaudeCode,root.to_str().unwrap(),None,vec![],&[],false,false,Arc::new(AtomicU32::new(0)),None,Some(command),None).unwrap();
+        connection.permission_handler=Some(Box::new(|_,_|Ok(true)));
+        connection.single_use_permissions=true;
+        let once=connection.prompt("once").unwrap();
+        let no_once=connection.prompt("persistent-only").unwrap();
+        connection.stop_checked().unwrap();drop(connection);std::fs::remove_dir_all(root).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&once.text).unwrap(),json!({"outcome":"selected","optionId":"single"}));
+        assert_eq!(serde_json::from_str::<Value>(&no_once.text).unwrap(),json!({"outcome":"cancelled"}));
+    }
+    #[test]
+    fn native_group_web_grants_use_sdk_options_without_changing_user_policy() {
+        let params=managed_session_params(ManagedAcpKind::ClaudeCode,"cwd",&[],None,true);
+        let options=&params["_meta"]["claudeCode"]["options"];
+        assert_eq!(options["allowedTools"],json!(["WebSearch","WebFetch"]));
+        assert_eq!(options.as_object().unwrap().len(),1,"do not replace tools, settingsSources, model or permissionMode");
+        assert!(managed_session_params(ManagedAcpKind::ClaudeCode,"cwd",&[],None,false).get("_meta").is_none());
+        assert!(managed_session_params(ManagedAcpKind::Codex,"cwd",&[],None,true).get("_meta").is_none());
+    }
+    #[test]
+    fn conversation_research_has_no_native_tools_hooks_user_context_or_user_mcp() {
+        let gateway = json!({"name":"crewvela","type":"http","url":"http://127.0.0.1:1234/mcp","headers":[]});
+        let research = research_session_params("isolated", &[gateway.clone()], Some(ManagedResearchPolicy { tools_enabled:true }));
+        let options = &research["_meta"]["claudeCode"]["options"];
+        assert_eq!(options["tools"], json!([]));
+        assert_eq!(options["settingSources"], json!([]));
+        assert_eq!(options["strictMcpConfig"], true);
+        assert_eq!(options["settings"]["disableAllHooks"], true);
+        assert_eq!(research["mcpServers"], json!([gateway.clone()]));
+        let reply = research_session_params("isolated", &[gateway.clone()], Some(ManagedResearchPolicy { tools_enabled:false }));
+        assert_eq!(reply["mcpServers"], json!([]));
+        assert_eq!(reply["_meta"]["claudeCode"]["options"]["tools"], json!([]));
+        let native = research_session_params("original", &[gateway.clone()], None);
+        assert_eq!(native, json!({"cwd":"original","mcpServers":[gateway]}), "native chats and engineering keep their original configuration semantics");
+    }
+    #[test]
+    fn conversation_auth_import_preserves_provider_but_excludes_executable_configuration() {
+        let env = research_provider_env(&json!({"env":{"ANTHROPIC_AUTH_TOKEN":"test-only-token", "ANTHROPIC_BASE_URL":"https://provider.example",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL":"chosen-model", "NODE_OPTIONS":"--require unsafe.js", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS":"1", "ENABLE_TOOL_SEARCH":"1"},
+            "apiKeyHelper":"unsafe-command", "hooks":{"PreToolUse":["unsafe"]}, "enabledPlugins":{"unsafe":true}})).unwrap();
+        assert_eq!(env.len(), 3);
+        assert_eq!(env["ANTHROPIC_BASE_URL"], "https://provider.example");
+        assert_eq!(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "chosen-model");
+        assert!(!env.contains_key("NODE_OPTIONS"));
+    }
+}
+
+pub(crate) fn execute_managed_research_acp(
+    kind: ManagedAcpKind, app_session_id: &str, cwd: &str, prompt: &str,
+    mcp_url: &str, token: &str, tools_enabled: bool, cancelled: &AtomicBool,
+    update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
+) -> Result<ManagedAcpOutcome> {
+    let permissions: ManagedPermissionHandler = Box::new(move |request, _| {
+        let call = &request["params"]["toolCall"];
+        let named = call["title"].as_str().or_else(|| call["rawInput"]["name"].as_str()).unwrap_or("");
+        let name = if call["rawInput"]["server"].as_str() == Some("crewvela") { call["rawInput"]["tool"].as_str().unwrap_or("") }
+            else { named.strip_prefix("mcp__crewvela__").unwrap_or("") };
+        Ok(tools_enabled && matches!(name, "cc_research_read" | "cc_research_list" | "cc_research_search" | "cc_research_web_search" | "cc_research_web_fetch"))
+    });
+    execute_managed_acp_inner(kind, app_session_id, cwd, None, prompt, mcp_url, token,
+        ManagedAcpMode::ReadOnly, cancelled, None, Some(permissions), update_handler,
+        Some(ManagedResearchPolicy { tools_enabled }))
+}
+
 pub(crate) fn execute_managed_acp(
     kind: ManagedAcpKind,
     app_session_id: &str,
@@ -1733,21 +1911,41 @@ pub(crate) fn execute_managed_acp(
     permission_handler: Option<ManagedPermissionHandler>,
     update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
 ) -> Result<ManagedAcpOutcome> {
+    execute_managed_acp_inner(kind, app_session_id, cwd, resume_session_id, prompt, mcp_url, token,
+        mode, cancelled, model, permission_handler, update_handler, None)
+}
+
+fn execute_managed_acp_inner(
+    kind: ManagedAcpKind,
+    app_session_id: &str,
+    cwd: &str,
+    resume_session_id: Option<&str>,
+    prompt: &str,
+    mcp_url: &str,
+    token: &str,
+    mode: ManagedAcpMode,
+    cancelled: &AtomicBool,
+    model: Option<&str>,
+    permission_handler: Option<ManagedPermissionHandler>,
+    update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
+    research: Option<ManagedResearchPolicy>,
+) -> Result<ManagedAcpOutcome> {
     let process_id = Arc::new(AtomicU32::new(0));
     // 保留配置中启用的 http 类型用户 server 一并交给 Agent；
     // 读取失败不阻塞：协作桥本身仍然是必需的控制面。
     let mut mcp_servers = if mcp_url.is_empty() { Vec::new() } else { vec![managed_mcp_server(mcp_url, token)] };
-    if !mcp_url.is_empty() { match crate::mcp::enabled_acp_servers() {
+    if !mcp_url.is_empty() && research.is_none() { match crate::mcp::enabled_acp_servers() {
         Ok(user_servers) => mcp_servers.extend(user_servers),
         Err(error) => eprintln!("[crewvela] 读取用户 MCP 配置失败：{error:#}"),
     } }
-    let mut connection = match AcpConnection::spawn_for_with_cli_identity(
+    let mut connection = match AcpConnection::spawn_for_with_cli_identity_policy(
         kind,
         cwd,
         resume_session_id,
         mcp_servers,
         if kind == ManagedAcpKind::DeepSeekHarness {
             match mode {
+                ManagedAcpMode::Inherit => &[],
                 ManagedAcpMode::ReadOnly => &["read-only"],
                 ManagedAcpMode::FullAccess => &["agent-full-access"],
                 _ => &["workspace-write"],
@@ -1761,6 +1959,7 @@ pub(crate) fn execute_managed_acp(
         Some(app_session_id),
         None,
         None,
+        research,
     ) {
         Ok(connection) => connection,
         Err(error) if error.downcast_ref::<UnverifiedStop>().is_some() => return Err(error),
@@ -1768,6 +1967,7 @@ pub(crate) fn execute_managed_acp(
     };
     let outcome = (|| -> Result<ManagedAcpOutcome> {
     connection.permission_handler = permission_handler;
+    connection.single_use_permissions = matches!(mode,ManagedAcpMode::Inherit);
     if let Some(handler) = update_handler { connection.set_update_handler(handler); }
     if kind == ManagedAcpKind::DeepSeekHarness {
         if let Some(model) = model.filter(|model| !model.trim().is_empty()) {

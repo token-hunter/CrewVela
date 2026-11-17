@@ -991,26 +991,78 @@ export interface ConversationExecutionPlan {
   taskIds: string[];
   createdAt: number;
 }
+export interface ConversationHardBoundary {
+  tools: "research" | "none";
+  network: "public_web" | "none";
+  deniedReadPaths: string[];
+}
+export interface ConversationTaskRules {
+  tools: "research" | "none";
+  instructions?: string;
+  archivedRuleId?: string;
+}
+export interface ConversationPolicyEntry {
+  projectId: string;
+  agentId: string | null;
+  boundary: ConversationHardBoundary;
+  legacyReviewRequired: boolean;
+  legacyText: string;
+}
+export interface ConversationRuntimeCapability {
+  runtimeKind: AgentRuntimeKind;
+  research: boolean;
+  replyOnly: boolean;
+  networkControl: boolean;
+  pathControl: boolean;
+  status: "native" | "adapted" | "unsupported";
+  detail: string;
+}
+export interface ConversationArchivedRule {
+  id: string;
+  agentId: string | null;
+  label: string;
+  instructions: string;
+  tools: "research" | "none";
+  createdAt: number;
+}
+export interface ConversationMigrationPreview {
+  id: string;
+  projectId: string;
+  agentId: string | null;
+  previousText: string;
+  replacementText: string;
+  archivedRules: string;
+  createdAt: number;
+}
 export interface ConversationSnapshot {
+  /** Safe per-run metadata; never raw reasoning or tool results. */
+  activityEvents?: RuntimeEventRecord[];
   conversation: CollaborationConversation;
   messages: ConversationMessage[];
   rounds: ConversationRound[];
   executionPlans: ConversationExecutionPlan[];
   supportedDiscussionRuntimes: AgentRuntimeKind[];
+  projectPolicy?: ConversationPolicyEntry;
+  memberPolicies?: ConversationPolicyEntry[];
+  runtimeCapabilities?: ConversationRuntimeCapability[];
+  archivedTaskRules?: ConversationArchivedRule[];
 }
 export interface ConversationSendInput {
+  nativeCapabilities?: boolean;
   projectId: string;
   clientMessageId: string;
   body: string;
   participantAgentIds: string[];
   mode: ConversationMode;
   intent?: ConversationIntent;
+  taskRules?: ConversationTaskRules;
   /** Legacy compatible bound for directed exchange; ordinary chat never repeats members. */
   maxRounds?: number;
   /** Whole discussion deadline, including queue and approvals; defaults to 600. */
   maxDurationSeconds?: number;
 }
 export interface ConversationInterruptInput {
+  nativeCapabilities?: boolean;
   projectId: string;
   clientMessageId: string;
   body: string;
@@ -1018,6 +1070,7 @@ export interface ConversationInterruptInput {
   participantAgentIds?: string[];
   mode?: ConversationMode;
   intent?: ConversationIntent;
+  taskRules?: ConversationTaskRules;
   maxRounds?: number;
   maxDurationSeconds?: number;
 }

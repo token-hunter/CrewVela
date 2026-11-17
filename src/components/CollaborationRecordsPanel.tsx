@@ -20,7 +20,7 @@ export function CollaborationRecordsPanel({ snapshot, preview = false }: { snaps
   const [loading, setLoading] = useState(!preview);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("全部");
-  const [expanded, setExpanded] = useState(() => new Set(buildCollaborationRecords(snapshot, [])[0]?.id ? [buildCollaborationRecords(snapshot, [])[0].id] : []));
+  const [expanded, setExpanded] = useState(() => new Set<string>());
   const alive = useRef(false);
   const inFlight = useRef(false);
   const loadDeliveries = useCallback(async () => {

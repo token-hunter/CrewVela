@@ -27,6 +27,7 @@ try {
   assert.equal((await calls(page, 'ma_pause_project')).length, 1);
   await settings.getByRole('button', { name: '关闭设置', exact: true }).click();
   await settings.waitFor({ state: 'detached' });
+  await page.locator('[data-message-id="m5"]').getByRole('button', { name: '查看活动', exact: true }).click();
   await page.getByRole('button', { name: '查看Codex的原会话', exact: true }).click();
   assert.deepEqual((await calls(page, 'fixture_open_session')).at(-1).args, { sessionId: 'session-codex' });
   const editor = page.getByRole('combobox', { name: '给团队发消息', exact: true });
@@ -41,7 +42,9 @@ try {
   assert.equal(await page.locator('.multi-agent-mention-menu').getByRole('option').count(), 0, 'the same caret selection must not reopen a dismissed menu');
   await editor.fill('@Claude Code @Codex 检查接口');
   await page.locator('.conversation-composer').evaluate(form => { form.requestSubmit(); form.requestSubmit(); });
-  await page.getByRole('button', { name: /暂停讨论/ }).waitFor();
+  await page.getByRole('button', { name: '讨论记录操作', exact: true }).click();
+  await page.getByRole('menuitem', { name: '暂停讨论', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
   const sent = await calls(page, 'ma_conversation_send');
   assert.equal(sent.length, 1); assert.deepEqual(sent[0].args.input.participantAgentIds, ['claude', 'codex']);
   await page.getByRole('combobox', { name: '给团队插话', exact: true }).fill('先核对数据格式');
@@ -101,7 +104,8 @@ try {
   assert.equal((await calls(planning, 'ma_apply_plan')).length, 0);
 
   const stopping = await fresh('running=1&stopping=1');
-  await stopping.getByRole('button', { name: /暂停讨论/ }).click();
+  await stopping.getByRole('button', { name: '讨论记录操作', exact: true }).click();
+  await stopping.getByRole('menuitem', { name: '暂停讨论', exact: true }).click();
   await stopping.getByText('正在停止', { exact: false }).first().waitFor();
   assert.equal(await stopping.getByRole('button', { name: '继续输入', exact: true }).count(), 0, 'unverified stops cannot unlock a new round');
   assert.equal(await stopping.getByRole('button', { name: /暂停讨论/ }).isDisabled(), true);
@@ -112,7 +116,7 @@ try {
   await unsupported.keyboard.press('Escape');
   await unsupported.getByRole('combobox', { name: '给团队发消息', exact: true }).fill('@Kimi Code 检查');
   await unsupported.getByRole('button', { name: '发送消息', exact: true }).click();
-  await unsupported.getByRole('alert').filter({ hasText: '暂不支持受限讨论' }).waitFor();
+  await unsupported.getByRole('alert').filter({ hasText: '此 Runtime 尚未接入群聊' }).waitFor();
   assert.equal((await calls(unsupported, 'ma_conversation_send')).length, 0);
 
   const disabled = await fresh('disabled=codex');

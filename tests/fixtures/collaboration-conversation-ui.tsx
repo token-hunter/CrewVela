@@ -21,6 +21,7 @@ const agent = (id: string, name: string, runtimeKind: string, role: string, proj
 const agents = params.get("header") === "1"
   ? [{ ...agent("claude", "模型验收-Claude", "claude_code", "worker"), avatarId: "orbit" }, { ...agent("codex", "模型验收-Codex", "codex", "worker"), avatarId: "block" }, { ...agent("kimi", "聊天-ZCodeCLI", "zcode_cli", "orchestrator"), avatarId: "sprout" }]
   : [agent("claude", "Claude Code", "claude_code", "orchestrator"), agent("codex", "Codex", "codex", "worker"), agent("kimi", "Kimi Code", "kimi_code", "reviewer")];
+if (params.get("native") === "1") agents.push({ ...agent("zcode-review", "语义复核员", "zcode_cli", "reviewer"), avatarId: "ribbon" });
 if (params.get("members") === "none") agents.length = 0;
 if (params.get("members") === "many") for (let i=0;i<24;i++) agents.push(agent(`extra-${i}`, `开发成员-${i}：很长的成员名称用于检查省略与布局`, "codex", "worker"));
 let projects = [
@@ -39,9 +40,10 @@ if (dualViews) {
   ["Claude", "Codex", "Kimi"].forEach((name,index) => { agents[index].name=name; agents[index].avatarId=["orbit","block","sprout"][index] as any; });
   ["登录页面","接口对接","测试与审查"].forEach((title,index) => { planned[index].title=title; planned[index].description=["登录表单与状态反馈","对接登录相关接口","功能验证与体验检查"][index]; planned[index].acceptanceCriteria="覆盖成功、失败和加载状态"; });
 }
-const emptyChat = (id: string): any => ({ conversation: { id: `conversation-${id}`, projectId: id, createdAt: clock }, messages: [], rounds: [], executionPlans: [], supportedDiscussionRuntimes: params.get("unsupported") === "1" ? ["claude_code", "codex"] : ["claude_code", "codex", "kimi_code", ...(params.get("header") === "1" ? ["zcode_cli"] : [])] });
+const emptyChat = (id: string): any => ({ conversation: { id: `conversation-${id}`, projectId: id, createdAt: clock }, messages: [], rounds: [], executionPlans: [], supportedDiscussionRuntimes: params.get("native") === "1" ? ["claude_code","codex","kimi_code","pi","opencode","deepseek_harness","zcode","zcode_cli"] : params.get("unsupported") === "1" ? ["claude_code", "codex"] : ["claude_code", "codex", "kimi_code", ...(params.get("header") === "1" ? ["zcode_cli"] : [])] });
 const message = (id: string, senderType: string, body: string, agentId: string | null = null, status = "completed", kind = "reply"): any => ({ id, projectId: "A", conversationId: "conversation-A", roundId: "round-1", replyToMessageId: "m1", taskId: null, runId: agentId ? `run-${agentId}` : null, agentId, senderType, kind, phase: "opinions", body, status, createdAt: clock + Number(id.slice(1) || 0) * 1000, updatedAt: clock });
 const chats: Record<string, any> = { A: emptyChat("A"), B: emptyChat("B") };
+if (params.get("rules") === "1") chats.A.archivedTaskRules = [{ id: "acceptance-rule", agentId: "claude", label: "Claude 原验收规则", instructions: "只回复 ABC，不调用工具", tools: "none", createdAt: clock }];
 if (params.get("empty") !== "1") {
   chats.A.rounds = [{ id: "round-1", projectId: "A", conversationId: "conversation-A", userMessageId: "m1", participantAgentIds: ["claude", "codex", "kimi"], mode: "execution_plan", status: params.get("running") === "1" ? "running" : "completed", phase: "summary", maxRounds: 1, currentRound: 1, deadlineAt: clock + 600000, stopReason: null, createdAt: clock, updatedAt: clock }];
   chats.A.messages = [
@@ -66,6 +68,31 @@ if (params.get("header") === "1") { tasks.forEach(task=>{task.status="done";}); 
 const runHistory = params.get("evidence") === "1" ? [1,2].map(attempt=>({ id:`evidence-${attempt}`,projectId:"A",taskId:"t-build",agentId:"codex",attempt,status:"failed",sessionLocator:attempt===2?{stopUnverified:true}:null,leaseExpiresAt:0,lastHeartbeatAt:null,outputSummary:`尝试${attempt}输出`,error:attempt===2?"fixture 原进程停止状态待确认":"fixture 旧尝试失败",createdAt:clock+attempt,startedAt:clock,finishedAt:clock+attempt })) : [];
 if (dualViews) runHistory.push({id:"login-run",projectId:"A",taskId:"t-design",agentId:"claude",attempt:1,status:"running",sessionLocator:null,leaseExpiresAt:clock+60000,lastHeartbeatAt:clock,outputSummary:"开始实现登录页面",error:null,createdAt:clock,startedAt:clock,finishedAt:null});
 const runLogs = runHistory.flatMap(run=>Array.from({length:25},(_,seq)=>({seq,projectId:"A",taskId:run.taskId,runId:run.id,stream:"stdout",content:`尝试${run.attempt}日志${seq}`,createdAt:clock+seq})));
+if(params.get("copy")==="1") {
+  chats.A.executionPlans=[];
+  chats.A.messages=[message("m1","user","@Claude 请检查接口。\n保留第二行与缩进。"),message("m2","agent","**结果**：已核对。\n\n```ts\nconst answer = 42;\n```\n\n[文档](https://example.com/docs)","claude"),message("m3","agent","","codex","paused")];
+}
+const activityEvents: any[] = [];
+const activityApprovals: any[] = [];
+if (params.get("activity") === "1") {
+  const at = Date.now();
+  projects[0].name = "登录功能改版";
+  ["Claude","Codex","Pi"].forEach((name,index)=>{agents[index].name=name;agents[index].avatarId=["orbit","block","sprout"][index] as any;});
+  chats.A.executionPlans = [];
+  chats.A.rounds = [{...chats.A.rounds[0],id:"activity-round",status:"running",phase:"chat",mode:"discussion",updatedAt:at}];
+  chats.A.messages = [message("a0","user","核对登录接口，整理交互方案。"),message("a1","agent","接口参数已核对，我继续查看登录态处理。","claude","running"),message("a2","agent","","codex","running"),message("a3","agent","我已列出空态、加载和失败状态。","kimi")];
+  chats.A.messages.forEach((item:any,index:number)=>{item.createdAt=at-60000+index;item.updatedAt=at-2000;item.roundId="activity-round";item.phase="chat";if(item.agentId)item.taskId=`activity-task-${item.agentId}`;});
+  runHistory.splice(0,runHistory.length,...agents.slice(0,3).map((item,index)=>({id:`run-${item.id}`,projectId:"A",taskId:`activity-task-${item.id}`,agentId:item.id,attempt:1,status:index===2?"succeeded":"running",sessionLocator:null,leaseExpiresAt:at+120000,lastHeartbeatAt:at-1000,outputSummary:null,error:null,createdAt:at-(index===1?52000:24000),startedAt:at-(index===1?52000:24000),finishedAt:index===2?at-3000:null})));
+  const event=(seq:number,offset:number,payload:any,agentId="claude")=>({seq,projectId:"A",runId:`run-${agentId}`,taskId:`activity-task-${agentId}`,agentId,eventType:"agent_activity",payload,createdAt:at-offset});
+  activityEvents.push(event(1,21000,{kind:"analysis"}),event(2,16000,{kind:"tool",toolId:"read-auth",operation:"read",path:"src/api/auth.ts",status:"running"}),event(3,14000,{kind:"tool",toolId:"read-auth",status:"completed"}),event(4,4000,{kind:"tool",toolId:"read-session",operation:"read",path:"src/stores/session.ts",status:"running"}),event(5,2000,{kind:"tool",toolId:"read-session"}));
+  chats.A.activityEvents = activityEvents;
+}
+if (params.get("approval") === "1") {
+  chats.A.rounds[0].status = "waiting_approval";
+  chats.A.messages.find((item:any)=>item.id==="a1").status="waiting_approval";
+  runHistory.find(item=>item.id==="run-claude")!.status="waiting_approval";
+  activityApprovals.push({id:"permission-claude",projectId:"A",taskId:"activity-task-claude",runId:"run-claude",approvalType:"runtime_permission",summary:"Claude 请求运行命令：npm test\n{\"command\":\"npm test\"}",status:"pending",createdAt:Date.now(),decidedAt:null});
+}
 const snapshot = (id: string): any => ({ project: projects.find(project => project.id === id), agents: id === "A" ? agents : [agent("b-codex", "文档 Codex", "codex", "worker", "B")], tasks: id === "A" && (params.get("plan") !== "pending" || chats.A.executionPlans.some((plan:any)=>plan.status === "applied")) ? tasks : params.get("task-link")==="1" ? [{...tasks[0],id:"b-task",projectId:"B",title:"文档任务",assigneeAgentId:"b-codex"}] : [], runs: id==="A"?runHistory:[], messages: [], events: [], dependencies: [{ taskId: "t-review", dependsOnTaskId: "t-build" }], agentSessions: (id === "A" ? agents : []).map(agent => ({ agentId: agent.id, appSessionId: `session-${agent.id}`, projectId: id, id: `agent-session-${agent.id}`, status: agent.id === "codex" ? "running" : "idle", controlMode: params.get("manual") === agent.id ? "manual" : "auto", currentTaskId: null, currentRunId: null, lastOutputAt: null, createdAt: clock, updatedAt: clock })), runLogs: id==="A"?runLogs:[], runtimeEvents: [], memories: [], instructions: [], artifacts: [], approvals: [], reviewDecisions: [], wakeups: [] });
 const calls: Array<{ command: string; args: any }> = [];
 const pending: Array<{ command: string; args: any; resolve(value: any): void; reject(reason: Error): void }> = [];
@@ -73,13 +100,36 @@ const receipts = new Map<string, string>();
 let failSend = params.get("fail") === "send";
 let failBeforeSave = params.get("fail") === "send-before-save";
 const mock = {
-  calls, pending, chats, projects, snapshot, archivedConversations: [] as any[], holdProject: "", holdSend: false, holdClear: false, holdNew: false, failExecution: false, failApproval: false, failClear: false, failNew: false,
+  clipboardWrites: [] as string[], copyError: "", holdCopy: false, pendingCopies: [] as Array<()=>void>, failPermission:false, stalePermission:false,
+  calls, pending, chats, projects, snapshot, activityEvents, activityApprovals, runHistory, archivedConversations: [] as any[], holdProject: "", holdSend: false, holdClear: false, holdNew: false, failExecution: false, failApproval: false, failClear: false, failNew: false,
   release(command: string, value?: any, error?: string) { const index = pending.findIndex(item => item.command === command); if (index < 0) throw Error(`No pending ${command}`); const item = pending.splice(index, 1)[0]; if (error) item.reject(Error(error)); else item.resolve(value ?? (command === "ma_snapshot" ? snapshot(item.args.projectId) : chats[item.args.projectId ?? item.args.input.projectId])); },
   async invoke(command: string, args: any = {}) {
     calls.push({ command, args: structuredClone(args) });
+    if(command === "plugin:clipboard-manager|write_text") {
+      if(mock.holdCopy)await new Promise<void>(resolve=>mock.pendingCopies.push(resolve));
+      if(mock.copyError)throw Error(mock.copyError);
+      mock.clipboardWrites.push(args.text);return null;
+    }
+    if (params.get("slow-open") === "1" && ["ma_probe_runtimes", "ma_check_runtime_updates", "skill_center_snapshot", "collaboration_health"].includes(command)) await new Promise(resolve => setTimeout(resolve, 2500));
+    if (params.get("slow-data") === "1" && command === "ma_snapshot" && calls.some(item => item.command === "fixture_open_settings")) await new Promise(resolve => setTimeout(resolve, 2500));
+    if (params.get("fail-aux") === "1" && ["ma_probe_runtimes", "skill_center_snapshot"].includes(command)) throw Error("隔离测试：辅助检测失败");
+    if (params.get("slow-data") === "1" && command === "ma_snapshot" && calls.some(item => item.command === "fixture_open_settings")) await new Promise(resolve => setTimeout(resolve, 2500));
+    if (params.get("fail-aux") === "1" && ["ma_probe_runtimes", "skill_center_snapshot"].includes(command)) throw Error("隔离测试：辅助读取失败");
     if ((["ma_snapshot", "ma_conversation_snapshot"].includes(command) && mock.holdProject === args.projectId) || (command === "ma_conversation_send" && mock.holdSend) || (command === "ma_conversation_clear" && mock.holdClear) || (command === "ma_conversation_new" && mock.holdNew)) return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
     if (command === "ma_list_projects") return structuredClone(projects);
-    if (command === "ma_snapshot") return structuredClone(snapshot(args.projectId));
+    if (command === "ma_list_interventions") {
+      const item={id:"permission-current",projectId:"A",taskId:"activity-task-claude",runId:"run-claude",kind:"approval_required",status:"open",metadata:{approvalId:"permission-claude"}};
+      return mock.stalePermission ? [] : [{...item,id:"foreign-project",projectId:"B"},{...item,id:"old-run",runId:"previous-run"},item];
+    }
+    if (command === "ma_resolve_intervention") {
+      if(args.input.interventionId!=="permission-current"||args.input.action!=="approve")throw Error("Wrong permission identity");
+      if(mock.failPermission)throw Error("隔离测试：批准未保存，请重试");
+      activityApprovals[0].status="approved";
+      runHistory.find(item=>item.id==="run-claude")!.status="running";
+      chats.A.rounds[0].status="running";chats.A.messages.find((item:any)=>item.id==="a1").status="running";
+      return {interventionId:"permission-current",projectId:"A",resumeProject:false,message:"已批准本次工具操作"};
+    }
+    if (command === "ma_snapshot") { const result=snapshot(args.projectId); if(params.get("activity")==="1"&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} return structuredClone(result); }
     if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
     if (command === "ma_conversation_new") {
       if (mock.failNew) throw Error("隔离测试：新建会话失败，原记录保留");
@@ -121,7 +171,7 @@ const mock = {
       if (failSend) { failSend = false; throw Error("隔离测试：响应丢失，发送结果未确认"); }
       return structuredClone(chat);
     }
-    if (command === "ma_conversation_control") { const chat = chats[args.projectId]; if (chat.rounds.length) chat.rounds[chat.rounds.length - 1].status = params.get("stopping") === "1" ? "stopping" : args.action === "pause" ? "paused" : "cancelled"; return structuredClone(chat); }
+    if (command === "ma_conversation_control") { const chat = chats[args.projectId]; if (chat.rounds.length) chat.rounds[chat.rounds.length - 1].status = params.get("stopping") === "1" ? "stopping" : args.action === "pause" ? "paused" : "cancelled"; if(params.get("activity")==="1"&&params.get("stopping")!=="1"){for(const item of chat.messages.filter((item:any)=>item.senderType==="agent"&&item.status==="running")){item.status=args.action==="pause"?"paused":"cancelled";item.updatedAt=Date.now();const run=runHistory.find(run=>run.id===item.runId);if(run){run.status=args.action==="pause"?"interrupted":"cancelled";run.finishedAt=Date.now();}}} return structuredClone(chat); }
     if (command === "ma_conversation_execute_plan") { if(mock.failApproval) throw Error("隔离测试：分工确认失败"); const chat = chats[args.input.projectId]; const plan = chat.executionPlans.find((item: any) => item.id === args.input.planId); plan.status = "applied"; plan.taskIds = ["t-design", "t-build", "t-review"]; return structuredClone(chat); }
     if (command === "ma_pause_project" || command === "ma_start_project") { if(mock.failExecution) return {accepted:false,message:"隔离测试：执行控制未确认"}; projects.find(project => project.id === args.projectId)!.status = command === "ma_pause_project" ? "paused" : "active"; return { accepted: true, projectId: args.projectId }; }
     if (command === "ma_confirm_run_stopped") { if(params.get("confirm-fails")==="1")throw Error("fixture 确认失败"); const run=runHistory.find(run=>run.id===args.runId);if(!run||args.confirmedStopped!==true)throw Error("Wrong run confirmation");run.sessionLocator=null;return null; }

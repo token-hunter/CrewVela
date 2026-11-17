@@ -14,12 +14,13 @@ const snapshot = (id: string) => ({ ...base, project: projects.find(item => item
 localStorage.setItem("crewvela-multi-agent-project", "A");
 const calls: any[] = []; const pending: any[] = [];
 const mock = { calls, pending, holdDelivery: false, failDelivery: false,
+  extraDeliveries: [] as any[],
   invoke(command: string, args: any) {
     calls.push({ command, args });
     if (command === "list_delivery_records") {
       if (mock.failDelivery) return Promise.reject(new Error("fixture delivery failure"));
       if (mock.holdDelivery) return new Promise(resolve => pending.push(resolve));
-      return Promise.resolve(["A", "B", "foreign"].map(id => ({ id, at: Date.now()-2000, fromSessionId: null, fromLabel: "用户", toSessionId: `${id}-session`, body: `${id}投递正文`, kind: "direct" })));
+      return Promise.resolve(["A", "B", "foreign"].map(id => ({ id, at: Date.now()-2000, fromSessionId: null, fromLabel: "用户", toSessionId: `${id}-session`, body: `${id}投递正文`, kind: "direct" })).concat(mock.extraDeliveries));
     }
     if (command === "ma_list_projects") return Promise.resolve(projects);
     if (command === "ma_snapshot") return Promise.resolve(snapshot(args.projectId));

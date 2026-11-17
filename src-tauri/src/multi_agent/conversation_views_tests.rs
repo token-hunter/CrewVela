@@ -87,7 +87,7 @@ fn durable_interruption_preserves_chat_plan_but_invalidates_for_explicit_replann
         fixture.store.begin_conversation(active).unwrap();
         fixture
             .store
-            .interrupt_conversation(ConversationInterruptInput {
+            .interrupt_conversation(ConversationInterruptInput { native_capabilities: None,
                 project_id: fixture.project.clone(),
                 client_message_id: "interruption".into(),
                 body: "new request".into(),
@@ -96,6 +96,7 @@ fn durable_interruption_preserves_chat_plan_but_invalidates_for_explicit_replann
                 intent: Some("chat".into()),
                 max_rounds: Some(1),
                 max_duration_seconds: Some(60),
+                task_rules: None,
             })
             .unwrap();
         let chat = fixture

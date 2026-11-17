@@ -1,0 +1,10 @@
+.conversation-mention-highlight { position:absolute; z-index:0; overflow:hidden; pointer-events:none; user-select:none; color:var(--text); }
+.conversation-mention-highlight > div { box-sizing:border-box; border:0; }
+.conversation-mention-highlight mark { font:inherit; color:var(--accent); background:var(--accent-soft); border-radius:3px; padding:0; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
+.collaboration-conversation .conversation-composer .conversation-editor[data-highlighted="true"] textarea { position:relative; z-index:1; color:transparent; -webkit-text-fill-color:transparent; caret-color:var(--text); }
+.collaboration-conversation .conversation-composer .conversation-editor[data-highlighted="true"] textarea::selection { background:color-mix(in srgb,var(--accent) 28%,transparent); color:transparent; -webkit-text-fill-color:transparent; }
+@media(forced-colors:active) {
+  .conversation-mention-highlight { display:none; }
+  .collaboration-conversation .conversation-composer .conversation-editor[data-highlighted="true"] textarea { color:CanvasText; -webkit-text-fill-color:CanvasText; }
+  .collaboration-conversation .conversation-composer .conversation-editor[data-highlighted="true"] textarea::selection { color:HighlightText; -webkit-text-fill-color:HighlightText; background:Highlight; }
+}

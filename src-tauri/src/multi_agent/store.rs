@@ -125,6 +125,9 @@ impl MultiAgentStore {
 
     pub fn create_agent(&self, input: CreateAgentInput) -> Result<AgentProfile> {
         input.runtime_kind.ensure_available()?;
+        if !input.runtime_kind.is_collaboration_cli() {
+            return Err(anyhow!("新增协作成员仅支持 CLI 执行引擎；ZCode Desktop 仅兼容已有成员，独立 Chat 不作为新成员"));
+        }
         super::domain::validate_agent_avatar(input.avatar_id.as_deref())?;
         let name = required(&input.name, "Agent 名称")?;
         let connection = self.connection.lock().unwrap();
@@ -202,6 +205,10 @@ impl MultiAgentStore {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_agent_in_project(&tx, &input.agent_id, &input.project_id)?;
         let previous = get_agent_with(&tx, &input.agent_id)?;
+        if (input.runtime_kind != previous.runtime_kind && !input.runtime_kind.is_collaboration_cli())
+            || (input.enabled && !input.runtime_kind.supports_existing_collaboration()) {
+            return Err(anyhow!("切换协作成员请选择 CLI 执行引擎；已有 ZCode Desktop 可保留原配置，不会自动替换"));
+        }
         let duplicate: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_agents WHERE project_id=?1 AND lower(name)=lower(?2) AND id<>?3)", params![input.project_id, name, input.agent_id], |row| row.get(0))?;
         if duplicate {
             return Err(anyhow!("本项目已存在同名成员，请使用不同名称"));
@@ -958,6 +965,10 @@ impl MultiAgentStore {
         let connection = self.connection.lock().unwrap();
         let run = get_run_with(&connection, &input.run_id)?;
         let now = now_millis();
+        if event_type == "agent_activity" {
+            let previous = connection.query_row("SELECT seq,project_id,run_id,task_id,agent_id,event_type,payload_json,created_at FROM ma_runtime_events WHERE run_id=?1 AND event_type='agent_activity' ORDER BY seq DESC LIMIT 1", [&run.id], runtime_event_from_row).optional()?;
+            if let Some(previous) = previous.filter(|event| event.payload == input.payload && now.saturating_sub(event.created_at) < 1000) { return Ok(previous); }
+        }
         connection.execute(
             "INSERT INTO ma_runtime_events
              (project_id, run_id, task_id, agent_id, event_type, payload_json, created_at)
@@ -973,6 +984,11 @@ impl MultiAgentStore {
             ],
         )?;
         let event = runtime_event_by_seq(&connection, connection.last_insert_rowid())?;
+        if event.task_id.starts_with("cli-message-conversation-") {
+            if let Some(activity) = super::conversation_activity::signal(&event.event_type, &event.payload) {
+                super::conversation_activity::persist(&connection, &event, &activity)?;
+            }
+        }
         drop(connection);
         self.record_conversation_runtime_event(&event)?;
         Ok(event)
@@ -4481,7 +4497,7 @@ fn event_from_row(row: &Row<'_>) -> rusqlite::Result<ActivityEvent> {
     })
 }
 
-fn runtime_event_from_row(row: &Row<'_>) -> rusqlite::Result<RuntimeEventRecord> {
+pub(super) fn runtime_event_from_row(row: &Row<'_>) -> rusqlite::Result<RuntimeEventRecord> {
     let payload: String = row.get(6)?;
     Ok(RuntimeEventRecord {
         seq: row.get(0)?,
@@ -5362,6 +5378,42 @@ mod tests {
         edit.name = "已重命名".into();
         fixture.store().update_agent(edit).unwrap();
         assert_eq!(fixture.store().snapshot(&project.id).unwrap().agents[0].name, "已重命名");
+    }
+
+    #[test]
+    fn collaboration_cli_admission_rejects_new_chat_and_preserves_legacy_desktop() {
+        let fixture = TestStore::new();
+        let project = fixture.project();
+        for runtime in super::super::COLLABORATION_CLI_RUNTIMES {
+            let input:CreateAgentInput=serde_json::from_value(serde_json::json!({"projectId":project.id,"name":runtime.as_str(),"runtimeKind":runtime,"role":"worker"})).unwrap();
+            fixture.store().create_agent(input).unwrap();
+        }
+        assert_eq!(fixture.store().snapshot(&project.id).unwrap().agents.len(),7);
+        for runtime in [AgentRuntimeKind::ZCode,AgentRuntimeKind::ClaudeChat,AgentRuntimeKind::CodexChat,AgentRuntimeKind::KimiChat,AgentRuntimeKind::PiChat,AgentRuntimeKind::OpenCodeChat] {
+            let input:CreateAgentInput=serde_json::from_value(serde_json::json!({"projectId":project.id,"name":"rejected","runtimeKind":runtime,"role":"worker"})).unwrap();
+            assert!(fixture.store().create_agent(input).unwrap_err().to_string().contains("CLI"));
+        }
+        assert_eq!(fixture.store().snapshot(&project.id).unwrap().agents.len(),7,"rejected creation is side-effect free");
+        let cli=fixture.store().snapshot(&project.id).unwrap().agents[0].clone();
+        for target in [AgentRuntimeKind::ZCode,AgentRuntimeKind::ClaudeChat] {
+            let mut edit=agent_edit(&cli);edit.runtime_kind=target;
+            assert!(fixture.store().update_agent(edit).is_err());
+            assert_eq!(fixture.store().agent_profile(&cli.id).unwrap().runtime_kind,cli.runtime_kind);
+        }
+        // Simulate a previously persisted Desktop member, rather than bypassing the new API.
+        fixture.store().connection.lock().unwrap().execute("UPDATE ma_agents SET runtime_kind='zcode',model='desktop/original-model' WHERE id=?1",[&cli.id]).unwrap();
+        let old=fixture.store().agent_profile(&cli.id).unwrap();
+        let task:CreateTaskInput=serde_json::from_value(serde_json::json!({"projectId":project.id,"title":"original task","description":"original scope","assigneeAgentId":old.id,"workspaceMode":"shared_write"})).unwrap();
+        let task=fixture.store().create_task(task).unwrap();
+        let reopened=MultiAgentStore::open_at(fixture.root.join("control.db")).unwrap();
+        let old=reopened.agent_profile(&old.id).unwrap();assert!(old.enabled);assert_eq!(old.runtime_kind,AgentRuntimeKind::ZCode);assert_eq!(old.model.as_deref(),Some("desktop/original-model"));
+        let mut edit=agent_edit(&old);edit.description="updated role".into();
+        let updated=reopened.update_agent(edit).unwrap();
+        assert_eq!(updated.runtime_kind,AgentRuntimeKind::ZCode);assert_eq!(updated.model,old.model);assert_eq!(updated.permission_profile,old.permission_profile);
+        assert_eq!(reopened.snapshot(&project.id).unwrap().tasks.iter().find(|item|item.id==task.id).unwrap().assignee_agent_id.as_deref(),Some(old.id.as_str()));
+        assert!(reopened.conversation_snapshot(&project.id).unwrap().supported_discussion_runtimes.contains(&AgentRuntimeKind::ZCode));
+        let claimed=reopened.claim_task(ClaimTaskInput{task_id:task.id,agent_id:old.id.clone(),lease_seconds:120}).unwrap();
+        assert_eq!(claimed.agent_id,old.id,"legacy queued work still uses the original member");
     }
 
     #[test]

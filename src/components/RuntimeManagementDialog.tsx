@@ -2,7 +2,7 @@ import { useRef, useState, type DragEvent } from "react";
 import { ArrowDown, ArrowUp, DotsSixVertical, X } from "@phosphor-icons/react";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
-import { COLLABORATION_RUNTIMES, runtimeCategory, isRetiredRuntime, type RuntimeCategory } from "../runtimeTaxonomy";
+import { COLLABORATION_RUNTIMES, isLegacyCollaborationRuntime, runtimeCategory, isRetiredRuntime, type RuntimeCategory } from "../runtimeTaxonomy";
 import type { AgentRuntimeKind } from "../types";
 import type { RuntimeDropPosition } from "../runtimePreferences";
 import { Modal } from "./ui/Modal";
@@ -101,7 +101,7 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
     <span className="collab-runtime-drag-handle" aria-hidden="true" title="按住拖动，调整上下顺序"><DotsSixVertical size={17} /></span>
     <label className="collab-runtime-toggle">
       <img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" draggable={false} />
-      <span>{RUNTIME_LABELS[kind]}<small className="collab-runtime-scope">{COLLABORATION_RUNTIMES.includes(kind) ? "支持协作调度" : "仅原生聊天"}</small></span>
+      <span>{RUNTIME_LABELS[kind]}<small className="collab-runtime-scope">{COLLABORATION_RUNTIMES.includes(kind) ? "CLI 协作执行" : isLegacyCollaborationRuntime(kind) ? "原生聊天 · 已有协作成员兼容" : "仅原生聊天"}</small></span>
       <small>{pending === kind ? "保存中…" : availability.ready ? availability.isRuntimeEnabled(kind) ? "已启用" : "已禁用" : "加载中…"}</small>
       <input type="checkbox" aria-label={`启用 ${RUNTIME_LABELS[kind]}`} checked={availability.ready && availability.isRuntimeEnabled(kind)} disabled={!availability.ready || pending !== null} onChange={(event) => void toggle(kind, event.target.checked)} />
     </label>

@@ -10,15 +10,51 @@ let failNext = false;
 let saves = 0;
 let report: (text: string) => void = () => {};
 const fixtureState = new URLSearchParams(location.search).get("state");
+if(fixtureState === "legacy-desktop") snapshot.agents[0]={...snapshot.agents[0],name:"已有 Desktop 成员",runtimeKind:"zcode",model:"desktop/kept-model",permissionProfile:"auto"};
+const policyMock = { failLoad: false, failSave: false, stale: false, calls: [] as any[], previews: [] as any[], policies: {} as Record<string, any>, archives: [] as any[] };
+(window as any).policyMock = policyMock;
+if (fixtureState === "policy") {
+  snapshot.runs = [];
+  snapshot.agents[0].description = "负责模型设置验收。只回复指定标记，不调用工具。";
+  snapshot.project.goal = "模型设置验收，只回复验收标记，不调用工具。";
+}
+const policySnapshot = () => ({
+  projectPolicy: policyEntry(null), memberPolicies: snapshot.agents.map((agent: any) => policyEntry(agent.id)), archivedTaskRules: policyMock.archives,
+  runtimeCapabilities: snapshot.agents.map((agent: any) => ({ runtimeKind: agent.runtimeKind, research: true, replyOnly: true, networkControl: true, pathControl: true, status: "adapted", detail: "隔离 UI 数据，不代表真实工具验证" })),
+});
+function policyEntry(agentId: string | null) {
+  const legacyText = agentId ? snapshot.agents.find((agent: any) => agent.id === agentId)?.description : snapshot.project.goal;
+  return { projectId: project.id, agentId, legacyText, legacyReviewRequired: legacyText?.includes("不调用工具"), boundary: policyMock.policies[agentId ?? "project"] ?? { tools: "research", network: "public_web", deniedReadPaths: [] } };
+}
 if (fixtureState === "agents-empty") snapshot.agents = [];
 const projects: any[] = fixtureState === "empty" ? [] : [project];
 const snapshots = new Map([[project.id, snapshot]]);
-const projectMock = { creates: [] as any[], holdCreate: false, releaseCreate: null as (() => void) | null, pickerResult: null as string | null, pickerError: false };
+const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate: false, releaseCreate: null as (() => void) | null, pickerResult: null as string | null, pickerError: false };
 (window as any).projectMock = projectMock;
 (window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(command: string, args: any) {
   if (command === "plugin:event|listen") return 1;
   if (command === "plugin:event|unlisten") return;
   if (command === "get_runtime_preferences") return { disabledRuntimes: [] };
+  if (command === "ma_conversation_snapshot") { if (policyMock.failLoad) throw Error("隔离测试：权限读取失败"); return structuredClone(policySnapshot()); }
+  if (command === "ma_conversation_policy_set") {
+    policyMock.calls.push(structuredClone(args.input));
+    if (policyMock.failSave) throw Error("隔离测试：限制保存失败");
+    policyMock.policies[args.input.agentId ?? "project"] = structuredClone(args.input.boundary);
+    return structuredClone(policySnapshot());
+  }
+  if (command === "ma_conversation_migration_preview") {
+    const entry = policyEntry(args.input.agentId);
+    const preview = { ...args.input, id: `preview-${policyMock.previews.length}`, previousText: entry.legacyText, archivedRules: entry.legacyText, createdAt: 1 };
+    policyMock.previews.push(preview); return structuredClone(preview);
+  }
+  if (command === "ma_conversation_migration_apply") {
+    const preview = policyMock.previews.find(value => value.id === args.input.previewId);
+    if (policyMock.stale || policyEntry(preview.agentId).legacyText !== preview.previousText) throw Error("原文已变化，请重新预览");
+    if (preview.agentId) snapshot.agents.find((agent: any) => agent.id === preview.agentId).description = preview.replacementText;
+    else snapshot.project.goal = preview.replacementText;
+    policyMock.archives.push({ id: preview.id, agentId: preview.agentId, label: "原验收规则", tools: "none", instructions: preview.previousText, createdAt: 1 });
+    return structuredClone(policySnapshot());
+  }
   if (command === "ma_list_projects") {
     if (fixtureState === "projects-pending") return new Promise(() => {});
     if (fixtureState === "projects-failed") throw Error("回归测试：项目读取失败");
@@ -47,6 +83,7 @@ const projectMock = { creates: [] as any[], holdCreate: false, releaseCreate: nu
   if (command === "skill_center_snapshot") return { skillSets: [] };
   if (command === "collaboration_health") return { sessions: [], runtimes: [], messages: [], handoffs: [], cliPath: "fixture", cliPathExists: true, replyEvidence: "fixture" };
   if (["ma_create_agent", "ma_update_agent"].includes(command)) {
+    projectMock.agentSaves.push(structuredClone(args.input));
     if (failNext) { failNext = false; throw Error("回归测试：保存失败"); }
     const { agentId, ...draft } = args.input;
     if (agentId) snapshot.agents = snapshot.agents.map((a: any) => a.id === agentId ? { ...a, ...draft } : a);

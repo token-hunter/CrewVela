@@ -130,13 +130,16 @@ impl CollaborationBridge {
         cwd: &Path,
     ) -> RunBridgeLease {
         let agent_key = format!("{project_id}:{agent_id}");
-        let token = self
+        let token = if super::conversation::is_conversation_task(task_id) {
+            // Research capabilities must never be inherited by an older or later run.
+            uuid::Uuid::new_v4().to_string()
+        } else { self
             .agent_tokens
             .lock()
             .unwrap()
             .entry(agent_key)
             .or_insert_with(|| uuid::Uuid::new_v4().to_string())
-            .clone();
+            .clone() };
         self.scopes.lock().unwrap().insert(
             token.clone(),
             RunScope {
@@ -304,7 +307,8 @@ fn dispatch(
     scope: &RunScope,
     command: CollaborationCommand,
 ) -> Result<serde_json::Value> {
-    if super::conversation::is_conversation_task(&scope.task_id) {
+    if super::conversation::is_conversation_task(&scope.task_id)
+        && !store.conversation_task_policy(&scope.task_id, &scope.agent_id)?.uses_native_capabilities() {
         return Err(anyhow!("公共讨论不允许调用任务、私有消息、共享记忆或外部通信工具；请直接回复本轮"));
     }
     let profile = store.agent_profile(&scope.agent_id)?;
@@ -511,7 +515,12 @@ fn handle_mcp_request(
             "instructions": "这些工具只访问当前任务范围。SQLite 调度状态是唯一事实源。",
         }),
         "notifications/initialized" | "ping" => serde_json::json!({}),
-        "tools/list" => serde_json::json!({"tools": collaboration_tools()}),
+        "tools/list" => {
+            if super::conversation::is_conversation_task(&scope.task_id) {
+                let policy = store.conversation_task_policy(&scope.task_id, &scope.agent_id)?;
+                serde_json::json!({"tools": if policy.uses_native_capabilities() { collaboration_tools() } else { super::conversation::research::tools(&policy) }})
+            } else { serde_json::json!({"tools": collaboration_tools()}) }
+        },
         "tools/call" => {
             let params = request
                 .get("params")
@@ -525,8 +534,14 @@ fn handle_mcp_request(
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({}));
-            let command = collaboration_command_from_tool(name, &arguments)?;
-            match dispatch(store, scope, command) {
+            let legacy_conversation = super::conversation::is_conversation_task(&scope.task_id)
+                && !store.conversation_task_policy(&scope.task_id, &scope.agent_id)?.uses_native_capabilities();
+            let outcome = if legacy_conversation {
+                super::conversation::research::call(store, &scope.project_id, &scope.task_id, &scope.run_id, &scope.agent_id, name, &arguments)
+            } else {
+                collaboration_command_from_tool(name, &arguments).and_then(|command| dispatch(store, scope, command))
+            };
+            match outcome {
                 Ok(data) => {
                     let structured_content = if data.is_object() {
                         data.clone()
