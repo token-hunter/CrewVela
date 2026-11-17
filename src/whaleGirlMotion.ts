@@ -1,3 +1,5 @@
+import { spriteMascotFrame } from "./spriteMascotMotion";
+
 export const WHALE_GIRL_MOTIONS = [
   { name: "眨眼", duration: 3000, frames: [0, 1, 2, 3], stops: [2000, 2140, 2300, 3000] },
   { name: "摆尾", duration: 2000, frames: [0, 1, 2, 3, 0, 1, 2, 3] },
@@ -10,8 +12,5 @@ export const WHALE_GIRL_MOTIONS = [
 ] as const;
 
 export function whaleGirlFrame(motion: number, elapsed: number): number {
-  const entry = WHALE_GIRL_MOTIONS[motion];
-  const time = Math.max(0, Math.min(elapsed, entry.duration - 1));
-  if ("stops" in entry) return entry.frames[entry.stops.findIndex(end => time < end)];
-  return entry.frames[Math.min(entry.frames.length - 1, Math.floor(time / entry.duration * entry.frames.length))];
+  return spriteMascotFrame(WHALE_GIRL_MOTIONS[motion], elapsed);
 }

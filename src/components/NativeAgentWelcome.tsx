@@ -4,7 +4,8 @@ import { RUNTIME_LOGOS, RUNTIME_LABELS } from "../runtimeLogos";
 import type { NativeAgentKind, NativeAgentSwitchProps } from "../nativeAgentSwitch";
 import { NativeAgentMascot } from "./NativeAgentMascot";
 import { NativeWhaleGirl } from "./NativeWhaleGirl";
-import { NativeZCodeMascot } from "./NativeZCodeMascot";
+import { NativeClawd } from "./NativeClawd";
+import { NativeZCodeArcade } from "./NativeZCodeArcade";
 
 export function NativeAgentSelector({ kind, switching, enabledAgents, onSwitchAgent, onHandoffAgent, managedToolbar }: NativeAgentSwitchProps & { kind: NativeAgentKind }) {
   if (managedToolbar) return null;
@@ -27,7 +28,7 @@ export function NativeAgentWelcome({ kind, active = true, skillsDisabled, onSkil
   }, []);
   return <div className={`native-agent-welcome ${kind === "zcode" ? "native-agent-zcode" : "native-agent-dolphin"}${!active || !visible ? " motion-paused" : ""}`}>
     <div className="native-agent-character">
-      {kind === "deepseek_harness" ? <NativeWhaleGirl active={active && visible} /> : kind === "zcode" ? <NativeZCodeMascot active={active && visible} /> : <NativeAgentMascot kind={kind} active={active && visible} />}
+      {kind === "claude_chat" ? <NativeClawd active={active && visible} /> : kind === "deepseek_harness" ? <NativeWhaleGirl active={active && visible} /> : kind === "zcode" ? <NativeZCodeArcade active={active && visible} /> : <NativeAgentMascot kind={kind} active={active && visible} />}
     </div>
     <h1>{RUNTIME_LABELS[kind]}</h1>
     <button type="button" className="native-agent-skills" disabled={skillsDisabled} onClick={onSkills}>{kind === "zcode" ? "查看技能与插件" : kind === "claude_chat" || kind === "codex_chat" || kind === "kimi_chat" || kind === "opencode_chat" || kind === "pi_chat" ? "查看命令" : "查看技能"}<ArrowRight size={17} /></button>

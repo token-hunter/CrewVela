@@ -1,0 +1,7 @@
+.native-agent-welcome .native-agent-character:has(.native-clawd) { width:min(300px,100%); height:auto; aspect-ratio:1; }
+.native-agent-character button.native-clawd { display:block; width:100%; height:100%; aspect-ratio:1; padding:0; border:0; border-radius:16px; background:transparent; color:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.native-clawd:focus-visible { outline:2px solid var(--harness-link,var(--accent)); outline-offset:3px; }
+.native-clawd-sprite { display:block; width:100%; height:100%; background-size:400% 800%; background-repeat:no-repeat; }
+.native-clawd:disabled { cursor:default; opacity:1; }
+@media (max-height:800px) { .native-agent-welcome .native-agent-character:has(.native-clawd) { width:min(220px,100%); } }
+@container (max-width:650px) { .native-agent-welcome .native-agent-character:has(.native-clawd) { width:min(220px,100%); } }

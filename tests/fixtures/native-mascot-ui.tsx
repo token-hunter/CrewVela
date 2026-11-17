@@ -9,7 +9,10 @@ function Preview() {
   const [active, setActive] = useState(true);
   const [compact, setCompact] = useState(false);
   const [command, setCommand] = useState("");
-  const [filter, setFilter] = useState<NativeAgentKind | "all">("all");
+  const [filter, setFilter] = useState<NativeAgentKind | "all">(() => {
+    const requested = new URLSearchParams(location.search).get("kind");
+    return kinds.find(kind => kind === requested) ?? "all";
+  });
   return <main className={`mascot-qa${compact ? " compact" : ""}`}>
     <style>{`.mascot-qa{padding:24px;background:#1f1f1f;min-height:100vh;color:#eee}.mascot-qa header{display:flex;align-items:center;gap:24px;flex-wrap:wrap;margin-bottom:24px}.mascot-qa header h1{font-size:22px;margin:0}.mascot-qa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:20px;max-width:1500px;margin:auto}.mascot-qa article{border:1px solid #3c3c3c;border-radius:18px;padding:18px 10px;container-type:inline-size;min-width:0}.mascot-qa .native-agent-character{width:320px;height:280px}.mascot-qa .native-agent-welcome h1{font-size:22px}.mascot-qa .native-agent-welcome p{font-size:13px}.mascot-qa.compact .mascot-qa-grid{max-width:330px;grid-template-columns:1fr}.mascot-qa output{color:#aaa}@media(max-width:380px){.mascot-qa{padding:10px}.mascot-qa-grid{grid-template-columns:1fr}}`}</style>
     <style>{`.mascot-qa [data-preview-kind="deepseek_harness"] .native-agent-character{width:min(280px,100%);height:auto;aspect-ratio:1}`}</style>
