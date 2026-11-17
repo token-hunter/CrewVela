@@ -368,19 +368,11 @@ impl AcpConnection {
         let command = match command_override {
             Some(command) => command,
             None => {
-                let mut command = adapter_command(ManagedAcpKind::Codex)?;
+                let command = adapter_command(ManagedAcpKind::Codex)?;
                 if let Err(error) = crate::ai_memory::ensure_codex_service() {
                     // Shared memory is optional: report its failure without
                     // preventing Codex itself from opening a chat.
                     eprintln!("[crewvela] Codex Chat 共享记忆启动检查失败：{error:#}");
-                }
-                // 适配器默认 spawn 裸 "codex"，shell 解析失败时会回退包内旧版 codex
-                // （0.153.x，模型目录陈旧）；显式指向本机解析到的 codex，与 PTY
-                // 会话保持同一二进制与模型目录。
-                if let Some(codex) = crate::multi_agent::resolve_runtime_executable(
-                    crate::multi_agent::AgentRuntimeKind::Codex,
-                ) {
-                    command.env("CODEX_PATH", codex);
                 }
                 command
             }
@@ -2214,8 +2206,22 @@ fn codex_adapter_command() -> Result<Command> {
             .context("未找到 Codex ACP 适配器或 npx；请安装 Node.js/npm")?;
         codex_npx_command(&npx, &node, &wrapper)?
     };
+    // codex-acp defaults to its bundled Codex when CODEX_PATH is absent.
+    // All entry points (native chat, group chat and managed tasks/resume) must
+    // use the same installed CLI without changing the user's model or provider.
+    pin_codex_executable(&mut command, crate::multi_agent::resolve_runtime_executable_checked(
+        crate::multi_agent::AgentRuntimeKind::Codex,
+    ))?;
     command.env("CREWVELA_CODEX_ACP_BRIDGE", "1");
     Ok(command)
+}
+
+fn pin_codex_executable(command: &mut Command, executable: std::result::Result<PathBuf, String>) -> Result<()> {
+    let executable = executable.map_err(|reason| anyhow!(
+        "Codex ACP 无法使用本机 CLI，未切换到适配器内置版本：{reason}"
+    ))?;
+    command.env("CODEX_PATH", executable);
+    Ok(())
 }
 
 fn codex_npx_command(npx: &Path, node: &Path, wrapper: &Path) -> Result<Command> {
@@ -2429,6 +2435,10 @@ fn choose_permission_option(request: &Value, allow: bool) -> Option<String> {
 }
 
 #[cfg(test)]
+#[path = "acp_model_routing_tests.rs"]
+mod model_routing_tests;
+
+#[cfg(test)]
 mod tests {
     #[test]
     fn codex_acp_terminal_failure_is_not_a_successful_reply() {
@@ -2580,6 +2590,40 @@ setInterval(()=>{},1000);
         child.kill().unwrap(); child.wait().unwrap();
     }
     use super::*;
+
+    #[test]
+    fn codex_adapter_runtime_pin_preserves_user_settings_and_rejects_missing_cli() {
+        let path = std::env::temp_dir().join("Codex runtime with spaces").join("codex.cmd");
+        let mut command = Command::new("node");
+        command.arg("adapter-wrapper.mjs").env("CODEX_CONFIG", r#"{"model":"explicit-model","model_provider":"user-provider","approval_policy":"on-request"}"#)
+            .env("CODEX_HOME", "isolated-home");
+        let before_args = command.get_args().map(|value| value.to_os_string()).collect::<Vec<_>>();
+        let before_env = command.get_envs().map(|(key,value)| (key.to_os_string(), value.map(|value| value.to_os_string()))).collect::<Vec<_>>();
+        pin_codex_executable(&mut command, Ok(path.clone())).unwrap();
+        assert_eq!(command.get_args().map(|value| value.to_os_string()).collect::<Vec<_>>(), before_args);
+        for (key, value) in before_env {
+            assert!(command.get_envs().any(|(actual_key,actual_value)| actual_key == &key && actual_value == value.as_deref()));
+        }
+        assert!(command.get_envs().any(|(key,value)| key == "CODEX_PATH" && value == Some(path.as_os_str())));
+        let mut missing = Command::new("node");
+        let error = pin_codex_executable(&mut missing, Err("fixture CLI missing".into())).unwrap_err();
+        assert!(error.to_string().contains("fixture CLI missing"));
+        assert!(!missing.get_envs().any(|(key,_)| key == "CODEX_PATH"));
+    }
+
+    #[test]
+    #[ignore = "requires installed Codex/Node; checks the production adapter command without a model request"]
+    fn codex_managed_adapter_pins_the_same_installed_cli_as_native_chat() {
+        let expected = crate::multi_agent::resolve_runtime_executable(
+            crate::multi_agent::AgentRuntimeKind::Codex,
+        ).expect("installed Codex fixture is required");
+        let command = codex_adapter_command().unwrap();
+        let actual = command.get_envs().find_map(|(key, value)| {
+            (key == "CODEX_PATH").then_some(value).flatten()
+        });
+        assert_eq!(actual, Some(expected.as_os_str()),
+            "managed ACP must use the installed Codex; omitting CODEX_PATH selects the adapter's bundled CLI");
+    }
 
     #[test]
     fn codex_packaged_wrapper_materialization_and_npx_arguments_keep_bridge() {

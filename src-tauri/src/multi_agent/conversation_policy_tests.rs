@@ -57,6 +57,55 @@ fn native_request_is_frozen_and_old_requests_keep_their_original_contract() {
 }
 
 #[test]
+#[ignore = "requires CREWVELA_RUN_REAL_CODEX_MODEL=1 and isolated CODEX_HOME; one short request through the production group executor"]
+fn real_native_codex_group_inherits_model_and_completes() {
+    assert_eq!(std::env::var("CREWVELA_RUN_REAL_CODEX_MODEL").as_deref(), Ok("1"));
+    let base = std::path::PathBuf::from(std::env::var_os("CREWVELA_CODEX_MODEL_PROBE_ROOT").expect("isolated root required"));
+    let code_home = std::path::PathBuf::from(std::env::var_os("CODEX_HOME").expect("isolated CODEX_HOME required"));
+    assert_eq!(code_home.canonicalize().unwrap(), base.join("codex-home").canonicalize().unwrap());
+    assert!(base.canonicalize().unwrap().starts_with(std::env::temp_dir().canonicalize().unwrap()));
+    assert_eq!(std::fs::read_to_string(base.join(".isolated-model-probe")).unwrap(), "crewvela-codex-model-probe-v1\n");
+    crate::test_profile::initialize(&base.join("app")).unwrap();
+    let fixture = Fixture::at(base.join(format!("group-{}", id())));
+    fixture.store.connection.lock().unwrap().execute(
+        "UPDATE ma_agents SET model=NULL,permission_profile='default',description='隔离普通群聊验收，不调用工具' WHERE id=?1",
+        [&fixture.agents[0]],
+    ).unwrap();
+    let sessions = crate::sessions::SessionManager::open_at(fixture.root.join("sessions.json"), fixture.root.join("events")).unwrap();
+    let executor = ExistingRunExecutor {
+        host: AgentTerminalHost::new(crate::pty::PtyManager::new(), sessions),
+        bridge: CollaborationBridge::start(fixture.store.clone()).unwrap(),
+    };
+    let marker = "CREWVELA_CODEX_GROUP_MODEL_OK";
+    let mut input = fixture.input();
+    input.native_capabilities = true;
+    input.participant_agent_ids = vec![fixture.agents[0].clone()];
+    input.max_duration_seconds = 90;
+    input.body = format!("只回复 {marker}，不要调用工具、读取文件、发信或执行其他任务。");
+    let (round, _) = fixture.store.begin_conversation(input).unwrap();
+    let outcome = run_discussion(&fixture.store, &round.id, &Arc::new(AtomicBool::new(false)), &executor);
+    let snapshot = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    let engine = fixture.store.snapshot(&fixture.project).unwrap();
+    let events = fixture.store.runtime_events(&fixture.project, None, 2000).unwrap();
+    let round = snapshot.rounds.iter().find(|item| item.id == round.id).unwrap();
+    let replies = snapshot.messages.iter().filter(|message| message.sender_type == "agent").collect::<Vec<_>>();
+    let tool_seen = events.iter().any(|event| event.event_type == "tool_protocol");
+    let evidence = json!({"boundary":"production run_discussion -> ExistingRunExecutor -> execute_preferred_acp; isolated store/profile/CODEX_HOME; no Tauri GUI",
+        "passed":outcome.is_ok() && round.status == "completed" && replies.len() == 1 && replies[0].body.trim() == marker && !tool_seen,
+        "roundStatus":round.status,"stopReason":round.stop_reason,"toolSeen":tool_seen,
+        "memberModel":fixture.store.agent_profile(&fixture.agents[0]).unwrap().model,
+        "replies":replies.iter().map(|message|json!({"status":message.status,"body":message.body})).collect::<Vec<_>>(),
+        "runs":engine.runs.iter().map(|run|json!({"status":run.status,"sessionLocator":run.session_locator})).collect::<Vec<_>>(),
+        "runtimeEventTypes":events.iter().map(|event|event.event_type.as_str()).collect::<Vec<_>>(),
+        "error":outcome.as_ref().err().map(|error|format!("{error:#}"))});
+    let path = base.join("group-acceptance.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&evidence).unwrap()).unwrap();
+    eprintln!("CODEX_GROUP_MODEL_ACCEPTANCE={} evidence={}", evidence["passed"], path.display());
+    outcome.unwrap();
+    assert_eq!(evidence["passed"], true, "group completion must be stored with the real Codex response");
+}
+
+#[test]
 #[ignore = "requires CREWVELA_RUN_NATIVE_GROUP=1 and logged-in native CLIs; isolated project and store"]
 fn real_native_group_reads_with_original_cli_tools_and_keeps_role() {
     assert_eq!(std::env::var("CREWVELA_RUN_NATIVE_GROUP").as_deref(), Ok("1"));
