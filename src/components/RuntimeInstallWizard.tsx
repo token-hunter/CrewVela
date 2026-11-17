@@ -12,6 +12,9 @@ export function RuntimeInstallWizard({ kind, onBack }: {
   const [environment, setEnvironment] = useState<RuntimeEnvironment | null>(null);
   const [job, setJob] = useState<RuntimeInstallJob | null>(null);
   const [loading, setLoading] = useState(true);
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [latestLoading, setLatestLoading] = useState(true);
+  const [latestError, setLatestError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +26,9 @@ export function RuntimeInstallWizard({ kind, onBack }: {
   const completed = useRef<string | null>(null);
   const requestPending = useRef(false);
   const operationRevision = useRef(0);
+  const environmentRequest = useRef<Promise<void> | null>(null);
+  const latestRequest = useRef<Promise<void> | null>(null);
+  const lastPolledJob = useRef<RuntimeInstallJob | null>(null);
   const label = RUNTIME_LABELS[kind];
   const info = runtimeInstallationInfo(kind);
   const running = installationRunning(job);
@@ -31,18 +37,33 @@ export function RuntimeInstallWizard({ kind, onBack }: {
   const percent = downloadPercent(job);
   const failed = job?.phase === "failed";
   const installed = job?.phase === "ready" || (!!environment?.version && !environment.error);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(() => {
+    if (environmentRequest.current) return environmentRequest.current;
     const current = ++generation.current;
     setLoading(true);
-    try {
-      const result = await invoke<RuntimeEnvironment>("runtime_install_environment", { kind });
-      if (alive.current && generation.current === current) { setEnvironment(result); setError(null); }
-    } catch (reason) { if (alive.current && generation.current === current) setError(String(reason)); }
-    finally { if (alive.current && generation.current === current) setLoading(false); }
+    const pending = invoke<RuntimeEnvironment>("runtime_install_environment", { kind })
+      .then(result => { if (alive.current && generation.current === current) { setEnvironment(result); setError(null); } })
+      .catch(reason => { if (alive.current && generation.current === current) setError(String(reason)); })
+      .finally(() => {
+        if (environmentRequest.current === pending) environmentRequest.current = null;
+        if (alive.current && generation.current === current) setLoading(false);
+      });
+    environmentRequest.current = pending;
+    return pending;
+  }, [kind]);
+  const refreshLatest = useCallback(() => {
+    if (latestRequest.current) return latestRequest.current;
+    setLatestLoading(true);
+    const pending = invoke<string>("runtime_install_latest_version", { kind })
+      .then(version => { if (alive.current) { setLatestVersion(version); setLatestError(null); } })
+      .catch(reason => { if (alive.current) setLatestError(String(reason)); })
+      .finally(() => { if (latestRequest.current === pending) latestRequest.current = null; if (alive.current) setLatestLoading(false); });
+    latestRequest.current = pending;
+    return pending;
   }, [kind]);
   useEffect(() => {
     alive.current = true;
-    void refresh();
+    let firstFrame = 0, backgroundFrame = 0, timer = 0;
     let polling = false;
     const poll = async () => {
       if (polling) return;
@@ -52,18 +73,31 @@ export function RuntimeInstallWizard({ kind, onBack }: {
         const next = await invoke<RuntimeInstallJob | null>("runtime_install_status", { kind });
         if (!alive.current || revision !== operationRevision.current || requestPending.current) return;
         setStatusError(null);
+        const wasRunning = installationRunning(lastPolledJob.current);
+        lastPolledJob.current = next;
         setJob(next);
         if (next && !installationRunning(next)) {
           setCancelling(false);
-          if (completed.current !== next.id) { completed.current = next.id; void refresh(); }
+          if (completed.current !== next.id) {
+            completed.current = next.id;
+            if (wasRunning) { generation.current += 1; environmentRequest.current = null; }
+            void refresh();
+            void refreshLatest();
+          }
         }
       } catch (reason) { if (alive.current) setStatusError(`读取安装状态失败：${String(reason)}`); }
       finally { polling = false; }
     };
-    void poll();
-    const timer = window.setInterval(() => void poll(), 600);
-    return () => { alive.current = false; generation.current += 1; window.clearInterval(timer); };
-  }, [kind, refresh]);
+    // Give the dialog a painted frame before starting CLI processes or IPC.
+    firstFrame = requestAnimationFrame(() => {
+      backgroundFrame = requestAnimationFrame(() => {
+        void refreshLatest();
+        void poll().finally(() => { if (alive.current && !installationRunning(lastPolledJob.current)) void refresh(); });
+        timer = window.setInterval(() => void poll(), 600);
+      });
+    });
+    return () => { alive.current = false; generation.current += 1; environmentRequest.current = null; latestRequest.current = null; window.cancelAnimationFrame(firstFrame); window.cancelAnimationFrame(backgroundFrame); window.clearInterval(timer); };
+  }, [kind, refresh, refreshLatest]);
   const start = async () => {
     if (requestPending.current || running) return;
     operationRevision.current += 1;
@@ -107,18 +141,18 @@ export function RuntimeInstallWizard({ kind, onBack }: {
       <p role="status">{phaseMessage}</p>
       {(error || statusError) && <p role="alert" className="runtime-install-error"><WarningCircle size={18} />{error || statusError}</p>}
       {failed && <p role="alert" className="runtime-install-error"><WarningCircle size={18} />{job.error}</p>}
-      {environment?.updateError && !busy && <p className="runtime-install-note">官方版本暂未确认：{environment.updateError}</p>}
+      {latestError && !busy && <p className="runtime-install-note">官方版本暂未确认：{latestError}</p>}
     </section>
     <dl className="runtime-install-facts">
       <div><dt>依赖检查</dt><dd>{loading ? "正在检查…" : !environment ? "检查未完成，请重新检查" : <>{environment.supported && <CheckCircle size={18} />}{environment.dependencyMessage ?? (environment.supported ? "当前平台支持，不需要 Node/npm" : "此平台请使用官方安装方式")}</>}</dd></div>
       <div><dt>安装方式</dt><dd>{info.method} · 当前用户目录</dd></div>
       <div><dt>原有配置</dt><dd>沿用本地配置</dd></div>
-      {!busy && <><div><dt>版本</dt><dd>{loading ? "正在确认…" : environment?.version ?? "尚未确认"}{(job?.version ?? environment?.latestVersion) && <span className="runtime-install-latest">官方版本 {job?.version ?? environment?.latestVersion}</span>}</dd></div>
-      <div><dt>登录状态</dt><dd>{environment?.auth === "authenticated" ? "已登录（未验证额度）" : environment?.auth === "login_required" ? "待登录" : "未验证，请在原生 CLI 中确认"}</dd></div></>}
+      {!busy && <><div><dt>版本</dt><dd>{loading ? "正在确认…" : environment?.version ?? "尚未确认"}<span className="runtime-install-latest">官方版本 {latestVersion ?? (latestLoading ? "正在确认…" : "尚未确认")}</span></dd></div>
+      <div><dt>登录状态</dt><dd>{loading ? "正在检查…" : environment?.auth === "authenticated" ? "已登录（未验证额度）" : environment?.auth === "login_required" ? "待登录" : "未验证，请在原生 CLI 中确认"}</dd></div></>}
     </dl>
     <details className="runtime-install-details"><summary><CaretDown size={17} />安装详情</summary><dl>
       <div><dt>当前来源</dt><dd>{environment?.source ?? "正在检测…"}</dd></div>
-      <div><dt>当前路径</dt><dd>{environment?.executable ?? "未检测到可用 CLI"}</dd></div>
+      <div><dt>当前路径</dt><dd>{environment?.executable ?? (loading ? "正在检测…" : "未检测到可用 CLI")}</dd></div>
       <div><dt>安装目录</dt><dd>{environment?.installDirectory ?? "正在检测…"}</dd></div>
       {environment?.error && <div><dt>当前安装检查</dt><dd>{environment.error}</dd></div>}
       <div><dt>文件校验</dt><dd>{info.checksum}</dd></div>
@@ -130,7 +164,7 @@ export function RuntimeInstallWizard({ kind, onBack }: {
       {busy ? <button className="btn secondary" disabled={starting || cancelling} onClick={() => void cancel()}>{cancelling ? "正在取消…" : "取消安装"}</button>
         : <button className="btn secondary" disabled={loading || !environment?.supported} onClick={() => void start()}>{failed || job?.phase === "cancelled" ? "重试安装" : installed ? "升级或修复安装" : "开始安装"}</button>}
       <span>{busy ? "关闭面板后继续，可返回查看" : installed ? "安装与登录状态分别确认" : "验证通过后可登录"}</span>
-      {!busy && <button className="btn secondary" disabled={loading} onClick={() => void refresh()}><ArrowClockwise size={16} />重新检查</button>}
+      {!busy && <button className="btn secondary" disabled={loading} onClick={() => { void refresh(); void refreshLatest(); }}><ArrowClockwise size={16} />重新检查</button>}
       <button className="btn runtime-install-primary" disabled={!installed || busy || loginBusy} onClick={() => void login()}>{loginBusy ? "正在打开…" : info.loginLabel}</button>
     </footer>
   </div>;

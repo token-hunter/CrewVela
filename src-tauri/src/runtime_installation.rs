@@ -167,6 +167,10 @@ fn parse_codex_release(value: &serde_json::Value, version: &str, platform: &str)
     Ok(Release { version: version.into(), url: expected, integrity: integrity.into(), archive: ArchiveFormat::TarGz })
 }
 pub(crate) async fn environment(kind: AgentRuntimeKind) -> Result<Environment, String> {
+    crate::blocking_command(move || inspect_environment(kind)).await
+}
+
+fn inspect_environment(kind: AgentRuntimeKind) -> Result<Environment, String> {
     if !supported_kind(kind) { return Err("此 Runtime 保留现有官方安装方式".into()); }
     let dependency = additional::dependencies(kind);
     let supported = platform().is_ok() && dependency.is_ok();
@@ -175,17 +179,19 @@ pub(crate) async fn environment(kind: AgentRuntimeKind) -> Result<Environment, S
         Ok(path) => {
             let owned = managed_executable(kind).ok().flatten().as_ref() == Some(&path);
             let source = if owned { "CrewVela 用户级安装" } else if path.to_string_lossy().contains("node_modules") { "本机 npm 安装" } else { "本机 CLI 安装" };
-            let path_copy = path.clone();
-            let inspected = tauri::async_runtime::spawn_blocking(move || (verify(&path_copy, kind, None), auth_status(&path_copy, kind))).await.map_err(|e| e.to_string())?;
+            let inspected = (verify(&path, kind, None), auth_status(&path, kind));
             (Some(path.display().to_string()), inspected.0.as_ref().ok().cloned(), inspected.1, inspected.0.err().map(|e| e.to_string()), source.into())
         }
         Err(error) => (None, None, "unverified".into(), Some(error), "未安装或安装异常".into()),
     };
-    let latest = if platform().is_ok() { release(kind).await } else { Err(anyhow!("此平台请使用官方安装方式")) };
     Ok(Environment { kind, supported, executable, version, auth, error, source,
         dependency_message: dependency.unwrap_or_else(|error| error.to_string()),
         install_directory: root().map_err(|e| e.to_string())?.join(kind.as_str()).display().to_string(),
-        latest_version: latest.as_ref().ok().map(|r| r.version.clone()), update_error: latest.err().map(|e| e.to_string()) })
+        latest_version: None, update_error: None })
+}
+
+pub(crate) async fn latest_version(kind: AgentRuntimeKind) -> Result<String, String> {
+    release(kind).await.map(|release| release.version).map_err(|error| error.to_string())
 }
 
 pub(crate) fn status(kind: AgentRuntimeKind) -> Option<InstallJob> { jobs().lock().unwrap().get(kind.as_str()).map(|op| op.job.clone()) }
@@ -356,6 +362,17 @@ fn rename_for_publication_with(mut rename: impl FnMut() -> std::io::Result<()>) 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[ignore = "requires CREWVELA_RUN_RUNTIME_LOCAL_PROBE=1; reads current Claude CLI version/help/auth status without installation or model calls"]
+    fn local_runtime_environment_returns_without_official_release_lookup() {
+        assert_eq!(std::env::var("CREWVELA_RUN_RUNTIME_LOCAL_PROBE").as_deref(), Ok("1"));
+        let started=std::time::Instant::now();
+        let result=tauri::async_runtime::block_on(super::environment(AgentRuntimeKind::ClaudeCode)).unwrap();
+        assert!(result.executable.is_some(), "requires installed Claude CLI");
+        assert!(result.version.is_some(), "local CLI self-check must complete");
+        assert!(result.latest_version.is_none() && result.update_error.is_none(), "local inspection must be independent of official version lookup");
+        eprintln!("LOCAL_RUNTIME_INSPECTION elapsed_ms={} verified={} auth={}",started.elapsed().as_millis(),result.version.is_some(),result.auth);
+    }
     use super::*;
     fn temporary(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!("crewvela-install-{label}-{}", uuid::Uuid::new_v4()));
