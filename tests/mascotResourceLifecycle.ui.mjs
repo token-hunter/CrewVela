@@ -70,7 +70,7 @@ try{
   const requests=[];reduced.on('request',r=>requests.push({url:r.url(),type:r.resourceType()}));
   await reduced.goto(`${base}/tests/fixtures/native-mascot-ui.html?kind=claude_chat`);
   await reduced.locator('.native-clawd[data-renderer="static-paused"]').waitFor();
-  assert.equal(requests.some(r=>r.type==='image'&&(/(?:flow|visibility)\.png/.test(r.url)||/action-\d\.webp/.test(r.url))),false,'reduced-motion initial load does not request animation textures (Vite URL import modules are scripts)');
+  assert.equal(requests.some(r=>['image','fetch'].includes(r.type)&&(/(?:flow|visibility)\.png/.test(r.url)||/(?:action|motion)-\d\.webp/.test(r.url))),false,'reduced-motion initial load does not request animation textures (Vite URL import modules are scripts)');
   await reduced.close();
   const missing=await browser.newPage();
   await missing.route('**/*flow.png*',route=>route.request().resourceType()==='image'?route.abort():route.continue());
@@ -82,7 +82,7 @@ try{
   assert.match(await missing.locator('output').textContent(),/命令入口已响应/);
   await missing.close();
   const missingAction=await browser.newPage();
-  await missingAction.route('**/action-1.webp*',route=>route.request().resourceType()==='image'?route.abort():route.continue());
+  await missingAction.route('**/motion-1.webp*',route=>['image','fetch'].includes(route.request().resourceType())?route.abort():route.continue());
   await missingAction.goto(`${base}/tests/fixtures/native-mascot-ui.html?kind=claude_chat`);
   await missingAction.locator('.native-clawd[data-renderer="flow"]').waitFor();
   await missingAction.locator('.native-clawd').click();

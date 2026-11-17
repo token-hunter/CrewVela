@@ -1,0 +1,240 @@
+{
+  "method": "built-in image_gen",
+  "acceptedSources": [
+    {
+      "file": "clawd-right-key-tap-hd-v2.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-right-key-tap-hd-v2",
+      "promptExact": false,
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-ef9d4d9b-88b8-49db-b3ae-ae4bab764fd8.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+      "notes": "Native generated source retained; numeric assets rebuild from this PNG without regenerating artwork."
+    },
+    {
+      "file": "clawd-common-hand-lift-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-common-hand-lift-hd-v1",
+      "promptExact": true,
+      "prompt": "Produce TWO reusable small-step intermediate hand-lift poses of this exact approved Clawd character. Output exact 1774x887 transparent RGBA, two native 887px squares, no gutter. Both are AFTER the original idle (reference1) and BEFORE either wave/glasses gesture; do not jump to the endpoints. Image-right arm/hand stays gripping the SAME keyboard at the original idle position; keyboard and four feet remain exactly stationary. Only image-left hand releases the keyboard and lifts toward the image-left cheek. LEFT output: hand center roughly x220 y560 in its 887px cell, just above the keyboard, elbow bent, hand still a soft mitten with thumb. RIGHT output: hand center roughly x220 y480, beside lower left cheek, wrist turning into a small relaxed open gesture, fingers not touching glasses yet. Original idle hand starts about y640, so these are two clear in-between vertical positions. One connected sleeve/cuff/hand per side; no hand remains on left keyboard edge. Keep head, square eyes, glasses/hood, coat body, native fabric, lighting/camera, full-body framing and registration identical to reference1. Do not tilt head, resize body, change key layout, duplicate hands or move feet. Transparent alpha, no text/dividers/streaks/shadows. Solid finished poses, not dissolves.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/claude-programmer/idle.webp",
+        "F:/project/CrewVela-public/src/assets/mascots-hd/claude-programmer/action-6.webp",
+        "F:/project/CrewVela-public/src/assets/mascots-hd/claude-programmer/action-3.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-5cc34890-749b-48f5-ba99-f8282e8d5309.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "clawd-glasses-slide-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-glasses-slide-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO intermediate poses between the LEFT and RIGHT original Clawd glasses-adjusting poses. Exact output 1774x887 transparent RGBA two-cell sheet, 887 square native detail per cell. The image-left hand/index finger moves continuously from outer left glasses hinge (reference LEFT) toward center glasses bridge/nose (reference RIGHT). LEFT output 1/3: index fingertip is at upper-left portion of the left gold lens rim, hand has moved slightly inward. RIGHT output 2/3: fingertip is near the inner-left lens rim approaching bridge. Keep the arm anatomically connected, sleeve follows inward; one hand only in front of face, no old finger beside the ear, no overlay/double hand. Keep SAME original head/eyes/glasses alignment, hood/coat, keyboard held by image-right hand and four feet; body registration and scale do not change. Preserve original 3D orange material, dark hoodie detail, gold rim/zipper, keyboard layout and lighting. Hand should visibly occlude part of the gold rim as it crosses it, with correct front-to-back order. Two genuine solid intermediate poses, no ghost rims or soft endpoint blend. True transparent alpha, no labels/dividers/motion trails.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/claude-programmer/action-3.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-ba4538ad-8e52-47cf-a5a1-f9704db849d2.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "clawd-keyboard-release-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-keyboard-release-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO very early hand-release poses BETWEEN reference1 idle and reference2 LEFT raised-hand pose. Crucial: hand remains LOW beside keyboard, not already at cheek/collar. Only IMAGE-LEFT hand moves; other hand holds right keyboard edge unchanged. LEFT output: original left mitten has lifted only about 25-35 native pixels, center about x210,y605, fingers still level with the upper key rows, sleeve still slopes toward keyboard. RIGHT output: left mitten lifted about 70-80 pixels, center about x220,y560, just over the keyboard's top edge and STILL BELOW the collar/cheek. The existing next pose center is about x230,y500; do not repeat that high pose. Keep the hand same rounded mitten shape at first, only gentle thumb turn, no pointing finger. Keyboard and entire head/body remain absolutely fixed.  Exact 1774x887 transparent RGBA two-cell sheet, native 887 square cells, no gutters. Preserve original head, square eyes, gold glasses, hood/charcoal fabric, zipper, four feet, keyboard placement/layout/knob, lighting/camera, proportions and registration. Exactly one connected sleeve/cuff/hand per side, one keyboard. No duplicate hands or ghost blending. True alpha; no labels, dividers, motion trails, blur or additional objects.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/claude-programmer/idle.webp",
+        "F:/project/CrewVela-public/.scratch/mascot-overlap-fix/clawd-common-hand-lift-hd-v1.png"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-732764e6-9f54-4541-b78f-db3eb28af623.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "clawd-glasses-between-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-glasses-between-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO genuinely intervening hand locations BETWEEN the LEFT and RIGHT attached finger-on-glasses poses. Do NOT repeat the outer hinge or nose/bridge endpoint. Image-left hand moves diagonally right/down over the LEFT lens. LEFT output: fingertip around x365,y310 in its 887 cell, crossing the upper-middle left lens area; palm around x310,y395. RIGHT output: fingertip around x415,y330, crossing inner-middle left lens; palm around x355,y420. Exactly one index finger/palm, correctly occluding part of the left lens/eye, sleeve attached. Keep glasses as one fixed pair, unchanged head, other hand fixed on keyboard, source stance and camera. These two hand positions must sit between the existing left fingertip roughly x320,y280 and right fingertip x470,y340. One moving hand, no leftover old hand beside ear.  Exact 1774x887 transparent RGBA two-cell sheet, native 887 square cells, no gutters. Preserve original head, square eyes, gold glasses, hood/charcoal fabric, zipper, four feet, keyboard placement/layout/knob, lighting/camera, proportions and registration. Exactly one connected sleeve/cuff/hand per side, one keyboard. No duplicate hands or ghost blending. True alpha; no labels, dividers, motion trails, blur or additional objects.",
+      "references": [
+        "F:/project/CrewVela-public/.scratch/mascot-overlap-fix/clawd-glasses-slide-hd-v1.png"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-208902e4-4785-491e-8344-40a8fb8a6f95.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "clawd-lowering-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-lowering-hd-v1",
+      "promptExact": false,
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-00e37431-8ad8-4f6c-82d2-a2328a3f357c.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+      "notes": "Native generated source retained; numeric assets rebuild from this PNG without regenerating artwork."
+    },
+    {
+      "file": "clawd-stretch-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-stretch-hd-v1",
+      "promptExact": false,
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-af3184ed-be03-4943-a56d-552a5e5a74bd.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+      "notes": "Native generated source retained; numeric assets rebuild from this PNG without regenerating artwork."
+    },
+    {
+      "file": "clawd-lowering-occlusion-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-lowering-occlusion-hd-v1",
+      "promptExact": true,
+      "prompt": "Two genuine intermediate animation poses between the attached LEFT and RIGHT Clawd lowering-keyboard poses. Output exact 1774x887 transparent RGBA sheet, two 887 square cells. Critical physical geometry: the original LEFT feet are visible BELOW the keyboard, and original RIGHT feet are visible ABOVE the floor keyboard. During these TWO intermediate moments, the single keyboard passes IN FRONT OF the same four feet and naturally fully OCCLUDES them. Do NOT draw an extra second row of feet above/below the board. The four feet still exist behind the solid keyboard; no floating or detached feet. LEFT output at 1/3 between these attached poses, RIGHT at 2/3. One keyboard and one orange hand on each edge continuously lowering it. Hoodie hem/body position and the keyboard's vertical position must plausibly overlap so the board covers the feet. Head bows gradually from left reference to right, scale and position between the references. Keep original precise head, square open eyes, round gold glasses, hood, dark fabric, zipper, keyboard key layout/knob, native materials/camera. No duplicate hands/props/ghost outlines. Preserve registration/full-body frame, no zoom. True transparent alpha, no captions, dividers, blur or motion trails.",
+      "references": [
+        "F:/project/CrewVela-public/.scratch/mascot-overlap-fix/clawd-lowering-hd-v1.png"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-6ebf246e-4f0e-4ca3-b393-f2bda3e57119.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "clawd-stretch-lower-steps-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-stretch-lower-steps-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO small-step arm-stretch in-betweens for approved Clawd. Exact transparent RGBA 1774x887, two native 887 square cells. Starting pose is reference1 LEFT: hands just releasing keyboard on floor. Next pose is reference2 LEFT: both arms point outward about 25 degrees below horizontal. Create poses BETWEEN those, NOT repeated endpoints. LEFT output: both arms reach outward/down about 60 degrees BELOW horizontal, fists still relatively near hips. RIGHT output: both arms outward/down about 43 degrees BELOW horizontal, halfway farther out. One solid sleeve/cuff/orange fist on each side connected naturally to shoulders. Keep the ONE keyboard stationary in its exact source floor position, four original feet in their source row above keyboard, no extra feet. Head/hood/glasses rise only subtly toward reference2 left, square eyes transitioning to happy eyes naturally. Same approved orange block head, gold glasses/zipper, dark hoodie fabric, lighting, native sharpness and square registration. No huge jump directly to fully extended horizontal arms; these are specifically early lower-angle steps. No ghost fists, double outlines, floating hands or second keyboard. Full limbs stay inside each cell. True transparent alpha, no text/dividers/streaks/shadows.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/claude-programmer/action-5.webp",
+        "F:/project/CrewVela-public/.scratch/mascot-overlap-fix/clawd-stretch-hd-v1.png"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-4202bb6d-b708-4886-be3d-0c4a45919d3a.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "clawd-stretch-upper-steps-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "clawd-stretch-upper-steps-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO exact new arm-angle poses of approved Clawd for an animation. Output 1774x887 transparent RGBA, 2 equal 887 square cells. LEFT OUTPUT: both arms extend exactly horizontally from the shoulders, orange fists at shoulder level (0 degrees). RIGHT OUTPUT: both arms extend 33 degrees ABOVE horizontal, between reference2 RIGHT's low-up pose and reference1 RIGHT's high stretch. Same ONE keyboard stationary at its source floor position and four original orange feet in the original row above it. Head/hood/glasses/torso/body scale and registration remain consistent with supplied stretch source, happy closed eyes, no overall body zoom. Each side has exactly one solid sleeve/cuff/fist attached to shoulder, normal proportions, no ghost fists or double hands. Keep full fingers/fists inside square cells with similar padding as source. Preserve charcoal fabric sharpness, orange material, gold hardware, keyboard layout/knob, lighting and camera. Two independent complete solid poses, not source-image blends. True transparent alpha, no labels/dividers/motion trails/shadow.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/claude-programmer/action-5.webp",
+        "F:/project/CrewVela-public/.scratch/mascot-overlap-fix/clawd-stretch-hd-v1.png"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-147fecc2-6699-4741-ab76-5e5ef1fbf2ba.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "whale-wave-lift-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "whale-wave-lift-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO poses between reference1 idle and reference2 LEFT small waving pose. Image-left arm remains exactly down at idle. Only image-right arm bends and lifts its open hand. LEFT output: hand around x580,y525 in its 887 square, between waist and chest, palm beginning to face forward. RIGHT output: hand around x565,y480, midway from chest toward the final shoulder-level waving hand (final about x550,y435). Starting idle right hand about x590,y570. Keep the hand in these intermediate heights, do not jump straight to the final wave. Face stays cheerful open eyes as original.  Output exact 1774x887 transparent RGBA two-cell sheet, 887x887 per cell, no gutters. Preserve the original crisp anime sprite, face/hair/headband/bow, bodice/apron/whale motif, skirt, tail and shoes, original colors and native detail. Keep original 887 square framing, character size and head/body registration. Exactly one anatomically connected sleeve/cuff/hand per side, correct hair visible behind moving arm, no old hand remnants, ghost limbs, duplicated contours or dissolves. Genuine solid in-between poses, not repeated endpoints. Real alpha, no captions/dividers/motion trails or added props.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/idle.webp",
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/action-2.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-879501d4-ed1e-479e-8d27-86260de83b40.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "whale-jump-prep-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "whale-jump-prep-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO small-step poses between reference1 idle and reference2 LEFT jump preparation (two fists at chest). LEFT output 1/3: both elbows bend inward and hands become loose fists near waist, centers about x330,y540 and x550,y540; knees begin bending subtly. RIGHT output 2/3: fists rise near lower chest, about x370,y510 and x510,y510, approaching final chest fists. Head/body lowers only a little as in original preparation, maintain original cheerful eyes/mouth and proportion. Feet remain on the same floor until jump; no floating or extra legs. Each hand follows one continuous inward/upward arc from its original side position, expose clean hair behind its old sleeve. Do not jump directly to fists at face.  Exact output: 1774x887 transparent RGBA, two 887px square cells, no gutters. Preserve original crisp anime style/native detail, blue hair/headband/bow, outfit/apron/whale emblem, skirt, tail and shoes. Correct limb connections and front/back hair occlusion. Exactly two hands and two arms, no old hand residues, double sleeves, ghost silhouettes or blended endpoints. Preserve original full-body registration/scale, no zoom. True alpha; no labels/dividers/streaks or extra props.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/idle.webp",
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/action-3.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-b12771ea-23a6-4b48-ac14-9d6ffa71d73c.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "whale-jump-rise-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "whale-jump-rise-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO true intermediate poses between original LEFT crouched/chest-fists and original RIGHT small happy jump with fists raised outside face. LEFT output 1/3: body begins rising slightly, knees straighten, fists separate outward toward shoulder width but stay below face. RIGHT output 2/3: body rises a little farther, fists have lifted to beside the lower cheeks, before the final high/outward pose. Interpolate feet/legs and head position as one coherent body motion, never duplicate boots or arms. Hands stay clenched and each wrist remains joined to sleeve. Match original hair/skirt/tail lift subtly; do not exaggerate jump or change framing.  Exact output: 1774x887 transparent RGBA, two 887px square cells, no gutters. Preserve original crisp anime style/native detail, blue hair/headband/bow, outfit/apron/whale emblem, skirt, tail and shoes. Correct limb connections and front/back hair occlusion. Exactly two hands and two arms, no old hand residues, double sleeves, ghost silhouettes or blended endpoints. Preserve original full-body registration/scale, no zoom. True alpha; no labels/dividers/streaks or extra props.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/action-3.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-3136708d-574f-4e73-afdd-76e917e60063.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "whale-thinking-lift-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "whale-thinking-lift-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO poses between reference1 idle and reference2 LEFT thinking pose. Image-right arm stays down beside the skirt exactly as idle. Image-left hand lifts toward image-left cheek and extends index finger gradually. LEFT output: left hand around x325,y525 in its square, in front of lower chest with elbow bent, index beginning to extend. RIGHT output: left hand around x355,y465, near upper chest below cheek, index points up toward the final cheek touch at roughly x390,y410. Head makes only a subtle gradual tilt toward target; no sudden tilt. One hand per side, no skin hand remains beside left skirt.  Output exact 1774x887 transparent RGBA two-cell sheet, 887x887 per cell, no gutters. Preserve the original crisp anime sprite, face/hair/headband/bow, bodice/apron/whale motif, skirt, tail and shoes, original colors and native detail. Keep original 887 square framing, character size and head/body registration. Exactly one anatomically connected sleeve/cuff/hand per side, correct hair visible behind moving arm, no old hand remnants, ghost limbs, duplicated contours or dissolves. Genuine solid in-between poses, not repeated endpoints. Real alpha, no captions/dividers/motion trails or added props.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/idle.webp",
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/action-5.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-2089b57e-f35c-495b-8f4c-a44e9bac3e51.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "whale-thinking-cross-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "whale-thinking-cross-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO intermediate poses between original LEFT finger-at-image-left-cheek thinking pose and original RIGHT chin-rest/crossed-forearm thinking pose. LEFT output 1/3: the cheek hand slides slightly inward under the mouth, while the OTHER image-right hand moves from its lower side position inward toward right edge of the waist. RIGHT output 2/3: cheek hand is almost under chin; other forearm has crossed halfway in front of abdomen, its hand near the center just below the bow. In final source it reaches the image-left elbow; do not jump straight there. Keep exactly one hand at chin and one at waist, connected to their own arms, no old down hand on skirt. Head tilt changes gradually as original. Clear depth: waist forearm crosses in front of bodice; chin arm lies in front of it. No duplicated sleeves/skin patches.  Exact output: 1774x887 transparent RGBA, two 887px square cells, no gutters. Preserve original crisp anime style/native detail, blue hair/headband/bow, outfit/apron/whale emblem, skirt, tail and shoes. Correct limb connections and front/back hair occlusion. Exactly two hands and two arms, no old hand residues, double sleeves, ghost silhouettes or blended endpoints. Preserve original full-body registration/scale, no zoom. True alpha; no labels/dividers/streaks or extra props.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/action-5.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-01124cda-e4e9-4c54-95ba-e24af03e59ef.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "whale-lower-arms-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "whale-lower-arms-hd-v1",
+      "promptExact": false,
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-05fe65a4-d540-4f3e-ba0d-1bbc38454b7b.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+      "notes": "Native generated source retained; numeric assets rebuild from this PNG without regenerating artwork."
+    },
+    {
+      "file": "whale-upper-arms-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "whale-upper-arms-hd-v1",
+      "promptExact": false,
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-b8c98893-89fe-43e0-a134-38fd02d989c0.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+      "notes": "Native generated source retained; numeric assets rebuild from this PNG without regenerating artwork."
+    },
+    {
+      "file": "whale-bow-hands-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "whale-bow-hands-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO poses between reference1 idle with hands at sides and reference2 LEFT with both hands gently joined in front of apron. No bow yet, just bringing hands together. LEFT output: elbows gently bend inward, left hand center x330,y580 and right hand x545,y580 in the 887 cell, still separated in front of apron edges. RIGHT output: hands near x385,y580 and x495,y580, almost meeting but not overlapping yet. Final original hands meet near x440,y580. Preserve exactly two hands and two arms, move both in a coherent inward arc; expose clean blue hair where lower arms were, no leftover sleeves on either side. Face open eyes/soft smile unchanged, feet and head position fixed.  Output exact 1774x887 transparent RGBA two-cell sheet, 887x887 per cell, no gutters. Preserve the original crisp anime sprite, face/hair/headband/bow, bodice/apron/whale motif, skirt, tail and shoes, original colors and native detail. Keep original 887 square framing, character size and head/body registration. Exactly one anatomically connected sleeve/cuff/hand per side, correct hair visible behind moving arm, no old hand remnants, ghost limbs, duplicated contours or dissolves. Genuine solid in-between poses, not repeated endpoints. Real alpha, no captions/dividers/motion trails or added props.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/idle.webp",
+        "F:/project/CrewVela-public/src/assets/mascots-hd/deepseek-whale-girl/action-7.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-15eebf37-5467-43f5-b31c-767d03cffb55.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "zcode-inbetweens-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "zcode-inbetweens-hd-v1",
+      "promptExact": false,
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-334411d8-5d74-425b-b613-8094427e5afa.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link.",
+      "notes": "Native generated source retained; numeric assets rebuild from this PNG without regenerating artwork."
+    },
+    {
+      "file": "zcode-headset-hd-v1.png",
+      "method": "built-in image_gen",
+      "purpose": "zcode-headset-hd-v1",
+      "promptExact": true,
+      "prompt": "Create TWO intermediate animation poses in an exact 1774x887 transparent RGBA two-cell sheet (887x887 each, no gutter), preserving the approved ZCode purple gaming creature. Start is reference 1: both hands holding controller. End is reference 2 LEFT cell: image-left hand touching image-left headphone, image-right hand alone holds controller. LEFT output cell is 1/3 through the hand lift: image-left hand has released controller and risen beside the lower cheek, elbow bent, fingers begin extending. RIGHT output cell is 2/3: that hand is beside the lower headphone edge, index finger moving toward the Z earcup. One connected arm/hand on each side only. The controller remains one solid object held by the image-right hand, moving only slightly toward its endpoint position. Preserve head/ear/headphone/logo/eye/mouth/tail/feet registration, scale, native material detail, colors and camera. No duplicate hand at the chest, no ghost silhouette or double gamepad. Keep body/head/feet at original right/start pose registration with only minimal smooth endpoint adjustment. No sound glyphs yet. Do not repeat endpoints. True transparent background, no labels/dividers/motion trails. Each cell is a finished genuine pose, not a blend.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/zcode-arcade/idle.webp",
+        "F:/project/CrewVela-public/src/assets/mascots-hd/zcode-arcade/action-5.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-158f570c-e6b0-4137-a23c-57d6581f70b0.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "zcode-clear-start-hd-v2.png",
+      "method": "built-in image_gen",
+      "purpose": "zcode-clear-start-hd-v2",
+      "promptExact": true,
+      "prompt": "Create TWO controlled intermediate poses, exact 1774x887 transparent RGBA (887px square cells) for approved ZCode going from reference1 chest controller to reference2 LEFT hip controller plus CLEAR sign. CRITICAL: do NOT immediately place the controller at its final hip position. In the LEFT output cell, center the single cream controller at about x450,y590 (native 887 cell coordinates), still crossing the CENTER of the belly; original start is about x530,y565, final is about x330,y635. In RIGHT output, controller center about x390,y610, visibly halfway toward the image-left hip. Image-left hand holds its left grip securely in both. Image-right hand has released it and holds ONE purple CLEAR sign lower on the image-right side: sign center approx x650,y650 in LEFT cell and x680,y620 in RIGHT. Exact text CLEAR once. Keep original head/headphones/Z logo/eyes/mouth/tail/shoes/stance/scale and 887 framing; no head/body tilt. Same source materials, purple controller buttons, gold-free purple sign, native sharp detail. ONE controller, ONE sign and TWO connected hands total; never chest and hip controllers at once. Each is a true solid intermediate pose with proper object contacts, not a blend. Transparent alpha, no captions/dividers/motion trails or extra decorations.",
+      "references": [
+        "F:/project/CrewVela-public/src/assets/mascots-hd/zcode-arcade/idle.webp",
+        "F:/project/CrewVela-public/src/assets/mascots-hd/zcode-arcade/action-7.webp"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-bf0b8fee-a090-475c-b542-a94a345128d4.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    },
+    {
+      "file": "zcode-clear-raise-hd-v2.png",
+      "method": "built-in image_gen",
+      "purpose": "zcode-clear-raise-hd-v2",
+      "promptExact": true,
+      "prompt": "Use case: precise-object-edit / background-extraction. Edit this existing 1774x887 TWO-CELL ZCode sprite without changing either pose, framing, lettering or any character/prop design. Remove the erroneous light gray/white wedge visible between the underside of the face and the raised image-right arm in the LEFT cell (next to/under the mint microphone). That gap is empty space and must be genuinely transparent alpha 0, as are all outside-background spaces. Remove any similar stray white/gray background fill around headphones/arm in either cell, while preserving the white CLEAR letters, real shoe/headphone highlights and all purple body/arm pixels. Keep each microphone intact as ONE mint microphone attached to its headset; no duplicated contours. Preserve exact native 1774x887 dimensions (two 887 squares), character positions, native detail and all pose geometry. Do not redraw or move the sign/controller/hands, do not change expression or tilt. Output truly transparent RGBA with no white backdrop, no shadows or new elements.",
+      "references": [
+        "F:/project/CrewVela-public/.scratch/mascot-overlap-fix/zcode-clear-raise-hd-v1.png"
+      ],
+      "originalToolOutput": "Generated images are saved to C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb as C:\\Users\\PC\\.codex\\generated_images\\01a1e9ee-fcae-7a10-96a3-f716451dddbb\\exec-faef6476-f712-4382-86d1-513f45ff27dd.png by default.\nIf you need to use a generated image at another path, copy it and leave the original in place unless the user explicitly asks you to delete it.\nThe generated image is already displayed to the user. There is no need to render it in the final response as a Markdown image or file link."
+    }
+  ]
+}

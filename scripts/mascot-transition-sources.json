@@ -1,0 +1,386 @@
+{
+  "claude-programmer": {
+    "1": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-right-key-tap-hd-v2.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "firstToSecond": [
+        1,
+        0,
+        3,
+        4,
+        2
+      ],
+      "toSecond": [
+        0,
+        3,
+        4,
+        2
+      ],
+      "handBounds": { "3": [650,520,830,710], "4": [500,500,690,690] }
+    },
+    "3": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-common-hand-lift-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-glasses-slide-hd-v1.png",
+          "columns": 2,
+          "rows": 1,
+          "transparentPaddingRight": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-keyboard-release-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-glasses-between-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        7,
+        8,
+        3,
+        4,
+        1
+      ],
+      "firstToSecond": [
+        1,
+        5,
+        9,
+        10,
+        6,
+        2
+      ]
+    },
+    "4": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-common-hand-lift-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-keyboard-release-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        5,
+        6,
+        3,
+        4,
+        1
+      ]
+    },
+    "5": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-lowering-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-stretch-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-lowering-occlusion-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-stretch-lower-steps-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-stretch-upper-steps-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        3,
+        7,
+        8,
+        4,
+        1
+      ],
+      "firstToSecond": [
+        1,
+        9,
+        10,
+        5,
+        11,
+        6,
+        12,
+        2
+      ]
+    },
+    "6": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-common-hand-lift-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/clawd-keyboard-release-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        5,
+        6,
+        3,
+        4,
+        1
+      ]
+    }
+  },
+  "deepseek-whale-girl": {
+    "2": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/whale-wave-lift-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        3,
+        4,
+        1
+      ]
+    },
+    "3": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/whale-jump-prep-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/whale-jump-rise-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        3,
+        4,
+        1
+      ],
+      "firstToSecond": [
+        1,
+        5,
+        6,
+        2
+      ]
+    },
+    "4": {
+      "firstToSecond": [
+        1,
+        0,
+        2
+      ],
+      "toSecond": [
+        0,
+        2
+      ]
+    },
+    "5": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/whale-thinking-lift-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/whale-thinking-cross-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        3,
+        4,
+        1
+      ],
+      "firstToSecond": [
+        1,
+        5,
+        6,
+        2
+      ]
+    },
+    "6": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/whale-lower-arms-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/whale-upper-arms-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        3,
+        4,
+        1
+      ],
+      "firstToSecond": [
+        1,
+        5,
+        6,
+        2
+      ]
+    },
+    "7": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/whale-bow-hands-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        3,
+        4,
+        1
+      ]
+    }
+  },
+  "zcode-arcade": {
+    "1": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/zcode-inbetweens-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        3,
+        4,
+        1
+      ],
+      "firstToSecond": [
+        1,
+        4,
+        3,
+        2
+      ],
+      "toSecond": [
+        0,
+        2
+      ]
+    },
+    "5": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/zcode-headset-hd-v1.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        3,
+        4,
+        1
+      ]
+    },
+    "7": {
+      "sources": [
+        {
+          "path": "src/assets/mascots-hd/transition-sources/zcode-clear-start-hd-v2.png",
+          "columns": 2,
+          "rows": 1
+        },
+        {
+          "path": "src/assets/mascots-hd/transition-sources/zcode-clear-raise-hd-v2.png",
+          "columns": 2,
+          "rows": 1
+        }
+      ],
+      "toFirst": [
+        0,
+        3,
+        4,
+        1
+      ],
+      "firstToSecond": [
+        1,
+        5,
+        6,
+        2
+      ],
+      "rigidSignBounds": {
+        "1": [
+          585,
+          500,
+          815,
+          640
+        ],
+        "2": [
+          575,
+          333,
+          817,
+          465
+        ],
+        "3": [
+          550,
+          605,
+          790,
+          720
+        ],
+        "4": [
+          550,
+          595,
+          790,
+          710
+        ],
+        "5": [
+          595,
+          460,
+          834,
+          605
+        ],
+        "6": [
+          568,
+          350,
+          816,
+          485
+        ]
+      }
+    }
+  }
+}
