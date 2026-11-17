@@ -9,8 +9,9 @@ const settingsSource = readFileSync(
 );
 const stylesSource = readStyles();
 
-test("所有保留设置页共用固定窗口与分类导航", () => {
-  assert.match(settingsSource, /className="settings-dialog settings-native"/);
+test("保留设置共用窗口与分类导航，快捷指令仅添加专属样式", () => {
+  assert.match(settingsSource, /className=\{`settings-dialog settings-native\$\{activeSection === "quickCommands" \? " settings-quick-commands" : ""\}`\}/);
+  assert.match(settingsSource, /overlayClassName=\{`dialog-overlay settings-overlay settings-native-overlay\$\{activeSection === "quickCommands" \? " settings-quick-commands-overlay" : ""\}`\}/);
   assert.match(settingsSource, /labelledBy="settings-dialog-title"/);
   assert.match(settingsSource, /className="settings-window-header"/);
   assert.match(stylesSource, /width: min\(1280px, calc\(100vw - 64px\)\)/);

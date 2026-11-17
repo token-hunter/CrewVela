@@ -236,7 +236,7 @@ export function SettingsDialog({
       description: "跨智能体共享项目上下文，让下一次会话接着做。",
       note: "",
     },
-    quickCommands: { eyebrow: "设置 / 智能体", title: "快捷指令", description: "搜索、收藏和配置常用操作，执行前核对具体目标。", note: "" },
+    quickCommands: { eyebrow: "设置 / 智能体", title: "快捷指令", description: "常用操作，选定目标后执行。", note: "" },
     automation: {
       eyebrow: "AUTOMATION",
       title: "自动化",
@@ -290,8 +290,8 @@ export function SettingsDialog({
   }[activeSection];
   return (
     <Modal
-      overlayClassName="dialog-overlay settings-overlay settings-native-overlay"
-      className="settings-dialog settings-native"
+      overlayClassName={`dialog-overlay settings-overlay settings-native-overlay${activeSection === "quickCommands" ? " settings-quick-commands-overlay" : ""}`}
+      className={`settings-dialog settings-native${activeSection === "quickCommands" ? " settings-quick-commands" : ""}`}
       onClose={onClose}
       closeOnOverlayClick
       labelledBy="settings-dialog-title"

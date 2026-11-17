@@ -16,12 +16,34 @@ let sessions = [
   { id: "codex", title: "Codex · 审查", kind: "terminal", agentRuntimeKind: "codex_chat", status: "completed", ptyId: null, cwd: "/fixture/project", projectId: "project-a", providerId: "local", providerName: "Codex Chat" },
   { id: "outside", title: "其他工作区 · Codex", kind: "terminal", agentRuntimeKind: "codex", status: "running", ptyId: 2, cwd: "/fixture/project", projectId: "other", providerId: "local", providerName: "Codex CLI" },
 ] as SessionRecord[];
+if (params.get("design") === "1") {
+  const entries = [
+    ["DeepSeek Harness", "deepseek_harness"], ["ZCode Desktop", "zcode"],
+    ["Claude Code Chat", "claude_chat"], ["Kimi Code Chat", "kimi_chat"],
+    ["Codex Chat", "codex_chat"], ["OpenCode Chat", "opencode_chat"],
+    ["Pi Chat", "pi_chat"], ["Claude Code", "claude_code"],
+    ["Codex CLI", "codex"], ["ZCode CLI", "zcode_cli"],
+  ];
+  sessions = entries.map(([title, agentRuntimeKind], index) => ({
+    ...sessions[0], id: `design-${index}`, title, providerName: title, agentRuntimeKind,
+    kind: "terminal", cwd: "G:\\tmp", projectId: "project-a", ptyId: index + 1,
+  })) as SessionRecord[];
+}
 const calls: any[] = [];
 const evidence: any[] = [];
 (window as any).__quickCalls = calls;
+let releaseProbe: (() => void) | undefined;
+let probeGate = params.has("holdProbe") ? new Promise<void>(resolve => { releaseProbe = resolve; }) : Promise.resolve();
+(window as any).__quickReleaseProbe = () => releaseProbe?.();
+(window as any).__quickHoldProbe = () => { probeGate = new Promise<void>(resolve => { releaseProbe = resolve; }); };
+(window as any).__quickFailProbe = false;
 (window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(method: string, args: any) {
   calls.push({ method, args });
-  if (method === "ma_probe_runtimes") return ["claude_code", "codex"].map(kind => ({ kind, installed: true, error: null }));
+  if (method === "ma_probe_runtimes") {
+    await probeGate;
+    if ((window as any).__quickFailProbe) throw Error("隔离测试：检测失败");
+    return (params.get("design") === "1" ? ["claude_code", "codex", "kimi_code", "pi", "opencode", "zcode_cli"] : ["claude_code", "codex"]).map(kind => ({ kind, installed: true, error: null }));
+  }
   if (method === "session_snapshot") return structuredClone(sessions);
   if (method === "get_key_state") return false;
   if (method === "list_communication_evidence") return evidence;
@@ -34,7 +56,7 @@ const evidence: any[] = [];
   if (method === "launch_runtime_session") { const row = { ...sessions[0], id: `created-${sessions.length}`, title: "新建会话", agentRuntimeKind: args.runtimeKind }; sessions.push(row); return row; }
   throw Error(`隔离页面拒绝未模拟的接口：${method}`);
 } };
-const context = { workspaceSessionIds: ["claude", "codex"], projectId: "project-a", cwd: "/fixture/project" };
+const context = { workspaceSessionIds: params.get("design") === "1" ? sessions.map(row => row.id) : ["claude", "codex"], projectId: "project-a", cwd: params.get("design") === "1" ? "G:\\tmp" : "/fixture/project" };
 function Fixture() {
   const [open, setOpen] = useState(params.get("open") !== "0");
   const [settings, setSettings] = useState(params.get("settings") === "1");
