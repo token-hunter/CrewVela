@@ -14,11 +14,11 @@ try {
     await page.locator(".communication-sidebar-hint .communication-hint").waitFor();
     await page.getByRole("button", { name: "新建会话", exact: true }).first().click();
     await page.getByText("Claude Code", { exact: true }).click();
-    await page.locator(".new-session-dialog").waitFor();
+    await page.locator(".cli-launch-dialog").waitFor();
 
     const report = await page.evaluate(() => {
       const hint = document.querySelector(".communication-sidebar-hint .communication-hint").getBoundingClientRect();
-      const dialog = document.querySelector(".new-session-dialog");
+      const dialog = document.querySelector(".cli-launch-dialog");
       const box = dialog.getBoundingClientRect();
       const overlaps = Math.max(0, Math.min(hint.right, box.right) - Math.max(hint.left, box.left))
         * Math.max(0, Math.min(hint.bottom, box.bottom) - Math.max(hint.top, box.top)) > 0;
@@ -37,7 +37,8 @@ try {
     assert.equal(report.intercepted, 0, `${width}px: first-run hint must stay below the new-session dialog: ${JSON.stringify(report)}`);
     if (width < 1000) assert.ok(report.overlaps, `${width}px: narrow layout is expected to make hint and dialog overlap, otherwise this test proves nothing`);
     // 真实点击也要能落到对话框里。
-    await page.locator(".new-session-dialog").getByText("Claude Code", { exact: true }).click({ timeout: 5000 });
+    await page.locator(".cli-launch-dialog").getByRole("combobox", { name: "启动 Agent" }).selectOption("codex");
+    assert.equal(await page.locator(".cli-launch-dialog").getByRole("combobox", { name: "启动 Agent" }).inputValue(), "codex");
     assert.deepEqual(pageErrors.filter((message) => !/transformCallback|__TAURI/.test(message)), []);
     await page.close();
   }

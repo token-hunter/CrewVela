@@ -38,6 +38,9 @@ const api = {
     defaults: JSON.parse(localStorage.getItem('fixture-cli-launch-defaults') ?? '{"claude_code":"auto","codex":"read_only"}') as Record<string, string>,
     calls: [] as Array<{command: string; args: any}>,
     failSave: false, failLaunch: false, hold: false,
+    pickerValue: 'C:\\fixture' as string | null, pickerFails: false, pickerHold: false,
+    pickerCalls: [] as unknown[], pickerPending: [] as Array<() => void>,
+    releasePicker() { api.cliLaunch.pickerPending.shift()?.(); },
     pending: [] as Array<() => void>,
     release() { api.cliLaunch.pending.shift()?.(); },
   },
@@ -81,8 +84,13 @@ const api = {
   },
   async invoke(command: string, args?: Record<string, unknown>) {
     if (location.search.includes('cli-launch')) {
-      if (command === 'list_projects') return [{id:'fixture-project',name:'Fixture project',path:'C:\\fixture',createdAt:0}];
-      if (command === 'plugin:dialog|open') return 'C:\\fixture';
+      if (command === 'list_projects') return [{id:'fixture-project',name:'Fixture project',path:'C:\\fixture',createdAt:0}, {id:'second-project',name:'Second project',path:'D:\\Second 项目',createdAt:0}];
+      if (command === 'plugin:dialog|open') {
+        api.cliLaunch.pickerCalls.push(args);
+        if (api.cliLaunch.pickerFails) throw Error('fixture 目录选择失败');
+        if (api.cliLaunch.pickerHold) await new Promise<void>(resolve => api.cliLaunch.pickerPending.push(resolve));
+        return api.cliLaunch.pickerValue;
+      }
       if (command === 'get_runtime_preferences') return {disabledRuntimes:[],defaultLaunchModes:structuredClone(api.cliLaunch.defaults)};
       if (command === 'set_runtime_launch_default') {
         api.cliLaunch.calls.push({command,args});

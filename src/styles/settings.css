@@ -1049,17 +1049,6 @@
   color: var(--text);
 }
 
-.new-session-dialog {
-  width: min(680px, 92vw);
-  max-height: 86vh;
-  padding: 26px;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--bg-elev);
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.48);
-}
-
 .provider-picker {
   margin-top: 22px;
   display: grid;
@@ -1088,15 +1077,6 @@
   transform: translateY(-1px);
 }
 
-.new-session-dialog .local-claude-choice {
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-}
-.new-session-dialog .local-claude-choice .provider-choice-copy :is(strong, small) {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  line-height: 1.5;
-}
-
 .provider-choice-icon {
   width: 34px;
   height: 34px;
@@ -1107,18 +1087,6 @@
   background: rgba(var(--accent-rgb), 0.09);
   color: var(--accent);
   font: 700 14px/1 var(--display-font);
-}
-
-.new-session-dialog .provider-choice-icon.has-logo {
-  border-color: transparent;
-  background: transparent;
-}
-
-.new-session-dialog .provider-choice-icon.has-logo img {
-  display: block;
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
 }
 
 .provider-choice-copy,
@@ -1387,96 +1355,6 @@
   }
 }
 
-
-.new-session-dialog .new-session-group-label {
-  grid-column: 1 / -1;
-  margin: 4px 0 -2px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-secondary, #909090);
-}
-.new-session-dialog .new-session-group-label:not(:first-of-type) {
-  margin-top: 10px;
-}
-
-.new-session-dialog .project-agent-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.new-session-agent-group {
-  min-width: 0;
-}
-
-.new-session-agent-group .new-session-group-label {
-  margin: 0 0 8px;
-}
-
-.new-session-agent-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-9);
-}
-
-.new-session-order-error {
-  grid-column: 1 / -1;
-  margin: 0 0 8px;
-  color: var(--danger);
-  font-size: var(--text-sm);
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.new-session-dialog .new-session-agent-choice {
-  grid-template-columns: 12px 34px minmax(0, 1fr) auto;
-  cursor: pointer;
-  user-select: none;
-}
-
-.new-session-dialog .new-session-agent-choice:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.new-session-agent-grip {
-  display: inline-flex;
-  align-items: center;
-  color: var(--text-faint);
-  cursor: move;
-}
-
-.new-session-agent-choice:hover .new-session-agent-grip,
-.new-session-agent-choice:focus-visible .new-session-agent-grip {
-  color: var(--accent);
-}
-
-.new-session-dialog .new-session-agent-choice.dragging {
-  opacity: 0.42;
-  cursor: move;
-}
-
-.new-session-agent-choice.dragging .new-session-agent-grip {
-  cursor: move;
-}
-
-.new-session-dialog .new-session-agent-choice[data-drop-position="before"] {
-  border-color: var(--accent);
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-
-.new-session-dialog .new-session-agent-choice[data-drop-position="after"] {
-  border-color: var(--accent);
-  box-shadow: inset -3px 0 0 var(--accent);
-}
-
-@media (max-width: 560px) {
-  .new-session-agent-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* ── 模型服务编辑：当前生效值摘要条（编辑既有服务时置顶显示）────────── */
 .provider-effective-summary {

@@ -22,7 +22,8 @@ import {
   useRuntimeOrder,
 } from "../runtimePreferences";
 import type { Project, SessionDirectory } from "../types";
-import { CHAT_AGENTS, TERMINAL_AGENTS, type NewSessionAgent } from "./NewSessionDialog";
+import { CHAT_AGENTS, TERMINAL_AGENTS, type NewSessionAgent } from "../newSessionAgents";
+import { resolveSessionDirectory } from "../sessionDirectory";
 
 interface Props {
   projects: Project[];
@@ -37,7 +38,7 @@ interface Props {
  */
 export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange, onLaunch }: Props) {
   const { isRuntimeEnabled, ready, error } = useRuntimeAvailability();
-  // 与「选择 Agent」弹窗共用排序（拖动卡片调整过的顺序在这里同样生效）。
+  // 与启动弹窗和 Runtime 管理共用排序。
   const terminalPreferences = useRuntimeOrder(TERMINAL_AGENTS, NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY);
   const chatPreferences = useRuntimeOrder(CHAT_AGENTS, NEW_SESSION_CHAT_ORDER_STORAGE_KEY);
   const terminalOrder = terminalPreferences.order;
@@ -61,13 +62,7 @@ export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange,
     try {
       const selected = await openDirectory({ directory: true, multiple: false, title: "选择工作目录", defaultPath: directory?.path });
       if (!mountedRef.current || typeof selected !== "string" || !selected.trim()) return;
-      const normalize = (path: string) => {
-        const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
-        return /^[A-Za-z]:/.test(path) || path.startsWith("\\\\") ? normalized.toLowerCase() : normalized;
-      };
-      const existing = projects.find(project => normalize(project.path) === normalize(selected));
-      const name = selected.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || selected;
-      onDirectoryChange(existing ?? { path: selected, name });
+      onDirectoryChange(resolveSessionDirectory(selected, projects));
     } catch (reason) {
       if (mountedRef.current) setDirectoryError(`选择目录失败：${String(reason)}`);
     } finally {

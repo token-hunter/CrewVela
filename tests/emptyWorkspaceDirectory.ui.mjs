@@ -78,7 +78,7 @@ try {
   await cliPage.evaluate(value=>window.directoryMock.resolve(value),custom);
   await cliPage.getByRole('button',{name:'选择 Agent',exact:true}).click();
   await cliPage.getByRole('dialog',{name:'选择 Agent',exact:true}).getByRole('button',{name:agent==='Codex CLI'?'Codex':agent,exact:true}).click();
-  if(agent==='Claude Code')await cliPage.getByRole('button',{name:/使用本地 Claude Code 配置/}).click();
+  await cliPage.getByRole('dialog',{name:'新建会话',exact:true}).getByRole('button',{name:'启动',exact:true}).click();
   await cliPage.locator('.session-item').filter({hasText:`${agent} · new-project`}).first().waitFor();
   assert.equal(await cliPage.evaluate(()=>window.directoryMock.calls.length),1,`${agent}: reuse chosen path without a second dialog`);
   await cliPage.close();

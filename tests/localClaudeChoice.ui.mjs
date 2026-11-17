@@ -1,46 +1,100 @@
-import assert from "node:assert/strict";
-import { chromium } from "playwright";
-
-const base = process.env.CREWVELA_UI_URL || "http://127.0.0.1:1420";
-const browser = await chromium.launch({ channel: process.env.CREWVELA_BROWSER_CHANNEL || "chrome" });
+// Real App routing and real launch dialog; only IPC/directory results are isolated.
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+import { mkdirSync } from 'node:fs';
+const base = process.env.CREWVELA_UI_URL || 'http://127.0.0.1:1420';
+const output = '.scratch/session-launch-directory/ui'; mkdirSync(output, {recursive:true});
+const browser = await chromium.launch({channel:'chrome'});
+const errors = [];
+const custom = 'D:\\临时任务\\一个很长的目录名称用于检查窄屏布局\\demo';
+async function choose(page) {
+  await page.getByRole('button',{name:'新建会话',exact:true}).first().click();
+  await page.getByRole('menu',{name:'新建 Runtime 会话'}).getByRole('menuitem').filter({has:page.getByText('Claude Code',{exact:true})}).click();
+  const dialog=page.getByRole('dialog',{name:'新建会话',exact:true}); await dialog.waitFor();
+  assert.equal(await page.locator('.new-session-dialog').count(),0,'no repeated Agent picker');
+  assert.equal(await dialog.getByRole('combobox',{name:'启动 Agent'}).inputValue(),'claude_code');
+  return dialog;
+}
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const errors = [];
-  page.on("pageerror", error => errors.push(error.message));
-  const url = query => `${base}/tests/fixtures/local-claude-choice-ui.html?ui-preview=1&${query}`;
-  for (const providers of ["sample", "none"]) {
-    await page.goto(url(`providers=${providers}`));
-    await page.getByText("Claude Code", { exact: true }).click();
-    await page.getByRole("button", { name: /使用本地 Claude Code 配置/ }).click();
-    await page.getByText("本地 Claude Code：选择工作目录", { exact: true }).waitFor();
-    assert.equal(await page.locator(".new-session-dialog").count(), 0);
+  for (const theme of ['dark','light']) {
+    const page=await browser.newPage({viewport:{width:1440,height:1000}}); page.setDefaultTimeout(15000);
+    page.on('pageerror',error=>errors.push(error.message));
+    await page.goto(`${base}/tests/fixtures/app-session-async-ui.html?cli-launch=1`);
+    await page.waitForFunction(()=>window.appSessionMock);
+    await page.getByTitle('在「Fixture project」下新建会话').waitFor({state:'attached'});
+    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    let dialog=await choose(page);
+    assert.equal(await dialog.getByRole('combobox',{name:'工作目录',exact:true}).inputValue(),'fixture-project');
+    assert.equal(await page.evaluate(()=>window.appSessionMock.cliLaunch.pickerCalls.length),0);
+    await dialog.getByRole('button',{name:'启动',exact:true}).click(); await dialog.waitFor({state:'detached'});
+    let call=await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.at(-1));
+    assert.equal(call.args.cwd,'C:\\fixture'); assert.equal(call.args.projectId,'fixture-project');
+    assert.equal(await page.evaluate(()=>window.appSessionMock.cliLaunch.pickerCalls.length),0,'launch reuses shown path');
+    await page.locator('.session-project-head').filter({hasText:'Fixture project'}).hover();
+    await page.getByTitle('在「Fixture project」下新建会话').click();
+    dialog=page.getByRole('dialog',{name:'新建会话',exact:true}); await dialog.waitFor();
+    assert.equal(await dialog.getByRole('combobox',{name:'启动 Agent'}).locator('option').count(),13);
+    assert.equal(await dialog.getByRole('combobox',{name:'工作目录',exact:true}).inputValue(),'fixture-project');
+    await dialog.getByRole('combobox',{name:'启动 Agent'}).selectOption('codex_chat');
+    assert.equal(await dialog.getByRole('combobox',{name:'本次启动模式'}).count(),0,'native Chat does not inherit CLI flags');
+    await dialog.getByRole('combobox',{name:'启动 Agent'}).selectOption('codex');
+    assert.equal(await dialog.getByRole('combobox',{name:'本次启动模式'}).inputValue(),'read_only');
+    const browse=()=>dialog.getByRole('button',{name:'浏览其他目录…',exact:true});
+    await page.evaluate(()=>window.appSessionMock.cliLaunch.pickerValue=null);
+    await browse().click(); await browse().waitFor();
+    assert.equal(await dialog.getByRole('combobox',{name:'工作目录',exact:true}).inputValue(),'fixture-project','cancel retains selection');
+    await page.evaluate(()=>window.appSessionMock.cliLaunch.pickerFails=true);
+    await browse().click(); await dialog.getByRole('alert').filter({hasText:'目录选择失败'}).waitFor();
+    assert.equal(await dialog.getByRole('combobox',{name:'工作目录',exact:true}).inputValue(),'fixture-project');
+    await page.evaluate(path=>{window.appSessionMock.cliLaunch.pickerFails=false;window.appSessionMock.cliLaunch.pickerValue=path;window.appSessionMock.cliLaunch.pickerHold=true;},custom);
+    await browse().click();
+    await dialog.locator('form').dispatchEvent('submit'); await page.keyboard.press('Escape');
+    assert.equal(await dialog.count(),1,'cannot close/launch while picker pending');
+    await page.evaluate(()=>window.appSessionMock.cliLaunch.releasePicker()); await browse().waitFor();
+    await dialog.getByText('临时使用此目录，会话归入未分组',{exact:true}).waitFor();
+    assert.equal(await dialog.locator('.cli-launch-directory-path').innerText(),custom);
+    await dialog.screenshot({path:`${output}/temporary-${theme}.png`});
+    await page.setViewportSize({width:390,height:850});
+    assert.equal(await dialog.evaluate(el=>el.scrollWidth>el.clientWidth),false);
+    await dialog.screenshot({path:`${output}/temporary-narrow-${theme}.png`});
+    await page.setViewportSize({width:1440,height:1000});
+    const count=await page.evaluate(()=>window.appSessionMock.cliLaunch.pickerCalls.length);
+    await dialog.getByRole('button',{name:'启动',exact:true}).click(); await dialog.waitFor({state:'detached'});
+    call=await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.at(-1));
+    assert.equal(call.args.cwd,custom); assert.equal(call.args.projectId,null,'switching directory clears original project');
+    assert.equal(await page.evaluate(()=>window.appSessionMock.cliLaunch.pickerCalls.length),count);
+    dialog=await choose(page);
+    await dialog.getByRole('combobox',{name:'工作目录',exact:true}).selectOption('fixture-project');
+    await page.evaluate(()=>{window.appSessionMock.cliLaunch.pickerHold=false;window.appSessionMock.cliLaunch.pickerValue='c:/FIXTURE/';});
+    await browse().click(); await browse().waitFor();
+    assert.equal(await dialog.getByRole('combobox',{name:'工作目录',exact:true}).inputValue(),'fixture-project','matching existing folder restores project');
+    assert.equal(await dialog.locator('.cli-launch-directory-path').innerText(),'C:\\fixture','use canonical saved project path');
+    await dialog.screenshot({path:`${output}/project-${theme}.png`});
+    await dialog.getByRole('combobox',{name:'工作目录',exact:true}).selectOption('second-project');
+    assert.equal(await dialog.locator('.cli-launch-directory-path').innerText(),'D:\\Second 项目');
+    await dialog.getByRole('button',{name:'启动',exact:true}).click(); await dialog.waitFor({state:'detached'});
+    call=await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.at(-1));
+    assert.equal(call.args.cwd,'D:\\Second 项目'); assert.equal(call.args.projectId,'second-project');
+    await page.close();
   }
-  await page.goto(url("providers=sample"));
-  await page.getByText("Claude Code", { exact: true }).click();
-  await page.getByRole("button", { name: /^GLM 示例/ }).click();
-  await page.getByText("Provider：fixture-glm", { exact: true }).waitFor();
-  for (const theme of ["dark", "light"]) {
-    await page.goto(url(`theme=${theme}`));
-    await page.getByText("Claude Code", { exact: true }).click();
-    for (const size of [{ width: 1280, height: 900 }, { width: 687, height: 903 }]) {
-      await page.setViewportSize(size);
-      assert.equal(await page.getByRole("button", { name: /使用本地 Claude Code 配置/ }).isVisible(), true);
-      assert.equal(await page.locator(".new-session-dialog").evaluate(e => e.scrollWidth > e.clientWidth), false);
-    }
+  const empty=await browser.newPage(); empty.on('pageerror',error=>errors.push(error.message));
+  await empty.goto(`${base}/tests/fixtures/local-claude-choice-ui.html?ui-preview=1`);
+  const form=empty.getByRole('dialog',{name:'新建会话',exact:true}); await form.waitFor();
+  assert.equal(await form.getByRole('button',{name:'启动',exact:true}).isDisabled(),true);
+  await form.locator('form').dispatchEvent('submit'); assert.equal(await form.count(),1);
+  await empty.keyboard.press('Escape'); await form.waitFor({state:'detached'});
+  await empty.close();
+  const page=await browser.newPage(); page.setDefaultTimeout(15000); page.on('pageerror',error=>errors.push(error.message));
+  await page.goto(`${base}/?ui-preview=1&sessions=empty`);
+  for (const runtime of ['claude_chat','codex_chat','kimi_chat','pi_chat','opencode_chat','deepseek_harness','zcode']) {
+    await page.locator('.session-project-head').filter({hasText:'crewvela'}).hover();
+    await page.getByTitle('在「crewvela」下新建会话').click();
+    const dialog=page.getByRole('dialog',{name:'新建会话',exact:true});
+    await dialog.getByRole('combobox',{name:'启动 Agent'}).selectOption(runtime);
+    await dialog.getByRole('button',{name:'启动',exact:true}).click(); await dialog.waitFor({state:'detached'});
+    await page.locator(`.native-chat-tab img[data-runtime="${runtime}"]`).waitFor();
   }
-  // Real App UI-preview path: choosing local config bypasses Provider credentials/count prompts.
-  await page.goto(`${base}/?ui-preview=1`);
-  await page.getByRole("button", { name: "新建会话", exact: true }).first().click();
-  await page.getByText("Claude Code", { exact: true }).click();
-  await page.locator(".new-session-dialog").getByText("Claude Code", { exact: true }).click();
-  await page.getByRole("button", { name: /使用本地 Claude Code 配置/ }).click();
-  await page.locator(".session-item").filter({ hasText: "Claude Code" }).first().waitFor();
-  assert.equal(await page.getByRole("heading", { name: /^多开 / }).count(), 0);
-  assert.equal(await page.locator(".new-session-dialog").count(), 0);
-  await page.locator(".session-project-name").filter({ hasText: "crewvela" }).click();
-  await page.locator('[title="在「crewvela」下新建会话"]').click();
-  await page.locator(".new-session-dialog").getByText("Claude Code", { exact: true }).click();
-  await page.getByRole("button", { name: /使用本地 Claude Code 配置/ }).click();
-  await page.locator(".session-item").filter({ hasText: "Claude Code · crewvela" }).waitFor();
-  assert.deepEqual(errors, []);
-} finally { await browser.close(); }
+  await page.close();
+  assert.deepEqual(errors,[]);
+  console.log('PASS: direct Claude/project entry, 13 Agents, project/temp mapping, cancel/error/pending retention, no repeated folder picker, native creation routes, dark/light/narrow UI');
+} finally {await browser.close();}

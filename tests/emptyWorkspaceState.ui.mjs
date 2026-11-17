@@ -81,7 +81,7 @@ try {
       // CLI 统一进入本次启动模式设置；取消后保留已选工作目录。
       await pill.click();
       await popover.getByRole("button", { name: "Claude Code", exact: true }).click();
-      const launchStep = page.getByRole("dialog", { name: "新建 CLI 会话", exact: true });
+      const launchStep = page.getByRole("dialog", { name: "新建会话", exact: true });
       await launchStep.waitFor();
       assert.equal(await launchStep.getByRole("combobox", { name: "启动 Agent" }).inputValue(), "claude_code");
       assert.equal(await launchStep.getByRole("combobox", { name: "本次启动模式" }).inputValue(), "cli_default");
@@ -98,17 +98,19 @@ try {
       await popover.waitFor();
       await page.keyboard.press("Escape");
 
-      // 上面的启动设置只影响那一次：从侧栏再打开新建弹窗，仍从「选择 Agent」开始；
-      // 弹窗里点 Agent 卡片走的是与空状态共用的启动链路。
+      // 从侧栏打开新会话不受上一次启动设置影响，原生聊天直接使用其独立入口。
       await page.getByRole("button", { name: "新建会话", exact: true }).click();
       await page.getByRole("menu", { name: "新建 Runtime 会话" }).getByRole("menuitem").filter({ hasText: "Claude Code" }).first().click();
-      await page.getByRole("heading", { name: "选择 Agent", exact: true }).waitFor();
-      await page.locator(".new-session-agent-choice", { hasText: "DeepSeek Harness" }).click();
+      const directLaunch = page.getByRole("dialog", { name: "新建会话", exact: true });
+      await directLaunch.waitFor();
+      assert.equal(await directLaunch.getByRole("combobox", { name: "启动 Agent" }).inputValue(), "claude_code");
+      // 新流程明确展示当前目录，由用户在同一弹窗确认；切换 Agent 保留目录。
+      assert.ok(await directLaunch.locator(".cli-launch-directory-path").innerText());
+      await directLaunch.getByRole("combobox", { name: "启动 Agent" }).selectOption("deepseek_harness");
+      await directLaunch.getByRole("button", { name: "启动", exact: true }).click();
       await page.locator(".harness-chat").waitFor();
-      await page.getByRole("heading", { name: "选择 Agent", exact: true }).waitFor({ state: "detached" });
-      // 侧栏入口没带项目：不能沿用刚才在空状态勾选、又取消掉的那个目录。
-      await page.getByText("DeepSeek Harness", { exact: true }).first().waitFor();
-      assert.equal(await page.getByText(`DeepSeek Harness · ${projectName}`).count(), 0, "sidebar launch must not reuse the empty-state project");
+      await directLaunch.waitFor({ state: "detached" });
+      await page.getByText(`DeepSeek Harness · ${projectName}`, { exact: true }).first().waitFor();
     } else {
       // 回车启动第一个匹配的 Agent：在勾选的项目里打开 DeepSeek Harness 原生会话。
       await pill.click();

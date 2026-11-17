@@ -10,8 +10,7 @@ async function choose(page, kind) {
   await page.getByRole('button', {name:'新建会话',exact:true}).first().click();
   const labels={claude_code:'Claude Code',codex:'Codex CLI',kimi_code:'Kimi Code',opencode:'OpenCode',pi:'Pi Agent',zcode_cli:'ZCode CLI'};
   await page.getByRole('menu',{name:'新建 Runtime 会话'}).getByRole('menuitem').filter({has:page.getByText(labels[kind],{exact:true})}).click();
-  if(kind==='claude_code')await page.locator('.new-session-dialog [data-new-session-agent="claude_code"]').click();
-  const dialog = page.getByRole('dialog', {name:'新建 CLI 会话',exact:true});
+  const dialog = page.getByRole('dialog', {name:'新建会话',exact:true});
   await dialog.waitFor(); return dialog;
 }
 try {
@@ -101,7 +100,7 @@ try {
     await page.locator('.ews-card .ews-row').filter({hasText:'Fixture project'}).click();
     await page.getByRole('button',{name:'选择 Agent',exact:true}).click();
     await page.getByRole('button',{name:'Codex',exact:true}).click();
-    dialog=page.getByRole('dialog',{name:'新建 CLI 会话',exact:true});
+    dialog=page.getByRole('dialog',{name:'新建会话',exact:true});
     await dialog.getByRole('button',{name:'启动',exact:true}).click();await dialog.waitFor({state:'detached'});
     const projectLaunch=await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1).args);
     assert.equal(projectLaunch.projectId,'fixture-project');assert.equal(projectLaunch.cwd,'C:\\fixture');assert.equal(projectLaunch.launchMode,'read_only');

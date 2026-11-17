@@ -25,6 +25,7 @@ test("CLI 创建和唤醒不再注入应用模型覆盖或读取应用服务密�
 test("自动化和成员编辑不提供应用模型选择，原生 CLI 入口直接保留", () => {
   assert.doesNotMatch(read("src/components/CollaborationAgentEditor.tsx"), /<label>模型<input/);
   assert.doesNotMatch(read("src/components/AutomationPanel.tsx"), /<summary>模型与 Provider|aria-label="模型标识"|指定 CrewVela Provider/);
-  assert.doesNotMatch(read("src/components/NewSessionDialog.tsx"), /选择 Provider|providers\.filter/);
-  assert.match(read("src/components/NewSessionDialog.tsx"), /onLocalClaudeSelect\(\)/);
+  assert.equal(existsSync(new URL('../src/components/NewSessionDialog.tsx', import.meta.url)), false);
+  assert.doesNotMatch(read("src/components/CliLaunchDialog.tsx"), /选择 Provider|providers\.filter/);
+  assert.match(read("src/App.tsx"), /\(\) => setCliLaunchRequest\(\{ runtime: "claude_code" \}\)/);
 });
