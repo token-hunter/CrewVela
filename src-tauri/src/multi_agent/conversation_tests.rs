@@ -976,6 +976,10 @@ fn plan_validation_rejects_missing_scopes_traversal_cycles_and_parallel_overlap(
         "src/../outside",
         "src/*",
         ".git/config",
+        ".git/",
+        "frontend//",
+        "/frontend/",
+        "/",
         "",
     ] {
         let mut draft = fixture.draft();
@@ -986,11 +990,14 @@ fn plan_validation_rejects_missing_scopes_traversal_cycles_and_parallel_overlap(
         );
     }
     let mut overlap = fixture.draft();
+    overlap.tasks[0].write_paths = vec!["src/owned/".into()];
     let mut second = overlap.tasks[0].clone();
     second.key = "two".into();
     second.assignee_agent_id = fixture.agents[1].clone();
+    second.write_paths = vec!["src\\owned\\nested".into()];
     overlap.tasks.push(second);
-    assert!(validate_plan(&connection, &round, &overlap).is_err());
+    let error = validate_plan(&connection, &round, &overlap).unwrap_err();
+    assert!(error.to_string().contains("写入范围重叠"), "{error}");
     overlap.tasks[1].depends_on = vec!["one".into()];
     assert!(validate_plan(&connection, &round, &overlap).is_ok());
     overlap.tasks[0].depends_on = vec!["two".into()];
@@ -1884,7 +1891,10 @@ fn conversation_cross_runtime_integrator_must_use_worktree() {
 
 #[test]
 fn conversation_cross_runtime_valid_review_graph_applies_all_tasks_and_dependencies() {
-    let (fixture, round, plan) = cross_runtime_conversation_plan();
+    let (fixture, round, mut plan) = cross_runtime_conversation_plan();
+    plan.tasks[0].write_paths = vec!["frontend/".into()];
+    plan.tasks[1].write_paths = vec!["backend\\".into()];
+    plan.tasks[4].write_paths = vec!["frontend/".into(), "backend/".into(), "README.md".into()];
     fixture.git();
     fixture
         .store
@@ -1898,6 +1908,7 @@ fn conversation_cross_runtime_valid_review_graph_applies_all_tasks_and_dependenc
             &json!({"summary":plan.summary,"tasks":plan.tasks}).to_string(),
         )
         .unwrap();
+    assert_eq!(stored.status, "pending");
     let task_ids = fixture
         .store
         .apply_conversation_plan(&ConversationExecutePlanInput {
@@ -1907,6 +1918,15 @@ fn conversation_cross_runtime_valid_review_graph_applies_all_tasks_and_dependenc
         })
         .unwrap();
     assert_eq!(task_ids.len(), 5);
+    fixture.store
+        .verify_conversation_write_scope(&task_ids[0], &["frontend/index.html".into()])
+        .unwrap();
+    fixture.store
+        .verify_conversation_write_scope(&task_ids[1], &["backend/server.js".into()])
+        .unwrap();
+    assert!(fixture.store
+        .verify_conversation_write_scope(&task_ids[0], &["frontend-other/index.html".into()])
+        .is_err());
     let snapshot = fixture.store.snapshot(&fixture.project).unwrap();
     assert_eq!(snapshot.dependencies.len(), 4);
     for (task_index, dependency_index) in [(2, 0), (3, 1), (4, 2), (4, 3)] {

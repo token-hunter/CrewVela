@@ -2026,26 +2026,27 @@ fn parse_plan(body: &str) -> Result<PlanDraft> {
 }
 fn normalized_scope(path: &str) -> Result<String> {
     let path = path.trim().replace('\\', "/");
-    if path.is_empty()
-        || path.starts_with('/')
-        || path.ends_with('/')
-        || path.contains(':')
-        || path.contains(['*', '?', '\0'])
-        || path.len() > 512
+    let scope = path.strip_suffix('/').unwrap_or(&path);
+    if scope.is_empty()
+        || scope.starts_with('/')
+        || scope.contains(':')
+        || scope.contains(['*', '?', '\0'])
+        || scope.len() > 512
     {
         bail!("写入范围必须是明确的项目内相对目录或文件：{path}");
     }
-    if path.split('/').any(|p| {
+    if scope.split('/').any(|p| {
         p.is_empty()
             || matches!(p, "." | "..")
             || matches!(p.to_ascii_lowercase().as_str(), ".git" | ".hg" | ".svn")
     }) {
         bail!("写入范围不能包含路径穿越、空片段或版本库元数据：{path}");
     }
-    Ok(path.to_lowercase())
+    Ok(scope.to_lowercase())
 }
-fn scope_overlaps(a: &str, b: &str) -> bool {
-    a == b || a.starts_with(&format!("{b}/")) || b.starts_with(&format!("{a}/"))
+fn scope_contains(scope: &str, path: &str) -> bool {
+    path == scope
+        || path.strip_prefix(scope).is_some_and(|rest| rest.starts_with('/'))
 }
 fn reaches(
     tasks: &HashMap<&str, &ConversationPlannedTask>,
@@ -2079,6 +2080,7 @@ fn validate_plan(
     if tasks.len() != plan.tasks.len() {
         bail!("计划任务 key 不能重复");
     }
+    let mut normalized_scopes = Vec::with_capacity(plan.tasks.len());
     for task in &plan.tasks {
         validate_client_id(&task.key)?;
         bounded_text(&task.title, "任务标题")?;
@@ -2112,9 +2114,9 @@ fn validate_plan(
         } else if task.write_paths.is_empty() {
             bail!("写入任务必须列出明确目录范围");
         }
-        for path in &task.write_paths {
-            normalized_scope(path)?;
-        }
+        normalized_scopes.push(
+            task.write_paths.iter().map(|path| normalized_scope(path)).collect::<Result<Vec<_>>>()?,
+        );
         if let Some(reviewer) = &task.reviewer_agent_id {
             if reviewer == &task.assignee_agent_id
                 || !round.participant_agent_ids.contains(reviewer)
@@ -2144,14 +2146,9 @@ fn validate_plan(
         }
     }
     for (i, left) in plan.tasks.iter().enumerate() {
-        for right in plan.tasks.iter().skip(i + 1) {
-            let overlaps = left.write_paths.iter().any(|a| {
-                right.write_paths.iter().any(|b| {
-                    scope_overlaps(
-                        &a.replace('\\', "/").to_lowercase(),
-                        &b.replace('\\', "/").to_lowercase(),
-                    )
-                })
+        for (j, right) in plan.tasks.iter().enumerate().skip(i + 1) {
+            let overlaps = normalized_scopes[i].iter().any(|a| {
+                normalized_scopes[j].iter().any(|b| scope_contains(a, b) || scope_contains(b, a))
             });
             if overlaps
                 && !reaches(&tasks, &left.key, &right.key, &mut HashSet::new())
@@ -2470,9 +2467,7 @@ impl MultiAgentStore {
             .iter()
             .filter(|p| {
                 let p = p.replace('\\', "/").to_lowercase();
-                !scopes
-                    .iter()
-                    .any(|scope| p == *scope || p.starts_with(&format!("{scope}/")))
+                !scopes.iter().any(|scope| scope_contains(scope, &p))
             })
             .take(10)
             .cloned()
