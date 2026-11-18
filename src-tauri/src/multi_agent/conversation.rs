@@ -712,6 +712,11 @@ impl MultiAgentStore {
         // Keep this under the transaction, and after the idempotent receipt lookup.
         let mut manual_members = Vec::new();
         for agent in &input.participant_agent_ids {
+            let enabled: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM ma_agents WHERE project_id=?1 AND id=?2 AND enabled=1)",
+                params![input.project_id, agent], |row| row.get(0),
+            )?;
+            if !enabled { bail!("参与成员已停用或已从团队移除"); }
             let manual: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM ma_agent_sessions WHERE project_id=?1 AND agent_id=?2 AND control_mode='manual')",
                 params![input.project_id, agent], |row| row.get(0),
@@ -882,6 +887,11 @@ impl MultiAgentStore {
         }
         if let Some(request) = &queued_input {
             for agent in &request.participant_agent_ids {
+                let enabled: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM ma_agents WHERE project_id=?1 AND id=?2 AND enabled=1)",
+                    params![input.project_id, agent], |row| row.get(0),
+                )?;
+                if !enabled { bail!("插话接收成员已停用或已从团队移除"); }
                 let manual: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_agent_sessions WHERE project_id=?1 AND agent_id=?2 AND control_mode='manual')", params![input.project_id, agent], |row| row.get(0))?;
                 if manual { bail!("插话接收成员正由用户接管，请取消选择或交还自动控制"); }
             }

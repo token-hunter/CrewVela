@@ -209,6 +209,9 @@ impl MultiAgentStore {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_agent_in_project(&tx, &input.agent_id, &input.project_id)?;
         let previous = get_agent_with(&tx, &input.agent_id)?;
+        if previous.removed_at.is_some() {
+            return Err(anyhow!("该成员已从团队移除"));
+        }
         if (input.runtime_kind != previous.runtime_kind && !input.runtime_kind.is_collaboration_cli())
             || (input.enabled && !input.runtime_kind.supports_existing_collaboration()) {
             return Err(anyhow!("切换协作成员请选择 CLI 执行引擎；已有 ZCode Desktop 可保留原配置，不会自动替换"));
@@ -279,6 +282,46 @@ impl MultiAgentStore {
         Ok(updated)
     }
 
+    pub(crate) fn remove_agent(&self, project_id: &str, agent_id: &str, confirm: bool) -> Result<Vec<String>> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_agent_in_project(&tx, agent_id, project_id)?;
+        if get_agent_with(&tx, agent_id)?.removed_at.is_some() { return Ok(Vec::new()); }
+        let blockers = {
+            let mut statement = tx.prepare(
+                "SELECT t.title FROM ma_tasks t WHERE t.project_id=?1 AND (
+                    ((t.assignee_agent_id=?2 OR t.reviewer_agent_id=?2)
+                      AND t.status NOT IN ('done','cancelled')
+                      AND NOT (t.status='failed' AND t.id LIKE 'cli-message-%'))
+                    OR EXISTS (SELECT 1 FROM ma_runs r WHERE r.task_id=t.id AND r.agent_id=?2
+                      AND (r.status IN ('queued','starting','running','waiting_input','waiting_approval')
+                           OR json_extract(r.session_locator_json,'$.stopUnverified')=1))
+                 ) ORDER BY t.created_at,t.id",
+            )?;
+            let rows = statement.query_map(params![project_id, agent_id], |row| row.get(0))?;
+            rows.collect::<rusqlite::Result<Vec<String>>>()?
+        };
+        let active_discussion: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ma_conversation_rounds r,
+             json_each(r.data_json,'$.participantAgentIds') participant WHERE r.project_id=?1
+               AND r.status IN ('queued','running','waiting_approval','stopping','unconfirmed')
+               AND participant.value=?2)
+             OR EXISTS(SELECT 1 FROM ma_conversation_messages m,
+             json_each(m.data_json,'$.queuedInput.participantAgentIds') participant WHERE m.project_id=?1
+               AND json_extract(m.data_json,'$.status')='queued' AND participant.value=?2)",
+            params![project_id, agent_id], |row| row.get(0),
+        )?;
+        let mut blockers = blockers;
+        if active_discussion { blockers.push("团队讨论正在进行或尚未确认停止".into()); }
+        if !confirm || !blockers.is_empty() { return Ok(blockers); }
+
+        let now = now_millis();
+        tx.execute("UPDATE ma_agents SET enabled=0, removed_at=?3, updated_at=?3 WHERE project_id=?1 AND id=?2", params![project_id, agent_id, now])?;
+        append_event(&tx, project_id, "agent", agent_id, "agent.removed", "user", None, serde_json::json!({}), now)?;
+        tx.commit()?;
+        Ok(blockers)
+    }
+
     pub fn create_task(&self, input: CreateTaskInput) -> Result<MultiAgentTask> {
         let title = required(&input.title, "任务标题")?;
         let connection = self.connection.lock().unwrap();
@@ -287,10 +330,10 @@ impl MultiAgentStore {
             ensure_task_in_project(&connection, parent_id, &input.project_id)?;
         }
         if let Some(agent_id) = input.assignee_agent_id.as_deref() {
-            ensure_agent_in_project(&connection, agent_id, &input.project_id)?;
+            ensure_current_agent_in_project(&connection, agent_id, &input.project_id)?;
         }
         if let Some(agent_id) = input.reviewer_agent_id.as_deref() {
-            ensure_agent_in_project(&connection, agent_id, &input.project_id)?;
+            ensure_current_agent_in_project(&connection, agent_id, &input.project_id)?;
         }
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_millis();
@@ -2041,7 +2084,7 @@ impl MultiAgentStore {
                     a.id, a.project_id, a.name, a.runtime_kind, a.role, a.description,
                     a.model, a.permission_profile, a.max_concurrency, a.enabled,
                     a.created_at, a.updated_at, a.capabilities_json, a.avatar_id,
-                    a.persona, a.persona_custom
+                    a.persona, a.persona_custom, a.removed_at
              FROM ma_tasks t
              JOIN ma_agents a ON a.id = t.assignee_agent_id
              WHERE t.project_id = ?1 AND t.status IN ('ready','changes_requested') AND a.enabled = 1
@@ -2932,6 +2975,9 @@ impl MultiAgentStore {
         ) {
             return Err(anyhow!("任务当前状态不可重试: {}", task.status.as_str()));
         }
+        for agent_id in [task.assignee_agent_id.as_deref(), task.reviewer_agent_id.as_deref()].into_iter().flatten() {
+            ensure_current_agent_in_project(&tx, agent_id, &task.project_id)?;
+        }
         let incomplete: i64 = tx.query_row(
             "SELECT COUNT(*) FROM ma_task_dependencies d
              JOIN ma_tasks dependency ON dependency.id = d.depends_on_task_id
@@ -2964,6 +3010,9 @@ impl MultiAgentStore {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let task = get_task_with(&tx, task_id)?;
+        for agent_id in [task.assignee_agent_id.as_deref(), task.reviewer_agent_id.as_deref()].into_iter().flatten() {
+            ensure_current_agent_in_project(&tx, agent_id, &task.project_id)?;
+        }
         let now = now_millis();
         tx.execute(
             "UPDATE ma_tasks SET status = 'changes_requested',
@@ -2995,6 +3044,9 @@ impl MultiAgentStore {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let task = get_task_with(&tx, task_id)?;
+        if let Some(reviewer_id) = &task.reviewer_agent_id {
+            ensure_current_agent_in_project(&tx, reviewer_id, &task.project_id)?;
+        }
         ensure_agent_in_project(&tx, agent_id, &task.project_id)?;
         let agent = get_agent_with(&tx, agent_id)?;
         if !agent.enabled || agent.runtime_kind.is_retired() {
@@ -3746,6 +3798,7 @@ fn migrate(connection: &Connection) -> Result<()> {
     )?;
     migrate_knowledge_fts(connection)?;
     ensure_column(connection, "ma_agents", "avatar_id", "TEXT")?;
+    ensure_column(connection, "ma_agents", "removed_at", "INTEGER")?;
     ensure_column(
         connection,
         "ma_agents",
@@ -4250,6 +4303,14 @@ fn ensure_agent_in_project(
     }
 }
 
+fn ensure_current_agent_in_project(connection: &Connection, agent_id: &str, project_id: &str) -> Result<()> {
+    ensure_agent_in_project(connection, agent_id, project_id)?;
+    if get_agent_with(connection, agent_id)?.removed_at.is_some() {
+        return Err(anyhow!("该成员已从团队移除"));
+    }
+    Ok(())
+}
+
 fn ensure_task_in_project(connection: &Connection, task_id: &str, project_id: &str) -> Result<()> {
     let exists: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM ma_tasks WHERE id = ?1 AND project_id = ?2)",
@@ -4424,6 +4485,7 @@ fn agent_from_row(row: &Row<'_>) -> rusqlite::Result<AgentProfile> {
         permission_profile: parse_permission_profile(row.get::<_, String>(7)?)?,
         max_concurrency: row.get(8)?,
         enabled: row.get(9)?,
+        removed_at: row.get(16)?,
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
         capabilities: parse_string_list(&capabilities),
@@ -4447,6 +4509,7 @@ fn agent_from_row_offset(row: &Row<'_>, offset: usize) -> rusqlite::Result<Agent
         permission_profile: parse_permission_profile(row.get::<_, String>(offset + 7)?)?,
         max_concurrency: row.get(offset + 8)?,
         enabled: row.get(offset + 9)?,
+        removed_at: row.get(offset + 16)?,
         created_at: row.get(offset + 10)?,
         updated_at: row.get(offset + 11)?,
         capabilities: parse_string_list(&capabilities),
@@ -4606,7 +4669,7 @@ fn get_agent_with(connection: &Connection, id: &str) -> Result<AgentProfile> {
         .query_row(
             "SELECT id, project_id, name, runtime_kind, role, description, model,
          permission_profile, max_concurrency, enabled, created_at, updated_at, capabilities_json, avatar_id,
-         persona, persona_custom
+         persona, persona_custom, removed_at
          FROM ma_agents WHERE id = ?1",
             params![id],
             agent_from_row,
@@ -4660,7 +4723,7 @@ fn list_agents_with(connection: &Connection, project_id: &str) -> Result<Vec<Age
     let mut statement = connection.prepare(
         "SELECT id, project_id, name, runtime_kind, role, description, model,
          permission_profile, max_concurrency, enabled, created_at, updated_at, capabilities_json, avatar_id,
-         persona, persona_custom
+         persona, persona_custom, removed_at
          FROM ma_agents WHERE project_id = ?1 ORDER BY created_at",
     )?;
     let agents = statement
@@ -5591,6 +5654,38 @@ mod tests {
                 lease_seconds: 60
             })
             .is_err());
+    }
+
+    #[test]
+    fn removing_member_checks_current_tasks_and_preserves_history() {
+        let fixture = TestStore::new();
+        let store = fixture.store();
+        let project = fixture.project();
+        let agent = fixture.agent(&project.id, "待移除");
+        let other = fixture.agent(&project.id, "接收成员");
+        let task = fixture.task(&project.id, &agent.id, "未完成开发");
+        let review = fixture.task(&project.id, &other.id, "未完成审查");
+        store.connection.lock().unwrap().execute(
+            "UPDATE ma_tasks SET reviewer_agent_id=?1 WHERE id=?2", params![agent.id, review.id],
+        ).unwrap();
+        let blockers = store.remove_agent(&project.id, &agent.id, true).unwrap();
+        assert!(blockers.contains(&task.title) && blockers.contains(&review.title));
+        assert!(store.agent_profile(&agent.id).unwrap().enabled);
+        store.reassign_task(&task.id, &other.id).unwrap();
+        store.connection.lock().unwrap().execute("UPDATE ma_tasks SET status='done' WHERE id=?1", [&review.id]).unwrap();
+        assert!(store.remove_agent(&project.id, &agent.id, false).unwrap().is_empty());
+        let before = store.agent_profile(&agent.id).unwrap();
+        assert!(before.enabled && before.removed_at.is_none());
+        assert!(store.remove_agent(&project.id, &agent.id, true).unwrap().is_empty());
+        let removed = store.agent_profile(&agent.id).unwrap();
+        assert!(!removed.enabled && removed.removed_at.is_some());
+        assert_eq!(removed.name, before.name);
+        assert!(store.update_agent(agent_edit(&before)).is_err());
+        assert!(store.remove_agent(&project.id, &agent.id, true).unwrap().is_empty());
+        let snapshot = MultiAgentStore::open_at(fixture.root.join("control.db")).unwrap().snapshot(&project.id).unwrap();
+        assert_eq!(snapshot.tasks.iter().find(|task| task.id == review.id).unwrap().reviewer_agent_id.as_deref(), Some(agent.id.as_str()));
+        assert_eq!(snapshot.agents.iter().find(|row| row.id == agent.id).unwrap().removed_at, removed.removed_at);
+        assert_eq!(snapshot.events.iter().filter(|event| event.event_type == "agent.removed").count(), 1);
     }
 
     #[test]

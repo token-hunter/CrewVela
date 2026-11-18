@@ -306,6 +306,8 @@ pub struct AgentProfile {
     #[serde(default)]
     pub capabilities: Vec<String>,
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
 }

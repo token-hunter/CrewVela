@@ -7,6 +7,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { CollaborationAgentEditor, type AgentDraft } from "./CollaborationAgentEditor";
+import { CollaborationAgentRemovalDialog } from "./CollaborationAgentRemovalDialog";
 import { CollaborationProjectDialog } from "./CollaborationProjectDialog";
 import { SettingsSection } from "./ui/SettingsSection";
 import { Modal } from "./ui/Modal";
@@ -18,6 +19,7 @@ import { KnowledgeBaseDialog } from "./KnowledgeBaseDialog";
 import { ArrowSquareOutIcon } from "@phosphor-icons/react/dist/csr/ArrowSquareOut";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowClockwise";
 import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
+import { DotsThreeIcon } from "@phosphor-icons/react/dist/csr/DotsThree";
 import { AgentAvatar } from "./AgentAvatar";
 import { AgentCard } from "./AgentCard";
 import { RuntimeManagementDialog } from "./RuntimeManagementDialog";
@@ -243,6 +245,8 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   const runtimeCheckInFlight = useRef(false);
 
   const [editingAgent, setEditingAgent] = useState<AgentProfile | null | undefined>(undefined);
+  const [removingAgent, setRemovingAgent] = useState<AgentProfile | null>(null);
+  const memberMenuGroup = useId();
   const [editorProjectId, setEditorProjectId] = useState<string | null>(null);
   const [teamRoleFilter, setTeamRoleFilter] = useState<AgentRole | "all">("all");
   const [teamSearch, setTeamSearch] = useState("");
@@ -311,6 +315,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     if (selectionRef.current !== projectId) {
       selectionRef.current = projectId;
       snapshotRequest.current += 1;
+      setRemovingAgent(null);
       setSelectedProjectId(projectId);
     }
     selectCollaborationProject(projectId);
@@ -544,7 +549,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
 
   const suggestedSkillSets = useMemo(() => {
     if (!snapshot) return [];
-    const availableAgents = snapshot.agents.filter((agent) => availability.isRuntimeEnabled(agent.runtimeKind));
+    const availableAgents = snapshot.agents.filter((agent) => !agent.removedAt && availability.isRuntimeEnabled(agent.runtimeKind));
     const roles = new Set(availableAgents.map((agent) => agent.role));
     const runtimes = new Set(availableAgents.map((agent) => agent.runtimeKind));
     return skillSets.filter((set) =>
@@ -588,14 +593,21 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     setDetail({ title: record.title, content: original ? JSON.stringify(original, null, 2) : record.content + "\n\n引用：" + record.sourceUri });
   };
   const agents = currentSnapshot?.agents ?? [];
+  const teamAgents = agents.filter(agent => !agent.removedAt);
+  const previewRemovalBlockers = useMemo(() => {
+    if (!UI_PREVIEW || !removingAgent) return undefined;
+    return (currentSnapshot?.tasks ?? []).filter(task =>
+      [task.assigneeAgentId, task.reviewerAgentId].includes(removingAgent.id) && !["done", "cancelled"].includes(task.status))
+      .map(task => task.title);
+  }, [currentSnapshot, removingAgent]);
   const memberUnavailableReason = currentSnapshot ? null : projectsLoading
     ? "正在加载协作项目，请稍候再新增成员。"
     : error ? "协作项目未能加载，请先处理上方错误，再新增成员。"
     : !projects.length ? "成员必须归属协作项目。点击「创建项目」，完成后即可在这里新增成员。"
     : selectedProjectId ? "正在加载当前项目，请稍候再新增成员。" : "请先在顶部选择一个协作项目，再新增成员。";
-  const enabledAgents = agents.filter((agent) => availability.isRuntimeEnabled(agent.runtimeKind));
+  const enabledAgents = teamAgents.filter((agent) => availability.isRuntimeEnabled(agent.runtimeKind));
   const memberCount = currentSnapshot && availability.ready ? enabledAgents.length : "—";
-  const hiddenMemberCount = availability.ready ? agents.length - enabledAgents.length : 0;
+  const hiddenMemberCount = availability.ready ? teamAgents.length - enabledAgents.length : 0;
   const activity = useMemo(() => [...(currentSnapshot?.events ?? [])].sort((a, b) => b.createdAt - a.createdAt), [currentSnapshot?.events]);
   const sessionName = (id: string) => health?.sessions.find((item) => item.id === id)?.title ?? agents.find((item) => item.id === id)?.name ?? currentSnapshot?.tasks.find((item) => item.id === id)?.title ?? id;
   return <div className="collaboration-settings-panel collab-overview-page collab-task-first">
@@ -688,15 +700,34 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
         ))}
         <div className="collab-team-search"><input aria-label="搜索成员" placeholder="搜索成员 / 职责…" value={teamSearch} onChange={(event) => setTeamSearch(event.target.value)} /></div>
         <button className="btn secondary" disabled={!currentSnapshot} title={memberUnavailableReason ?? undefined} aria-describedby={memberUnavailableReason ? "collab-member-unavailable" : undefined} onClick={() => { setEditorProjectId(currentSnapshot!.project.id); setEditingAgent(null); }}>新增成员</button>
-      </div>{memberUnavailableReason ? <p id="collab-member-unavailable" role="status">{memberUnavailableReason}</p> : <p>默认团队可自由编辑，点击名片调整人格、模型与职责。{hiddenMemberCount > 0 && ` 共 ${agents.length} 位，隐藏 ${hiddenMemberCount} 位（对应 Runtime 未启用）。`}</p>}
+      </div>{memberUnavailableReason ? <p id="collab-member-unavailable" role="status">{memberUnavailableReason}</p> : <p>默认团队可自由编辑，点击名片调整人格、模型与职责。{hiddenMemberCount > 0 && ` 共 ${teamAgents.length} 位，隐藏 ${hiddenMemberCount} 位（对应 Runtime 未启用）。`}</p>}
       </div><SettingsSection title="团队"><div className="collab-agent-card-grid">
         {filteredAgents.map((agent) => {
           const active = currentSnapshot?.runs.some((run) => run.agentId === agent.id && ["queued", "starting", "running", "waiting_input", "waiting_approval"].includes(run.status));
+          const busyHint = "该成员有执行中的任务，请完成或停止任务后编辑";
+          const editAgent = () => { setEditorProjectId(agent.projectId); setEditingAgent(agent); };
+          const closeMenu = (button: HTMLButtonElement) => {
+            const menu = button.closest("details");
+            if (menu) { menu.open = false; menu.querySelector("summary")?.focus(); }
+          };
           return <div className="collab-agent-card-cell" key={agent.id}>
-            <AgentCard agent={agent} dimmed={!agent.enabled} onClick={active ? undefined : () => { setEditorProjectId(agent.projectId); setEditingAgent(agent); }} />
-            {active
-              ? <span className="collab-agent-card-busy" title="该成员有执行中的任务，请完成或停止任务后编辑">执行中 · 暂不可编辑</span>
-              : <span className="collab-agent-card-edit-hint">点击名片编辑</span>}
+            <AgentCard agent={agent} dimmed={!agent.enabled} onClick={active ? undefined : editAgent} />
+            <details className="collab-member-actions" name={memberMenuGroup} onBlur={event => {
+              if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+            }}>
+              <summary aria-label={`${agent.name}的更多操作`} title="更多操作"><DotsThreeIcon size={19} /></summary>
+              <div className="collab-member-action-list">
+                <button type="button" className="btn secondary" disabled={active} title={active ? busyHint : undefined} onClick={event => {
+                  closeMenu(event.currentTarget);
+                  editAgent();
+                }}>编辑</button>
+                <button type="button" className="btn secondary collab-member-remove-action" onClick={event => {
+                  closeMenu(event.currentTarget);
+                  setRemovingAgent(agent);
+                }}>从团队移除</button>
+              </div>
+            </details>
+            {active && <span className="collab-agent-card-busy" title={busyHint}>执行中 · 暂不可编辑</span>}
           </div>;
         })}
         {currentSnapshot && !filteredAgents.length && <p className="collab-empty">{enabledAgents.length === 0 ? "暂无可用成员，点击右上角「新增成员」创建。" : "没有匹配的成员。"}</p>}
@@ -723,6 +754,17 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
       if (selectionRef.current === editorProjectId) await refreshSnapshot();
     }} />}
 
+    {removingAgent && currentSnapshot?.project.id === removingAgent.projectId && <CollaborationAgentRemovalDialog
+      agent={removingAgent} previewBlockers={previewRemovalBlockers} onClose={() => setRemovingAgent(null)}
+      onRemoved={() => {
+        const { id, projectId } = removingAgent;
+        setRemovingAgent(null);
+        if (selectionRef.current !== projectId) return;
+        setSnapshot(previous => previous?.project.id === projectId ? {
+          ...previous, agents: previous.agents.map(agent => agent.id === id ? { ...agent, enabled: false, removedAt: Date.now() } : agent),
+        } : previous);
+        void refreshSnapshot();
+      }} />}
     <CollaborationSupportPanel initialGlobal={initialDiagnosticGlobal} snapshot={currentSnapshot} enabledRuntimes={visibleRuntimeOrder} onChanged={() => { if (!UI_PREVIEW) void refreshSnapshot(); }} view={tab} request={handoffRequest} onHealthChange={setHealth} onHandoffClose={() => setHandoffRequest(null)} />
     {taskDetail && currentSnapshot?.project.id === taskDetail.projectId && createPortal(<Modal className="collaboration-handoff-dialog collab-task-detail-dialog" onClose={() => setTaskDetail(null)} ariaLabel="协作任务详情"><button className="collab-modal-close" aria-label="关闭任务详情" onClick={() => setTaskDetail(null)}>×</button><h3>{currentSnapshot.tasks.find(task => task.id === taskDetail.taskId)?.title ?? "任务已不可用"}</h3><CollaborationTaskDetails snapshot={currentSnapshot} taskId={taskDetail.taskId} onChanged={refreshSnapshot}/></Modal>, document.body)}
     {detail && <Modal className="collaboration-handoff-dialog" onClose={() => setDetail(null)} ariaLabel={detail.title}><button className="collab-modal-close" aria-label="关闭详情" onClick={() => setDetail(null)}>×</button><h3>{detail.title}</h3><pre>{detail.content}</pre></Modal>}

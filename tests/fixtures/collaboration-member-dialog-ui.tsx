@@ -29,7 +29,8 @@ function policyEntry(agentId: string | null) {
 if (fixtureState === "agents-empty") snapshot.agents = [];
 const projects: any[] = fixtureState === "empty" ? [] : [project];
 const snapshots = new Map([[project.id, snapshot]]);
-const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate: false, releaseCreate: null as (() => void) | null, pickerResult: null as string | null, pickerError: false };
+const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate: false, releaseCreate: null as (() => void) | null, pickerResult: null as string | null, pickerError: false,
+  removalRequests: [] as any[], removalBlockers: [] as string[], removedAgents: () => snapshot.agents.filter((agent: any) => agent.removedAt) };
 (window as any).projectMock = projectMock;
 (window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(command: string, args: any) {
   if (command === "plugin:event|listen") return 1;
@@ -82,6 +83,13 @@ const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate:
   if (command === "ma_upgrade_runtime" && fixtureState === "runtime-update-failed") throw Error("回归测试：升级失败");
   if (command === "skill_center_snapshot") return { skillSets: [] };
   if (command === "collaboration_health") return { sessions: [], runtimes: [], messages: [], handoffs: [], cliPath: "fixture", cliPathExists: true, replyEvidence: "fixture" };
+  if (command === "ma_remove_agent") {
+    projectMock.removalRequests.push(structuredClone(args));
+    const agent = snapshot.agents.find((item: any) => item.id === args.agentId && item.projectId === args.projectId);
+    if (!agent) throw Error("该成员不属于当前项目");
+    if (args.confirm && !projectMock.removalBlockers.length) Object.assign(agent, { enabled: false, removedAt: Date.now() });
+    return [...projectMock.removalBlockers];
+  }
   if (["ma_create_agent", "ma_update_agent"].includes(command)) {
     projectMock.agentSaves.push(structuredClone(args.input));
     if (failNext) { failNext = false; throw Error("回归测试：保存失败"); }

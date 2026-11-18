@@ -907,6 +907,19 @@ fn stop_member_runtime_ptys(sessions: &SessionManager, pty: &PtyManager, project
 }
 
 #[tauri::command]
+fn ma_remove_agent(
+    project_id: String, agent_id: String, confirm: bool,
+    state: State<'_, MultiAgentStore>, sessions: State<'_, SessionManager>,
+) -> Result<Vec<String>, String> {
+    let _lifecycle = state.agent_lifecycle_guard();
+    let blockers = state.remove_agent(&project_id, &agent_id, false).map_err(to_err)?;
+    if !blockers.is_empty() { return Ok(blockers); }
+    if let Err(reason) = ensure_member_terminal_idle(&sessions, &agent_id) { return Ok(vec![reason]); }
+    if confirm { state.remove_agent(&project_id, &agent_id, true).map_err(to_err) }
+    else { Ok(blockers) }
+}
+
+#[tauri::command]
 fn ma_update_agent(
     input: UpdateAgentInput,
     state: State<'_, MultiAgentStore>,
@@ -6311,6 +6324,7 @@ pub fn run() {
             ma_create_project,
             ma_create_agent,
             ma_update_agent,
+            ma_remove_agent,
             ma_create_task,
             ma_add_dependency,
             ma_claim_task,

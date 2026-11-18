@@ -69,7 +69,7 @@ export function Modal({
         if (event.target instanceof Element && event.target.closest('.model-combobox.open')) return;
         // Close an open local disclosure before its containing dialog, including
         // keyboard events dispatched from the dialog rather than its summary.
-        const disclosureSelector = '.skill-import-menu[open], .skill-tools-menu[open], .skill-filter-menu[open], .automation-card-menu[open], .model-provider-more[open]';
+        const disclosureSelector = '.skill-import-menu[open], .skill-tools-menu[open], .skill-filter-menu[open], .automation-card-menu[open], .model-provider-more[open], .collab-member-actions[open]';
         const focusedDisclosure = event.target instanceof Element ? event.target.closest<HTMLDetailsElement>(disclosureSelector) : null;
         const importMenu = focusedDisclosure && dialogRef.current?.contains(focusedDisclosure)
           ? focusedDisclosure : dialogRef.current?.querySelector<HTMLDetailsElement>(disclosureSelector);

@@ -618,6 +618,7 @@ export interface AgentProfile {
   maxConcurrency: number;
   capabilities: string[];
   enabled: boolean;
+  removedAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }

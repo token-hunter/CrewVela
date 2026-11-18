@@ -3503,6 +3503,7 @@ mod tests {
             max_concurrency: 1,
             capabilities: vec![],
             enabled: true,
+            removed_at: None,
             created_at: 0,
             updated_at: 0,
         };
