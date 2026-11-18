@@ -143,6 +143,7 @@ pub struct ConversationExecutionPlan {
 #[serde(rename_all = "camelCase")]
 pub struct ConversationSnapshot {
     pub conversation: CollaborationConversation,
+    pub delegations: Vec<super::store::delegation::DesignDelegation>,
     pub messages: Vec<ConversationMessage>,
     pub activity_events: Vec<super::RuntimeEventRecord>,
     pub rounds: Vec<ConversationRound>,
@@ -490,7 +491,8 @@ fn snapshot_with(connection: &Connection, project_id: &str) -> Result<Conversati
     let activity_events = super::conversation_activity::events(connection, project_id, &run_ids)?;
     let legacy_desktop = connection.query_row("SELECT EXISTS(SELECT 1 FROM ma_agents WHERE project_id=?1 AND runtime_kind='zcode')", [project_id], |row| row.get::<_,bool>(0))?;
     let runtime_capabilities = policy::runtime_capabilities(legacy_desktop);
-    Ok(ConversationSnapshot { conversation, messages, activity_events,
+    let delegations = super::store::delegation::conversation_designs(connection, project_id, &conversation.id)?;
+    Ok(ConversationSnapshot { conversation, delegations, messages, activity_events,
         rounds: rows(connection,"SELECT data_json FROM ma_conversation_rounds WHERE project_id=?1 AND json_extract(data_json,'$.conversationId')=(SELECT id FROM ma_conversations WHERE project_id=?1) ORDER BY created_at,rowid",project_id)?,
         execution_plans: rows(connection,"SELECT p.data_json FROM ma_conversation_plans p JOIN ma_conversation_rounds r ON r.id=p.round_id JOIN ma_conversations c ON c.project_id=r.project_id WHERE p.project_id=?1 AND json_extract(r.data_json,'$.conversationId')=c.id ORDER BY p.rowid",project_id)?,
         supported_discussion_runtimes: runtime_capabilities.iter()

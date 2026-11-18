@@ -74,6 +74,38 @@ if(params.get("copy")==="1") {
 }
 const activityEvents: any[] = [];
 const activityApprovals: any[] = [];
+if (params.has("delegation")) {
+  const sourceAt = new Date(2026, 10, 16, 10, 42).getTime();
+  projects[0].name = "登录功能改版";
+  agents.splice(0, agents.length,
+    { ...agent("claude", "评审 Agent", "claude_code", "reviewer"), avatarId: "orbit" },
+    { ...agent("codex", "后端 Agent", "codex", "worker"), avatarId: "block" },
+    { ...agent("architect", "架构 Agent", "claude_code", "orchestrator"), avatarId: "sprout" },
+    { ...agent("frontend", "前端 Agent", "opencode", "worker"), avatarId: "messenger" },
+  );
+  chats.A.executionPlans = [];
+  chats.A.rounds = [];
+  chats.A.supportedDiscussionRuntimes.push("opencode");
+  chats.A.delegations = [{
+    id: "login-design", sourceAgentId: "codex", targetAgentId: "architect",
+    sourceRunId: "backend-source", deliveryRunId: "architecture-delivery", resumeRunId: "backend-resume",
+    title: "登录接口设计", brief: "我先负责梳理登录接口的设计方案，确认接口契约和返回结果，然后委派给架构 Agent 评审整体方案。",
+    checkpointAt: sourceAt, submittedAt: sourceAt + 6 * 60000, acceptedAt: sourceAt + 6 * 60000 + 1000,
+    resumedAt: sourceAt + 7 * 60000, filename: "登录接口契约.md", status: "resumed", failure: null,
+  }];
+  chats.A.messages = [
+    { ...message("delegate-source", "system", "等待设计交付", "codex", "paused", "status"), runId: "backend-source", createdAt: sourceAt },
+    { ...message("delegate-delivery", "agent", "已收到委派。我从架构一致性、接口边界和扩展性三个方面完成评审，整体方案可行，建议按当前设计推进。", "architect"), runId: "architecture-delivery", createdAt: sourceAt + 6 * 60000 },
+    { ...message("delegate-resume", "agent", "评审通过。我已更新接口契约文档并续跑后续实现，登录接口设计部分可以进入开发阶段。", "codex"), runId: "backend-resume", createdAt: sourceAt + 7 * 60000 },
+    { ...message("parallel-frontend", "system", "正在推进登录页面的交互与状态反馈开发…", "frontend", "running", "status"), createdAt: sourceAt + 8 * 60000 },
+  ];
+  if (params.get("delegation") === "pending") {
+    Object.assign(chats.A.delegations[0], { filename: null, deliveryRunId: null, resumeRunId: null,
+      submittedAt: null, acceptedAt: null, resumedAt: null, status: "waiting_design" });
+    chats.A.messages.splice(1, 2);
+  }
+  tasks.length = 0;
+}
 if (params.get("activity") === "1") {
   const at = Date.now();
   projects[0].name = "登录功能改版";
@@ -134,6 +166,11 @@ const mock = {
       return structuredClone(runLogs.filter(log => log.projectId === args.projectId && log.runId === args.runId).slice(-args.limit));
     }
     if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
+    if (command === "ma_conversation_design_delivery") {
+      if (args.projectId !== "A" || args.conversationId !== "conversation-A" || args.delegationId !== "login-design") throw Error("交付标识不匹配");
+      return { filename: "登录接口契约.md", markdown: "# 登录接口契约\n\n登录成功返回 200，认证失败返回 401。",
+        acceptanceEvidence: [{ criterion: "描述错误码", evidence: "接口契约包含成功和失败响应。", met: true }] };
+    }
     if (command === "ma_conversation_history") {
       const current = chats[args.projectId];
       const archived = mock.archivedConversations.filter(chat => chat.conversation.projectId === args.projectId);

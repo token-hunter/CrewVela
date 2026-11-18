@@ -46,3 +46,4 @@ pub use runtime::{
 };
 pub(crate) use runtime::{command_for_path, resolve_runtime_executable, resolve_runtime_executable_checked};
 pub use store::MultiAgentStore;
+pub(crate) use store::delegation::DesignDelivery;

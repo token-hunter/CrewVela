@@ -969,6 +969,30 @@ export interface ConversationOriginalSession {
   reply: string;
   error: string | null;
 }
+
+export interface ConversationDesignDelegation {
+  id: string;
+  sourceAgentId: string;
+  targetAgentId: string;
+  sourceRunId: string;
+  deliveryRunId: string | null;
+  resumeRunId: string | null;
+  title: string;
+  brief: string;
+  checkpointAt: number | null;
+  submittedAt: number | null;
+  acceptedAt: number | null;
+  resumedAt: number | null;
+  filename: string | null;
+  status: "checkpointing" | "waiting_design" | "accepted" | "resumed" | "failed";
+  failure: string | null;
+}
+
+export interface ConversationDesignDelivery {
+  filename: string;
+  markdown: string;
+  acceptanceEvidence: Array<{ criterion: string; evidence: string; met: boolean }>;
+}
 export interface ConversationRound {
   id: string;
   projectId: string;
@@ -1053,6 +1077,7 @@ export interface ConversationMigrationPreview {
   createdAt: number;
 }
 export interface ConversationSnapshot {
+  delegations?: ConversationDesignDelegation[];
   /** Safe per-run metadata; never raw reasoning or tool results. */
   activityEvents?: RuntimeEventRecord[];
   conversation: CollaborationConversation;

@@ -29,6 +29,9 @@ pub struct MultiAgentStore {
     agent_lifecycle: Arc<Mutex<()>>,
 }
 
+#[path = "delegation.rs"]
+pub(super) mod delegation;
+
 impl MultiAgentStore {
     pub fn new() -> Result<Self> {
         Self::open_at(crate::providers::config_dir()?.join("multi-agent.db"))
@@ -47,6 +50,7 @@ impl MultiAgentStore {
         )?;
         migrate(&connection)?;
         super::conversation::migrate(&connection)?;
+        delegation::migrate(&connection)?;
         connection.execute(
             "UPDATE ma_agents SET enabled = 0 WHERE runtime_kind NOT IN ('claude_code','codex','kimi_code','pi','opencode','deepseek_harness','zcode','zcode_cli') AND enabled != 0",
             [],
@@ -1656,8 +1660,9 @@ impl MultiAgentStore {
         }
         let task = get_task_with(tx, &run.task_id)?;
         let now = now_millis();
-        let should_retry = allow_retry && run.attempt < task.max_attempts;
-        let exponent = run.attempt.saturating_sub(1).min(10);
+        let charged_attempt = delegation::charged_attempt(tx, &task.id, run.attempt)?;
+        let should_retry = allow_retry && charged_attempt < task.max_attempts;
+        let exponent = charged_attempt.saturating_sub(1).min(10);
         let backoff_seconds = task
             .retry_backoff_seconds
             .saturating_mul(1_u64 << exponent)
@@ -2630,8 +2635,9 @@ impl MultiAgentStore {
                         params![target.id],
                         |row| row.get(0),
                     )?;
+                    let target_charged_attempt = delegation::charged_attempt(&tx, &target.id, target_attempt)?;
                     let can_retry =
-                        run.attempt < task.max_attempts && target_attempt < target.max_attempts;
+                        run.attempt < task.max_attempts && target_charged_attempt < target.max_attempts;
                     let feedback_message_id = uuid::Uuid::new_v4().to_string();
                     tx.execute(
                         "INSERT INTO ma_messages

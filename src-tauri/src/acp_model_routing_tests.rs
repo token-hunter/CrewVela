@@ -72,7 +72,7 @@ fn real_managed_codex_inherits_model_for_new_and_resumed_sessions() {
                         if matches!(update["sessionUpdate"].as_str(), Some("tool_call"|"tool_call_update")) {
                             event_seen.store(true,Ordering::Release); event_cancel.store(true,Ordering::Release);
                         }
-                    })));
+                    })), None);
                 done.store(true, Ordering::Release);
                 result
             });

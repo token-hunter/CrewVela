@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
+use super::store::delegation::{is_design_task, DesignDelivery, RequestDesign};
 
 use super::{
     AppendRuntimeEventInput, HeartbeatRunInput, MultiAgentStore, PublishArtifactInput,
@@ -130,7 +131,7 @@ impl CollaborationBridge {
         cwd: &Path,
     ) -> RunBridgeLease {
         let agent_key = format!("{project_id}:{agent_id}");
-        let token = if super::conversation::is_conversation_task(task_id) {
+        let token = if super::conversation::is_conversation_task(task_id) || is_design_task(task_id) {
             // Research capabilities must never be inherited by an older or later run.
             uuid::Uuid::new_v4().to_string()
         } else { self
@@ -166,6 +167,10 @@ impl CollaborationBridge {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 enum CollaborationCommand {
+    #[serde(rename = "design.delegate")]
+    DesignDelegate { input: RequestDesign },
+    #[serde(rename = "design.submit")]
+    DesignSubmit { input: DesignDelivery },
     #[serde(rename = "task.read")]
     TaskRead,
     #[serde(rename = "thread.read")]
@@ -317,6 +322,15 @@ fn dispatch(
     }
     let _runtime_lease = crate::runtime_preferences::acquire(profile.runtime_kind)?;
     match command {
+        CollaborationCommand::DesignDelegate { input } => {
+            let id = store.request_design(&scope.run_id, &scope.agent_id, input)?;
+            Ok(serde_json::json!({"delegationId":id,"status":"checkpointing",
+                "next":"结束本轮。正常退出后由 CrewVela 保存检查点并派发设计任务，请勿继续修改原任务。"}))
+        }
+        CollaborationCommand::DesignSubmit { input } => {
+            store.submit_design(&scope.run_id, &scope.agent_id, input)?;
+            Ok(serde_json::json!({"status":"submitted","next":"结束本轮。CrewVela 将在执行结束并验证只读工作区后验收交付。"}))
+        }
         CollaborationCommand::TaskRead => {
             let snapshot = store.snapshot(&scope.project_id)?;
             let task = snapshot
@@ -330,11 +344,15 @@ fn dispatch(
                 .filter(|dependency| dependency.task_id == scope.task_id)
                 .collect::<Vec<_>>();
             let artifacts = store.dependency_artifacts(&scope.task_id)?;
-            Ok(serde_json::json!({
+            let mut result = serde_json::json!({
                 "task": task,
                 "dependencies": dependencies,
                 "dependencyArtifacts": artifacts,
-            }))
+            });
+            if store.delegation_tools_for_run(&scope.task_id)? == Some("request") {
+                result["designRecipients"] = serde_json::to_value(store.design_recipients(&scope.task_id, &scope.agent_id)?)?;
+            }
+            Ok(result)
         }
         CollaborationCommand::ThreadRead { limit } => {
             Ok(serde_json::to_value(store.scoped_messages(
@@ -519,7 +537,25 @@ fn handle_mcp_request(
             if super::conversation::is_conversation_task(&scope.task_id) {
                 let policy = store.conversation_task_policy(&scope.task_id, &scope.agent_id)?;
                 serde_json::json!({"tools": if policy.uses_native_capabilities() { collaboration_tools() } else { super::conversation::research::tools(&policy) }})
-            } else { serde_json::json!({"tools": collaboration_tools()}) }
+            } else {
+                let mut tools = collaboration_tools();
+                match store.delegation_tools_for_run(&scope.task_id)? {
+                    Some("request") => tools.push(mcp_tool("cc_design_delegate",
+                        "登记阻塞原任务的设计委派。先从 cc_task_read.designRecipients 取得成员 ID，然后保存进度并结束本轮。",
+                        serde_json::json!({
+                            "targetAgentId":{"type":"string"},"title":{"type":"string"},"brief":{"type":"string"},
+                            "criteria":{"type":"array","items":{"type":"string"}},"checkpoint":{"type":"string"}
+                        }))),
+                    Some("deliver") => tools.push(mcp_tool("cc_design_submit",
+                        "提交设计的 Markdown 文件名、完整正文和对照验收标准的依据。成功后结束本轮。",
+                        serde_json::json!({"filename":{"type":"string"},"markdown":{"type":"string"},
+                            "acceptanceEvidence":{"type":"array","items":{"type":"object","additionalProperties":false,
+                                "properties":{"criterion":{"type":"string"},"evidence":{"type":"string"},"met":{"type":"boolean"}},
+                                "required":["criterion","evidence","met"]}}}))),
+                    _ => {}
+                }
+                serde_json::json!({"tools": tools})
+            }
         },
         "tools/call" => {
             let params = request
@@ -691,6 +727,8 @@ fn collaboration_tools() -> Vec<serde_json::Value> {
 
 fn mcp_tool(name: &str, description: &str, properties: serde_json::Value) -> serde_json::Value {
     let required = match name {
+        "cc_design_delegate" => vec!["targetAgentId", "title", "brief", "criteria", "checkpoint"],
+        "cc_design_submit" => vec!["filename", "markdown", "acceptanceEvidence"],
         "cc_message_send" => vec!["body"],
         "cc_review_submit" => vec!["targetTaskId", "verdict", "summary"],
         "cc_artifact_publish" => vec!["artifactType", "uri", "summary"],
@@ -727,6 +765,8 @@ fn collaboration_command_from_tool(
             .ok_or_else(|| anyhow!("工具参数缺少 {key}"))
     };
     Ok(match name {
+        "cc_design_delegate" => CollaborationCommand::DesignDelegate { input: serde_json::from_value(arguments.clone())? },
+        "cc_design_submit" => CollaborationCommand::DesignSubmit { input: serde_json::from_value(arguments.clone())? },
         "cc_task_read" => CollaborationCommand::TaskRead,
         "cc_thread_read" => CollaborationCommand::ThreadRead {
             limit: arguments

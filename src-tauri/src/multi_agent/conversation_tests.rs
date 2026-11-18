@@ -979,6 +979,97 @@ fn plan_approval_atomically_creates_scoped_existing_tasks_once() {
 }
 
 #[test]
+fn design_delegation_blocks_only_its_parent_and_resumes_after_a_scoped_delivery() {
+    use crate::multi_agent::TaskStatus;
+    let fixture = Fixture::new();
+    fixture.git();
+    let parallel = fixture.store.create_agent(CreateAgentInput {
+        avatar_id: None, project_id: fixture.project.clone(), name: "前端 Agent".into(),
+        runtime_kind: AgentRuntimeKind::Codex, role: AgentRole::Worker, description: "前端开发".into(),
+        persona: Default::default(), persona_custom: String::new(), model: None,
+        permission_profile: PermissionProfile::Default, max_concurrency: 1,
+    }).unwrap();
+    let mut chat = fixture.input();
+    chat.participant_agent_ids.push(parallel.id.clone());
+    let snapshot = fixture.run_input(chat, &Replies::default());
+    let conversation = snapshot.conversation.id;
+    let mut draft = fixture.draft();
+    let mut frontend = draft.tasks[0].clone();
+    frontend.key = "frontend".into();
+    frontend.title = "实现前端".into();
+    frontend.assignee_agent_id = parallel.id.clone();
+    frontend.write_paths = vec!["web".into()];
+    draft.tasks.push(frontend);
+    let plan = fixture.store.save_conversation_plan(
+        &snapshot.rounds[0].id, &snapshot.messages.last().unwrap().id,
+        &json!({"summary":draft.summary,"tasks":draft.tasks}).to_string(),
+    ).unwrap();
+    let tasks = fixture.store.apply_conversation_plan(&ConversationExecutePlanInput {
+        project_id: fixture.project.clone(), plan_id: plan.id, client_request_id: "delegation-test".into(),
+    }).unwrap();
+    let claim = |task_id: &str, agent_id: &str| fixture.store.claim_task(ClaimTaskInput {
+        task_id: task_id.into(), agent_id: agent_id.into(), lease_seconds: 120,
+    });
+    let start = |run: &crate::multi_agent::AgentRun| fixture.store.update_run(UpdateRunInput {
+        run_id: run.id.clone(), status: RunStatus::Running, output_summary: None, error: None, session_locator: None,
+    }).unwrap();
+    let original = start(&claim(&tasks[0], &fixture.agents[0]).unwrap());
+    let delegation_input = |target: &str| serde_json::from_value(json!({
+        "targetAgentId":target,"title":"登录接口设计","brief":"明确登录返回值",
+        "criteria":["成功与失败的返回值","错误码"],"checkpoint":"已完成输入校验，下一步实现返回值"
+    })).unwrap();
+    let unrelated = start(&claim(&tasks[1], &parallel.id).unwrap());
+    assert!(fixture.store.request_design(&original.id, &fixture.agents[0], delegation_input(&fixture.agents[0])).is_err());
+    assert_eq!(fixture.store.design_recipients(&tasks[0], &fixture.agents[0]).unwrap().len(), 2);
+    let delegation = fixture.store.request_design(&original.id, &fixture.agents[0], delegation_input(&fixture.agents[1])).unwrap();
+    assert_eq!(delegation, fixture.store.request_design(&original.id, &fixture.agents[0], delegation_input(&fixture.agents[1])).unwrap());
+    assert!(!fixture.store.snapshot(&fixture.project).unwrap().tasks.iter().any(|task| task.parent_id.as_deref() == Some(&tasks[0])));
+    let source = fixture.store.agent_profile(&fixture.agents[0]).unwrap();
+    fixture.store.checkpoint_design_request(&original.id, &source, "backend-worktree", "checkpoint",
+        &json!({"sessionId":"original-session"})).unwrap();
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    let state = reopened.snapshot(&fixture.project).unwrap();
+    let child = state.tasks.iter().find(|task| task.parent_id.as_deref() == Some(&tasks[0])).unwrap();
+    assert_eq!(child.workspace_mode, WorkspaceMode::ReadOnly);
+    assert_eq!(state.tasks.iter().find(|task| task.id == tasks[0]).unwrap().status, TaskStatus::Blocked);
+    assert_eq!(state.runs.iter().find(|run| run.id == unrelated.id).unwrap().status, RunStatus::Running);
+    assert!(claim(&tasks[0], &source.id).is_err());
+    let design = start(&claim(&child.id, &fixture.agents[1]).unwrap());
+    let delivery_input = |met| serde_json::from_value(json!({
+        "filename":"登录接口契约.md","markdown":"# 登录接口\n\n成功为 200，失败为 401。",
+        "acceptanceEvidence":[{"criterion":"成功与失败的返回值","evidence":"接口响应章节","met":true},
+            {"criterion":"错误码","evidence":"错误码一节","met":met}]
+    })).unwrap();
+    assert!(reopened.submit_design(&design.id, &source.id, delivery_input(true)).is_err());
+    assert!(reopened.submit_design(&design.id, &fixture.agents[1], delivery_input(false)).is_err());
+    assert!(reopened.settle_design(&design.id, &fixture.agents[1], "", &json!({})).is_err());
+    assert!(reopened.design_delivery(&fixture.project, &conversation, &delegation).is_err());
+    assert!(claim(&tasks[0], &source.id).is_err());
+    reopened.submit_design(&design.id, &fixture.agents[1], delivery_input(true)).unwrap();
+    assert!(claim(&tasks[0], &source.id).is_err());
+    reopened.settle_design(&design.id, &fixture.agents[1], "接口设计已提交。", &json!({"sessionId":"design-session"})).unwrap();
+    let accepted = reopened.design_delivery(&fixture.project, &conversation, &delegation).unwrap();
+    assert!(serde_json::to_string(&accepted).unwrap().contains("登录接口契约.md"));
+    assert!(reopened.design_delivery("wrong-project", &conversation, &delegation).is_err());
+    assert!(reopened.design_delivery(&fixture.project, "other-conversation", &delegation).is_err());
+    let task = reopened.snapshot(&fixture.project).unwrap().tasks.into_iter().find(|task| task.id == tasks[0]).unwrap();
+    assert_eq!(task.status, TaskStatus::Ready);
+    let mut wrong_permission = source.clone();
+    wrong_permission.permission_profile = PermissionProfile::Default;
+    assert!(reopened.pending_design_checkpoint(&task, &wrong_permission).is_err());
+    assert_eq!(reopened.pending_design_checkpoint(&task, &source).unwrap().unwrap().head, "checkpoint");
+    assert_eq!(reopened.latest_session_locator(&task.id).unwrap().unwrap()["sessionId"], "original-session");
+    assert!(reopened.design_continuation_context(&task.id).unwrap().contains("失败为 401"));
+    let resumed = start(&claim(&task.id, &source.id).unwrap());
+    reopened.mark_design_resumed(&resumed.id, &task.id).unwrap();
+    assert!(claim(&task.id, &source.id).is_err());
+    let view = serde_json::to_value(reopened.conversation_snapshot(&fixture.project).unwrap()).unwrap();
+    assert_eq!(view["delegations"][0]["status"], "resumed");
+    assert_eq!(view["delegations"][0]["resumeRunId"], resumed.id);
+    assert_eq!(view["delegations"][0]["filename"], "登录接口契约.md");
+}
+
+#[test]
 fn run_log_history_finds_old_output_outside_project_snapshot_and_checks_project() {
     let fixture = Fixture::new();
     fixture.run(&Replies::default());

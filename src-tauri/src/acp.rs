@@ -214,6 +214,7 @@ pub(crate) struct AcpConnection {
     auto_approve_permissions: bool,
     single_use_permissions: bool,
     read_only_crewvela_mcp_calls: HashSet<String>,
+    scoped_design_tool: Option<&'static str>,
     last_start_resumed: bool,
     commands: Vec<AcpCommand>,
     process_id: Arc<AtomicU32>,
@@ -604,6 +605,7 @@ impl AcpConnection {
             full_permissions: false,
             auto_approve_permissions,
             read_only_crewvela_mcp_calls: HashSet::new(),
+            scoped_design_tool: None,
             last_start_resumed: false,
             commands: Vec::new(),
             process_id,
@@ -1164,7 +1166,12 @@ impl AcpConnection {
                     }
                 }
             }
-            let allow = if let Some(handler) = self.permission_handler.as_mut() {
+            let scoped_design = self.scoped_design_tool.is_some_and(|tool| {
+                enriched.pointer("/params/toolCall").is_some_and(|call| is_scoped_design_call(call, tool))
+            });
+            let allow = if scoped_design {
+                true
+            } else if let Some(handler) = self.permission_handler.as_mut() {
                 handler(&enriched, cancellation)?
             } else {
                 should_allow_permission(
@@ -1180,7 +1187,7 @@ impl AcpConnection {
             {
                 self.read_only_crewvela_mcp_calls.remove(tool_call_id);
             }
-            let option = if allow && (self.adapter_kind == ManagedAcpKind::DeepSeekHarness || self.single_use_permissions) {
+            let option = if allow && (scoped_design || self.adapter_kind == ManagedAcpKind::DeepSeekHarness || self.single_use_permissions) {
                 value
                     .pointer("/params/options")
                     .and_then(Value::as_array)
@@ -1588,6 +1595,15 @@ fn is_read_only_crewvela_mcp_call(update: &Value) -> bool {
             .is_some_and(|tool| READ_ONLY_TOOLS.contains(&tool))
 }
 
+fn is_scoped_design_call(call: &Value, tool: &str) -> bool {
+    match call.pointer("/rawInput/server").and_then(Value::as_str) {
+        Some(server) => server == "crewvela" && call.pointer("/rawInput/tool").and_then(Value::as_str) == Some(tool),
+        None => call.get("title").and_then(Value::as_str)
+            .or_else(|| call.pointer("/rawInput/name").and_then(Value::as_str))
+            .and_then(|name| name.strip_prefix("mcp__crewvela__")) == Some(tool),
+    }
+}
+
 fn should_allow_permission(
     request: &Value,
     auto_approve_permissions: bool,
@@ -1820,8 +1836,11 @@ rl.on('line',line=>{const f=JSON.parse(line);
  else if(f.method==='session/new')send(f.id,{sessionId:'fixture'});
  else if(f.method==='session/prompt'){
   promptId=f.id;
-  const options=[{optionId:'persistent',kind:'allow_always'},...(f.params.prompt[0].text==='once'?[{optionId:'single',kind:'allow_once'}]:[])];
-  process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:'permission',method:'session/request_permission',params:{sessionId:'fixture',toolCall:{toolCallId:'tool-1',title:'Test command',kind:'execute'},options}})+'\n');
+  const text=f.params.prompt[0].text;
+  const options=[{optionId:'persistent',kind:'allow_always'},...(text==='once'||text.endsWith('-once')?[{optionId:'single',kind:'allow_once'}]:[])];
+  const design=text.startsWith('design-');
+  const toolCall={toolCallId:'tool-1',title:design?'mcp__crewvela__cc_design_submit':'Test command',kind:'execute'};
+  process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:'permission',method:'session/request_permission',params:{sessionId:'fixture',toolCall,options}})+'\n');
  }else if(f.id!==undefined)send(f.id,{});
 });
 "#).unwrap();
@@ -1831,9 +1850,20 @@ rl.on('line',line=>{const f=JSON.parse(line);
         connection.single_use_permissions=true;
         let once=connection.prompt("once").unwrap();
         let no_once=connection.prompt("persistent-only").unwrap();
+        connection.permission_handler=None;
+        connection.single_use_permissions=false;
+        let plain=connection.prompt("design-once").unwrap();
+        connection.scoped_design_tool=Some("cc_design_submit");
+        let design=connection.prompt("design-once").unwrap();
+        let design_persistent=connection.prompt("design-persistent").unwrap();
+        let unrelated=connection.prompt("once").unwrap();
         connection.stop_checked().unwrap();drop(connection);std::fs::remove_dir_all(root).unwrap();
         assert_eq!(serde_json::from_str::<Value>(&once.text).unwrap(),json!({"outcome":"selected","optionId":"single"}));
         assert_eq!(serde_json::from_str::<Value>(&no_once.text).unwrap(),json!({"outcome":"cancelled"}));
+        assert_eq!(serde_json::from_str::<Value>(&plain.text).unwrap(),json!({"outcome":"cancelled"}));
+        assert_eq!(serde_json::from_str::<Value>(&design.text).unwrap(),json!({"outcome":"selected","optionId":"single"}));
+        assert_eq!(serde_json::from_str::<Value>(&design_persistent.text).unwrap(),json!({"outcome":"cancelled"}));
+        assert_eq!(serde_json::from_str::<Value>(&unrelated.text).unwrap(),json!({"outcome":"cancelled"}));
     }
     #[test]
     fn native_group_web_grants_use_sdk_options_without_changing_user_policy() {
@@ -1886,7 +1916,7 @@ pub(crate) fn execute_managed_research_acp(
     });
     execute_managed_acp_inner(kind, app_session_id, cwd, None, prompt, mcp_url, token,
         ManagedAcpMode::ReadOnly, cancelled, None, Some(permissions), update_handler,
-        Some(ManagedResearchPolicy { tools_enabled }))
+        Some(ManagedResearchPolicy { tools_enabled }), None)
 }
 
 pub(crate) fn execute_managed_acp(
@@ -1902,9 +1932,10 @@ pub(crate) fn execute_managed_acp(
     model: Option<&str>,
     permission_handler: Option<ManagedPermissionHandler>,
     update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
+    scoped_design_tool: Option<&'static str>,
 ) -> Result<ManagedAcpOutcome> {
     execute_managed_acp_inner(kind, app_session_id, cwd, resume_session_id, prompt, mcp_url, token,
-        mode, cancelled, model, permission_handler, update_handler, None)
+        mode, cancelled, model, permission_handler, update_handler, None, scoped_design_tool)
 }
 
 fn execute_managed_acp_inner(
@@ -1921,13 +1952,16 @@ fn execute_managed_acp_inner(
     permission_handler: Option<ManagedPermissionHandler>,
     update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
     research: Option<ManagedResearchPolicy>,
+    scoped_design_tool: Option<&'static str>,
 ) -> Result<ManagedAcpOutcome> {
     let process_id = Arc::new(AtomicU32::new(0));
     // 保留配置中启用的 http 类型用户 server 一并交给 Agent；
     // 读取失败不阻塞：协作桥本身仍然是必需的控制面。
     let mut mcp_servers = if mcp_url.is_empty() { Vec::new() } else { vec![managed_mcp_server(mcp_url, token)] };
     if !mcp_url.is_empty() && research.is_none() { match crate::mcp::enabled_acp_servers() {
-        Ok(user_servers) => mcp_servers.extend(user_servers),
+        Ok(user_servers) => mcp_servers.extend(user_servers.into_iter().filter(|server| {
+            scoped_design_tool.is_none() || server.get("name").and_then(Value::as_str) != Some("crewvela")
+        })),
         Err(error) => eprintln!("[crewvela] 读取用户 MCP 配置失败：{error:#}"),
     } }
     let mut connection = match AcpConnection::spawn_for_with_cli_identity_policy(
@@ -1959,6 +1993,7 @@ fn execute_managed_acp_inner(
     };
     let outcome = (|| -> Result<ManagedAcpOutcome> {
     connection.permission_handler = permission_handler;
+    connection.scoped_design_tool = scoped_design_tool;
     connection.single_use_permissions = matches!(mode,ManagedAcpMode::Inherit);
     if let Some(handler) = update_handler { connection.set_update_handler(handler); }
     if kind == ManagedAcpKind::DeepSeekHarness {
@@ -3233,6 +3268,17 @@ for await (const line of readline.createInterface({input:process.stdin})) {
             choose_permission_option(&request, true).as_deref(),
             Some("always")
         );
+    }
+
+    #[test]
+    fn design_approval_requires_the_scoped_crewvela_tool() {
+        let tool = "cc_design_submit";
+        assert!(is_scoped_design_call(&json!({"rawInput":{"server":"crewvela","tool":tool}}), tool));
+        assert!(is_scoped_design_call(&json!({"title":"mcp__crewvela__cc_design_submit"}), tool));
+        assert!(!is_scoped_design_call(&json!({"title":"mcp__crewvela__cc_design_submit",
+            "rawInput":{"server":"another-server","tool":tool}}), tool));
+        assert!(!is_scoped_design_call(&json!({"rawInput":{"server":"crewvela","tool":"cc_memory_put"}}), tool));
+        assert!(!is_scoped_design_call(&json!({"title":"cc_design_submit"}), tool));
     }
 
     #[test]

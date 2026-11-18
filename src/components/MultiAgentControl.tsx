@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, GearSix, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, GearSix, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConversationMentionHighlight } from "./ConversationMentionHighlight";
 import { ResizableConversationComposer } from "./ResizableConversationComposer";
@@ -12,6 +12,7 @@ import { ConversationMemberActivity } from "./ConversationMemberActivity";
 import { conversationMemberActivity } from "../conversationActivity";
 import { ConversationPlanCard } from "./ConversationPlanCard";
 import { ConversationHistoryDialog } from "./ConversationHistoryDialog";
+import { ConversationDelegationDetails } from "./ConversationDelegationDetails";
 import { ConversationTaskView } from "./ConversationTaskView";
 import { AgentMentionMenu, type AgentMentionOption } from "./AgentMentionMenu";
 import { CollaborationProjectDialog } from "./CollaborationProjectDialog";
@@ -22,7 +23,7 @@ import { RUNTIME_LABELS } from "../runtimeLogos";
 import { visibleProjectTasks } from "../collaborationTasks";
 import { hasMentionToken, mentionTextSegments, selectMentionTokens } from "../multiAgentMention";
 import { useRuntimeAvailability } from "../runtimeAvailability";
-import type { AgentProfile, ConversationExecutionPlan, ConversationMessage, ConversationMode, ConversationOriginalSession, ConversationSendInput, ConversationSnapshot, ConversationTaskRules, MultiAgentProject, MultiAgentSnapshot, SessionRecord } from "../types";
+import type { AgentProfile, ConversationDesignDelegation, ConversationExecutionPlan, ConversationMessage, ConversationMode, ConversationOriginalSession, ConversationSendInput, ConversationSnapshot, ConversationTaskRules, MultiAgentProject, MultiAgentSnapshot, SessionRecord } from "../types";
 import "../styles/collaboration-conversation.css";
 import "../styles/team-work-views.css";
 import "../styles/conversation-member-activity.css";
@@ -88,6 +89,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [showOlder, setShowOlder] = useState(false);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [openDelegation, setOpenDelegation] = useState<{ conversationId: string; itemId: string } | null>(null);
+  const delegationTrigger = useRef<HTMLButtonElement | null>(null);
   const [historySwitchError, setHistorySwitchError] = useState("");
   const [clearConfirmation, setClearConfirmation] = useState<{ projectId: string; projectName: string; expectedConversationId: string; expectedMessageIds: string[] } | null>(null);
   const [clearError, setClearError] = useState("");
@@ -493,7 +496,35 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const toggleMember = (agent: AgentProfile) => setSelected(ids => ids.includes(agent.id) ? ids.filter(id => id !== agent.id) : [...ids, agent.id]);
   const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} agents={snapshot?.agents ?? []} blocked={busy || !healthy || discussing || !active} onConfirm={() => void applyPlan(plan)} onAdjust={() => editPlan(plan)} onTasks={() => setWorkView("tasks")} />;
 
-  return <section className="collaboration-conversation team-work-views" aria-label="团队协作会话">
+  const conversationId = conversation?.conversation.id;
+  const delegationsByRun = useMemo(() => {
+    const index = new Map<string, { item: ConversationDesignDelegation; phase: "source" | "delivery" | "resume" }>();
+    for (const item of conversation?.delegations ?? []) {
+      index.set(item.sourceRunId, { item, phase: "source" });
+      if (item.deliveryRunId) index.set(item.deliveryRunId, { item, phase: "delivery" });
+      if (item.resumeRunId && !index.has(item.resumeRunId)) index.set(item.resumeRunId, { item, phase: "resume" });
+    }
+    return index;
+  }, [conversation?.delegations]);
+  const delegation = active && workView === "chat" && openDelegation?.conversationId === conversationId
+    ? conversation?.delegations?.find(item => item.id === openDelegation?.itemId) : undefined;
+  const closeDelegation = () => {
+    setOpenDelegation(null);
+    requestAnimationFrame(() => delegationTrigger.current?.focus());
+  };
+  useEffect(() => {
+    setOpenDelegation(value => value?.conversationId === conversationId && active && workView === "chat" ? value : null);
+  }, [active, conversationId, workView]);
+  const delegationLink = (item: ConversationDesignDelegation) => <button type="button"
+    className="conversation-text-button delegation-view-link" aria-expanded={delegation?.id === item.id}
+    onClick={event => {
+      if (!conversationId) return;
+      delegationTrigger.current = event.currentTarget;
+      setOpenDelegation({ conversationId, itemId: item.id });
+    }}>查看委派<CaretRight size={16} /></button>;
+
+  return <div className={`conversation-delegation-layout${delegation ? " has-delegation" : ""}`}>
+    <section className="collaboration-conversation team-work-views" aria-label="团队协作会话">
     <header className="conversation-header">
       <div className="conversation-heading"><span className="conversation-project-select"><select aria-label="协作项目" title={snapshot?.project.rootPath ? `${snapshot.project.name}\n项目目录：${snapshot.project.rootPath}` : projects.find(project => project.id === projectId)?.name} value={projectId ?? ""} onChange={event => chooseProject(event.target.value || null)}><option value="" disabled>选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select><CaretDown size={15} aria-hidden="true" /></span>
         <button type="button" className="conversation-icon" aria-label="创建协作项目" onClick={() => setCreatingProject(true)}><Plus size={18} /></button>
@@ -501,7 +532,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       </div>
       <div className="conversation-context-row"><div className="conversation-context"><button type="button" className="conversation-text-button conversation-task-link" disabled={!snapshot || !onOpenProjectSettings} onClick={openProjectTasks}>查看任务 · {tasks.length}<ArrowSquareOut size={14} /></button></div>
         <div className="conversation-members" aria-label="当前团队成员"><button ref={headerMemberTrigger} type="button" className="conversation-members-trigger" aria-label={`选择参与成员，已选 ${selected.length} 位，共 ${agents.length} 位`} aria-expanded={membersOpen === "header"} aria-controls={membersOpen === "header" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "header" ? null : "header")} disabled={!snapshot}>
-          <span className="conversation-member-preview" aria-hidden="true">{agents.slice(0, 3).map(agent => <span key={agent.id} data-selected={selected.includes(agent.id)}><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /></span>)}</span><span>成员 {agents.length}</span><CaretDown size={14} /></button></div>
+          <span className="conversation-member-preview" aria-hidden="true">{agents.slice(0, delegation ? 4 : 3).map(agent => <span key={agent.id} data-selected={selected.includes(agent.id)}><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /></span>)}</span><span>成员 {agents.length}</span><CaretDown size={14} /></button></div>
       </div>
       <div className="conversation-tabs-row"><div className="conversation-modes" role="tablist" aria-label="协作视图">{([['chat', '团队聊天'], ['tasks', '任务执行']] as const).map(([value, label]) => <button type="button" role="tab" id={`${workViewId}-${value}-tab`} aria-label={label} aria-controls={`${workViewId}-${value}-panel`} key={value} aria-selected={workView === value} tabIndex={workView === value ? 0 : -1} onKeyDown={event => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -535,7 +566,37 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const plan = conversation?.executionPlans.find(item => item.messageId === message.id);
         const planning = message.senderType === "user" ? planningRounds.get(message.id) : undefined;
         const openOriginal = message.agentId ? () => void openAgentSession(message, agent?.name ?? "历史成员") : undefined;
-        if (message.senderType === "system") return <div className={`conversation-event ${message.status}`} key={message.id}><span className="conversation-status-dot" /><p>{message.body || CONVERSATION_STATUS[message.status]}</p>{openOriginal && <button type="button" className="conversation-text-button" onClick={openOriginal}>查看原会话<ArrowSquareOut size={13} /></button>}</div>;
+        const delegated = message.runId ? delegationsByRun.get(message.runId) : undefined;
+        if (delegated && conversationId && delegated.item.checkpointAt
+            && (delegated.phase !== "resume" || message.status === "completed")) {
+          const { item, phase } = delegated;
+          const stamp = (phase === "source" ? item.checkpointAt : phase === "delivery" ? item.acceptedAt : item.resumedAt) ?? message.createdAt;
+          const body = phase === "source" ? item.brief : phase === "delivery" ? message.body || `已完成设计并提交「${item.filename ?? item.title}」。`
+            : message.body || `已从检查点续跑「${item.title}」。`;
+          return <article className="conversation-message agent delegation-message" data-message-id={message.id} key={message.id}>
+            {agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar"><Robot size={21} /></span>}
+            <div className="conversation-message-content">
+              <header><strong>{agent?.name ?? "历史成员"}</strong><time dateTime={new Date(stamp).toISOString()}>{new Date(stamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}</time></header>
+              <p className="conversation-message-body">{body}{phase === "source" && delegationLink(item)}</p>
+              <div className="delegation-message-actions">
+                {openOriginal && <button type="button" className="conversation-text-button" onClick={openOriginal}>查看原会话<ArrowSquareOut size={13} /></button>}
+                <ConversationMessageCopy body={message.body || body} />
+              </div>
+            </div>
+          </article>;
+        }
+        if (delegation && !delegated && message.senderType === "system" && message.status === "running" && agent) {
+          const task = tasks.find(task => task.id === message.taskId);
+          return <article className="conversation-message delegation-message delegation-parallel" key={message.id} data-message-id={message.id}>
+            <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative />
+            <div className="conversation-message-content">
+              <header><strong>{agent.name}</strong><span>· 执行中</span></header>
+              <p className="conversation-message-body">{message.body || task?.description || task?.title}</p>
+              {openOriginal && <div className="delegation-message-actions"><button type="button" className="conversation-text-button" onClick={openOriginal}>查看原会话<ArrowSquareOut size={13} /></button></div>}
+            </div>
+          </article>;
+        }
+        if (message.senderType === "system") return <div className={`conversation-event ${message.status}`} key={message.id}><span className="conversation-status-dot" /><p>{message.body || CONVERSATION_STATUS[message.status]}{delegated?.phase === "source" && delegationLink(delegated.item)}</p>{openOriginal && <button type="button" className="conversation-text-button" onClick={openOriginal}>查看原会话<ArrowSquareOut size={13} /></button>}</div>;
         const previous = visibleMessages[index - 1];
         const continuation = !!plan && previous?.senderType === "agent" && previous.agentId === message.agentId;
         return <article className={`conversation-message ${message.senderType} ${message.status}${continuation ? " plan-continuation" : ""}`} key={message.id} data-message-id={message.id}>
@@ -606,5 +667,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       {clearError && <p className="conversation-clear-error" role="alert">{clearError}</p>}
       <div><button ref={cancelClear} type="button" disabled={busy} onClick={() => setClearConfirmation(null)}>取消</button><button type="button" className="conversation-clear-confirm" disabled={clearBlocked || clearChanged} onClick={() => void confirmClear()}>{busy ? "正在清空…" : "清空记录"}</button></div>
     </Modal>, document.body)}
-  </section>;
+    </section>
+    {delegation && projectId && conversationId && <ConversationDelegationDetails key={delegation.id}
+      item={delegation} agents={agents} projectId={projectId} conversationId={conversationId} onClose={closeDelegation} />}
+  </div>;
 }

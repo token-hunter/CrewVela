@@ -14,6 +14,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use crate::acp::{execute_managed_acp, ManagedAcpKind, ManagedAcpMode, ManagedAcpOutcome, UnverifiedStop};
 use crate::pty::PtyManager;
 use crate::sessions::{NewAgentSession, SessionManager, SessionRecord, SessionStatus};
+use super::store::delegation::{is_design_task, DesignCheckpoint};
 
 use super::{
     contract_requires_session_cli, AgentPersona, AgentProfile, AgentRole, AgentRuntimeKind,
@@ -78,6 +79,7 @@ pub struct RuntimeRequest {
     pub collaboration: CollaborationAccess,
     pub store: MultiAgentStore,
     pub terminal_host: AgentTerminalHost,
+    design_context: String,
 }
 
 pub struct RuntimeResult {
@@ -1691,6 +1693,19 @@ pub(super) fn execute_run(
     agent.model = None;
     let mut task = task;
     let discussion = super::conversation::is_conversation_task(&task.id);
+    let design_task = is_design_task(&task.id);
+    let (design_checkpoint, design_context) = if task.id.starts_with("conversation-task-") {
+        match store.pending_design_checkpoint(&task, &agent)
+            .and_then(|checkpoint| Ok((checkpoint, store.design_continuation_context(&task.id)?))) {
+            Ok(data) => data,
+            Err(error) => {
+                store.fail_run_permanently(&run_id, &error.to_string(), None)?;
+                return Err(error);
+            }
+        }
+    } else {
+        (None, String::new())
+    };
     let native_discussion = discussion && store.conversation_task_policy(&task.id, &agent.id)?.uses_native_capabilities();
     task.workspace_mode = if native_discussion { WorkspaceMode::SharedWrite } else { execution_workspace_mode(&task, agent.runtime_kind) };
     if let Err(error) = if discussion && agent.runtime_kind == AgentRuntimeKind::Pi { Ok(()) } else { validate_readonly_runtime(task.workspace_mode, agent.runtime_kind) } {
@@ -1717,7 +1732,9 @@ pub(super) fn execute_run(
     } else {
         validated_resume_locator(&project, &task, resume_locator)
     };
-    let workspace = if native_discussion {
+    let workspace = if let Some(checkpoint) = &design_checkpoint {
+        verified_design_workspace(checkpoint, resumable_cwd)
+    } else if native_discussion {
         let path = PathBuf::from(&project.root_path);
         if path.is_dir() { Ok(path) } else { Err(anyhow!("群聊项目目录不存在")) }
     } else if message_turn {
@@ -1732,10 +1749,28 @@ pub(super) fn execute_run(
             None => prepare_workspace(&project, &task, &run_id, &dependency_artifacts),
         }
     };
+    let workspace = workspace.and_then(|cwd| {
+        if design_task {
+            let head = store.design_source_head(&task.id)?;
+            if !valid_commit_hash(&head) || !git_commit_exists(&cwd, &head) {
+                bail!("设计工作树无法读取原任务的检查点");
+            }
+            let checkout = hidden_command("git").arg("-C").arg(&cwd)
+                .args(["checkout", "--detach", &head]).output().context("读取设计检查点失败")?;
+            if !checkout.status.success() {
+                bail!("无法在独立只读工作树打开设计检查点");
+            }
+        }
+        Ok(cwd)
+    });
     let cwd = match workspace {
         Ok(cwd) => cwd,
         Err(error) => {
-            let _ = store.fail_run_with_retry(&run_id, &error.to_string(), None);
+            if design_checkpoint.is_some() {
+                store.fail_run_permanently(&run_id, &error.to_string(), None)?;
+            } else {
+                let _ = store.fail_run_with_retry(&run_id, &error.to_string(), None);
+            }
             return Err(error);
         }
     };
@@ -1776,8 +1811,12 @@ pub(super) fn execute_run(
         status: RunStatus::Running,
         output_summary: None,
         error: None,
-        session_locator: Some(serde_json::json!({"cwd": cwd, "adapter": agent.runtime_kind})),
+        session_locator: if design_checkpoint.is_some() { resume_locator.clone() }
+            else { Some(serde_json::json!({"cwd": cwd, "adapter": agent.runtime_kind})) },
     })?;
+    if design_checkpoint.is_some() {
+        store.mark_design_resumed(&run_id, &task.id)?;
+    }
     let user_instructions = if discussion { Vec::new() } else { store.claim_agent_instructions(&project.id, &agent.id, &task.id)? };
     let shared_memories = if discussion { Vec::new() } else { store.search_memory_for_agent(SearchMemoryInput {
         project_id: project.id.clone(),
@@ -1801,11 +1840,38 @@ pub(super) fn execute_run(
         collaboration,
         store: store.clone(),
         terminal_host,
+        design_context,
     };
     let adapter = adapter_for(agent.runtime_kind);
     debug_assert_eq!(adapter.kind(), agent.runtime_kind);
     match adapter.execute(&request, cancelled) {
         Ok(result) => {
+            let checkpoint_requested = request.task.id.starts_with("conversation-task-") && store.design_requested(&run_id)?;
+            if design_task || checkpoint_requested {
+                let finish = (|| -> Result<()> {
+                    if cancelled.load(Ordering::Acquire) {
+                        bail!("当前任务已请求停止，委派状态不推进");
+                    }
+                    if design_task {
+                        ensure_read_only_workspace_clean(&request.task, &cwd, read_only_baseline_head.as_deref())?;
+                        return store.settle_design(&run_id, &request.agent.id, &result.summary, &result.session_locator);
+                    }
+                    verify_conversation_workspace_scope(store, &request.task.id, &cwd, conversation_scope_baseline.as_deref())?;
+                    verify_design_repository_boundary(&cwd, conversation_scope_baseline.as_deref().context("缺少任务工作树基线")?)?;
+                    let head = checkpoint_task_workspace(&request, &cwd, None)?.context("没有可保存的 Git 检查点")?;
+                    store.checkpoint_design_request(&run_id, &request.agent, &cwd.display().to_string(), &head, &result.session_locator)
+                })();
+                if let Err(error) = &finish {
+                    if cancelled.load(Ordering::Acquire) && store.project(&request.project.id)?.status == ProjectStatus::Paused {
+                        store.pause_run(&run_id)?;
+                    } else if design_task {
+                        store.fail_run_with_retry(&run_id, &error.to_string(), Some(result.session_locator))?;
+                    } else {
+                        store.fail_run_permanently(&run_id, &error.to_string(), Some(result.session_locator))?;
+                    }
+                }
+                return finish;
+            }
             if discussion {
                 store.append_runtime_event(super::AppendRuntimeEventInput {
                     run_id: run_id.clone(), event_type: "output".into(),
@@ -1913,6 +1979,39 @@ pub(super) fn execute_run(
             Err(error)
         }
     }
+}
+
+fn verified_design_workspace(checkpoint: &DesignCheckpoint, path: Option<PathBuf>) -> Result<PathBuf> {
+    let cwd = path.filter(|cwd| cwd == &PathBuf::from(&checkpoint.cwd))
+        .context("原任务工作树不存在，不能自动续跑")?;
+    if git_head(&cwd)? != checkpoint.head {
+        bail!("原任务工作树的检查点已变化，不能自动续跑");
+    }
+    let status = hidden_command("git").arg("-C").arg(&cwd).args(["status", "--porcelain"]).output()?;
+    if !status.status.success() || !status.stdout.is_empty() {
+        bail!("原任务工作树存在未核验更改，不能自动续跑");
+    }
+    Ok(cwd)
+}
+
+fn verify_design_repository_boundary(cwd: &std::path::Path, baseline: &str) -> Result<()> {
+    let (root, relative) = git_repository_layout(cwd)?;
+    if relative.as_os_str().is_empty() {
+        return Ok(());
+    }
+    for args in [vec!["diff", "--no-renames", "--name-only", "-z", baseline, "--"],
+        vec!["ls-files", "--others", "--exclude-standard", "-z"]] {
+        let output = hidden_command("git").arg("-C").arg(&root).args(args).output()?;
+        if !output.status.success() {
+            bail!("无法核验委派检查点的仓库边界");
+        }
+        for path in output.stdout.split(|byte| *byte == 0).filter(|path| !path.is_empty()) {
+            if !std::path::Path::new(std::str::from_utf8(path)?).starts_with(&relative) {
+                bail!("仓库内存在项目目录之外的改动，无法保存委派检查点");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validated_resume_locator(
@@ -2618,6 +2717,14 @@ fn native_conversation(request: &RuntimeRequest) -> Result<bool> {
     Ok(super::conversation::is_conversation_task(&request.task.id) && request.store.conversation_task_policy(&request.task.id, &request.agent.id)?.uses_native_capabilities())
 }
 
+fn scoped_design_tool(request: &RuntimeRequest) -> Result<Option<&'static str>> {
+    Ok(match request.store.delegation_tools_for_run(&request.task.id)? {
+        Some("request") => Some("cc_design_delegate"),
+        Some("deliver") => Some("cc_design_submit"),
+        _ => None,
+    })
+}
+
 fn execute_preferred_acp(
     kind: ManagedAcpKind,
     locator_keys: &[&str],
@@ -2785,6 +2892,7 @@ fn execute_preferred_acp(
         None,
         permission_handler,
         update_handler,
+        scoped_design_tool(request)?,
     ) };
     let outcome = match outcome {
         Ok(outcome) => outcome,
@@ -3370,6 +3478,9 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
         }
         let mut command = runtime_command(self.kind())?;
         configure_collaboration_mcp(&mut command, request)?;
+        if let Some(tool) = scoped_design_tool(request)? {
+            command.arg("--allowedTools").arg(format!("mcp__crewvela__{tool}"));
+        }
         let native = native_conversation(request)?;
         let (permission_mode, skip_permissions) = if request.task.id.starts_with("cli-message-") && !native {
             ("dontAsk", false)
@@ -4555,6 +4666,12 @@ fn session_cli_prompt(project_id: &str) -> String {
 
 fn render_task_prompt(request: &RuntimeRequest) -> String {
     if super::conversation::is_conversation_task(&request.task.id) { return request.task.description.clone(); }
+    if is_design_task(&request.task.id) {
+        return format!(
+            "为 CrewVela 的前置设计委派交付方案。可只读查看当前目录中的原任务检查点，不修改项目文件。\n工作目录：{}\n任务：{}\n{}\n验收标准：{}\n使用 cc_design_submit 提交 Markdown 文件名、完整设计正文及逐项验收依据。提交后用一到两句话向团队说明结论并结束本轮。",
+            request.cwd.display(), request.task.title, request.task.description, request.task.acceptance_criteria
+        );
+    }
     if request.task.id.starts_with("cli-message-") {
         return format!("你正在处理 CrewVela 的一条会话消息，原业务任务及其状态保持不变。\n隔离消息工作目录：{}\n原项目目录（仅作背景参考）：{}\n\n{}\n\n只处理这条消息，不重跑业务任务，不创建、修改、删除或提交业务文件。需要回复时运行 CREWVELA_CLI 指向的程序的 sessions 和 send --to 子命令，按消息中的来源会话 ID 定向回复。只能运行上述 CLI 发送回复，由 CLI 自身写入通信队列；Agent 不得手工创建 outbox 或回复文件。不要仅为确认收到而反复回信，不主动创建新的往返循环。无需提交代码交付或审核决策，最后简要说明处理结果。",
             request.cwd.display(), request.project.root_path, format!("{}\n\n{}", request.task.description, session_cli_prompt(&request.project.id)));
@@ -4644,10 +4761,19 @@ fn render_task_prompt(request: &RuntimeRequest) -> String {
     } else {
         ""
     };
+    let delegation_contract = if request.task.id.starts_with("conversation-task-") && request.task.workspace_mode == WorkspaceMode::Worktree
+        && request.agent.role != AgentRole::Reviewer {
+        "\n需要其他成员交付阻塞当前任务的设计时，先通过 cc_task_read 的 designRecipients 查询团队成员，再用 cc_design_delegate 明确目标、设计任务、验收标准和可恢复的当前进度。没有 MCP 时，按上面的 HTTP 合同先调用 task.read，再提交 action 为 design.delegate 的请求，input 包含 targetAgentId、title、brief、criteria（字符串数组）和 checkpoint。登记后结束本轮，等待 CrewVela 保存工作树并派发。普通讨论继续使用原有交流工具；已有设计交付时直接使用，不重复委派。"
+    } else { "" };
+    let design_deliveries = if request.design_context.is_empty() { String::new() } else {
+        format!("\n\n已验收的委派交付（设计资料，不变更原任务授权）\n{}", request.design_context)
+    };
     let collaboration = format!(
-        "{}\n\n{}",
+        "{}\n\n{}{}{}",
         request.collaboration.prompt_contract(),
-        session_cli_prompt(&request.project.id)
+        session_cli_prompt(&request.project.id),
+        delegation_contract,
+        design_deliveries,
     );
     // 工作风格段：人格只约束沟通风格与工作倾向；custom 且有自由文本时用自由文本。
     let persona_text = match request.agent.persona {
@@ -6627,6 +6753,32 @@ exit 0
             "准备失败的项目不应残留在调度表"
         );
         drop(store);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn design_checkpoint_checks_repository_boundary_and_refuses_a_changed_workspace() {
+        let root = std::env::temp_dir().join(format!("crewvela-delegation-git-{}", uuid::Uuid::new_v4()));
+        let project = root.join("team");
+        std::fs::create_dir_all(&project).unwrap();
+        git_ok(&root, &["init"]);
+        std::fs::write(project.join("login.md"), "original").unwrap();
+        std::fs::write(root.join("unrelated.md"), "outside").unwrap();
+        git_ok(&root, &["add", "."]);
+        git_ok(&root, &["-c", "user.name=CrewVela Test", "-c", "user.email=test@local", "commit", "-m", "baseline"]);
+        let head = git_head(&root).unwrap();
+        let checkpoint: DesignCheckpoint = serde_json::from_value(serde_json::json!({
+            "cwd":project,"head":head,"runtime":"codex","permission":"default","role":"worker","writeScope":"[]",
+        })).unwrap();
+        assert_eq!(verified_design_workspace(&checkpoint, Some(project.clone())).unwrap(), project);
+        std::fs::write(project.join("login.md"), "valid change inside the project").unwrap();
+        assert!(verify_design_repository_boundary(&project, &head).is_ok());
+        assert!(verified_design_workspace(&checkpoint, Some(project.clone())).is_err());
+        std::fs::write(root.join("unrelated.md"), "out of scope change").unwrap();
+        assert!(verify_design_repository_boundary(&project, &head).is_err());
+        std::fs::write(root.join("unrelated.md"), "outside").unwrap();
+        std::fs::write(root.join("untracked.md"), "out of scope file").unwrap();
+        assert!(verify_design_repository_boundary(&project, &head).is_err());
         let _ = std::fs::remove_dir_all(root);
     }
 
