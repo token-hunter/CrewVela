@@ -9,6 +9,8 @@ const params = new URLSearchParams(location.search);
 const theme = params.get('theme') === 'light' ? 'light' : 'dark';
 document.documentElement.setAttribute('data-theme', theme);
 const versions: Record<string, string> = { claude_code: '2.1.325', codex: '0.169.0', opencode: '1.19.5', kimi_code: '2.6.2', pi: '1.5.2' };
+const chatLabels: Record<string, string> = { claude_chat: 'Claude Code CLI', codex_chat: 'Codex CLI', kimi_chat: 'Kimi Code CLI', opencode_chat: 'OpenCode CLI', pi_chat: 'Pi CLI', deepseek_harness: 'DeepSeek Harness', zcode: 'ZCode Desktop' };
+const usesNode = (kind: string) => ['claude_chat', 'codex_chat', 'pi_chat'].includes(kind);
 const state = {
   starts: 0,
   calls: [] as Array<{ command: string; args: any }>,
@@ -27,9 +29,26 @@ if (params.get('previous-job') === '1') state.job = { id:'previous-ready', kind:
   state.calls.push({ command, args });
   if (command === 'get_runtime_preferences') return { disabledRuntimes: [] };
   if (command === 'set_runtime_enabled') return { disabledRuntimes: args.enabled ? [] : [args.kind] };
+  if (command === 'runtime_chat_dependencies') return Object.fromEntries(Object.keys(chatLabels).map(kind => {
+    const needsSetup = usesNode(kind) && !state.installed;
+    return [kind, { label: needsSetup ? '缺少兼容的 Node.js' : '已检测到启动依赖', needsSetup }];
+  }));
   if (command === 'runtime_install_environment') {
     if (params.get('slow-local') === '1') await new Promise(resolve => setTimeout(resolve, 1500));
     if (state.environmentError) { state.environmentError = false; throw new Error('fixture network offline'); }
+    if (chatLabels[args.kind]) {
+      const usesAdapter = ['claude_chat', 'codex_chat'].includes(args.kind);
+      const nodeRequired = usesNode(args.kind);
+      const desktop = ['deepseek_harness', 'zcode'].includes(args.kind);
+      const verified = nodeRequired ? state.installed : !desktop;
+      return {
+        kind: args.kind, executable: desktop ? null : 'C:/fixture/cli.exe',
+        auth: verified ? state.auth : 'unverified', error: null, installDirectory: 'C:/fixture/chat-dependencies',
+        chat: { cliLabel: chatLabels[args.kind], nodeRequired, nodeVersion: state.installed && nodeRequired ? '24.12.0' : null,
+          adapterRequired: usesAdapter, adapterInstalled: state.installed, verified, canInstall: nodeRequired && !verified,
+          canLogin: verified && !desktop, officialUrl: desktop ? 'https://www.deepseek.com/harness/en/' : null },
+      };
+    }
     return { kind: args.kind, supported: params.get('scenario') !== 'dependency', executable: state.installed ? `C:/fixture/official/${args.kind}.exe` : null, version: state.installed ? versions[args.kind] : null,
       latestVersion: versions[args.kind], source: state.installed ? 'CrewVela 用户级安装' : '未安装或安装异常', installDirectory: `C:/fixture/runtime-installations/${args.kind}`,
       dependencyMessage: params.get('scenario') === 'dependency' ? 'Kimi Code 需要 Git for Windows / Git Bash；安装后重新检查' : args.kind === 'kimi_code' ? '已检测到 Git Bash，不需要 Node/npm' : '当前平台支持，不需要 Node/npm',

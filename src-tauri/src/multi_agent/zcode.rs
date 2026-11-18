@@ -550,7 +550,7 @@ pub(crate) fn launch(path: &Path) -> Result<Command> {
         let mut command = Command::new(if let Some(program) = desktop_program.as_ref() {
             program.clone()
         } else {
-            which::which("node").context("启动 ZCode Desktop cjs Agent 需要 Node.js")?
+            crate::runtime_dependencies::node_executable().context("启动 ZCode Desktop cjs Agent 需要 Node.js")?
         });
         if desktop_program.is_some() {
             command

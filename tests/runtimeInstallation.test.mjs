@@ -18,9 +18,10 @@ test('步骤和忙碌状态区分校验、安装、登录与终止结果', () =>
   assert.equal(supportsRuntimeInstallation('claude_code'), true);
   assert.equal(supportsRuntimeInstallation('zcode_cli'), false);
 });
-test('五种终端 CLI 支持安装；原生聊天和暂缓的 ZCode 不新增安装入口', () => {
+test('五种终端 CLI 和七种原生聊天有安装与版本入口', () => {
   for (const kind of ['claude_code', 'codex', 'opencode', 'kimi_code', 'pi']) assert.equal(supportsRuntimeInstallation(kind), true);
-  for (const kind of ['zcode_cli', 'zcode', 'claude_chat', 'codex_chat', 'kimi_chat', 'pi_chat', 'opencode_chat', 'deepseek_harness']) assert.equal(supportsRuntimeInstallation(kind), false);
+  for (const kind of ['zcode', 'claude_chat', 'codex_chat', 'kimi_chat', 'pi_chat', 'opencode_chat', 'deepseek_harness']) assert.equal(supportsRuntimeInstallation(kind), true);
+  assert.equal(supportsRuntimeInstallation('zcode_cli'), false);
   assert.match(runtimeInstallationInfo('opencode').channel, /1\.x/);
   assert.match(runtimeInstallationInfo('opencode').checksum, /SHA512/);
   assert.match(runtimeInstallationInfo('kimi_code').checksum, /SHA256/);

@@ -163,11 +163,22 @@ fn capture_pipe(mut pipe: impl std::io::Read, limit: usize, keep_tail: bool) -> 
 /// Collect both output pipes while writing stdin, with one deadline for all I/O.
 /// The caller receives nonzero exits unchanged and decides how to explain them.
 pub(crate) fn run_cli_with_timeout(
+    command: Command,
+    input: Option<Vec<u8>>,
+    timeout: Duration,
+    stdout_limit: usize,
+    operation: &str,
+) -> Result<std::process::Output> {
+    run_cli_until_cancelled(command, input, timeout, stdout_limit, operation, None)
+}
+
+pub(crate) fn run_cli_until_cancelled(
     mut command: Command,
     input: Option<Vec<u8>>,
     timeout: Duration,
     stdout_limit: usize,
     operation: &str,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<std::process::Output> {
     use std::io::Write;
     use std::sync::mpsc;
@@ -193,6 +204,9 @@ pub(crate) fn run_cli_with_timeout(
             Some(rx)
         } else { None };
         let status = loop {
+            if cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)) {
+                return Err(anyhow!("{operation}已取消"));
+            }
             if let Some(status) = crate::acp::try_wait_child_preserving_identity(&mut child).context("读取子进程状态失败")? { break status; }
             if Instant::now() >= deadline { return Err(anyhow!("{operation}超时")); }
             std::thread::sleep(Duration::from_millis(20));

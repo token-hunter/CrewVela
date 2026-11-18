@@ -1,5 +1,6 @@
-import { useRef, useState, type DragEvent } from "react";
-import { ArrowDown, ArrowUp, DotsSixVertical, X } from "@phosphor-icons/react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { ArrowDown, ArrowUp, CaretDown, CaretRight, DotsSixVertical, X } from "@phosphor-icons/react";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
 import { COLLABORATION_RUNTIMES, isLegacyCollaborationRuntime, runtimeCategory, isRetiredRuntime, type RuntimeCategory } from "../runtimeTaxonomy";
@@ -9,23 +10,37 @@ import { Modal } from "./ui/Modal";
 import "../styles/runtime-management.css";
 import "../styles/cli-launch.css";
 import { RuntimeInstallWizard } from "./RuntimeInstallWizard";
-import { supportsRuntimeInstallation } from "../runtimeInstallation";
+import { supportsChatInstallation, supportsRuntimeInstallation, type RuntimeChatDependencies } from "../runtimeInstallation";
 import { isCliRuntime, launchChoices } from "../runtimeLaunch";
 
-export function RuntimeManagementDialog({ order, onReorder, orderError, onClose }: {
+export function RuntimeManagementDialog({ order, onReorder, orderError, onClose, initialInstaller }: {
   order: AgentRuntimeKind[];
   onReorder: (kind: AgentRuntimeKind, target: AgentRuntimeKind, position: RuntimeDropPosition) => void;
   orderError?: string | null;
   onClose: () => void;
+  initialInstaller?: AgentRuntimeKind;
 }) {
   const availability = useRuntimeAvailability();
   const [pending, setPending] = useState<AgentRuntimeKind | null>(null);
-  const [installing, setInstalling] = useState<AgentRuntimeKind | null>(null);
+  const [installing, setInstalling] = useState<AgentRuntimeKind | null>(initialInstaller ?? null);
+  const [cliCollapsed, setCliCollapsed] = useState(initialInstaller !== undefined);
+  const [chatDependencies, setChatDependencies] = useState<RuntimeChatDependencies | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState<AgentRuntimeKind | null>(null);
   const [dropTarget, setDropTarget] = useState<{ kind: AgentRuntimeKind; position: RuntimeDropPosition } | null>(null);
   const dragSource = useRef<AgentRuntimeKind | null>(null);
   const suppressClickUntil = useRef(0);
+  const hasChats = order.some(supportsChatInstallation);
+  useEffect(() => {
+    if (installing || !hasChats) return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      void invoke<RuntimeChatDependencies>("runtime_chat_dependencies")
+        .then(result => { if (live) setChatDependencies(result ?? {}); })
+        .catch(() => { if (live) setChatDependencies({}); });
+    }, 100);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [installing, hasChats]);
   const clearDrag = () => {
     dragSource.current = null;
     setDragging(null);
@@ -67,7 +82,7 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
     ["chat", "原生聊天 Agent"],
   ];
   const renderItem = (kind: AgentRuntimeKind, index: number, group: AgentRuntimeKind[]) => <div
-    className={`collab-runtime-management-row${isCliRuntime(kind) ? " cli-mode-row" : ""}${dragging === kind ? " dragging" : ""}`} key={kind}
+    className={`collab-runtime-management-row${isCliRuntime(kind) ? " cli-mode-row" : " chat-install-row"}${dragging === kind ? " dragging" : ""}`} key={kind}
     data-runtime-order={kind} data-drop-position={dropTarget?.kind === kind ? dropTarget.position : undefined}
     draggable
     onDragStart={(event) => {
@@ -101,7 +116,9 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
     <span className="collab-runtime-drag-handle" aria-hidden="true" title="按住拖动，调整上下顺序"><DotsSixVertical size={17} /></span>
     <label className="collab-runtime-toggle">
       <img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" draggable={false} />
-      <span>{RUNTIME_LABELS[kind]}<small className="collab-runtime-scope">{COLLABORATION_RUNTIMES.includes(kind) ? "CLI 协作执行" : isLegacyCollaborationRuntime(kind) ? "原生聊天 · 已有协作成员兼容" : "仅原生聊天"}</small></span>
+      <span>{RUNTIME_LABELS[kind]}<small className="collab-runtime-scope">{COLLABORATION_RUNTIMES.includes(kind) ? "CLI 协作执行" : isLegacyCollaborationRuntime(kind) ? "原生聊天 · 已有协作成员兼容" : "仅原生聊天"}</small>
+        {supportsChatInstallation(kind) && <small className="runtime-chat-dependency" data-missing={chatDependencies?.[kind]?.needsSetup || undefined}>{chatDependencies?.[kind]?.label ?? (chatDependencies ? "打开详情检查启动依赖" : "正在检查启动依赖…")}</small>}
+      </span>
       <small>{pending === kind ? "保存中…" : availability.ready ? availability.isRuntimeEnabled(kind) ? "已启用" : "已禁用" : "加载中…"}</small>
       <input type="checkbox" aria-label={`启用 ${RUNTIME_LABELS[kind]}`} checked={availability.ready && availability.isRuntimeEnabled(kind)} disabled={!availability.ready || pending !== null} onChange={(event) => void toggle(kind, event.target.checked)} />
     </label>
@@ -117,17 +134,28 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose 
   </div>;
   return <Modal className={`collab-runtime-management${installing ? " runtime-installation-modal" : ""}`} ariaLabel="管理 Runtime" onClose={onClose}>
     <header><h3>管理 Runtime</h3><button type="button" className="btn secondary" aria-label="关闭" onClick={onClose}>{installing ? <X size={21} /> : "关闭"}</button></header>
-    {installing ? <RuntimeInstallWizard key={installing} kind={installing} onBack={() => setInstalling(null)} /> : <>
+    {installing ? <RuntimeInstallWizard key={installing} kind={installing} onBack={() => setInstalling(null)} onComplete={installing === initialInstaller ? onClose : undefined} /> : <>
     {(error || availability.error) && <p role="alert" className="collaboration-settings-error">{error || availability.error}</p>}
     {orderError && <p role="alert" className="collaboration-settings-error">{orderError}</p>}
     {!availability.ready && <button type="button" className="btn secondary" onClick={() => void availability.refresh()}>重新加载配置</button>}
     <div className="collab-runtime-management-list" onDragOver={(event) => {
       if (!dragSource.current) return;
       event.preventDefault();
-    }} onDrop={(event) => { event.preventDefault(); clearDrag(); }}>{groups.filter(([category]) => managed.some(kind => runtimeCategory(kind) === category)).map(([category, title]) => <section key={category} className="collab-runtime-management-group-section">
-      <h4 className="collab-runtime-management-group">{title}{category === "terminal" && <span className="runtime-default-heading">默认启动模式</span>}</h4>
-      {managed.filter((kind) => runtimeCategory(kind) === category).map(renderItem)}
-    </section>)}
+    }} onDrop={(event) => { event.preventDefault(); clearDrag(); }}>{groups.map(([category, title]) => {
+      const items = managed.filter(kind => runtimeCategory(kind) === category);
+      if (!items.length) return null;
+      const terminal = category === "terminal";
+      const collapsed = terminal && cliCollapsed;
+      return <section key={category} className="collab-runtime-management-group-section">
+        <h4 className="collab-runtime-management-group">{terminal ? <>
+          <button type="button" className="runtime-group-toggle" aria-expanded={!collapsed} onClick={() => setCliCollapsed(!collapsed)}>
+            {collapsed ? <CaretRight size={14} /> : <CaretDown size={14} />}{title}（{items.length}）
+          </button>
+          {!collapsed && <span className="runtime-default-heading">默认启动模式</span>}
+        </> : title}</h4>
+        {!collapsed && items.map(renderItem)}
+      </section>;
+    })}
     </div>
     <p className="runtime-launch-footnote">默认模式用于之后新建的 CLI 会话；已打开的会话保持原设置。</p>
     </>}

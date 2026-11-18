@@ -54,6 +54,10 @@
 .collab-runtime-management.runtime-installation-modal .runtime-install-footer .runtime-install-primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
 .collab-runtime-management.runtime-installation-modal .runtime-install-primary:disabled { background: var(--bg-hover); color: var(--text-dim); border-color: var(--border); cursor: default; opacity: .6; }
 .collab-runtime-install-entry { flex: none; font-size: 12px; white-space: nowrap; }
+.runtime-group-toggle { display: inline-flex; align-items: center; gap: 5px; background: transparent; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.runtime-chat-dependency { display: block; margin-top: 3px; font-size: 12px; overflow-wrap: anywhere; }
+.collab-runtime-management-list .runtime-chat-dependency[data-missing], .runtime-chat-install-facts dd .runtime-install-missing { color: var(--warn); }
+.runtime-chat-install-facts dd small { flex-basis: 100%; padding-left: 26px; color: var(--text-dim); }
 @media (max-width: 720px) {
   .runtime-installation-modal > header { padding: 12px 16px; }
   .runtime-installer { padding: 14px 16px 0; }

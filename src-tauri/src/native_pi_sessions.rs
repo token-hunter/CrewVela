@@ -646,7 +646,9 @@ impl NativePiSessions {
                 .ok_or_else(|| {
                     anyhow!("未找到本机 pi CLI。请先安装 @earendil-works/pi-coding-agent（npm i -g）并在运行时管理中启用 Pi")
                 })?;
-                crate::multi_agent::command_for_path(&path)
+                let mut command = crate::multi_agent::command_for_path(&path);
+                crate::runtime_dependencies::with_managed_node(&mut command);
+                command
             }
         };
         command.arg("--mode").arg("rpc").arg("-e").arg(&extension);

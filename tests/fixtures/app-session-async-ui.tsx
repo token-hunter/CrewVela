@@ -128,6 +128,9 @@ const api = {
       if (command === "get_runtime_preferences") return { disabledRuntimes: [] };
     }
     if (location.search.includes('cli-launch')) {
+      if (command === 'runtime_chat_dependencies' && location.search.includes('chat-setup')) {
+        return { claude_chat: { label: '缺少兼容的 Node.js', needsSetup: true } };
+      }
       if (command === 'list_projects') return [{id:'fixture-project',name:'Fixture project',path:'C:\\fixture',createdAt:0}, {id:'second-project',name:'Second project',path:'D:\\Second 项目',createdAt:0}];
       if (command === 'plugin:dialog|open') {
         api.cliLaunch.pickerCalls.push(args);

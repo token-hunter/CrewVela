@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { open as openDirectory } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { X } from "@phosphor-icons/react";
 import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
 import { isCliRuntime, launchChoices, launchModeLabel, type RuntimeLaunchSelection } from "../runtimeLaunch";
@@ -9,6 +10,7 @@ import type { Project, SessionDirectory } from "../types";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { NEW_SESSION_CHAT_ORDER_STORAGE_KEY, NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY, useRuntimeOrder } from "../runtimePreferences";
 import { RuntimeManagementDialog } from "./RuntimeManagementDialog";
+import type { RuntimeChatDependencies } from "../runtimeInstallation";
 import { Modal } from "./ui/Modal";
 import "../styles/cli-launch.css";
 
@@ -26,6 +28,7 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [managing, setManaging] = useState(false);
+  const [chatDependencies, setChatDependencies] = useState<RuntimeChatDependencies | null>(null);
   const [selectedDirectory, setSelectedDirectory] = useState(initialDirectory ?? null);
   const [picking, setPicking] = useState(false);
   const pickingRef = useRef(false);
@@ -39,6 +42,17 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
   const submitting = useRef(false);
   const directory = selectedDirectory ? resolveSessionDirectory(selectedDirectory.path, projects) : null;
   const cli = isCliRuntime(kind);
+  const chatDependency = chatDependencies?.[kind];
+  useEffect(() => {
+    if (cli || managing) return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      void invoke<RuntimeChatDependencies>("runtime_chat_dependencies").then(result => {
+        if (live) setChatDependencies(result ?? null);
+      }).catch(() => { if (live) setChatDependencies(null); });
+    }, 100);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [cli, managing]);
   const defaultMode = availability.prefs.defaultLaunchModes?.[kind] ?? "cli_default";
   const mode = override ?? defaultMode;
   const choice = launchChoices(kind).find(choice => choice.id === mode);
@@ -91,6 +105,10 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
         <p className="cli-launch-directory-path">{directory?.path ?? "尚未选择工作目录"}</p>
         <p className="cli-launch-directory-hint">{directory ? directory.id ? `会话归入「${directory.name}」项目` : "临时使用此目录，会话归入未分组" : "选择目录后即可启动；临时目录无需添加为项目。"}</p>
       </section>
+      {!cli && chatDependency?.needsSetup && <div className="cli-launch-chat-setup">
+        <span>{chatDependency.label}</span>
+        <button type="button" className="btn secondary" disabled={busy} onClick={() => setManaging(true)}>安装与版本</button>
+      </div>}
       {cli && <><label>启动模式<select aria-label="本次启动模式" value={mode} disabled={!availability.ready || busy} onChange={event => setOverride(event.target.value)}>
         {!choice && <option value={mode} disabled>不支持的已保存模式：{mode}</option>}
         {launchChoices(kind).map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
@@ -106,7 +124,7 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
         <button type="submit" className="btn" disabled={!directory || (cli && !choice) || !availability.ready || busy || !availability.isRuntimeEnabled(kind)}>{pending ? "正在启动…" : "启动"}</button>
       </footer>
     </form>
-    {managing && <RuntimeManagementDialog order={[...order.order, ...chatOrder.order]} orderError={order.error || chatOrder.error} onClose={() => setManaging(false)} onReorder={(kind, target, position) => {
+    {managing && <RuntimeManagementDialog order={[...order.order, ...chatOrder.order]} orderError={order.error || chatOrder.error} initialInstaller={cli ? undefined : kind} onClose={() => { setChatDependencies(null); setManaging(false); }} onReorder={(kind, target, position) => {
       if (isCliRuntime(kind) && isCliRuntime(target)) order.reorder(kind, target, position);
       else if (CHAT_AGENTS.includes(kind as NewSessionAgent) && CHAT_AGENTS.includes(target as NewSessionAgent)) chatOrder.reorder(kind as NewSessionAgent, target as NewSessionAgent, position);
     }} />}

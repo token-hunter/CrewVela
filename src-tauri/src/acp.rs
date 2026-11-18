@@ -51,7 +51,7 @@ impl ManagedAcpKind {
         }
     }
 
-    fn binary(self) -> &'static str {
+    pub(crate) fn binary(self) -> &'static str {
         match self {
             Self::ClaudeCode => "claude-agent-acp",
             Self::Codex => "codex-acp",
@@ -61,7 +61,7 @@ impl ManagedAcpKind {
         }
     }
 
-    fn package(self) -> &'static str {
+    pub(crate) fn package(self) -> &'static str {
         match self {
             Self::ClaudeCode => ACP_ADAPTER_PACKAGE,
             Self::Codex => CODEX_ACP_ADAPTER_PACKAGE,
@@ -2174,7 +2174,7 @@ fn harness_windows_path(path: &str) -> String {
     }
 }
 
-fn adapter_command(adapter: ManagedAcpKind) -> Result<Command> {
+pub(crate) fn adapter_command(adapter: ManagedAcpKind) -> Result<Command> {
     if adapter == ManagedAcpKind::Codex {
         return codex_adapter_command();
     }
@@ -2190,6 +2190,10 @@ fn adapter_command(adapter: ManagedAcpKind) -> Result<Command> {
     if adapter == ManagedAcpKind::OpenCode {
         return opencode_acp_command();
     }
+    if let Some(entry) = managed_adapter_entry(adapter) {
+        let node = crate::runtime_dependencies::node_executable().context("Claude Code Chat 需要 Node.js 22+")?;
+        return Ok(claude_adapter_entry_command(&node, &entry));
+    }
     let binary = adapter.binary();
     for root in crate::runtime_dependencies::node_modules_candidates() {
         let local = root.join(".bin").join(if cfg!(target_os = "windows") {
@@ -2200,15 +2204,45 @@ fn adapter_command(adapter: ManagedAcpKind) -> Result<Command> {
     if let Ok(global) = which::which(binary) {
         return Ok(command_for_script(&global));
     }
-    let npx = which::which(if cfg!(target_os = "windows") {
+    let managed_npx = crate::runtime_dependencies::managed_node().and_then(|node| Some(node.parent()?.join("npx.cmd"))).filter(|path| path.is_file());
+    let npx = managed_npx.map(Ok).unwrap_or_else(|| which::which(if cfg!(target_os = "windows") {
         "npx.cmd"
     } else {
         "npx"
-    })
+    }))
     .with_context(|| format!("未找到 {binary}，也未找到 npx；请先安装 Node.js 22+"))?;
     let mut command = npx_command(&npx)?;
     command.arg("--yes").arg(adapter.package());
     Ok(command)
+}
+
+pub(crate) fn managed_adapter_entry(adapter: ManagedAcpKind) -> Option<PathBuf> {
+    let package = adapter.package();
+    let (name, version) = package.rsplit_once('@')?;
+    let root = crate::runtime_dependencies::chat_install_root().ok()?.join("adapters").join(adapter.binary()).join(version);
+    crate::runtime_dependencies::active_component(&root, &PathBuf::from("node_modules").join(name).join("dist/index.js"))
+}
+
+pub(crate) fn chat_adapter_installed(adapter: ManagedAcpKind) -> bool {
+    if managed_adapter_entry(adapter).is_some() { return true; }
+    if adapter == ManagedAcpKind::Codex { return local_codex_adapter_entry().is_some(); }
+    let binary = adapter.binary();
+    let shim = if cfg!(windows) { format!("{binary}.cmd") } else { binary.to_string() };
+    crate::runtime_dependencies::node_modules_candidates().iter().any(|root| root.join(".bin").join(&shim).is_file())
+        || which::which(binary).is_ok()
+}
+
+pub(crate) fn claude_adapter_entry_command(node: &Path, entry: &Path) -> Command {
+    let mut command = Command::new(node);
+    command.arg(entry);
+    if let Some(executable) = std::env::var_os("CLAUDE_CODE_EXECUTABLE").or_else(|| {
+        crate::multi_agent::resolve_runtime_executable(crate::multi_agent::AgentRuntimeKind::ClaudeCode)
+            .filter(|path| !cfg!(windows) || path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("exe")))
+            .map(PathBuf::into_os_string)
+    }) {
+        command.env("CLAUDE_CODE_EXECUTABLE", executable);
+    }
+    command
 }
 
 fn materialize_codex_wrapper_at(directory: &Path) -> Result<PathBuf> {
@@ -2222,22 +2256,14 @@ fn materialize_codex_wrapper_at(directory: &Path) -> Result<PathBuf> {
 }
 
 fn codex_adapter_command() -> Result<Command> {
-    let node = which::which("node").context("Codex ACP 需要 Node.js")?;
+    let node = crate::runtime_dependencies::node_executable().context("Codex ACP 需要 Node.js")?;
     let wrapper = materialize_codex_wrapper_at(&crate::brand::config_dir()?.join("adapters"))?;
-    let entry = crate::runtime_dependencies::node_modules_candidates().into_iter()
-        .map(|root| root.join("@agentclientprotocol/codex-acp/dist/index.js"))
-        .find(|entry| {
-            entry.is_file() && entry.parent().and_then(Path::parent)
-                .and_then(|root| std::fs::read_to_string(root.join("package.json")).ok())
-                .and_then(|source| serde_json::from_str::<Value>(&source).ok())
-                .is_some_and(|package| package.get("version").and_then(Value::as_str) == Some("1.11.0"))
-        });
+    let entry = managed_adapter_entry(ManagedAcpKind::Codex).or_else(local_codex_adapter_entry);
     let mut command = if let Some(entry) = entry {
-        let mut command = Command::new(&node);
-        command.arg(&wrapper).arg(entry);
-        command
+        codex_adapter_entry_command(&node, &wrapper, &entry)
     } else {
-        let npx = which::which(if cfg!(windows) { "npx.cmd" } else { "npx" })
+        let bundled = node.parent().map(|directory| directory.join(if cfg!(windows) { "npx.cmd" } else { "npx" })).filter(|path| path.is_file());
+        let npx = bundled.map(Ok).unwrap_or_else(|| which::which(if cfg!(windows) { "npx.cmd" } else { "npx" }))
             .context("未找到 Codex ACP 适配器或 npx；请安装 Node.js/npm")?;
         codex_npx_command(&npx, &node, &wrapper)?
     };
@@ -2247,6 +2273,31 @@ fn codex_adapter_command() -> Result<Command> {
     pin_codex_executable(&mut command, crate::multi_agent::resolve_runtime_executable_checked(
         crate::multi_agent::AgentRuntimeKind::Codex,
     ))?;
+    command.env("CREWVELA_CODEX_ACP_BRIDGE", "1");
+    Ok(command)
+}
+
+fn local_codex_adapter_entry() -> Option<PathBuf> {
+    let (name, version) = CODEX_ACP_ADAPTER_PACKAGE.rsplit_once('@')?;
+    crate::runtime_dependencies::node_modules_candidates().into_iter().find_map(|root| {
+        let package = root.join(name);
+        let entry = package.join("dist/index.js");
+        let metadata: Value = serde_json::from_slice(&std::fs::read(package.join("package.json")).ok()?).ok()?;
+        (entry.is_file() && metadata["version"].as_str() == Some(version)).then_some(entry)
+    })
+}
+
+fn codex_adapter_entry_command(node: &Path, wrapper: &Path, entry: &Path) -> Command {
+    let mut command = Command::new(node);
+    command.arg(wrapper).arg(entry);
+    command
+}
+
+pub(crate) fn chat_adapter_probe_command(adapter: ManagedAcpKind, node: &Path, entry: &Path) -> Result<Command> {
+    if adapter == ManagedAcpKind::ClaudeCode { return Ok(claude_adapter_entry_command(node, entry)); }
+    let wrapper = materialize_codex_wrapper_at(&crate::brand::config_dir()?.join("adapters"))?;
+    let mut command = codex_adapter_entry_command(node, &wrapper, entry);
+    pin_codex_executable(&mut command, crate::multi_agent::resolve_runtime_executable_checked(crate::multi_agent::AgentRuntimeKind::Codex))?;
     command.env("CREWVELA_CODEX_ACP_BRIDGE", "1");
     Ok(command)
 }
@@ -2294,7 +2345,7 @@ fn npx_command(path: &Path) -> Result<Command> {
     Ok(Command::new(path))
 }
 
-pub(crate) fn deepseek_executable() -> Result<PathBuf> {
+pub(crate) fn deepseek_entry() -> Result<PathBuf> {
     if let Some(root) = std::env::var_os("CREWVELA_DSH_ROOT").filter(|root| !root.is_empty()) {
         let root = PathBuf::from(root);
         let entry = root.join("apps/cli/src/bin.ts");
@@ -2306,10 +2357,17 @@ pub(crate) fn deepseek_executable() -> Result<PathBuf> {
                 "CREWVELA_DSH_ROOT 必须指向已安装依赖的 DeepSeek Harness 源码根目录"
             ));
         }
-        which::which("node").context("DeepSeek Harness 源码启动需要 Node.js")?;
         return Ok(entry);
     }
     which::which("dsh").context("未找到 dsh；请安装 DeepSeek Harness CLI，或配置 CREWVELA_DSH_ROOT")
+}
+
+pub(crate) fn deepseek_executable() -> Result<PathBuf> {
+    let path = deepseek_entry()?;
+    if path.extension().is_some_and(|ext| ext == "ts") {
+        crate::runtime_dependencies::node_executable().context("DeepSeek Harness 源码启动需要 Node.js")?;
+    }
+    Ok(path)
 }
 
 /// kimi CLI 原生 ACP server 启动命令：`kimi acp`（stdio JSON-RPC，无需适配器）。
@@ -2357,7 +2415,7 @@ fn opencode_terminal_prompt_failure(log: &str, session_id: &str) -> Option<&'sta
 }
 
 pub(crate) fn deepseek_command() -> Result<Command> {
-    let executable = deepseek_executable()?;
+    let executable = deepseek_entry()?;
     if executable.extension().is_some_and(|ext| ext == "ts") {
         let root = executable
             .parent()
@@ -2365,7 +2423,7 @@ pub(crate) fn deepseek_command() -> Result<Command> {
             .and_then(Path::parent)
             .and_then(Path::parent)
             .context("DeepSeek Harness 源码入口路径无效")?;
-        let mut command = Command::new(which::which("node").context("源码启动需要 Node.js")?);
+        let mut command = Command::new(crate::runtime_dependencies::node_executable().context("源码启动需要 Node.js")?);
         command
             .arg("--import")
             .arg(root.join("node_modules/tsx/dist/esm/index.mjs"))
@@ -2383,6 +2441,7 @@ fn command_for_script(path: &Path) -> Command {
     {
         let mut command = Command::new("cmd.exe");
         command.arg("/d").arg("/s").arg("/c").arg(path);
+        crate::runtime_dependencies::with_managed_node(&mut command);
         command
     } else {
         Command::new(path)

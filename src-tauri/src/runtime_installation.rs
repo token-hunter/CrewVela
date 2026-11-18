@@ -7,6 +7,8 @@ use sha2::{Digest, Sha256, Sha512};
 use std::{collections::HashMap, fs, io::{Read, Write}, path::{Component, Path, PathBuf}, process::Command, sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, Ordering}}, time::Duration};
 use crate::multi_agent::AgentRuntimeKind;
 mod additional;
+mod chat;
+pub(crate) use chat::ChatDependencySummary;
 
 const CLAUDE_BASE: &str = "https://downloads.claude.ai/claude-code-releases";
 const MAX_DOWNLOAD: u64 = 384 * 1024 * 1024;
@@ -23,6 +25,7 @@ impl InstallJob { fn running(&self) -> bool { !matches!(self.phase.as_str(), "re
 struct Operation { job: InstallJob, cancel: Arc<AtomicBool>, wake: Arc<tokio::sync::Notify> }
 static JOBS: OnceLock<Mutex<HashMap<String, Operation>>> = OnceLock::new();
 fn jobs() -> &'static Mutex<HashMap<String, Operation>> { JOBS.get_or_init(Default::default) }
+static CLI_INSTALL_LOCKS: OnceLock<HashMap<&'static str, tokio::sync::Mutex<()>>> = OnceLock::new();
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +35,8 @@ pub(crate) struct Environment {
     pub install_directory: String, pub auth: String, pub error: Option<String>,
     pub update_error: Option<String>,
     pub dependency_message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat: Option<chat::ChatEnvironment>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -171,6 +176,7 @@ pub(crate) async fn environment(kind: AgentRuntimeKind) -> Result<Environment, S
 }
 
 fn inspect_environment(kind: AgentRuntimeKind) -> Result<Environment, String> {
+    if chat::supports(kind) { return chat::environment(kind).map_err(|error| error.to_string()); }
     if !supported_kind(kind) { return Err("此 Runtime 保留现有官方安装方式".into()); }
     let dependency = additional::dependencies(kind);
     let supported = platform().is_ok() && dependency.is_ok();
@@ -187,7 +193,11 @@ fn inspect_environment(kind: AgentRuntimeKind) -> Result<Environment, String> {
     Ok(Environment { kind, supported, executable, version, auth, error, source,
         dependency_message: dependency.unwrap_or_else(|error| error.to_string()),
         install_directory: root().map_err(|e| e.to_string())?.join(kind.as_str()).display().to_string(),
-        latest_version: None, update_error: None })
+        latest_version: None, update_error: None, chat: None })
+}
+
+pub(crate) async fn chat_dependencies() -> Result<HashMap<String, ChatDependencySummary>, String> {
+    crate::blocking_command(|| Ok(chat::summaries())).await
 }
 
 pub(crate) async fn latest_version(kind: AgentRuntimeKind) -> Result<String, String> {
@@ -213,8 +223,8 @@ pub(crate) fn start(kind: AgentRuntimeKind) -> Result<InstallJob, String> {
 }
 fn start_at(base: PathBuf, kind: AgentRuntimeKind) -> Result<InstallJob, String> {
     platform().map_err(|e| e.to_string())?;
-    if !supported_kind(kind) { return Err("此 Runtime 暂不支持一键安装".into()); }
-    additional::dependencies(kind).map_err(|e| e.to_string())?;
+    if !supported_kind(kind) && !chat::supports(kind) { return Err("此 Runtime 暂不支持一键安装".into()); }
+    if supported_kind(kind) { additional::dependencies(kind).map_err(|e| e.to_string())?; }
     let mut state = jobs().lock().unwrap();
     if state.get(kind.as_str()).is_some_and(|op| op.job.running()) { return Err("该 Runtime 已有安装操作，请等待或取消后重试".into()); }
     let job = InstallJob { id: uuid::Uuid::new_v4().to_string(), kind, phase: "checking".into(), message: "正在检查平台与官方发行信息…".into(), downloaded: 0, total: None, version: None, executable: None, error: None };
@@ -222,12 +232,28 @@ fn start_at(base: PathBuf, kind: AgentRuntimeKind) -> Result<InstallJob, String>
     state.insert(kind.as_str().into(), Operation { job: job.clone(), cancel: cancel.clone(), wake: wake.clone() });
     let id = job.id.clone();
     tauri::async_runtime::spawn(async move {
-        let result = install(&base, kind, &id, &cancel, &wake).await;
+        let result = if chat::supports(kind) { chat::install(&base, kind, &id, &cancel, &wake).await }
+            else { install_cli(&base, kind, &id, &cancel, &wake, false).await };
         let mut state = jobs().lock().unwrap();
         if let Some(operation) = state.get_mut(kind.as_str()).filter(|op| op.job.id == id) {
             match result {
-                Ok((version, executable)) => { operation.job.phase = "ready".into(); operation.job.message = "安装和启动自检通过".into(); operation.job.version = Some(version); operation.job.executable = Some(executable.display().to_string()); }
-                Err(error) => { operation.job.phase = if cancel.load(Ordering::Acquire) { "cancelled" } else { "failed" }.into(); operation.job.message = if cancel.load(Ordering::Acquire) { "安装已取消，原入口保持不变" } else { "安装未完成，原入口保持不变" }.into(); operation.job.error = (!cancel.load(Ordering::Acquire)).then(|| error.to_string()); }
+                Ok((version, executable)) => {
+                    operation.job.phase = "ready".into();
+                    operation.job.message = if chat::supports(kind) { "Chat 启动协议验证通过" } else { "安装和启动自检通过" }.into();
+                    operation.job.version = (!version.is_empty()).then_some(version);
+                    operation.job.executable = Some(executable.display().to_string());
+                }
+                Err(error) => {
+                    let cancelled = cancel.load(Ordering::Acquire);
+                    operation.job.phase = if cancelled { "cancelled" } else { "failed" }.into();
+                    operation.job.message = match (chat::supports(kind), cancelled) {
+                        (true, true) => "安装已取消，已验证的组件可在下次继续使用",
+                        (true, false) => "安装未完成，请检查缺少的组件后重试",
+                        (false, true) => "安装已取消，原入口保持不变",
+                        (false, false) => "安装未完成，原入口保持不变",
+                    }.into();
+                    operation.job.error = (!cancelled).then(|| error.to_string());
+                }
             }
         }
     });
@@ -237,7 +263,20 @@ fn check_cancel(cancel: &AtomicBool) -> Result<()> { if cancel.load(Ordering::Ac
 struct Staging(PathBuf);
 impl Drop for Staging { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
 
-async fn install(base: &Path, kind: AgentRuntimeKind, id: &str, cancel: &Arc<AtomicBool>, wake: &Arc<tokio::sync::Notify>) -> Result<(String, PathBuf)> {
+async fn install_cli(base: &Path, kind: AgentRuntimeKind, id: &str, cancel: &Arc<AtomicBool>, wake: &tokio::sync::Notify, only_if_missing: bool) -> Result<(String, PathBuf)> {
+    use AgentRuntimeKind::*;
+    let locks = CLI_INSTALL_LOCKS.get_or_init(|| [ClaudeCode, Codex, KimiCode, OpenCode, Pi].into_iter()
+        .map(|kind| (kind.as_str(), tokio::sync::Mutex::new(()))).collect());
+    let lock = locks.get(kind.as_str()).context("此 CLI 暂不支持安装")?;
+    let _guard = tokio::select! { lock = lock.lock() => lock, _ = wake.notified() => bail!("安装已取消") };
+    check_cancel(cancel)?;
+    if only_if_missing {
+        if let Ok(path) = crate::multi_agent::resolve_runtime_executable_checked(kind) { return Ok((String::new(), path)); }
+    }
+    install(base, kind, id, cancel, wake).await
+}
+
+async fn install(base: &Path, kind: AgentRuntimeKind, id: &str, cancel: &Arc<AtomicBool>, wake: &tokio::sync::Notify) -> Result<(String, PathBuf)> {
     let release = tokio::select! { result = release(kind) => result?, _ = wake.notified() => bail!("安装已取消") };
     check_cancel(cancel)?;
     if let Ok(existing) = crate::multi_agent::resolve_runtime_executable_checked(kind) {
@@ -485,6 +524,8 @@ mod tests {
 }
 
 pub(crate) fn open_login(kind: AgentRuntimeKind) -> Result<(), String> {
+    let for_chat = chat::supports(kind);
+    let kind = chat::cli_kind(kind).unwrap_or(kind);
     if !supported_kind(kind) { return Err("不支持此 CLI 的登录引导".into()); }
     let executable = crate::multi_agent::resolve_runtime_executable_checked(kind)?;
     #[cfg(windows)] {
@@ -492,8 +533,10 @@ pub(crate) fn open_login(kind: AgentRuntimeKind) -> Result<(), String> {
         let path = executable.display().to_string().replace('\'', "''");
         let script = additional::login_script(kind, &path)?;
         let encoded = base64::engine::general_purpose::STANDARD.encode(script.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>());
-        Command::new("powershell.exe").args(["-NoLogo", "-NoProfile", "-NoExit", "-EncodedCommand", &encoded]).creation_flags(0x00000010).spawn().map_err(|e| format!("无法打开 CLI 登录窗口：{e}"))?;
+        let mut command = Command::new("powershell.exe");
+        if for_chat { crate::runtime_dependencies::with_managed_node(&mut command); }
+        command.args(["-NoLogo", "-NoProfile", "-NoExit", "-EncodedCommand", &encoded]).creation_flags(0x00000010).spawn().map_err(|e| format!("无法打开 CLI 登录窗口：{e}"))?;
         Ok(())
     }
-    #[cfg(not(windows))] { let _ = executable; Err("请在原生 CLI 中完成登录".into()) }
+    #[cfg(not(windows))] { let _ = (executable, for_chat); Err("请在原生 CLI 中完成登录".into()) }
 }

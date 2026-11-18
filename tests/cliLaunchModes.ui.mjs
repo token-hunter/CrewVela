@@ -167,6 +167,16 @@ try {
     }
     await page.close();
   }
+  const firstRun = await browser.newPage();
+  await firstRun.goto(`${base}/tests/fixtures/app-session-async-ui.html?cli-launch=1&chat-setup=1`);
+  const launch = await choose(firstRun, 'claude_chat');
+  await launch.getByText('缺少兼容的 Node.js', { exact: true }).waitFor();
+  await launch.getByRole('button', { name: '安装与版本', exact: true }).click();
+  const setup = firstRun.getByRole('dialog', { name: '管理 Runtime', exact: true });
+  await setup.getByRole('heading', { name: '管理 Claude Code Chat', exact: true }).waitFor();
+  await setup.getByRole('button', { name: '关闭', exact: true }).click();
+  assert.equal(await launch.getByRole('combobox', { name: '启动 Agent' }).inputValue(), 'claude_chat');
+  await firstRun.close();
   assert.deepEqual(errors,[]);
   console.log('PASS: real App launch routes for six CLIs and seven Chats, directory selection, mode controls, pending dedup/close guard, saved defaults, dark/light and narrow layouts');
 } finally { await browser.close(); }

@@ -806,6 +806,8 @@ async fn ma_upgrade_runtime(kind: AgentRuntimeKind) -> Result<RuntimeUpgradeRece
 #[tauri::command]
 async fn runtime_install_environment(kind: AgentRuntimeKind) -> Result<runtime_installation::Environment, String> { runtime_installation::environment(kind).await }
 #[tauri::command]
+async fn runtime_chat_dependencies() -> Result<HashMap<String, runtime_installation::ChatDependencySummary>, String> { runtime_installation::chat_dependencies().await }
+#[tauri::command]
 async fn runtime_install_latest_version(kind: AgentRuntimeKind) -> Result<String, String> { runtime_installation::latest_version(kind).await }
 #[tauri::command]
 fn runtime_install_start(kind: AgentRuntimeKind) -> Result<runtime_installation::InstallJob, String> { runtime_installation::start(kind) }
@@ -6297,6 +6299,7 @@ pub fn run() {
             ma_check_runtime_updates,
             ma_upgrade_runtime,
             runtime_install_environment,
+            runtime_chat_dependencies,
             runtime_install_latest_version,
             runtime_install_start,
             runtime_install_status,

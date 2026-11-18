@@ -1,4 +1,63 @@
-use std::path::PathBuf;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+pub(crate) fn chat_install_root() -> anyhow::Result<PathBuf> {
+    Ok(crate::providers::config_dir()?.join("runtime-installations/chat-dependencies"))
+}
+
+pub(crate) fn active_component(root: &Path, entry: &Path) -> Option<PathBuf> {
+    let pointer = fs::read_to_string(root.join("current")).ok()?;
+    let id = uuid::Uuid::parse_str(&pointer).ok()?;
+    let versions = root.join("versions");
+    let executable = versions.join(id.to_string()).join(entry);
+    (executable.is_file()
+        && executable
+            .canonicalize()
+            .ok()?
+            .starts_with(versions.canonicalize().ok()?))
+    .then_some(executable)
+}
+
+pub(crate) fn managed_node() -> Option<PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    active_component(
+        &chat_install_root().ok()?.join("nodejs"),
+        Path::new("node.exe"),
+    )
+}
+
+pub(crate) fn node_executable() -> anyhow::Result<PathBuf> {
+    managed_node()
+        .map(Ok)
+        .unwrap_or_else(|| which::which("node").map_err(Into::into))
+}
+
+pub(crate) fn with_managed_node(command: &mut Command) {
+    if let Some(node) = managed_node() {
+        prepend_path(command, &node);
+    }
+}
+
+pub(crate) fn prepend_path(command: &mut Command, executable: &Path) {
+    let Some(directory) = executable.parent() else {
+        return;
+    };
+    let inherited = std::env::var_os("PATH");
+    let paths = std::iter::once(directory.to_path_buf()).chain(
+        inherited
+            .as_deref()
+            .into_iter()
+            .flat_map(std::env::split_paths),
+    );
+    if let Ok(path) = std::env::join_paths(paths) {
+        command.env("PATH", path);
+    }
+}
 
 /// Only development builds may refer to the build machine's checkout. Release
 /// discovery is based on the installed executable and the user's runtime PATH.
@@ -29,7 +88,9 @@ fn node_modules_from_path(directories: impl IntoIterator<Item = PathBuf>) -> Vec
     let mut roots = Vec::new();
     for directory in directories {
         if directory.file_name().is_some_and(|name| name == ".bin") {
-            if let Some(parent) = directory.parent() { roots.push(parent.to_owned()); }
+            if let Some(parent) = directory.parent() {
+                roots.push(parent.to_owned());
+            }
         }
         roots.push(directory.join("node_modules"));
         if let Some(prefix) = directory.parent() {
