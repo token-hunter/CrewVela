@@ -392,48 +392,48 @@ export function AppSidebar(props: Props) {
               <div ref={newSessionMenuRef} id="sidebar-new-session-menu" className={`rail-new-menu unified-new-menu runtime-submenu${toolsMenuOpen ? "" : " direct-new-menu"}`} role="menu" aria-label="新建 Runtime 会话">
                 {isRuntimeEnabled("claude_code") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onNewClaudeSession)}>
                   <img src={claudeIcon} alt="" aria-hidden="true" />
-                  <span><strong>Claude Code</strong><small>新建 AI 会话</small></span>
+                  <span><strong>Claude Code</strong></span>
                 </button>}
                 {isRuntimeEnabled("codex") && <button type="button" role="menuitem" onClick={() => runNewAction(() => props.onNewRuntimeSession("codex"))}>
                   <img src={RUNTIME_LOGOS.codex} data-runtime="codex" alt="" aria-hidden="true" />
-                  <span><strong>Codex CLI</strong><small>新建 Codex 会话</small></span>
+                  <span><strong>Codex CLI</strong></span>
                 </button>}
                 {isRuntimeEnabled("kimi_code") && <button type="button" role="menuitem" onClick={() => runNewAction(() => props.onNewRuntimeSession("kimi_code"))}>
                   <img src={RUNTIME_LOGOS.kimi_code} data-runtime="kimi_code" alt="" aria-hidden="true" />
-                  <span><strong>Kimi Code</strong><small>新建 Kimi 会话</small></span>
+                  <span><strong>Kimi Code</strong></span>
                 </button>}
                 {isRuntimeEnabled("pi") && <button type="button" role="menuitem" onClick={() => runNewAction(() => props.onNewRuntimeSession("pi"))}>
                   <img src={RUNTIME_LOGOS.pi} data-runtime="pi" alt="" aria-hidden="true" />
-                  <span><strong>Pi Agent</strong><small>新建 Pi 会话</small></span>
+                  <span><strong>Pi Agent</strong></span>
                 </button>}
                 {isRuntimeEnabled("opencode") && <button type="button" role="menuitem" onClick={() => runNewAction(() => props.onNewRuntimeSession("opencode"))}>
                   <img src={RUNTIME_LOGOS.opencode} data-runtime="opencode" alt="" aria-hidden="true" />
-                  <span><strong>OpenCode</strong><small>新建 OpenCode 会话</small></span>
+                  <span><strong>OpenCode</strong></span>
                 </button>}
 
                 {isRuntimeEnabled("deepseek_harness") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenDeepSeekHarness)}>
                   <img src={RUNTIME_LOGOS.deepseek_harness} data-runtime="deepseek_harness" alt="" aria-hidden="true" />
-                  <span><strong>DeepSeek Harness</strong><small>新建 ACP 会话</small></span>
+                  <span><strong>DeepSeek Harness</strong></span>
                 </button>}
                 {isRuntimeEnabled("claude_chat") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenClaudeChat)}>
                   <img src={RUNTIME_LOGOS.claude_chat} data-runtime="claude_chat" alt="" aria-hidden="true" />
-                  <span><strong>Claude Code Chat</strong><small>本机账号 · ACP 原生聊天</small></span>
+                  <span><strong>Claude Code Chat</strong></span>
                 </button>}
                 {isRuntimeEnabled("codex_chat") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenCodexChat)}>
                   <img src={RUNTIME_LOGOS.codex_chat} data-runtime="codex_chat" alt="" aria-hidden="true" />
-                  <span><strong>Codex Chat</strong><small>本机账号 · ACP 原生聊天</small></span>
+                  <span><strong>Codex Chat</strong></span>
                 </button>}
                 {isRuntimeEnabled("kimi_chat") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenKimiChat)}>
                   <img src={RUNTIME_LOGOS.kimi_chat} data-runtime="kimi_chat" alt="" aria-hidden="true" />
-                  <span><strong>Kimi Code Chat</strong><small>本机账号 · 原生 ACP 聊天</small></span>
+                  <span><strong>Kimi Code Chat</strong></span>
                 </button>}
                 {isRuntimeEnabled("opencode_chat") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenOpenCodeChat)}>
                   <img src={RUNTIME_LOGOS.opencode_chat} data-runtime="opencode_chat" alt="" aria-hidden="true" />
-                  <span><strong>OpenCode Chat</strong><small>本机账号 · ACP 原生聊天</small></span>
+                  <span><strong>OpenCode Chat</strong></span>
                 </button>}
                 {isRuntimeEnabled("pi_chat") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenPiChat)}>
                   <img src={RUNTIME_LOGOS.pi_chat} data-runtime="pi_chat" alt="" aria-hidden="true" />
-                  <span><strong>Pi Chat</strong><small>本机 pi CLI · 原生 RPC 聊天</small></span>
+                  <span><strong>Pi Chat</strong></span>
                 </button>}
                 {isRuntimeEnabled("zcode") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenZCode)}><img src={RUNTIME_LOGOS.zcode} data-runtime="zcode" alt="" aria-hidden="true" />ZCode Desktop</button>}
                 {isRuntimeEnabled("zcode_cli") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenZCodeCli)}><img src={RUNTIME_LOGOS.zcode_cli} data-runtime="zcode_cli" alt="" aria-hidden="true" />ZCode CLI</button>}

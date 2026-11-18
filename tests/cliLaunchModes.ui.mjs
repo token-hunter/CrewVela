@@ -13,7 +13,7 @@ async function choose(page, kind) {
     claude_chat:'Claude Code Chat', codex_chat:'Codex Chat', kimi_chat:'Kimi Code Chat', opencode_chat:'OpenCode Chat',
     pi_chat:'Pi Chat', deepseek_harness:'DeepSeek Harness', zcode:'ZCode Desktop',
   };
-  await page.getByRole('menu',{name:'新建 Runtime 会话'}).getByRole('menuitem').filter({has:page.getByText(labels[kind],{exact:true})}).click();
+  await page.getByRole('menu',{name:'新建 Runtime 会话'}).getByRole('menuitem',{name:labels[kind],exact:true}).click();
   const dialog = page.getByRole('dialog', {name:'新建会话',exact:true});
   await dialog.waitFor(); return dialog;
 }
