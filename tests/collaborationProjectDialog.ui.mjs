@@ -42,10 +42,14 @@ try {
   await dialog.getByRole("button", { name: "选择目录", exact: true }).click();
   await dialog.getByRole("alert").filter({ hasText: "选择目录失败" }).waitFor();
   await dialog.getByLabel("项目目标", { exact: true }).fill("修复协作入口并验证");
+  const initialize = dialog.getByRole("checkbox", { name: "初始化 Git 并创建首次提交", exact: true });
+  await initialize.waitFor();
+  assert.equal(await initialize.isChecked(), true);
   await dialog.getByRole("button", { name: "创建项目", exact: true }).click();
   await dialog.getByRole("alert").filter({ hasText: "创建项目失败" }).waitFor();
   assert.equal(await dialog.getByLabel("项目名称", { exact: true }).inputValue(), "CrewVela 协作", "failed creation preserves the draft");
   await page.evaluate(() => { window.projectMock.holdCreate = true; });
+  await initialize.uncheck();
   await dialog.getByRole("button", { name: "创建项目", exact: true }).dblclick();
   await dialog.getByRole("button", { name: "创建中…", exact: true }).waitFor();
   await dialog.press("Escape");
@@ -58,6 +62,7 @@ try {
   assert.equal(await page.getByRole("tab", { name: /团队/ }).getAttribute("aria-selected"), "true");
   assert.equal(await page.getByRole("button", { name: "新增成员", exact: true }).isEnabled(), true);
   assert.deepEqual(await page.evaluate(() => window.projectMock.creates[1]), { name: "CrewVela 协作", goal: "修复协作入口并验证", rootPath: "/fixture/中文 空格 & project", defaultBranch: "main" });
+  assert.deepEqual(await page.evaluate(() => window.projectMock.gitSetups), [{ confirmExistingFiles: false }, null]);
   await page.getByRole("button", { name: "新增成员", exact: true }).click();
   const member = page.getByRole("dialog", { name: "新增团队成员" });
   await member.getByLabel("成员名称", { exact: true }).fill("首位成员");
@@ -91,6 +96,44 @@ try {
   assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 820 && bounds.y + bounds.height <= 540, "project form fits the minimum desktop viewport");
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   await dialog.waitFor({ state: "detached" });
+
+  const fillGitProject = async () => {
+    await createEntry.click();
+    await dialog.getByLabel("项目名称", { exact: true }).fill("Git 测试");
+    await dialog.getByLabel("项目目录", { exact: true }).fill("/fixture/git/subdirectory");
+    await dialog.getByLabel("项目目标", { exact: true }).fill("验证 Git 准备");
+  };
+  await page.evaluate(() => { window.projectMock.gitStatus = { state: "ready", repositoryPath: "/fixture/git", hasFiles: false, stagedFiles: [], stagedToken: null }; });
+  await fillGitProject();
+  await dialog.getByRole("status").filter({ hasText: "将复用现有 Git 仓库 /fixture/git" }).waitFor();
+  assert.equal(await initialize.count(), 0);
+  await dialog.getByRole("button", { name: "创建项目", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => window.projectMock.gitSetups.at(-1)), null);
+
+  await page.evaluate(() => { window.projectMock.gitStatus = { state: "missingCommit", repositoryPath: "/fixture/git", hasFiles: true, stagedFiles: ["README.md"], stagedToken: "fixture-staging" }; });
+  await fillGitProject();
+  const firstCommit = dialog.getByRole("checkbox", { name: "创建首次 Git 提交", exact: true });
+  await firstCommit.waitFor();
+  assert.equal(await firstCommit.isChecked(), false);
+  await dialog.getByText("README.md", { exact: true }).waitFor();
+  await firstCommit.check();
+  await dialog.getByRole("checkbox", { name: "将已暂存文件纳入首次提交" }).check();
+  await page.screenshot({ path: "output/playwright/collaboration-project-git.png", fullPage: true });
+  await dialog.getByRole("button", { name: "创建项目", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+  assert.deepEqual(await page.evaluate(() => window.projectMock.gitSetups.at(-1)), { confirmExistingFiles: true, stagedToken: "fixture-staging" });
+
+  await page.evaluate(() => { window.projectMock.gitError = true; });
+  await fillGitProject();
+  await dialog.getByRole("status").filter({ hasText: "找不到 Git" }).waitFor();
+  await page.evaluate(() => { window.projectMock.gitError = false; window.projectMock.gitStatus = null; });
+  await dialog.getByRole("button", { name: "重新检查 Git", exact: true }).click();
+  await initialize.waitFor();
+  assert.equal(await initialize.isChecked(), true);
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+  console.log("PASS: default first commit, opt-out, repository reuse, staged file confirmation, and Git probe retry");
   console.log("PASS: direct project creation, validation, picker/cancel/error, failed draft, duplicate submit guard, selection, first member and existing-project regression");
 } catch (error) {
   await page?.screenshot({ path: "output/playwright/collaboration-project-failure.png", fullPage: true });

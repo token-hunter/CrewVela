@@ -260,6 +260,7 @@ const mock = {
     if (command === "plugin:opener|open_url") return null;
     if (command === "plugin:event|emit") return null;
     if (command === "ma_create_project") { const project = { ...args.input, id: crypto.randomUUID(), status: "active", createdAt: clock, updatedAt: clock }; projects = [...projects, project]; chats[project.id] = emptyChat(project.id); return project; }
+    if (command === "ma_project_git_status") return { state: "missingRepository", repositoryPath: null, hasFiles: false, stagedFiles: [], stagedToken: null };
     if (command === "plugin:dialog|open") return "/fixture/new-project";
     if (command === "get_runtime_preferences") return { disabledRuntimes: params.get("disabled") ? [params.get("disabled")] : [] };
     if (command === "plugin:event|listen") return 1;

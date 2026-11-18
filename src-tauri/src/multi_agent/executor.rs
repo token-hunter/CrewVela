@@ -49,7 +49,7 @@ pub(crate) fn external_command_path(path: &std::path::Path) -> PathBuf {
     }
 }
 
-fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+pub(super) fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut command = Command::new(program);
     #[cfg(target_os = "windows")]
     {

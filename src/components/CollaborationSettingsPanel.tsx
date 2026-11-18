@@ -733,8 +733,8 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
         {currentSnapshot && !filteredAgents.length && <p className="collab-empty">{enabledAgents.length === 0 ? "暂无可用成员，点击右上角「新增成员」创建。" : "没有匹配的成员。"}</p>}
       </div></SettingsSection>{suggestedSkillSets.length > 0 && <SettingsSection title="Skill 配置建议">{suggestedSkillSets.map((set) => <article key={set.id}><strong>{set.name}</strong><p>{set.description}</p><button className="btn secondary" onClick={() => { if (!UI_PREVIEW) void applySkillSet(set); }}>应用配置集</button></article>)}</SettingsSection>}</>;
     })()}
-    {creatingProject && <CollaborationProjectDialog onClose={() => setCreatingProject(false)} onCreate={async draft => {
-      const created = UI_PREVIEW ? { ...PREVIEW_PROJECT, ...draft, id: crypto.randomUUID(), status: "active" as const, createdAt: Date.now(), updatedAt: Date.now() } : await invoke<MultiAgentProject>("ma_create_project", { input: { ...draft, defaultBranch: "main" } });
+    {creatingProject && <CollaborationProjectDialog preview={UI_PREVIEW} onClose={() => setCreatingProject(false)} onCreate={async (draft, gitSetup) => {
+      const created = UI_PREVIEW ? { ...PREVIEW_PROJECT, ...draft, id: crypto.randomUUID(), status: "active" as const, createdAt: Date.now(), updatedAt: Date.now() } : await invoke<MultiAgentProject>("ma_create_project", { input: { ...draft, defaultBranch: "main" }, gitSetup });
       setProjects(current => [created, ...current.filter(project => project.id !== created.id)]);
       if (UI_PREVIEW) setSnapshot({ ...COLLABORATION_UI_PREVIEW_SNAPSHOT, project: created, agents: [], tasks: [], events: [], runs: [], agentSessions: [], messages: [], artifacts: [], approvals: [], dependencies: [], wakeups: [], runLogs: [], instructions: [], runtimeEvents: [], memories: [], reviewDecisions: [] });
       setError(null);

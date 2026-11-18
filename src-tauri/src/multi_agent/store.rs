@@ -71,10 +71,17 @@ impl MultiAgentStore {
     }
 
     pub fn create_project(&self, input: CreateProjectInput) -> Result<MultiAgentProject> {
+        self.create_project_with_git(input, None)
+    }
+
+    pub(crate) fn create_project_with_git(
+        &self, input: CreateProjectInput, git_setup: Option<super::project_git::ProjectGitPreparation>,
+    ) -> Result<MultiAgentProject> {
         let name = required(&input.name, "项目名称")?;
         let goal = required(&input.goal, "项目目标")?;
         let root_path = required(&input.root_path, "项目目录")?;
         let root = Path::new(root_path);
+        if let Some(setup) = git_setup { super::project_git::prepare(root, setup)?; }
         if root.exists() && !root.is_dir() {
             return Err(anyhow!("项目目录不是文件夹: {root_path}"));
         }

@@ -30,6 +30,7 @@ if (fixtureState === "agents-empty") snapshot.agents = [];
 const projects: any[] = fixtureState === "empty" ? [] : [project];
 const snapshots = new Map([[project.id, snapshot]]);
 const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate: false, releaseCreate: null as (() => void) | null, pickerResult: null as string | null, pickerError: false,
+  gitSetups: [] as any[], gitStatus: null as any, gitError: false,
   removalRequests: [] as any[], removalBlockers: [] as string[], removedAgents: () => snapshot.agents.filter((agent: any) => agent.removedAt) };
 (window as any).projectMock = projectMock;
 (window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(command: string, args: any) {
@@ -70,8 +71,13 @@ const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate:
     if (projectMock.pickerError) throw Error("回归测试：目录选择失败");
     return projectMock.pickerResult;
   }
+  if (command === "ma_project_git_status") {
+    if (projectMock.gitError) throw Error("找不到 Git，请安装 Git 后重新检查。");
+    return projectMock.gitStatus ?? { state: "missingRepository", repositoryPath: null, hasFiles: false, stagedFiles: [], stagedToken: null };
+  }
   if (command === "ma_create_project") {
     projectMock.creates.push(args.input);
+    projectMock.gitSetups.push(args.gitSetup ?? null);
     if (projectMock.holdCreate) await new Promise<void>(resolve => { projectMock.releaseCreate = resolve; });
     if (failNext) { failNext = false; throw Error("回归测试：创建失败"); }
     const created = { ...project, ...args.input, id: `created-project-${projectMock.creates.length}` };

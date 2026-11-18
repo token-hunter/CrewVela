@@ -862,11 +862,17 @@ fn ma_resolve_intervention(
 }
 
 #[tauri::command]
-fn ma_create_project(
-    input: CreateProjectInput,
+async fn ma_create_project(
+    input: CreateProjectInput, git_setup: Option<multi_agent::project_git::ProjectGitPreparation>,
     state: State<'_, MultiAgentStore>,
 ) -> Result<MultiAgentProject, String> {
-    state.create_project(input).map_err(to_err)
+    let store = state.inner().clone();
+    blocking_command(move || store.create_project_with_git(input, git_setup).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_project_git_status(root_path: String) -> Result<multi_agent::project_git::ProjectGitStatus, String> {
+    blocking_command(move || multi_agent::project_git::inspect(std::path::Path::new(&root_path)).map_err(to_err)).await
 }
 
 #[tauri::command]
@@ -6358,6 +6364,7 @@ pub fn run() {
             ma_list_interventions,
             ma_resolve_intervention,
             ma_create_project,
+            ma_project_git_status,
             ma_create_agent,
             ma_update_agent,
             ma_remove_agent,
