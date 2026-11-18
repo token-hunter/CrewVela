@@ -84,7 +84,12 @@ export function TerminalFontPicker({ value, onChange, preview }: { value: string
 
   return <div className="terminal-font-control">
     <div ref={root} className={"model-combobox terminal-font-combobox" + (open ? " open" : "")}
-      onBlur={event => { if (!root.current?.contains(event.relatedTarget as Node | null)) setOpen(false); }}
+      onBlur={event => {
+        // Native scrollbar interaction can move focus to the containing dialog.
+        // Outside pointer presses are handled separately from focus changes.
+        const next = event.relatedTarget;
+        if (next instanceof Node && !event.currentTarget.contains(next) && !next.contains(event.currentTarget)) setOpen(false);
+      }}
       onKeyDown={event => {
         if (!open || event.nativeEvent.isComposing) return;
         if (event.key === "Escape") {
@@ -115,7 +120,7 @@ export function TerminalFontPicker({ value, onChange, preview }: { value: string
         data-above={placement.above} style={{ maxHeight: placement.height }}>
         <input ref={search} type="search" value={query} onChange={event => setQuery(event.target.value)}
           aria-label="搜索本机字体" placeholder="搜索本机字体" autoComplete="off" />
-        <div ref={options} className="terminal-font-options" aria-label="可选字体" role="group">
+        <div ref={options} className="terminal-font-options" aria-label="可选字体" role="group" tabIndex={-1}>
           <button type="button" className="model-combobox-option" aria-pressed={!value.trim()} onClick={() => select("")}>默认字体</button>
           {shownFonts.map(font => <button type="button" className="model-combobox-option"
             key={font.family} aria-pressed={[font.family, ...font.aliases].some(name => name.toLowerCase() === primary)}

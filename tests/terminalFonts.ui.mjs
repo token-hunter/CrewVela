@@ -6,7 +6,11 @@ const base = process.env.CREWVELA_UI_URL || "http://127.0.0.1:1461";
 const url = new URL("/tests/fixtures/terminal-init-ui.html?fonts=1", base);
 const out = ".scratch/terminal-font-picker";
 mkdirSync(out, { recursive: true });
-const browser = await chromium.launch({ channel: "chrome" });
+const browser = await chromium.launch({
+  channel: "chrome",
+  ignoreDefaultArgs: ["--hide-scrollbars"],
+  args: ["--disable-features=OverlayScrollbar"],
+});
 const errors = [];
 async function open(width) {
   const page = await browser.newPage({ viewport: { width, height: 850 } });
@@ -31,12 +35,55 @@ try {
   await browse.click();
   await options.getByRole("button", { name: "Courier New 等宽" }).waitFor();
   assert.deepEqual((await options.getByRole("button").allTextContents()).slice(0, 3), ["默认字体", "Consolas等宽", "Courier New等宽"]);
+
+  const scrollbarStyle = await page.addStyleTag({ content: `
+    .terminal-font-options { max-height: 80px; }
+    .terminal-font-options::-webkit-scrollbar { width: 16px; }
+    .terminal-font-options::-webkit-scrollbar-thumb { background: #aaa; }
+  ` });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const scrollbar = await options.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    const gutter = element.offsetWidth - element.clientWidth;
+    return { x: rect.right - gutter / 2, top: rect.top, bottom: rect.bottom, gutter };
+  });
+  assert.ok(scrollbar.gutter > 0, "the test uses a real scrollbar");
+  await page.mouse.move(scrollbar.x, scrollbar.bottom - 6);
+  await page.mouse.down();
+  try {
+    assert.equal(await options.count(), 1, "pressing the scrollbar track keeps the picker open");
+    await page.waitForFunction(() => document.querySelector(".terminal-font-options")?.scrollTop > 0);
+  } finally {
+    await page.mouse.up();
+  }
+  await search.focus();
+  await options.evaluate(element => { element.scrollTop = 0; });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.mouse.move(scrollbar.x, scrollbar.top + 6);
+  await page.mouse.down();
+  await page.mouse.move(scrollbar.x, scrollbar.top + 29, { steps: 4 });
+  await page.mouse.up();
+  assert.equal(await options.count(), 1, "dragging the scrollbar keeps the picker open");
+  await page.waitForFunction(() => document.querySelector(".terminal-font-options")?.scrollTop > 0);
+  assert.equal(await font.inputValue(), "Consolas, monospace");
+  await page.keyboard.press("Escape");
+  assert.equal(await options.count(), 0);
+  assert.equal(await dialog.isVisible(), true);
+  await scrollbarStyle.evaluate(element => element.remove());
+  await browse.click();
+
   await search.fill("微软雅黑");
   assert.equal(await options.getByRole("button", { name: "Microsoft YaHei" }).count(), 1);
   assert.equal(await options.getByRole("button", { name: "Consolas 等宽" }).count(), 0);
   await search.press("Escape");
   assert.equal(await dialog.isVisible(), true);
   assert.equal(await options.count(), 0);
+  await browse.click();
+  await size.focus();
+  assert.equal(await options.count(), 0, "moving focus outside still closes the picker");
+  await browse.click();
+  await dialog.getByText("预览", { exact: true }).click();
+  assert.equal(await options.count(), 0, "clicking outside still closes the picker");
 
   await font.fill("找不到的字体, Consolas");
   await size.selectOption("20");
@@ -101,7 +148,7 @@ try {
     return preview.scrollWidth <= preview.clientWidth + 1;
   }), true);
   assert.deepEqual(errors, []);
-  console.log("PASS terminal fonts: lazy catalog, monospace ordering, alias search, keyboard, fallback preview, apply and read retry");
+  console.log("PASS terminal fonts: scrollbar track/drag, outside dismissal, lazy catalog, alias search, keyboard, fallback preview, apply and retry");
 } finally {
   await browser.close();
 }
