@@ -39,6 +39,7 @@ interface Props {
   onOpenProjectSettings?: (projectId?: string, target?: "tasks") => void;
 }
 const PROJECT_KEY = "crewvela-multi-agent-project";
+const MAX_MEMBER_MENU_WIDTH = 304;
 const ROLE: Record<string, string> = { orchestrator: "方案", worker: "开发", reviewer: "审查", integrator: "集成" };
 const draftKey = (project: string, chat?: string) => `crewvela-conversation-draft:${chat ? `${project}:${chat}` : project}`;
 const pendingKey = (project: string, chat?: string) => `crewvela-conversation-pending:${chat ? `${project}:${chat}` : project}`;
@@ -73,7 +74,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<PendingSend | null>(null);
   const [membersOpen, setMembersOpen] = useState<"header" | "composer" | null>(null);
-  const [membersPosition, setMembersPosition] = useState({ left: 0, top: 0, width: 320, maxHeight: 320 });
+  const [membersPosition, setMembersPosition] = useState({ left: 0, top: 0, width: MAX_MEMBER_MENU_WIDTH, maxHeight: 320 });
   const membersId = useId();
   const headerMemberTrigger = useRef<HTMLButtonElement>(null);
   const composerMemberTrigger = useRef<HTMLButtonElement>(null);
@@ -220,7 +221,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const anchor = headerMemberTrigger.current?.getBoundingClientRect();
       const panel = headerMemberTrigger.current?.closest(".collaboration-conversation")?.getBoundingClientRect();
       if (!anchor || !panel) return;
-      const width = Math.min(416, Math.max(300, panel.width * .41), panel.width - 28, innerWidth - 16);
+      const width = Math.min(MAX_MEMBER_MENU_WIDTH, Math.max(248, panel.width * .32), panel.width - 28, innerWidth - 16);
       const left = Math.max(8, panel.left + 14, Math.min(anchor.right - width, innerWidth - width - 8));
       const below = innerHeight - anchor.bottom - 16;
       const above = anchor.top - 16;
@@ -549,7 +550,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         </div>
       </div>
     </header>
-    {membersOpen === "header" && createPortal(<div id={membersId} ref={membersMenu} className="conversation-member-menu" data-wide={membersPosition.width > 350} role="group" aria-label="选择参与成员" style={membersPosition}><header>参与成员</header>{agents.map(agent => {
+    {membersOpen === "header" && createPortal(<div id={membersId} ref={membersMenu} className="conversation-member-menu" role="group" aria-label="选择参与成员" style={membersPosition}><header>参与成员</header>{agents.map(agent => {
       const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id);
       const reason = !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? "Runtime 已停用" : !supported.includes(agent.runtimeKind) ? "此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? "用户接管中" : "";
       return <label key={agent.id} className={eligible ? "" : "unavailable"} title={`${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]}${reason ? ` · ${reason}` : ""}`}><input type="checkbox" aria-label={agent.name} checked={selected.includes(agent.id)} disabled={(!eligible && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span className="conversation-member-name"><strong>{agent.name}</strong><small>{ROLE[agent.role] ?? agent.role}{reason && ` · ${reason}`}{activeAgent?.id === agent.id && " · 正在回复"}</small></span><Check size={18} className="conversation-member-check" aria-hidden="true" /></label>;
