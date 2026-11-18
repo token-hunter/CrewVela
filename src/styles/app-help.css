@@ -1,4 +1,4 @@
-.app-tools-backdrop { position:fixed; inset:0; z-index:1099; background:transparent; }
+.app-tools-backdrop { position:fixed; inset:0; z-index:var(--z-app-tools-backdrop); background:transparent; }
 .unified-tools-menu.app-tools-menu { position:fixed; z-index:1100; max-width:calc(100vw - 16px); }
 .app-tools-menu > button { border:0; background:transparent; cursor:pointer; font-size:14px; min-height:36px; }
 .app-tools-menu .app-help-root { grid-template-columns:22px minmax(0,1fr) 13px; }

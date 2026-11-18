@@ -38,6 +38,17 @@
   outline-offset: 2px;
 }
 
+/* Keep the launch trigger clickable above the open menus' backdrops. */
+.sidebar-new-session-button[aria-expanded="true"],
+.sidebar-new-session-button[data-switching-menu] {
+  position: relative;
+  z-index: calc(var(--z-overlay-raised) + 1);
+}
+
+.sidebar-new-session-button[data-switching-menu="tools"] {
+  z-index: calc(var(--z-app-tools-backdrop) + 1);
+}
+
 .rail-new-menu.unified-new-menu.direct-new-menu {
   top: 84px;
   left: 12px;

@@ -68,6 +68,34 @@ try {
     await popover.waitFor({ state: "detached" });
     assert.equal(await pill.evaluate((element) => element === document.activeElement), true, `${size}: focus back on the pill`);
 
+    const newSession = page.getByRole("button", { name: "新建会话", exact: true });
+    const runtimeMenu = page.getByRole("menu", { name: "新建 Runtime 会话", exact: true });
+    const clickNewSession = async () => {
+      const bounds = await newSession.boundingBox();
+      await page.mouse.click(bounds.x + 80, bounds.y + bounds.height / 2);
+    };
+    const moreTools = page.getByRole("button", { name: "更多工具", exact: true });
+    const toolsMenu = page.getByRole("menu", { name: "更多工具", exact: true });
+    const openRightMenu = page.getByRole("button", { name: "新建工作面板标签", exact: true });
+    const rightMenu = page.getByRole("menu", { name: "新建标签", exact: true });
+    if (!await openRightMenu.isVisible()) {
+      await page.getByRole("button", { name: "切换右侧栏", exact: true }).click();
+    }
+    for (const [open, menu] of [[openRightMenu, rightMenu], [moreTools, toolsMenu]]) {
+      await open.click();
+      await menu.waitFor();
+      await clickNewSession();
+      await runtimeMenu.waitFor({ timeout: 2000 });
+      assert.equal(await menu.isVisible(), false, `${size}: a single click switches menus`);
+      await page.keyboard.press("Escape");
+      await runtimeMenu.waitFor({ state: "detached" });
+      assert.equal(await newSession.evaluate((element) => element === document.activeElement), true);
+    }
+    await clickNewSession();
+    await runtimeMenu.waitFor();
+    await newSession.click({ timeout: 2000 });
+    await runtimeMenu.waitFor({ state: "detached" });
+
     if (width === 1280) {
       // 取消目录选择保留当前项目。入口为按钮，选完才改变单选项。
       await page.evaluate(() => {
@@ -99,8 +127,8 @@ try {
       await page.keyboard.press("Escape");
 
       // 从侧栏打开新会话不受上一次启动设置影响。
-      await page.getByRole("button", { name: "新建会话", exact: true }).click();
-      await page.getByRole("menu", { name: "新建 Runtime 会话" }).getByRole("menuitem").filter({ hasText: "Claude Code" }).first().click();
+      await newSession.click();
+      await runtimeMenu.getByRole("menuitem").filter({ hasText: "Claude Code" }).first().click();
       const directLaunch = page.getByRole("dialog", { name: "新建会话", exact: true });
       await directLaunch.waitFor();
       assert.equal(await directLaunch.getByRole("combobox", { name: "启动 Agent" }).inputValue(), "claude_code");

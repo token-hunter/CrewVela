@@ -101,6 +101,7 @@
   --z-modal-raised: 200;
   --z-modal-2: 240;
   --z-modal-3: 340;
+  --z-app-tools-backdrop: 1099;
   --z-dialog: 1300;
   --z-dialog-raised: 1305;
   font-family: var(--display-font);

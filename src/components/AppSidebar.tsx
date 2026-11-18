@@ -80,6 +80,8 @@ interface Props {
   loadingSessionId: string | null;
   collapsed: boolean;
   onCollapse: () => void;
+  rightSidebarMenuOpen: boolean;
+  onRightSidebarMenuChange: (open: boolean) => void;
   sessionTypeFilter: SessionTypeFilter;
   onSessionTypeFilter: (filter: SessionTypeFilter) => void;
   onSelectSession: (id: string | null) => void;
@@ -259,19 +261,21 @@ export function AppSidebar(props: Props) {
           </span>
         </div>
 
-        {toolsMenuOpen && <AppToolsMenu trigger={toolsButtonRef} onClose={closeToolsMenus} onHelp={setHelpSection} view={props.viewMenu} />}
+        {toolsMenuOpen && <AppToolsMenu trigger={toolsButtonRef} keepClearOf={newSessionButtonRef} onClose={closeToolsMenus} onHelp={setHelpSection} view={props.viewMenu} />}
       </header>
       <div className="sidebar-new-session-row">
         <button
           ref={newSessionButtonRef}
           type="button"
           className="sidebar-new-session-button"
+          data-switching-menu={toolsMenuOpen ? "tools" : props.rightSidebarMenuOpen ? "workspace" : undefined}
           aria-haspopup="menu"
           aria-expanded={newMenuOpen && !toolsMenuOpen}
           aria-controls={newMenuOpen ? "sidebar-new-session-menu" : undefined}
           onClick={() => {
+            props.onRightSidebarMenuChange(false);
             setToolsMenuOpen(false);
-            setNewMenuOpen(!newMenuOpen || toolsMenuOpen);
+            setNewMenuOpen(!newMenuOpen || toolsMenuOpen || props.rightSidebarMenuOpen);
           }}
         >
           <span className="sidebar-new-session-icon" aria-hidden="true"><PlusIcon size={12} weight="bold" /></span>

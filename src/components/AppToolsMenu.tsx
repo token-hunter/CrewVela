@@ -8,6 +8,7 @@ import "../styles/app-help.css";
 
 interface Props {
   trigger: RefObject<HTMLButtonElement>;
+  keepClearOf?: RefObject<HTMLButtonElement>;
   onHelp: (section: AppHelpSection) => void;
   onClose: () => void;
   view?: AppViewMenuProps;
@@ -34,7 +35,8 @@ export function AppToolsMenu(props: Props) {
       if (!anchor) return;
       const width = root.current?.offsetWidth ?? 184, height = root.current?.offsetHeight ?? 120;
       const left = Math.max(8, Math.min(anchor.left, innerWidth-width-8));
-      const top = Math.max(8, Math.min(anchor.bottom+5, innerHeight-height-8));
+      const keepClearBottom = callbacks.current.keepClearOf?.current?.getBoundingClientRect().bottom ?? 0;
+      const top = Math.max(keepClearBottom + 5, 8, Math.min(anchor.bottom+5, innerHeight-height-8));
       const beside = (parentLeft: number, parentWidth: number, target: HTMLElement | null, anchorTop: number) => {
         const childWidth = target?.offsetWidth ?? 224, childHeight = target?.offsetHeight ?? 128;
         const right = parentLeft+parentWidth+4;

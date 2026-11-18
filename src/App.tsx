@@ -2315,6 +2315,8 @@ export default function App() {
         loadingSessionId={loadingSessionId}
         collapsed={sidebarCollapsed}
         onCollapse={collapseSidebar}
+        rightSidebarMenuOpen={sidebarMenuOpen}
+        onRightSidebarMenuChange={setSidebarMenuOpen}
         sessionTypeFilter={sessionTypeFilter}
         onSessionTypeFilter={setSessionTypeFilter}
         onSelectSession={selectSession}
