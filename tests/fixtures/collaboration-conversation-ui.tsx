@@ -131,10 +131,20 @@ const pending: Array<{ command: string; args: any; resolve(value: any): void; re
 const receipts = new Map<string, string>();
 let failSend = params.get("fail") === "send";
 let failBeforeSave = params.get("fail") === "send-before-save";
+const planDraftBody = '```json\n' + JSON.stringify({ summary: "范围样例", tasks: [{ writePaths: ["frontend/"] }] }, null, 2) + '\n```';
+const planRetryRequests = new Map<string, any>();
 const mock = {
   clipboardWrites: [] as string[], copyError: "", holdCopy: false, pendingCopies: [] as Array<()=>void>, failPermission:false, stalePermission:false,
   calls, pending, chats, projects, snapshot, activityEvents, activityApprovals, runHistory, archivedConversations: [] as any[], holdProject: "", holdSend: false, holdClear: false, holdNew: false, failExecution: false, failApproval: false, failClear: false, failNew: false,
   release(command: string, value?: any, error?: string) { const index = pending.findIndex(item => item.command === command); if (index < 0) throw Error(`No pending ${command}`); const item = pending.splice(index, 1)[0]; if (error) item.reject(Error(error)); else item.resolve(value ?? (command === "ma_snapshot" ? snapshot(item.args.projectId) : chats[item.args.projectId ?? item.args.input.projectId])); },
+  failPlanning() {
+    const round = chats.A.rounds.at(-1);
+    const reply = chats.A.messages.find((item: any) => item.id === "streaming-plan");
+    round.status = "needs_decision";
+    round.stopReason = "真实成员已回复，但分工计划未通过校验：写入范围必须是明确的项目内相对目录或文件：frontend/；可补充约束后重试";
+    reply.status = "completed";
+    reply.body = planDraftBody;
+  },
   async invoke(command: string, args: any = {}) {
     calls.push({ command, args: structuredClone(args) });
     if (command === "ma_conversation_export") {
@@ -172,6 +182,11 @@ const mock = {
       return structuredClone(runLogs.filter(log => log.projectId === args.projectId && log.runId === args.runId).slice(-args.limit));
     }
     if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
+    if (command === "ma_conversation_plan_retry_input") {
+      const input = planRetryRequests.get(args.roundId);
+      if (!input || input.projectId !== args.projectId) throw Error("无法重试其他项目的分工");
+      return { ...input, expectedConversationId: args.expectedConversationId, clientMessageId: args.clientMessageId };
+    }
     if (command === "ma_conversation_plan_preflight") return params.get("plan-blocked") === "1" ? [
       { kind: "git", message: "项目目录缺少 Git 工作区，请选择已初始化的 Git 项目目录。" },
       { kind: "member", message: "本轮缺少 Codex 审查成员。" },
@@ -223,18 +238,32 @@ const mock = {
       if (params.get("natural") === "1") {
         if (receipts.has(input.clientMessageId)) return structuredClone(chat);
         receipts.set(input.clientMessageId,input.projectId);
-        chat.rounds.forEach((round: any)=>{round.status="paused";});
+        const planningStates = params.has("planning-states");
+        const firstPlan = planningStates && input.mode === "execution_plan" && !chat.rounds.some((item: any) => item.mode === "execution_plan");
+        if (!planningStates) chat.rounds.forEach((round: any)=>{round.status="paused";});
         let user=chat.messages.find((m: any)=>m.clientMessageId===input.clientMessageId);
         if(user){user.status="completed";user.queuedInput=null;}else{user={...message(input.clientMessageId,"user",input.body,null,"completed","message"),clientMessageId:input.clientMessageId,createdAt:clock+50000};chat.messages.push(user);}
         const roundId=`round-${input.clientMessageId}`;
         chat.rounds.push({id:roundId,projectId:input.projectId,conversationId:chat.conversation.id,userMessageId:user.id,participantAgentIds:input.participantAgentIds,mode:input.mode,intent:input.intent,status:"completed",phase:input.mode==="execution_plan"?"plan":input.intent==="exchange"?"exchange":"chat",maxRounds:input.maxRounds,currentRound:0,deadlineAt:clock+600000,stopReason:null,createdAt:clock+50000,updatedAt:clock+50000});
+        if (firstPlan) {
+          planRetryRequests.set(roundId, structuredClone(input));
+          chat.rounds.at(-1).status = "running";
+          chat.messages.push({ ...message("streaming-plan", "agent", '{"summary":"分工正在返回', input.participantAgentIds[0], "running"),
+            roundId, phase: "plan", replyToMessageId: user.id, createdAt: clock + 50001 });
+          return structuredClone(chat);
+        }
         if (input.mode === "execution_plan" && params.get("propose") === "1") {
-          const proposal = {...message("generated-proposal", "agent", "", input.participantAgentIds[0], "completed", "plan"),
+          const proposal = {...message("generated-proposal", "agent", planningStates ? planDraftBody : "", input.participantAgentIds[0], "completed", "plan"),
             roundId, phase: "plan", replyToMessageId: user.id, createdAt: clock + 50001 };
           chat.messages.push(proposal);
           chat.executionPlans.push({ id: "generated-plan", projectId: input.projectId, roundId,
             messageId: proposal.id, summary: "先实现，再审查与联调", tasks: structuredClone(planned),
             status: "pending", taskIds: [], createdAt: clock + 50005 });
+          return structuredClone(chat);
+        }
+        if (planningStates && input.mode === "discussion") {
+          chat.messages.push({ ...message("plain-json", "agent", planDraftBody, input.participantAgentIds[0]),
+            roundId, phase: "chat", replyToMessageId: user.id, createdAt: clock + 50008 });
           return structuredClone(chat);
         }
         for(const [index,agentId] of input.participantAgentIds.entries()) chat.messages.push({...message(`natural-${chat.messages.length}`,"agent",input.intent==="exchange"?(index===0?"@Codex 我建议先核对接口，你觉得呢？":"我看到了前面的建议，接口一致，可以开始下一步。"):"你好！有什么需要我帮忙？",agentId),roundId,phase:"chat",replyToMessageId:index?chat.messages.at(-1).id:user.id,createdAt:clock+50001+index});

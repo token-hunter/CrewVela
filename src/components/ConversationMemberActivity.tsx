@@ -2,8 +2,8 @@ import { Fragment, useId, useState, type ReactNode } from "react";
 import { ArrowSquareOut, CaretDown, CaretUp, CheckCircle, CircleNotch, Clock, PauseCircle, Stop, WarningCircle, XCircle } from "@phosphor-icons/react";
 import { activityDuration, secondsSince, type MemberActivity } from "../conversationActivity";
 
-interface Props { activity: MemberActivity; now: number; children: ReactNode; onOpen?: () => void; onStop?: () => void; stopDisabled: boolean; agentName: string }
-export function ConversationMemberActivity({activity,now,children,onOpen,onStop,stopDisabled,agentName}:Props) {
+interface Props { activity: MemberActivity; now: number; children: ReactNode; onOpen?: () => void; onStop?: () => void; stopDisabled: boolean; agentName: string; completedLabel?: string }
+export function ConversationMemberActivity({activity,now,children,onOpen,onStop,stopDisabled,agentName,completedLabel}:Props) {
   const [expanded,setExpanded] = useState(false);
   const id = useId();
   const {phase,live,stale} = activity;
@@ -11,7 +11,7 @@ export function ConversationMemberActivity({activity,now,children,onOpen,onStop,
   const Icon = phase === "completed" ? CheckCircle : phase === "failed" ? XCircle : ["approval","unconfirmed"].includes(phase) ? WarningCircle : phase === "cancelled" ? PauseCircle : active ? CircleNotch : Clock;
   return <div className="member-activity" data-phase={phase} data-stale={stale}>
     <div className="member-activity-summary" aria-live="off">
-      <div className="member-activity-state"><Icon size={21} className={active ? "member-activity-spin" : undefined} aria-hidden="true"/><span><span role="status" aria-live="polite">{stale && ["analysis","reply","read","search","web","command","edit","tool"].includes(phase) ? "等待新活动" : activity.label}</span>{live && <span aria-live="off"> · {activityDuration(activity.elapsed)}</span>}</span></div>
+      <div className="member-activity-state"><Icon size={21} className={active ? "member-activity-spin" : undefined} aria-hidden="true"/><span><span role="status" aria-live="polite">{stale && ["analysis","reply","read","search","web","command","edit","tool"].includes(phase) ? "等待新活动" : phase === "completed" ? completedLabel ?? activity.label : activity.label}</span>{live && <span aria-live="off"> · {activityDuration(activity.elapsed)}</span>}</span></div>
       {live && <Fragment><span className="member-activity-divider" aria-hidden="true"/><span className="member-activity-recency">{stale ? "45秒未收到新活动，需核实" : activity.lastActivityAt == null ? "尚未收到活动反馈" : `最近活动：${activityDuration(secondsSince(now,activity.lastActivityAt))}前`}</span></Fragment>}
       {(live || expanded || activity.lastActivityAt != null || onOpen) && <button type="button" className="member-activity-toggle" aria-expanded={expanded} aria-controls={id} onClick={()=>setExpanded(value=>!value)}>{expanded ? "收起活动" : "查看活动"}{expanded ? <CaretUp size={16}/> : <CaretDown size={16}/>}</button>}
     </div>

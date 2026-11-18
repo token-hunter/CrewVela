@@ -1226,6 +1226,17 @@ async fn ma_conversation_plan_preflight(
 }
 
 #[tauri::command]
+async fn ma_conversation_plan_retry_input(
+    project_id: String, expected_conversation_id: String, round_id: String, client_message_id: String,
+    state: State<'_, MultiAgentStore>,
+) -> Result<multi_agent::ConversationSendInput, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.conversation_plan_retry_input(
+        &project_id, &expected_conversation_id, &round_id, client_message_id,
+    ).map_err(to_err)).await
+}
+
+#[tauri::command]
 fn ma_conversation_send(input: multi_agent::ConversationSendInput,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
@@ -6451,6 +6462,7 @@ pub fn run() {
             ma_conversation_switch,
             ma_conversation_send,
             ma_conversation_plan_preflight,
+            ma_conversation_plan_retry_input,
             ma_conversation_interrupt,
             ma_conversation_control,
             ma_conversation_execute_plan,

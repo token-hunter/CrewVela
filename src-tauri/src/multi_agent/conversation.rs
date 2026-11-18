@@ -206,6 +206,39 @@ fn plan_runtime_label(runtime: &str) -> &str {
 }
 
 impl MultiAgentStore {
+    pub(crate) fn conversation_plan_retry_input(
+        &self,
+        project_id: &str,
+        expected_conversation_id: &str,
+        round_id: &str,
+        client_message_id: String,
+    ) -> Result<ConversationSendInput> {
+        validate_client_id(&client_message_id)?;
+        let connection = self.connection.lock().unwrap();
+        let conversation = conversation_with(&connection, project_id)?;
+        ensure_active_conversation(Some(expected_conversation_id), &conversation)?;
+        let (request, round): (String, String) = connection.query_row(
+            "SELECT request_json,data_json FROM ma_conversation_rounds WHERE project_id=?1 AND id=?2",
+            params![project_id, round_id], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional()?.context("找不到本项目的分工请求")?;
+        let round: ConversationRound = decode(round)?;
+        if round.conversation_id != conversation.id || round.mode != "execution_plan"
+            || !matches!(round.status.as_str(), "failed" | "needs_decision" | "completed") {
+            bail!("当前分工请求不能重试");
+        }
+        let has_plan: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ma_conversation_plans p JOIN ma_conversation_rounds r ON r.id=p.round_id
+             WHERE p.project_id=?1 AND (p.round_id=?2 OR (json_extract(r.data_json,'$.conversationId')=?3
+                 AND json_extract(p.data_json,'$.status')='pending')))",
+            params![project_id, round_id, conversation.id], |row| row.get(0),
+        )?;
+        if has_plan { bail!("请先处理当前分工方案，再重试失败的分工请求"); }
+        let mut input: ConversationSendInput = decode(request)?;
+        input.expected_conversation_id = Some(conversation.id);
+        input.client_message_id = client_message_id;
+        Ok(input)
+    }
+
     pub(crate) fn conversation_plan_preflight(&self, input: &ConversationSendInput) -> Result<Vec<ConversationPlanIssue>> {
         if input.mode != "execution_plan" { return Ok(Vec::new()); }
         validate_send_input(&mut input.clone())?;

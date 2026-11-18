@@ -1216,6 +1216,36 @@ fn old_plan_is_invalidated_by_new_human_instruction() {
 }
 
 #[test]
+fn failed_plan_retry_preserves_original_request_and_requires_current_conversation() {
+    let fixture = Fixture::new();
+    let mut original = fixture.input();
+    original.mode = "execution_plan".into();
+    original.body = "规划实验目录的导出功能".into();
+    original.max_duration_seconds = 125;
+    original.task_rules = Some(ConversationTaskRules { tools: "none".into(), instructions: "先提出分工".into(), archived_rule_id: None });
+    validate_send_input(&mut original).unwrap();
+    let (round, _) = fixture.store.begin_conversation(original.clone()).unwrap();
+    let get_retry = |conversation_id: &str| fixture.store.conversation_plan_retry_input(
+        &fixture.project, conversation_id, &round.id, "fresh-plan-request".into(),
+    );
+    assert!(get_retry(&round.conversation_id).is_err(), "active plans must not restart");
+    fixture.store.finish_conversation(&round.id, "needs_decision", Some("计划未通过校验".into())).unwrap();
+    assert!(get_retry("another-conversation").is_err());
+    let retry = get_retry(&round.conversation_id).unwrap();
+    original.client_message_id = "fresh-plan-request".into();
+    original.expected_conversation_id = Some(round.conversation_id.clone());
+    assert_eq!(retry, original);
+    assert_eq!(fixture.store.conversation_snapshot(&fixture.project).unwrap().rounds.len(), 1);
+    let (retry_round, fresh) = fixture.store.begin_conversation(retry.clone()).unwrap();
+    assert!(fresh && retry_round.id != round.id);
+    assert!(!fixture.store.begin_conversation(retry).unwrap().1);
+    let draft = fixture.draft();
+    fixture.store.save_conversation_plan(&retry_round.id, &retry_round.user_message_id,
+        &json!({ "summary": draft.summary, "tasks": draft.tasks }).to_string()).unwrap();
+    assert!(get_retry(&round.conversation_id).is_err(), "older failures must not replace a pending plan");
+}
+
+#[test]
 fn malformed_plan_summary_is_preserved_as_real_reply_with_decision_status() {
     let fixture = Fixture::new();
     let mut input = fixture.input();
