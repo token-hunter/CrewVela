@@ -1,7 +1,7 @@
 use super::*;
 use crate::multi_agent::{
     AgentRole, CreateAgentInput, CreateProjectInput, CreateTaskInput, PermissionProfile,
-    ProjectStatus, RunStatus, SendCollaborationMessageInput, UpdateRunInput,
+    ProjectStatus, RunStatus, SendCollaborationMessageInput, TaskStatus, UpdateRunInput,
 };
 
 #[path = "conversation_chat_tests.rs"]
@@ -1678,6 +1678,76 @@ fn pi_public_reply_accepts_only_final_assistant_text() {
     );
     assert!(super::super::executor::conversation_pi_output("terminal says success").is_err());
     assert!(super::super::executor::conversation_pi_output(&json!({"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"provider unavailable","content":[{"type":"text","text":"partial"}]}}).to_string()).is_err());
+}
+
+#[test]
+fn resumed_delivery_replaces_an_empty_commit_before_releasing_the_review() {
+    let fixture = Fixture::new();
+    fixture.git();
+    let project = fixture.root.join("project");
+    let workspace = fixture.root.join("development");
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git").arg("-C").arg(&project).args(args).output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    };
+    git(&["worktree", "add", "-b", "development", workspace.to_str().unwrap()]);
+    let base = super::super::executor::git_head(&workspace).unwrap();
+    let snapshot = fixture.run(&Replies::default());
+    let draft = fixture.draft();
+    let plan = fixture.store.save_conversation_plan(
+        &snapshot.rounds[0].id, &snapshot.messages.last().unwrap().id,
+        &json!({"summary":draft.summary,"tasks":draft.tasks}).to_string(),
+    ).unwrap();
+    let task = fixture.store.apply_conversation_plan(&ConversationExecutePlanInput {
+        project_id: fixture.project.clone(), plan_id: plan.id, client_request_id: "resumed-delivery".into(),
+    }).unwrap().remove(0);
+    let review = fixture.store.create_task(serde_json::from_value::<CreateTaskInput>(json!({
+        "projectId":fixture.project, "title":"review", "acceptanceCriteria":"check the actual delivery",
+        "assigneeAgentId":fixture.agents[1], "workspaceMode":"read_only",
+    })).unwrap()).unwrap();
+    fixture.store.add_dependency(crate::multi_agent::AddDependencyInput {
+        task_id: review.id.clone(), depends_on_task_id: task.clone(),
+    }).unwrap();
+    let run = fixture.store.claim_task(ClaimTaskInput {
+        task_id: task.clone(), agent_id: fixture.agents[0].clone(), lease_seconds: 120,
+    }).unwrap();
+    fixture.store.update_run(UpdateRunInput {
+        run_id: run.id.clone(), status: RunStatus::Running,
+        output_summary: None, error: None, session_locator: None,
+    }).unwrap();
+    fixture.store.finalize_successful_run(&run.id, workspace.to_str().unwrap(), "write refused", false, Some(&base), None).unwrap();
+    assert!(fixture.store.approve_task(&task).unwrap_err().to_string().contains("没有实际改动"));
+
+    // The previous product could already have accepted this empty checkpoint.
+    {
+        let connection = fixture.store.connection.lock().unwrap();
+        connection.execute("UPDATE ma_tasks SET status='done' WHERE id=?1", [&task]).unwrap();
+        connection.execute("UPDATE ma_approvals SET status='approved' WHERE task_id=?1", [&task]).unwrap();
+        connection.execute("UPDATE ma_tasks SET status='ready' WHERE id=?1", [&review.id]).unwrap();
+    }
+    std::fs::create_dir_all(workspace.join("src/owned")).unwrap();
+    std::fs::write(workspace.join("src/owned/game.js"), "const ready = true;").unwrap();
+    std::fs::write(workspace.join("outside"), "do not commit").unwrap();
+    assert!(fixture.store.update_resumed_delivery(&task).unwrap_err().to_string().contains("超出"));
+    assert_eq!(super::super::executor::git_head(&workspace).unwrap(), base);
+    std::fs::remove_file(workspace.join("outside")).unwrap();
+    assert_eq!(fixture.store.update_resumed_delivery(&task).unwrap().status, TaskStatus::InReview);
+    let commit = super::super::executor::git_head(&workspace).unwrap();
+    assert_ne!(base, commit);
+    assert_eq!(super::super::executor::git_head(&project).unwrap(), base);
+    let snapshot = fixture.store.snapshot(&fixture.project).unwrap();
+    assert!(snapshot.approvals.iter().any(|a| a.run_id.as_deref() == Some(run.id.as_str()) && a.status == "pending"));
+    assert!(snapshot.approvals.iter().any(|a| a.run_id.as_deref() == Some(run.id.as_str()) && a.status == "approved"));
+    assert_eq!(snapshot.tasks.iter().find(|t| t.id == review.id).unwrap().status, TaskStatus::Blocked);
+    assert_eq!(fixture.store.approve_task(&task).unwrap().status, TaskStatus::Done);
+    assert!(fixture.store.runnable_tasks(&fixture.project).unwrap().iter().any(|(t, _)| t.id == review.id));
+    assert!(fixture.store.dependency_artifacts(&review.id).unwrap().iter().any(|a| {
+        a.run_id == run.id && a.content_hash.as_deref() == Some(commit.as_str())
+    }));
+    fixture.store.claim_task(ClaimTaskInput {
+        task_id: review.id, agent_id: fixture.agents[1].clone(), lease_seconds: 120,
+    }).unwrap();
+    assert!(fixture.store.update_resumed_delivery(&task).unwrap_err().to_string().contains("后续任务已开始"));
 }
 
 #[test]

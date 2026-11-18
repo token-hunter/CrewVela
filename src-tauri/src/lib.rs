@@ -2469,13 +2469,34 @@ fn ma_cancel_project(
 fn ma_approve_task(
     task_id: String,
     state: State<'_, MultiAgentStore>,
+    supervisor: State<'_, MultiAgentSupervisor>,
+    pty: State<'_, PtyManager>,
+    sessions: State<'_, SessionManager>,
+    collaboration_bridge: State<'_, CollaborationBridge>,
 ) -> Result<multi_agent::MultiAgentTask, String> {
     if let Err(error) = merge_integrator_delivery(state.inner(), &task_id) {
         let message = error.to_string();
         let _ = state.request_task_changes(&task_id, &message);
         return Err(format!("{message}；任务已转为“需要修改”，可修复后重试"));
     }
-    state.approve_task(&task_id).map_err(to_err)
+    let task = state.approve_task(&task_id).map_err(to_err)?;
+    if task.status == multi_agent::TaskStatus::Done {
+        supervisor.wake_active(
+            state.inner().clone(), task.project_id.clone(),
+            multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()),
+            collaboration_bridge.inner().clone(),
+        ).map_err(|error| format!("交付已批准，自动调度未启动：{error}。请在协作中心继续项目。"))?;
+    }
+    Ok(task)
+}
+
+#[tauri::command]
+async fn ma_update_resumed_delivery(
+    task_id: String,
+    state: State<'_, MultiAgentStore>,
+) -> Result<multi_agent::MultiAgentTask, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.update_resumed_delivery(&task_id).map_err(to_err)).await
 }
 
 #[tauri::command]
@@ -6482,6 +6503,7 @@ pub fn run() {
             ma_pause_project,
             ma_cancel_project,
             ma_approve_task,
+            ma_update_resumed_delivery,
             ma_retry_task,
             ma_reassign_task,
             ma_takeover_agent,
@@ -6790,6 +6812,69 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn approving_delivery_wakes_idle_active_scheduler_and_respects_pause() {
+        use multi_agent::{ClaimTaskInput, ProjectStatus, RunStatus, TaskStatus, UpdateRunInput};
+        for paused in [false, true] {
+            let (root, sessions) = lifecycle_fixture();
+            let store = MultiAgentStore::open_at(root.join("delivery.db")).unwrap();
+            let project = store.create_project(CreateProjectInput {
+                name: "Delivery wake".into(), goal: "Test the approval path".into(),
+                root_path: root.display().to_string(), default_branch: "main".into(),
+            }).unwrap();
+            let agent = store.create_agent(serde_json::from_value(serde_json::json!({
+                "projectId": project.id, "name": "worker", "runtimeKind": "codex", "role": "worker"
+            })).unwrap()).unwrap();
+            let create_task = |name: &str| store.create_task(serde_json::from_value(serde_json::json!({
+                "projectId": project.id, "title": name, "acceptanceCriteria": "fixture",
+                "assigneeAgentId": agent.id, "workspaceMode": "read_only", "maxAttempts": 1
+            })).unwrap()).unwrap();
+            let delivery = create_task("delivery");
+            let downstream = create_task("downstream");
+            store.add_dependency(multi_agent::AddDependencyInput {
+                task_id: downstream.id.clone(), depends_on_task_id: delivery.id.clone(),
+            }).unwrap();
+            store.set_project_status(&project.id, ProjectStatus::Active).unwrap();
+            let run = store.claim_task(ClaimTaskInput {
+                task_id: delivery.id.clone(), agent_id: agent.id, lease_seconds: 120,
+            }).unwrap();
+            store.update_run(UpdateRunInput {
+                run_id: run.id.clone(), status: RunStatus::Running, output_summary: None, error: None, session_locator: None,
+            }).unwrap();
+            store.finalize_successful_run(&run.id, "fixture", "ready to approve", false, None, None).unwrap();
+            if paused {
+                store.set_project_status(&project.id, ProjectStatus::Paused).unwrap();
+            }
+            let app = tauri::test::mock_app();
+            app.manage(store.clone());
+            app.manage(MultiAgentSupervisor::default());
+            app.manage(PtyManager::new());
+            app.manage(sessions);
+            app.manage(CollaborationBridge::start(store.clone()).unwrap());
+            let task = ma_approve_task(delivery.id, app.state(), app.state(), app.state(), app.state(), app.state()).unwrap();
+            assert_eq!(task.status, TaskStatus::Done);
+            if paused {
+                assert!(app.state::<MultiAgentSupervisor>().active_project_ids().is_empty());
+                assert_eq!(store.project(&project.id).unwrap().status, ProjectStatus::Paused);
+                assert!(!store.snapshot(&project.id).unwrap().runs.iter().any(|r| r.task_id == downstream.id));
+            } else {
+                // The fixture deliberately has no Git repository, so claiming
+                // the dependent terminates before invoking the real Agent CLI.
+                let started = std::time::Instant::now();
+                loop {
+                    let snapshot = store.snapshot(&project.id).unwrap();
+                    if let Some(run) = snapshot.runs.iter().find(|r| r.task_id == downstream.id && r.status == RunStatus::Failed) {
+                        assert!(run.error.as_deref().is_some_and(|error|error.contains("Git")));
+                        break;
+                    }
+                    assert!(started.elapsed() < std::time::Duration::from_secs(10), "approved task did not wake its dependent");
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                app.state::<MultiAgentSupervisor>().pause(&store, &project.id).unwrap();
+            }
+        }
+    }
+
     #[test]
     fn project_start_keeps_retired_tasks_without_blocking_available_members() {
         let (root, sessions) = lifecycle_fixture();

@@ -2944,6 +2944,10 @@ impl MultiAgentStore {
         if task.status != TaskStatus::InReview {
             return Err(anyhow!("只有等待审批或待审查任务可以批准"));
         }
+        if let Some(delivery) = planned_worker_delivery(&tx, &task)? {
+            let project = self.get_project_with(&tx, &task.project_id)?;
+            super::executor::validate_planned_delivery(&project, &delivery.workspace, &delivery.hash, &delivery.scopes)?;
+        }
         tx.execute(
             "UPDATE ma_tasks SET status = 'done', updated_at = ?2 WHERE id = ?1",
             params![task_id, now],
@@ -2965,6 +2969,53 @@ impl MultiAgentStore {
             serde_json::json!({}),
             now,
         )?;
+        tx.commit()?;
+        get_task_with(&connection, task_id)
+    }
+
+    pub fn update_resumed_delivery(&self, task_id: &str) -> Result<MultiAgentTask> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let task = get_task_with(&tx, task_id)?;
+        anyhow::ensure!(matches!(task.status, TaskStatus::InReview | TaskStatus::Done), "仅可补登记待审核或已批准的开发交付");
+        let delivery = planned_worker_delivery(&tx, &task)?
+            .context("此任务没有可补登记的原工作树交付")?;
+        let approved = task.status == TaskStatus::Done;
+        let approval_status = if approved { "approved" } else { "pending" };
+        let approval_id: String = tx.query_row(
+            "SELECT id FROM ma_approvals WHERE task_id=?1 AND run_id=?2 AND approval_type='task_review' AND status=?3
+             ORDER BY created_at DESC,rowid DESC LIMIT 1",
+            params![task_id, delivery.run_id, approval_status],
+            |row| row.get(0),
+        ).optional()?.context("原交付审批不可用，请刷新任务记录")?;
+        let dependent_started: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ma_task_dependencies d JOIN ma_tasks t ON t.id=d.task_id
+             WHERE d.depends_on_task_id=?1 AND (t.status NOT IN ('draft','ready','blocked')
+             OR EXISTS(SELECT 1 FROM ma_runs r WHERE r.task_id=t.id)))",
+            [task_id], |row| row.get(0),
+        )?;
+        anyhow::ensure!(!dependent_started, "后续任务已开始，请走审查退回流程更新交付");
+        let project = self.get_project_with(&tx, &task.project_id)?;
+        let hash = super::executor::checkpoint_resumed_delivery(
+            &project, &task, &delivery.workspace, &delivery.hash, &delivery.scopes,
+        )?;
+        let now = now_millis();
+        tx.execute("UPDATE ma_artifacts SET content_hash=?2 WHERE id=?1", params![delivery.artifact_id, hash])?;
+        tx.execute("UPDATE ma_tasks SET status='in_review',updated_at=?2 WHERE id=?1", params![task_id, now])?;
+        if approved {
+            tx.execute(
+                "INSERT INTO ma_approvals (id,project_id,task_id,run_id,approval_type,summary,status,created_at)
+                 SELECT ?2,project_id,task_id,run_id,approval_type,summary,'pending',?3 FROM ma_approvals WHERE id=?1",
+                params![approval_id, uuid::Uuid::new_v4().to_string(), now],
+            )?;
+            tx.execute(
+                "UPDATE ma_tasks SET status='blocked',updated_at=?2 WHERE status='ready'
+                 AND id IN (SELECT task_id FROM ma_task_dependencies WHERE depends_on_task_id=?1)",
+                params![task_id, now],
+            )?;
+        }
+        append_event(&tx, &task.project_id, "task", task_id, "task.delivery_updated", "user", None,
+            serde_json::json!({"runId": delivery.run_id, "previousCommit": delivery.hash, "commit": hash}), now)?;
         tx.commit()?;
         get_task_with(&connection, task_id)
     }
@@ -4383,6 +4434,46 @@ fn dependency_reaches(connection: &Connection, start: &str, target: &str) -> Res
         params![start, target],
         |row| row.get(0),
     )?)
+}
+
+struct PlannedWorkerDelivery {
+    artifact_id: String,
+    run_id: String,
+    workspace: String,
+    hash: String,
+    scopes: Vec<String>,
+}
+
+fn planned_worker_delivery(connection: &Connection, task: &MultiAgentTask) -> Result<Option<PlannedWorkerDelivery>> {
+    if task.workspace_mode != WorkspaceMode::Worktree {
+        return Ok(None);
+    }
+    let Some(agent_id) = task.assignee_agent_id.as_deref() else { return Ok(None) };
+    let raw: Option<String> = connection.query_row(
+        "SELECT s.write_paths_json FROM ma_conversation_task_scopes s
+         JOIN ma_agents a ON a.id=?2 AND a.project_id=?3 AND a.role='worker'
+         WHERE s.task_id=?1",
+        params![task.id, agent_id, task.project_id],
+        |row| row.get(0),
+    ).optional()?;
+    let Some(raw) = raw else { return Ok(None) };
+    let scopes: Vec<String> = serde_json::from_str(&raw)?;
+    if scopes.is_empty() {
+        return Ok(None);
+    }
+    let (artifact_id, run_id, workspace, hash) = connection.query_row(
+        "SELECT a.id,r.id,a.uri,a.content_hash FROM ma_runs r
+         JOIN ma_artifacts a ON a.run_id=r.id AND a.task_id=r.task_id AND a.artifact_type='git_commit'
+         WHERE r.task_id=?1 AND r.agent_id=?2 AND r.status='succeeded'
+         AND r.attempt=(SELECT MAX(attempt) FROM ma_runs WHERE task_id=?1)
+         AND EXISTS(SELECT 1 FROM ma_events e WHERE e.project_id=r.project_id AND e.entity_id=r.task_id
+             AND e.event_type='task.execution_completed' AND json_extract(e.payload_json,'$.artifactId')=a.id)
+         ORDER BY a.created_at DESC,a.rowid DESC LIMIT 1",
+        params![task.id, agent_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get::<_, Option<String>>(3)?)),
+    ).optional()?.context("任务没有可核验的原工作树交付")?;
+    let hash = hash.context("任务缺少交付提交哈希")?;
+    Ok(Some(PlannedWorkerDelivery { artifact_id, run_id, workspace, hash, scopes }))
 }
 
 fn unblock_ready_tasks(connection: &Connection, project_id: &str, now: i64) -> Result<usize> {

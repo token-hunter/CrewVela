@@ -2491,7 +2491,10 @@ impl MultiAgentStore {
         let Some(raw) = raw else {
             return Ok(());
         };
-        let scopes: Vec<String> = decode(raw)?;
+        Self::verify_write_paths(&decode::<Vec<String>>(raw)?, paths)
+    }
+
+    pub(super) fn verify_write_paths(scopes: &[String], paths: &[String]) -> Result<()> {
         let scopes = scopes
             .iter()
             .map(|s| normalized_scope(s))

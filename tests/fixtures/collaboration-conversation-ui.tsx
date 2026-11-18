@@ -62,6 +62,15 @@ if (dualViews && params.get("empty") !== "1") {
   chats.A.executionPlans[0].summary="基于登录功能改版的需求，建议如下分工：";
 }
 const tasks = planned.map((task, index) => ({ ...task, id: `t-${task.key}`, projectId: "A", parentId: null, stage: index, status: ["done", "running", "blocked"][index], priority: 0, requiredCapabilities: [], maxAttempts: 2, retryBackoffSeconds: 1, nextRetryAt: null, createdAt: clock, updatedAt: clock }));
+const resumedDelivery = params.has("resumed-delivery") ? {
+  id: "delivery-approval", projectId: "A", taskId: "conversation-task-resumed",
+  runId: "development-run", approvalType: "task_review", status: "approved",
+} : null;
+if (resumedDelivery) {
+  tasks[1].id = resumedDelivery.taskId;
+  tasks[1].status = "done";
+  tasks[2].status = "ready";
+}
 if (dualViews) tasks.forEach((task,index)=>{task.status=["running","ready","blocked"][index];});
 if (params.get("internal") === "1") tasks.push({ ...tasks[0], id: "cli-message-conversation-internal", title: "讨论内部执行", status: "running", stage: 9 });
 if (params.get("header") === "1") { tasks.forEach(task=>{task.status="done";}); for(let i=tasks.length;i<28;i++) tasks.push({...tasks[0],id:`history-${i}`,title:`历史任务 ${i+1}`}); }
@@ -179,7 +188,19 @@ const mock = {
       chats.A.rounds[0].status="running";chats.A.messages.find((item:any)=>item.id==="a1").status="running";
       return {interventionId:"permission-current",projectId:"A",resumeProject:false,message:"已批准本次工具操作"};
     }
-    if (command === "ma_snapshot") { const result=snapshot(args.projectId); if(params.get("activity")==="1"&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} if(params.has("logs-only"))result.runLogs=[]; return structuredClone(result); }
+    if (command === "ma_snapshot") { const result=snapshot(args.projectId); if(params.get("activity")==="1"&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} if(resumedDelivery && args.projectId==="A")result.approvals=[resumedDelivery]; if(params.has("logs-only"))result.runLogs=[]; return structuredClone(result); }
+    if (resumedDelivery && args.taskId === resumedDelivery.taskId && command === "ma_update_resumed_delivery") {
+      resumedDelivery.status = "pending";
+      tasks[1].status = "in_review";
+      tasks[2].status = "blocked";
+      return structuredClone(tasks[1]);
+    }
+    if (resumedDelivery && args.taskId === resumedDelivery.taskId && command === "ma_approve_task") {
+      resumedDelivery.status = "approved";
+      tasks[1].status = "done";
+      tasks[2].status = "ready";
+      return structuredClone(tasks[1]);
+    }
     if (command === "ma_run_log_history") {
       return structuredClone(runLogs.filter(log => log.projectId === args.projectId && log.runId === args.runId).slice(-args.limit));
     }

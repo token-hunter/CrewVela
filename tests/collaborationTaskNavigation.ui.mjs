@@ -71,6 +71,21 @@ try{
  failed.once('dialog',d=>d.accept());await failedDetail.getByRole('button',{name:'确认原进程已停止并允许重试',exact:true}).click();
  await failedDetail.getByRole('alert').filter({hasText:'解除冻结失败'}).waitFor();assert.equal((await calls(failed,'ma_retry_task')).length,0);await failed.close();
 
+ const resumed=await fresh('resumed-delivery=1');
+ await resumed.getByRole('button',{name:'查看任务 · 3',exact:true}).click();await taskView(resumed);
+ const resumedRow=settings(resumed).locator('.collab-task-row').filter({hasText:'列表与筛选'});
+ await resumedRow.locator('summary').click();
+ await resumedRow.getByRole('button',{name:'更新交付',exact:true}).click();
+ await settings(resumed).getByText('交付已更新，等待批准。',{exact:true}).waitFor();
+ assert.deepEqual((await calls(resumed,'ma_update_resumed_delivery')).map(c=>c.args),[{taskId:'conversation-task-resumed'}]);
+ assert.equal((await calls(resumed,'ma_approve_task')).length,0);
+ const approve=resumedRow.getByRole('button',{name:'批准交付',exact:true});
+ if(!await approve.isVisible()) await resumedRow.locator('summary').click();
+ await approve.click();
+ await resumedRow.getByText('已完成',{exact:true}).waitFor();
+ assert.equal((await calls(resumed,'ma_approve_task')).length,1);
+ await resumed.close();
+
  for(const theme of ['dark','light'])for(const size of [{width:1015,height:900},{width:390,height:844}]){
   const v=await fresh(`theme=${theme}`,size);await v.screenshot({path:`${out}/header-${theme}-${size.width}.png`});
   await v.getByRole('button',{name:'查看任务 · 3',exact:true}).click();await taskView(v);

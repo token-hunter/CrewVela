@@ -1187,6 +1187,7 @@ fn project_runtime_leases(
 pub struct MultiAgentSupervisor {
     run_stops: Arc<Mutex<HashMap<String, (String, Arc<AtomicBool>)>>>,
     projects: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    wake_requests: Arc<Mutex<HashSet<String>>>,
     message_projects: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     shutting_down: Arc<AtomicBool>,
 }
@@ -1213,6 +1214,9 @@ impl MultiAgentSupervisor {
         if let Some(current) = projects.get(project_id) {
             if !message && current.load(Ordering::Acquire) {
                 anyhow::bail!("项目调度器正在停止，请等待停止完成后重试启动");
+            }
+            if !message {
+                self.wake_requests.lock().unwrap().insert(project_id.to_owned());
             }
             return Ok(false);
         }
@@ -1242,6 +1246,22 @@ impl MultiAgentSupervisor {
         terminal_host: AgentTerminalHost,
         collaboration_bridge: CollaborationBridge,
     ) -> Result<ProjectExecutionReceipt> {
+        self.start_project(store, project_id, terminal_host, collaboration_bridge, false)
+    }
+
+    pub fn wake_active(
+        &self, store: MultiAgentStore, project_id: String, terminal_host: AgentTerminalHost, bridge: CollaborationBridge,
+    ) -> Result<ProjectExecutionReceipt> {
+        self.start_project(store, project_id, terminal_host, bridge, true)
+    }
+
+    fn start_project(
+        &self, store: MultiAgentStore, project_id: String, terminal_host: AgentTerminalHost,
+        collaboration_bridge: CollaborationBridge, only_active: bool,
+    ) -> Result<ProjectExecutionReceipt> {
+        if only_active && store.project(&project_id)?.status != ProjectStatus::Active {
+            return Ok(ProjectExecutionReceipt { project_id, accepted: false, message: "项目暂未启用调度".into() });
+        }
         let runtime_leases = project_runtime_leases(&store, &project_id)?;
         cleanup_stale_runtime_prompts();
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -1255,32 +1275,33 @@ impl MultiAgentSupervisor {
             }
         }
         // 准备工作在锁外执行，避免 pause/cancel 被阻塞；失败时回滚注册，保证可以重试。
-        if let Err(error) = terminal_host.prepare_project_sessions(&store, &project_id) {
-            self.projects.lock().unwrap().remove(&project_id);
-            return Err(error);
+        if !only_active {
+            if let Err(error) = terminal_host.prepare_project_sessions(&store, &project_id) {
+                self.finish_scheduler_pass(&project_id, &cancelled, false);
+                return Err(error);
+            }
         }
         let supervisor = self.clone();
         let thread_project_id = project_id.clone();
         std::thread::spawn(move || {
             let _runtime_leases = runtime_leases;
-            if supervisor.activate_project_if_current(&store, &thread_project_id, &cancelled).unwrap_or_else(|error| {
+            let active = supervisor.activate_scheduler(&store, &thread_project_id, &cancelled, only_active).unwrap_or_else(|error| {
                 eprintln!("[crewvela] 项目启动状态更新失败: {error:#}"); false
-            }) {
-            let _ = schedule_until_idle(
-                &store,
-                &thread_project_id,
-                cancelled,
-                terminal_host,
-                collaboration_bridge,
-                false,
-                supervisor.run_stops.clone(),
-            );
+            });
+            if !active {
+                supervisor.finish_scheduler_pass(&thread_project_id, &cancelled, false);
+                return;
             }
-            supervisor
-                .projects
-                .lock()
-                .unwrap()
-                .remove(&thread_project_id);
+            loop {
+                let result = schedule_until_idle(
+                    &store, &thread_project_id, Arc::clone(&cancelled),
+                    terminal_host.clone(), collaboration_bridge.clone(), false, supervisor.run_stops.clone(),
+                );
+                if let Err(ref error) = result { eprintln!("[crewvela] 项目调度已停止: {error:#}"); }
+                if !supervisor.finish_scheduler_pass(&thread_project_id, &cancelled, result.is_ok()) {
+                    break;
+                }
+            }
         });
         Ok(ProjectExecutionReceipt {
             project_id,
@@ -1289,9 +1310,25 @@ impl MultiAgentSupervisor {
         })
     }
 
+    fn finish_scheduler_pass(&self, project_id: &str, cancelled: &Arc<AtomicBool>, allow_restart: bool) -> bool {
+        let mut projects = self.projects.lock().unwrap();
+        let requested = self.wake_requests.lock().unwrap().remove(project_id);
+        if requested && allow_restart && !cancelled.load(Ordering::Acquire) {
+            return true;
+        }
+        projects.remove(project_id);
+        false
+    }
+
+    #[cfg(test)]
     fn activate_project_if_current(&self, store: &MultiAgentStore, project_id: &str, cancelled: &Arc<AtomicBool>) -> Result<bool> {
+        self.activate_scheduler(store, project_id, cancelled, false)
+    }
+
+    fn activate_scheduler(&self, store: &MultiAgentStore, project_id: &str, cancelled: &Arc<AtomicBool>, only_active: bool) -> Result<bool> {
         let projects = self.projects.lock().unwrap();
         if cancelled.load(Ordering::Acquire) || !projects.get(project_id).is_some_and(|current| Arc::ptr_eq(current, cancelled)) { return Ok(false); }
+        if only_active { return Ok(store.project(project_id)?.status == ProjectStatus::Active); }
         // Activation and pause share the registration lock and state-write order.
         store.set_project_status(project_id, ProjectStatus::Active)?;
         Ok(true)
@@ -2154,6 +2191,10 @@ fn checkpoint_task_workspace(
     {
         return Ok(workspace_content_hash(cwd));
     }
+    Ok(Some(commit_task_worktree(cwd, &request.task.title)?))
+}
+
+fn commit_task_worktree(cwd: &std::path::Path, title: &str) -> Result<String> {
     let status = hidden_command("git")
         .arg("-C")
         .arg(cwd)
@@ -2179,39 +2220,114 @@ fn checkpoint_task_workspace(
                 String::from_utf8_lossy(&add.stderr).trim()
             ));
         }
-        let commit = hidden_command("git")
-            .arg("-C")
-            .arg(cwd)
-            .args([
-                "-c",
-                "user.name=CrewVela",
-                "-c",
-                "user.email=crewvela@local",
-                "commit",
-                "-m",
-            ])
-            .arg(format!("crewvela: {}", request.task.title))
-            .output()
-            .context("提交任务 Worktree 变更失败")?;
-        if !commit.status.success() {
-            return Err(anyhow!(
-                "提交任务 Worktree 变更失败：{}",
-                String::from_utf8_lossy(&commit.stderr).trim()
-            ));
+        commit_staged_task(cwd, title)?;
+    }
+    git_head(cwd)
+}
+
+fn commit_staged_task(cwd: &std::path::Path, title: &str) -> Result<()> {
+    delivery_git(cwd, &[
+        "-c", "user.name=CrewVela", "-c", "user.email=crewvela@local",
+        "commit", "-m", &format!("crewvela: {title}"),
+    ])?;
+    Ok(())
+}
+
+fn delivery_git(cwd: &std::path::Path, args: &[&str]) -> Result<Vec<u8>> {
+    let output = hidden_command("git").arg("-C").arg(cwd).args(args).output()
+        .context("读取或保存任务交付失败")?;
+    if !output.status.success() {
+        bail!("Git 交付检查失败：{}", String::from_utf8_lossy(&output.stderr).trim());
+    }
+    Ok(output.stdout)
+}
+
+fn delivery_path_list(bytes: &[u8]) -> Result<Vec<String>> {
+    Ok(std::str::from_utf8(bytes)?.split('\0').filter(|path| !path.is_empty()).map(str::to_owned).collect())
+}
+
+pub(super) fn validate_planned_delivery(
+    project: &MultiAgentProject, workspace_uri: &str, hash: &str, scopes: &[String],
+) -> Result<()> {
+    let root = std::path::Path::new(&project.root_path);
+    let cwd = std::path::Path::new(workspace_uri);
+    if !valid_commit_hash(hash) || !git_commit_exists(root, hash) {
+        bail!("任务缺少有效的 Git 交付，请先登记实际代码");
+    }
+    // A cleaned-up worktree can still be reviewed from its recorded commit.
+    if cwd.is_dir() &&
+        (git_head(cwd)? != hash || !delivery_git(cwd, &["status", "--porcelain"])?.is_empty()) {
+        bail!("原会话工作树已有未登记的变更，请先点「更新交付」");
+    }
+    // The project branch may have moved since the original checkout.
+    let base = delivery_git(cwd, &["reflog", "show", "--format=%H", "HEAD"]).ok()
+        .and_then(|history| String::from_utf8(history).ok())
+        .and_then(|history| history.lines().last().map(str::to_owned))
+        .filter(|head| valid_commit_hash(head) && delivery_git(root, &["merge-base", "--is-ancestor", head, hash]).is_ok());
+    let base = match base {
+        Some(base) => base,
+        None => {
+            let target = format!("refs/heads/{}", project.default_branch);
+            let output = delivery_git(root, &["merge-base", &target, hash])
+                .or_else(|_| delivery_git(root, &["merge-base", "HEAD", hash]))?;
+            std::str::from_utf8(&output)?.trim().to_owned()
+        }
+    };
+    let diff = delivery_git(root, &["diff", "--relative", "--no-renames", "--name-only", "-z", &base, hash, "--", "."])?;
+    let paths = delivery_path_list(&diff)?;
+    if !paths.iter().any(|path| MultiAgentStore::verify_write_paths(scopes, std::slice::from_ref(path)).is_ok()) {
+        bail!("交付提交在任务范围内没有实际改动，请完成开发后点「更新交付」");
+    }
+    Ok(())
+}
+
+pub(super) fn checkpoint_resumed_delivery(
+    project: &MultiAgentProject, task: &MultiAgentTask, workspace_uri: &str, recorded: &str, scopes: &[String],
+) -> Result<String> {
+    let cwd = std::path::Path::new(workspace_uri);
+    let project_dir = std::path::Path::new(&project.root_path);
+    let (repo, relative) = git_repository_layout(cwd)?;
+    let (project_repo, project_relative) = git_repository_layout(project_dir)?;
+    anyhow::ensure!(repo != project_repo && relative == project_relative, "交付必须使用原任务的独立工作树");
+    let common_git_dir = |dir: &std::path::Path| -> Result<PathBuf> {
+        let output = delivery_git(dir, &["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+        Ok(std::fs::canonicalize(std::str::from_utf8(&output)?.trim())?)
+    };
+    anyhow::ensure!(common_git_dir(&repo)? == common_git_dir(&project_repo)?, "原任务工作树与项目不属于同一个 Git 仓库");
+    anyhow::ensure!(valid_commit_hash(recorded) && git_commit_exists(project_dir, recorded), "原交付提交已不可用");
+    delivery_git(cwd, &["merge-base", "--is-ancestor", recorded, "HEAD"])
+        .context("原会话工作树未沿用已登记的交付提交")?;
+
+    let check_scope = |bytes: Vec<u8>| -> Result<()> {
+        let paths = delivery_path_list(&bytes)?.into_iter().map(|path| {
+            let path = std::path::Path::new(&path);
+            let relative = path.strip_prefix(&relative).context("工作树存在项目目录之外的改动")?;
+            Ok(relative.to_string_lossy().replace('\\', "/"))
+        }).collect::<Result<Vec<_>>>()?;
+        MultiAgentStore::verify_write_paths(scopes, &paths)
+    };
+    for args in [
+        vec!["diff", "--no-renames", "--name-only", "-z", recorded, "HEAD", "--"],
+        vec!["diff", "--cached", "--no-renames", "--name-only", "-z", "HEAD", "--"],
+        vec!["diff", "--no-renames", "--name-only", "-z", "--"],
+        vec!["ls-files", "--others", "--exclude-standard", "-z"],
+    ] {
+        check_scope(delivery_git(&repo, &args)?)?;
+    }
+    if !delivery_git(&repo, &["status", "--porcelain"])?.is_empty() {
+        // Stage from the confirmed project directory after checking the whole worktree.
+        delivery_git(cwd, &["add", "-A", "--", "."])?;
+        let staged = delivery_git(&repo, &["diff", "--cached", "--no-renames", "--name-only", "-z", "HEAD", "--"])?;
+        if !staged.is_empty() {
+            check_scope(staged)?;
+            commit_staged_task(cwd, &task.title)?;
         }
     }
-    let head = hidden_command("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .context("读取任务提交哈希失败")?;
-    if !head.status.success() {
-        return Err(anyhow!("读取任务提交哈希失败"));
-    }
-    Ok(Some(
-        String::from_utf8_lossy(&head.stdout).trim().to_string(),
-    ))
+    let hash = git_head(cwd)?;
+    anyhow::ensure!(hash != recorded, "原会话工作树没有可补登记的新提交");
+    check_scope(delivery_git(&repo, &["diff", "--no-renames", "--name-only", "-z", recorded, &hash, "--"])?)?;
+    validate_planned_delivery(project, workspace_uri, &hash, scopes)?;
+    Ok(hash)
 }
 
 fn ensure_read_only_workspace_clean(
@@ -5845,6 +5961,9 @@ mod tests {
         assert!(sessions.list().is_empty(), "reuse must not prepare another set of sessions");
         assert_eq!(store.project(&project.id).unwrap().status, project.status);
         assert!(store.snapshot(&project.id).unwrap().tasks.is_empty());
+        assert!(supervisor.finish_scheduler_pass(&project.id, &original, true), "an approval racing with idle exit must be serviced");
+        assert!(!supervisor.finish_scheduler_pass(&project.id, &original, true), "a wake request is consumed once");
+        assert!(supervisor.active_project_ids().is_empty());
         drop(store); drop(sessions); std::fs::remove_dir_all(root).unwrap();
     }
 

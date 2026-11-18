@@ -33,6 +33,7 @@ const EVENT_LABELS: Record<string, string> = {
   "run.claimed": "任务已派发",
   "run.status_changed": "执行状态更新",
   "task.execution_completed": "Agent 已交付",
+  "task.delivery_updated": "交付已更新",
   "task.approved": "审查已通过",
   "task.changes_requested": "审查要求修改",
   "review.submitted": "Reviewer 已提交结论",

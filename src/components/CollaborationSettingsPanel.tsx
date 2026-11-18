@@ -240,6 +240,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   const [upgradingRuntimes, setUpgradingRuntimes] = useState(new Set<AgentRuntimeKind>());
   const [upgradeResults, setUpgradeResults] = useState<Partial<Record<AgentRuntimeKind, { error: boolean; message: string }>>>({});
   const [approvingTaskId, setApprovingTaskId] = useState<string | null>(null);
+  const [updatedDeliveryProject, setUpdatedDeliveryProject] = useState<string | null>(null);
   const taskInFlight = useRef(false);
   const projectInFlight = useRef(false);
   const runtimeCheckSequence = useRef(0);
@@ -429,18 +430,25 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
     };
   }, [selectedProjectId, refreshSnapshot]);
 
-  const mutateTask = async (taskId: string, command: "ma_approve_task" | "ma_retry_task") => {
+  const mutateTask = async (taskId: string, command: "ma_approve_task" | "ma_retry_task" | "ma_update_resumed_delivery") => {
     if (taskInFlight.current) return;
     taskInFlight.current = true;
     const projectId = selectedProjectId;
     setApprovingTaskId(taskId);
+    setUpdatedDeliveryProject(null);
     setError(null);
     try {
-      if (UI_PREVIEW) { setSnapshot((current) => current ? { ...current, tasks: current.tasks.map((task) => task.id === taskId ? { ...task, status: "done" } : task) } : current); return; }
+      if (UI_PREVIEW) { setSnapshot((current) => current ? { ...current, tasks: current.tasks.map((task) => task.id === taskId ? { ...task, status: command === "ma_update_resumed_delivery" ? "in_review" : "done" } : task) } : current); return; }
       await invoke(command, { taskId });
       await refreshSnapshot();
+      if (command === "ma_update_resumed_delivery" && selectionRef.current === projectId) {
+        setUpdatedDeliveryProject(projectId);
+      }
     } catch (reason) {
-      if (selectionRef.current === projectId) setError(String(reason));
+      if (selectionRef.current === projectId) {
+        if (command === "ma_approve_task") await refreshSnapshot();
+        if (selectionRef.current === projectId) setError(String(reason));
+      }
     } finally {
       taskInFlight.current = false;
       setApprovingTaskId(null);
@@ -678,12 +686,23 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
       {currentSnapshot && <details className="collab-project-info" key={currentSnapshot.project.id}><summary><CaretRightIcon size={14}/><span>项目信息</span></summary><dl><dt>项目目录</dt><dd><code>{currentSnapshot.project.rootPath || "尚未提供项目目录"}</code></dd></dl></details>}
       <section className="collab-diagnostic-summary" aria-label="协作诊断摘要"><i className={diagnosticIssues.length ? "warning" : "unknown"} /><strong>{health ? checkSummary : "尚未取得检查结果"}</strong><button onClick={() => setTab("diagnostics")} title={health ? `${health.scopeLabel} · ${checks.length} 项检查${health.checkedAt ? " · " + new Date(health.checkedAt).toLocaleTimeString("zh-CN") : ""}` : undefined}>查看诊断 →</button></section>
       <div className="collab-main-grid"><section ref={taskPanel} tabIndex={-1} className="collab-task-panel" aria-label="项目任务"><header><h3>项目任务</h3><div className="collab-task-filters" role="group" aria-label="任务筛选">{[["attention","待处理"],["all","全部"],["running","执行中"],["in_review","待审核"]].map(([id,title]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>{title}</button>)}</div></header>
+      {updatedDeliveryProject && updatedDeliveryProject === selectedProjectId && <p role="status">交付已更新，等待批准。</p>}
       {currentSnapshot?.runs.filter(run => run.sessionLocator?.stopUnverified === true).map(run => <UnverifiedRunNotice key={run.id} run={run} taskTitle={currentSnapshot.tasks.find(task => task.id === run.taskId)?.title} onConfirmed={refreshSnapshot}/>)}
       <div className="collab-task-columns"><span>任务</span><span>负责人</span><span>状态</span><span>更新</span><span /></div>
       {groupTasksByStage(taskSnapshot).filter((group) => group.tasks.some((task) => taskMatchesFilter(task.status, filter))).map((group) => <div key={group.stage} className="collab-stage"><button className="collab-stage-title" aria-expanded={!collapsed.has(group.stage)} onClick={() => setCollapsed((current) => { const next = new Set(current); if (next.has(group.stage)) next.delete(group.stage); else next.add(group.stage); return next; })}><span>{collapsed.has(group.stage) ? "›" : "⌄"} 阶段 {group.stage}{UI_PREVIEW ? " · " + (["调研与方案","实现","验证与交付"][group.stage] ?? "") : ""}</span><span>{group.done}/{group.total} 已完成 <i className={group.allDone ? "done" : ""}>{group.allDone ? "✓" : ""}</i></span></button>
       {!collapsed.has(group.stage) && [...group.tasks].sort((a,b) => taskPriority(a.status) - taskPriority(b.status) || b.updatedAt - a.updatedAt).filter((task) => taskMatchesFilter(task.status, filter)).map((task) => {
         const owner = agents.find((agent) => agent.id === task.assigneeAgentId);
-        return <div className={"collab-task-row" + (task.status === "running" ? " selected" : "")} key={task.id}><strong><i className={"task-mark " + task.status}>{task.status === "done" ? "✓" : ""}</i>{task.title}</strong><span className="collab-task-owner">{owner && <AgentAvatar avatarId={owner.avatarId} runtimeKind={owner.runtimeKind} decorative />}{owner?.name ?? "未指派"}</span><span className={"collab-status " + task.status}><i />{TASK_STATUS_LABELS[task.status]}</span><time>{formatDateTime(task.updatedAt)}</time><details className="collab-task-menu"><summary aria-label={task.title + "操作"}>⋯</summary><div><button onClick={() => showTask(task)}>查看任务详情</button>{!["done","waiting_approval","in_review"].includes(task.status) && <button onClick={() => requestHandoff(task.id)}>交接此任务</button>}{task.status === "in_review" && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_approve_task")}>批准交付</button>}{["failed","cancelled","changes_requested"].includes(task.status) && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_retry_task")}>重试任务</button>}</div></details></div>;
+        const canUpdateDelivery = task.id.startsWith("conversation-task-") && task.workspaceMode === "worktree"
+          && owner?.role === "worker" && ["in_review", "done"].includes(task.status)
+          && currentSnapshot?.approvals.some(approval => approval.taskId === task.id && approval.approvalType === "task_review"
+            && approval.status === (task.status === "done" ? "approved" : "pending"));
+        return <div className={"collab-task-row" + (task.status === "running" ? " selected" : "")} key={task.id}><strong><i className={"task-mark " + task.status}>{task.status === "done" ? "✓" : ""}</i>{task.title}</strong><span className="collab-task-owner">{owner && <AgentAvatar avatarId={owner.avatarId} runtimeKind={owner.runtimeKind} decorative />}{owner?.name ?? "未指派"}</span><span className={"collab-status " + task.status}><i />{TASK_STATUS_LABELS[task.status]}</span><time>{formatDateTime(task.updatedAt)}</time><details className="collab-task-menu"><summary aria-label={task.title + "操作"}>⋯</summary><div>
+          <button onClick={() => showTask(task)}>查看任务详情</button>
+          {!["done","waiting_approval","in_review"].includes(task.status) && <button onClick={() => requestHandoff(task.id)}>交接此任务</button>}
+          {canUpdateDelivery && <button title="原会话续做完成后，保存并登记工作树的实际提交" disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_update_resumed_delivery")}>更新交付</button>}
+          {task.status === "in_review" && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_approve_task")}>批准交付</button>}
+          {["failed","cancelled","changes_requested"].includes(task.status) && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_retry_task")}>重试任务</button>}
+        </div></details></div>;
       })}</div>)}
       {!taskSnapshot?.tasks.some((task) => taskMatchesFilter(task.status, filter)) && <p className="collab-empty">{projectsLoading || (selectedProjectId && !currentSnapshot) ? "正在加载项目任务…" : taskSnapshot?.tasks.length ? "当前筛选暂无任务" : "暂无协作任务"}</p>}</section>
       <details className="collab-activity-disclosure"><summary><CaretRightIcon size={16} aria-hidden="true" /><strong>最近活动</strong><span>{activity.length} 条活动 · {health?.handoffs.length ?? 0} 条交接</span></summary><aside className="collab-side-panels"><section className="collab-activity-panel"><header><h3>最近活动</h3><button onClick={() => setTab("records")}>查看全部活动</button></header><div>{activity.slice(0,4).map((event) => <article key={event.seq}><i className={String(event.payload.tone ?? "")} /><time>{formatDateTime(event.createdAt)}</time><p>{activityLabel(event.eventType)}{eventTask(event) && <button onClick={() => showTask(eventTask(event)!)}> · {eventTask(event)!.title}</button>}</p></article>)}{!activity.length && <p className="collab-empty">暂无活动记录</p>}</div></section>
