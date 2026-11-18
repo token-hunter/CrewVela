@@ -97,6 +97,17 @@ try {
     await runtimeMenu.waitFor({ state: "detached" });
 
     if (width === 1280) {
+      await newSession.click();
+      const shellNames = await page.evaluate(() => /mac/i.test(navigator.platform))
+        ? ["zsh", "bash"] : ["PowerShell", "CMD"];
+      for (const name of shellNames) {
+        await runtimeMenu.getByRole("menuitem", { name, exact: true }).waitFor();
+      }
+      await runtimeMenu.getByRole("menuitem", { name: "项目", exact: true }).click();
+      await page.getByRole("heading", { name: "添加项目", exact: true }).waitFor();
+      await page.keyboard.press("Escape");
+      await page.getByRole("heading", { name: "添加项目", exact: true }).waitFor({ state: "detached" });
+
       // 取消目录选择保留当前项目。入口为按钮，选完才改变单选项。
       await page.evaluate(() => {
         (window).__TAURI_INTERNALS__ = { invoke: async () => null };

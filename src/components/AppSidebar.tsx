@@ -439,11 +439,11 @@ export function AppSidebar(props: Props) {
                 {isRuntimeEnabled("zcode_cli") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenZCodeCli)}><img src={RUNTIME_LOGOS.zcode_cli} data-runtime="zcode_cli" alt="" aria-hidden="true" />ZCode CLI</button>}
                 {terminalShells().map(shell => <button key={shell} type="button" role="menuitem" onClick={() => runNewAction(() => props.onNewTerminal(shell))}>
                   <TerminalWindowIcon size={20} />
-                  <span><strong>{shellLabel(shell)}</strong><small>{shell === "cmd" ? "Windows 命令提示符" : "本地命令行"}</small></span>
+                  <span><strong>{shellLabel(shell)}</strong></span>
                 </button>)}
                 <button type="button" role="menuitem" onClick={() => runNewAction(props.onAddProject)}>
                   <FolderPlusIcon size={20} />
-                  <span><strong>项目</strong><small>添加目录并分组会话</small></span>
+                  <span><strong>项目</strong></span>
                 </button>
                 {props.presets.length > 0 && (
                   <div className="rail-new-presets">
