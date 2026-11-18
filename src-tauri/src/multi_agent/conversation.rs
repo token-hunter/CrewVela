@@ -177,6 +177,90 @@ pub struct ConversationSendInput {
     #[serde(default)]
     pub native_capabilities: bool,
 }
+
+#[derive(Debug, Serialize)]
+pub(crate) struct ConversationPlanIssue {
+    pub kind: &'static str,
+    pub message: String,
+}
+
+fn plan_git_issue(root: &std::path::Path) -> Option<&'static str> {
+    if !super::executor::is_git_worktree(root) {
+        return Some("项目目录缺少 Git 工作区，请选择已初始化的 Git 项目目录。");
+    }
+    if super::executor::git_head(root).is_err() {
+        return Some("Git 工作区缺少可用提交，请先创建首次提交再生成分工。");
+    }
+    None
+}
+
+fn supports_read_only_plan(runtime: &str) -> bool { matches!(runtime, "claude_code" | "codex") }
+
+fn plan_runtime_label(runtime: &str) -> &str {
+    match runtime {
+        "claude_code" => "Claude Code", "codex" => "Codex",
+        "kimi_code" => "Kimi Code", "pi" => "Pi", "opencode" => "OpenCode",
+        "zcode_cli" => "ZCode CLI", "deepseek_harness" => "DeepSeek Harness", "zcode" => "ZCode Desktop",
+        _ => runtime,
+    }
+}
+
+impl MultiAgentStore {
+    pub(crate) fn conversation_plan_preflight(&self, input: &ConversationSendInput) -> Result<Vec<ConversationPlanIssue>> {
+        if input.mode != "execution_plan" { return Ok(Vec::new()); }
+        validate_send_input(&mut input.clone())?;
+        let (root, roster) = {
+            let connection = self.connection.lock().unwrap();
+            let root: String = connection.query_row("SELECT root_path FROM ma_projects WHERE id=?1",
+                [&input.project_id], |row| row.get(0))?;
+            let mut statement = connection.prepare(
+                "SELECT role,runtime_kind FROM ma_agents WHERE project_id=?1 AND id=?2 AND enabled=1",
+            )?;
+            let mut roster = Vec::with_capacity(input.participant_agent_ids.len());
+            for id in &input.participant_agent_ids {
+                let profile: (String, String) = statement.query_row(params![input.project_id, id],
+                    |row| Ok((row.get(0)?, row.get(1)?))).optional()?
+                    .context("参与成员已停用、已移除或不属于当前项目，请重新选择")?;
+                roster.push(profile);
+            }
+            (root, roster)
+        };
+        let mut issues = Vec::new();
+        if let Some(message) = plan_git_issue(std::path::Path::new(&root)) {
+            issues.push(ConversationPlanIssue { kind: "git", message: message.into() });
+        }
+        let mut worker_runtimes: Vec<_> = roster.iter().filter(|(role, _)| role == "worker")
+            .map(|(_, runtime)| runtime.as_str()).collect();
+        worker_runtimes.sort_unstable();
+        worker_runtimes.dedup();
+        let goal = input.body.to_ascii_lowercase();
+        // Extra selected workers alone do not prove that a request will use multiple runtimes.
+        let split_front_back = goal.contains("前端") && goal.contains("后端")
+            && ["分别", "各自", "并行"].iter().any(|term| goal.contains(*term));
+        let parallel = worker_runtimes.len() >= 2 && (split_front_back || ["交叉审查", "交叉评审", "跨 runtime",
+            "跨运行时", "前后端", "并行开发", "cross-review", "cross runtime"].iter().any(|term| goal.contains(*term)));
+        if parallel {
+            for worker in worker_runtimes {
+                if !roster.iter().any(|(role, runtime)| role == "reviewer" && runtime.as_str() != worker && supports_read_only_plan(runtime)) {
+                    let required = match worker { "codex" => "Claude Code", "claude_code" => "Codex", _ => "Claude Code 或 Codex" };
+                    issues.push(ConversationPlanIssue { kind: "member", message: format!(
+                        "本轮缺少能审查 {} 开发任务的成员。请选择 Runtime 为 {}、角色为「审查」的成员。",
+                        plan_runtime_label(worker), required,
+                    ) });
+                }
+            }
+        } else if ["交叉审查", "只读审查", "安排审查", "审查成员", "审查通过", "code review"].iter().any(|term| goal.contains(*term))
+            && !roster.iter().any(|(role, runtime)| role == "reviewer" && supports_read_only_plan(runtime)) {
+            issues.push(ConversationPlanIssue { kind: "member", message: "本轮缺少能执行只读审查的成员。请选择 Runtime 为 Claude Code 或 Codex、角色为「审查」的成员。".into() });
+        }
+        if (parallel || ["由集成成员", "集成成员负责", "integrator"].iter().any(|term| goal.contains(*term)))
+            && !roster.iter().any(|(role, _)| role == "integrator") {
+            issues.push(ConversationPlanIssue { kind: "member", message: "本轮缺少「集成」角色。请选择负责联调和验收的集成成员。".into() });
+        }
+        Ok(issues)
+    }
+}
+
 fn default_rounds() -> u32 {
     1
 }
@@ -1560,7 +1644,8 @@ fn run_discussion(
                 store.finish_conversation(
                     round_id,
                     "needs_decision",
-                    Some("成员正在等待你的补充，已停止自动接话".into()),
+                    Some(if planning { "分工草案尚未生成，请查看规划成员指出的缺项。开发尚未开始。" }
+                         else { "成员正在等待你的补充，已停止自动接话" }.into()),
                 )?;
                 return Ok(());
             }
@@ -2021,7 +2106,7 @@ fn validate_plan(
                 bail!("只读任务不得声明写入范围");
             }
             // Discussion's Pi no-tools profile is intentionally not a business reviewer profile.
-            if !matches!(runtime.as_str(), "claude_code" | "codex") {
+            if !supports_read_only_plan(&runtime) {
                 bail!("该成员暂不支持执行只读项目任务");
             }
         } else if task.write_paths.is_empty() {
@@ -2238,9 +2323,7 @@ impl MultiAgentStore {
             [&input.project_id],
             |r| r.get(0),
         )?;
-        if !super::executor::is_git_worktree(std::path::Path::new(&root)) {
-            bail!("执行计划需要 Git 工作区以创建独立 Worktree；不会降级为共享写入");
-        }
+        if let Some(message) = plan_git_issue(std::path::Path::new(&root)) { bail!("{message}"); }
         let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_runs WHERE project_id=?1
             AND (status IN ('queued','starting','running','waiting_input','waiting_approval')
                  OR json_extract(session_locator_json,'$.stopUnverified')=1))",[&input.project_id],|r|r.get(0))?;

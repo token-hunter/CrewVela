@@ -172,6 +172,11 @@ const mock = {
       return structuredClone(runLogs.filter(log => log.projectId === args.projectId && log.runId === args.runId).slice(-args.limit));
     }
     if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
+    if (command === "ma_conversation_plan_preflight") return params.get("plan-blocked") === "1" ? [
+      { kind: "git", message: "项目目录缺少 Git 工作区，请选择已初始化的 Git 项目目录。" },
+      { kind: "member", message: "本轮缺少 Codex 审查成员。" },
+      { kind: "member", message: "本轮缺少「集成」角色。" },
+    ] : [];
     if (command === "ma_conversation_design_delivery") {
       if (args.projectId !== "A" || args.conversationId !== "conversation-A" || args.delegationId !== "login-design") throw Error("交付标识不匹配");
       return { filename: "登录接口契约.md", markdown: "# 登录接口契约\n\n登录成功返回 200，认证失败返回 401。",
@@ -223,6 +228,15 @@ const mock = {
         if(user){user.status="completed";user.queuedInput=null;}else{user={...message(input.clientMessageId,"user",input.body,null,"completed","message"),clientMessageId:input.clientMessageId,createdAt:clock+50000};chat.messages.push(user);}
         const roundId=`round-${input.clientMessageId}`;
         chat.rounds.push({id:roundId,projectId:input.projectId,conversationId:chat.conversation.id,userMessageId:user.id,participantAgentIds:input.participantAgentIds,mode:input.mode,intent:input.intent,status:"completed",phase:input.mode==="execution_plan"?"plan":input.intent==="exchange"?"exchange":"chat",maxRounds:input.maxRounds,currentRound:0,deadlineAt:clock+600000,stopReason:null,createdAt:clock+50000,updatedAt:clock+50000});
+        if (input.mode === "execution_plan" && params.get("propose") === "1") {
+          const proposal = {...message("generated-proposal", "agent", "", input.participantAgentIds[0], "completed", "plan"),
+            roundId, phase: "plan", replyToMessageId: user.id, createdAt: clock + 50001 };
+          chat.messages.push(proposal);
+          chat.executionPlans.push({ id: "generated-plan", projectId: input.projectId, roundId,
+            messageId: proposal.id, summary: "先实现，再审查与联调", tasks: structuredClone(planned),
+            status: "pending", taskIds: [], createdAt: clock + 50005 });
+          return structuredClone(chat);
+        }
         for(const [index,agentId] of input.participantAgentIds.entries()) chat.messages.push({...message(`natural-${chat.messages.length}`,"agent",input.intent==="exchange"?(index===0?"@Codex 我建议先核对接口，你觉得呢？":"我看到了前面的建议，接口一致，可以开始下一步。"):"你好！有什么需要我帮忙？",agentId),roundId,phase:"chat",replyToMessageId:index?chat.messages.at(-1).id:user.id,createdAt:clock+50001+index});
         return structuredClone(chat);
       }

@@ -7,9 +7,21 @@ export const CONVERSATION_STATUS: Record<ConversationStatus, string> = {
   unconfirmed: "结果未确认", needs_decision: "等待你补充",
 };
 /** Conservative routing: uncertain requests stay in chat; a plan still needs explicit execution approval. */
-export function conversationRequestMode(body: string, selectedMode: ConversationMode = "discussion"): ConversationMode {
+export function conversationRequestMode(body: string, selectedMode: ConversationMode = "discussion", mentionTokens: readonly string[] = []): ConversationMode {
   if (selectedMode === "execution_plan") return selectedMode;
   const text = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+  const opening = withoutMentionTokens(text, mentionTokens).trim().replace(/^(?:@[^\s@]+\s+)+/u, "");
+  const firstRequest = opening.split(/[。！？!?；;\n，,]/u, 1)[0];
+  // Negative instructions about execution take precedence over an imperative goal.
+  const discussionOnly = /(?:^|[。！？!?；;\n，,])\s*(?:请)?(?:先|暂时)?(?:只|仅)(?:做|想)?(?:分析|讨论|评估|聊|听)|(?:不要|(?<!分)别|无需|不需要|暂不|先不|不准)\s*(?:开始|实际|直接)?\s*(?:开发|执行|动手|写(?:任何)?代码|动代码|修改(?:任何)?(?:代码|文件))|(?:^|[。！？!?；;\n，,])\s*不(?:写(?:任何)?代码|动代码|修改(?:任何)?(?:代码|文件))/u.test(text)
+    || /\b(?:don't|do not|not yet|only discuss)\b/i.test(text);
+  if (discussionOnly) return "discussion";
+  const directDevelopment = /^(?:(?:请|帮我|麻烦|你们|大家|团队|我想|我需要|先|直接|一起|共同|分工|协作)\s*)*(?:开发|实现|编写|构建|制作|做|修复|新增|添加|搭建).{0,40}(?:游戏|项目|功能|程序|系统|应用|工具|网站|页面|接口|脚本|代码|组件|服务|bug)/iu.test(firstRequest)
+    && !/(?:需要多久|要多久|需要什么|可行吗|吗$|(?:怎么|如何)(?:做|实现|开发)$|多少钱)/u.test(firstRequest)
+    && !/^[^。！!；;\n]*[？?]/u.test(opening);
+  const directEnglish = /^(?:please\s+|help me\s+)?(?:build|develop|implement|create|fix)\b.{0,60}\b(?:game|project|feature|app|application|bug|page|tool|site|api)\b/i.test(firstRequest)
+    && !/^[^.!;\n]*\?/u.test(opening);
+  if (directDevelopment || directEnglish) return "execution_plan";
   if (/(?:不要|(?<!分)别|无需|不需要|暂不|先不|不准|只聊|讨论|聊聊|解释|如何|怎么|分析|评估|能否|是否|告诉我|是什么意思|示例)|\b(?:don't|do not|not yet|only discuss|explain|analy[sz]e|how to)\b/iu.test(text)) return "discussion";
   const engineering = /(?:请|帮我|麻烦|你们|大家|团队|一起|共同|各自|分别)/u.test(text)
     && /(?:分工|协作|合作|一起|共同|你们|大家|各自|分别)/u.test(text)
@@ -20,10 +32,12 @@ export function conversationRequestMode(body: string, selectedMode: Conversation
     || /(?:^|[，。；,;\n])\s*(?:请)?(?:先)?(?:给(?:我)?|生成|制定|安排)(?:一下|个|一份)?分工(?:[：:，,。！!；;\s]|$)/u.test(text.trim());
   return engineering || teamEngineering || explicitPlan ? "execution_plan" : "discussion";
 }
-export function hasConversationPlanGoal(body: string, mentionTokens: readonly string[]): boolean {
-  const goal = [...mentionTokens].sort((a, b) => b.length - a.length)
+function withoutMentionTokens(body: string, mentionTokens: readonly string[]): string {
+  return [...mentionTokens].sort((a, b) => b.length - a.length)
     .reduce((text, token) => replaceMentionToken(text, token, ""), body);
-  return /[\p{L}\p{N}]/u.test(goal);
+}
+export function hasConversationPlanGoal(body: string, mentionTokens: readonly string[]): boolean {
+  return /[\p{L}\p{N}]/u.test(withoutMentionTokens(body, mentionTokens));
 }
 export function conversationRequestIntent(body: string): "chat" | "exchange" {
   const text = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");

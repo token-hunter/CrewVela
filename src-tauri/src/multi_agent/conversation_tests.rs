@@ -292,6 +292,53 @@ fn clear_input(snapshot: &ConversationSnapshot) -> ConversationClearInput {
 }
 
 #[test]
+fn plan_preflight_reports_missing_git_commit_reviewers_and_integrator() {
+    let fixture = Fixture::new();
+    fixture.store.connection.lock().unwrap().execute(
+        "UPDATE ma_agents SET runtime_kind='claude_code' WHERE id=?1", [&fixture.agents[1]],
+    ).unwrap();
+    let mut input = fixture.input();
+    input.body = "开发一个贪吃蛇小游戏。前后端分别开发，交叉审查后再由集成成员联调。".into();
+    assert!(fixture.store.conversation_plan_preflight(&input).unwrap().is_empty());
+    input.mode = "execution_plan".into();
+    let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
+    assert_eq!(issues.len(), 4);
+    assert!(issues.iter().any(|issue| issue.kind == "git" && issue.message.contains("缺少 Git 工作区")));
+    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Claude Code、角色为「审查」")));
+    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Codex、角色为「审查」")));
+    assert!(issues.iter().any(|issue| issue.message.contains("缺少「集成」角色")));
+    assert!(fixture.store.conversation_snapshot(&fixture.project).unwrap().messages.is_empty());
+
+    let status = std::process::Command::new("git").arg("-C").arg(fixture.root.join("project"))
+        .args(["init", "-b", "main"]).output().unwrap().status;
+    assert!(status.success());
+    let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
+    assert!(issues.iter().any(|issue| issue.kind == "git" && issue.message.contains("首次提交")));
+
+    fixture.git();
+    for (name, runtime_kind, role) in [
+        ("审查 Codex", AgentRuntimeKind::ClaudeCode, AgentRole::Reviewer),
+        ("审查 Claude", AgentRuntimeKind::Codex, AgentRole::Reviewer),
+        ("联调", AgentRuntimeKind::Codex, AgentRole::Integrator),
+    ] {
+        let agent = fixture.store.create_agent(CreateAgentInput {
+            avatar_id: None, project_id: fixture.project.clone(), name: name.into(), runtime_kind, role,
+            description: String::new(), persona: Default::default(), persona_custom: String::new(), model: None,
+            permission_profile: PermissionProfile::Default, max_concurrency: 1,
+        }).unwrap();
+        input.participant_agent_ids.push(agent.id);
+    }
+    assert!(fixture.store.conversation_plan_preflight(&input).unwrap().is_empty());
+    input.participant_agent_ids.truncate(2);
+    input.body = "开发一个贪吃蛇小游戏，交给其中一位开发成员。".into();
+    assert!(fixture.store.conversation_plan_preflight(&input).unwrap().is_empty());
+    input.body = "开发一个贪吃蛇小游戏，交给其中一位开发成员。完成后安排只读审查。".into();
+    let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
+    assert_eq!(issues.len(), 1);
+    assert!(issues[0].message.contains("缺少能执行只读审查的成员"));
+}
+
+#[test]
 fn conversation_export_preserves_complete_markdown_and_current_session_scope() {
     let fixture = Fixture::new();
     let markdown = "导出测试\n\n```ts\nconst name = '中文';\n```";

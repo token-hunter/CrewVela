@@ -20,3 +20,11 @@ test('分工调整是一次性请求，普通追问仍保持聊天',()=>{
  for(const body of ['请调整分工：增加测试','生成分工：登录功能','更新分工：先处理页面','@Claude @Codex 帮我做登录页，先给分工。']) assert.equal(conversationRequestMode(body),'execution_plan');
  for(const body of ['hi','这个分工的验收是什么意思','不要调整分工，先解释']) assert.equal(conversationRequestMode(body),'discussion');
 });
+test('明确要求开发小游戏直接进入分工，验收措辞和只读审查不改变开发意图', () => {
+ assert.equal(conversationRequestMode('@后端审查 @前端审查 @联调集成 @前端开发 @后端开发 开发一个贪吃蛇小游戏。Claude 开发成员负责前端和游戏交互，Codex 开发成员负责后端和排行榜。两项开发完成后分别安排交叉审查，两项审查通过后再由集成成员联调。验收时确认游戏能开始、结束和重开，分数能提交，刷新后仍能看到排行榜。'), 'execution_plan');
+ assert.equal(conversationRequestMode('开发一个数据分析工具。验收时检查是否能导出。'), 'execution_plan');
+ assert.equal(conversationRequestMode('@Claude Code @Codex 开发一个小游戏。前后端分别开发，交叉审查后再联调。', 'discussion', ['@Claude Code', '@Codex']), 'execution_plan');
+ assert.equal(conversationRequestMode('开发一个小游戏。先不要写代码，只讨论方案。'), 'discussion');
+ assert.equal(conversationRequestMode('开发一个游戏，先分析可行性，不写代码。'), 'discussion');
+ assert.equal(conversationRequestMode('开发一个小游戏需要多久？'), 'discussion');
+});

@@ -1179,6 +1179,14 @@ async fn ma_conversation_switch(input: multi_agent::conversation::ConversationSw
 }
 
 #[tauri::command]
+async fn ma_conversation_plan_preflight(
+    input: multi_agent::ConversationSendInput, state: State<'_, MultiAgentStore>,
+) -> Result<Vec<multi_agent::conversation::ConversationPlanIssue>, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.conversation_plan_preflight(&input).map_err(to_err)).await
+}
+
+#[tauri::command]
 fn ma_conversation_send(input: multi_agent::ConversationSendInput,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
@@ -6397,6 +6405,7 @@ pub fn run() {
             ma_conversation_history,
             ma_conversation_switch,
             ma_conversation_send,
+            ma_conversation_plan_preflight,
             ma_conversation_interrupt,
             ma_conversation_control,
             ma_conversation_execute_plan,

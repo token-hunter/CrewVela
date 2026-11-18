@@ -5437,7 +5437,7 @@ fn commits_not_in_workspace(
         .collect())
 }
 
-fn git_head(workspace: &std::path::Path) -> Result<String> {
+pub(super) fn git_head(workspace: &std::path::Path) -> Result<String> {
     let output = hidden_command("git")
         .arg("-C")
         .arg(workspace)
@@ -5481,10 +5481,9 @@ pub(super) fn is_git_worktree(root: &std::path::Path) -> bool {
         .arg("-C")
         .arg(root)
         .args(["rev-parse", "--is-inside-work-tree"])
-        .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
+        .output()
+        .map(|output| output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true")
         .unwrap_or(false)
 }
 
