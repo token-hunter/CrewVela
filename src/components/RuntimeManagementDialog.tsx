@@ -23,7 +23,10 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose,
   const availability = useRuntimeAvailability();
   const [pending, setPending] = useState<AgentRuntimeKind | null>(null);
   const [installing, setInstalling] = useState<AgentRuntimeKind | null>(initialInstaller ?? null);
-  const [cliCollapsed, setCliCollapsed] = useState(initialInstaller !== undefined);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<RuntimeCategory, boolean>>({
+    terminal: initialInstaller !== undefined,
+    chat: false,
+  });
   const [chatDependencies, setChatDependencies] = useState<RuntimeChatDependencies | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState<AgentRuntimeKind | null>(null);
@@ -144,15 +147,14 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose,
     }} onDrop={(event) => { event.preventDefault(); clearDrag(); }}>{groups.map(([category, title]) => {
       const items = managed.filter(kind => runtimeCategory(kind) === category);
       if (!items.length) return null;
-      const terminal = category === "terminal";
-      const collapsed = terminal && cliCollapsed;
+      const collapsed = collapsedGroups[category];
       return <section key={category} className="collab-runtime-management-group-section">
-        <h4 className="collab-runtime-management-group">{terminal ? <>
-          <button type="button" className="runtime-group-toggle" aria-expanded={!collapsed} onClick={() => setCliCollapsed(!collapsed)}>
-            {collapsed ? <CaretRight size={14} /> : <CaretDown size={14} />}{title}（{items.length}）
+        <h4 className="collab-runtime-management-group">
+          <button type="button" className="runtime-group-toggle" aria-expanded={!collapsed}
+            onClick={() => setCollapsedGroups(current => ({ ...current, [category]: !current[category] }))}>
+            {collapsed ? <CaretRight size={14} aria-hidden="true" /> : <CaretDown size={14} aria-hidden="true" />}{title}（{items.length}）
           </button>
-          {!collapsed && <span className="runtime-default-heading">默认启动模式</span>}
-        </> : title}</h4>
+        </h4>
         {!collapsed && items.map(renderItem)}
       </section>;
     })}

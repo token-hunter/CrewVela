@@ -31,7 +31,6 @@
 .cli-mode-row .collab-runtime-toggle { min-width: 0; }
 .cli-mode-row .collab-runtime-toggle > span { min-width: 0; overflow-wrap: anywhere; }
 .cli-mode-row .collab-runtime-toggle > small, .cli-mode-row .collab-runtime-scope { display: none; }
-.runtime-default-heading { float: right; margin-right: 155px; font-weight: 400; }
 .runtime-launch-footnote { font-size: 12px; color: var(--text-dim); margin: 12px 0 0; }
 .collab-runtime-management:has(.runtime-group-toggle) { width: min(820px, 94vw); }
-@media (max-width: 640px) { .collab-runtime-management:has(.runtime-group-toggle) { padding: 16px; } .collab-runtime-management-row.cli-mode-row { grid-template-columns: 12px minmax(0, 1fr) 82px 20px; gap: 6px; padding: 10px 6px; } .cli-mode-row .collab-runtime-toggle { gap: 6px; } .cli-mode-row > .collab-runtime-install-entry { grid-column: 3; min-width: 0; padding: 6px; } .cli-mode-row > .collab-runtime-order-actions { grid-column: 4; } .runtime-default-mode { grid-column: 2 / -1; grid-row: 2; } .runtime-default-heading { display: none; } }
+@media (max-width: 640px) { .collab-runtime-management:has(.runtime-group-toggle) { padding: 16px; } .collab-runtime-management-row.cli-mode-row { grid-template-columns: 12px minmax(0, 1fr) 82px 20px; gap: 6px; padding: 10px 6px; } .cli-mode-row .collab-runtime-toggle { gap: 6px; } .cli-mode-row > .collab-runtime-install-entry { grid-column: 3; min-width: 0; padding: 6px; } .cli-mode-row > .collab-runtime-order-actions { grid-column: 4; } .runtime-default-mode { grid-column: 2 / -1; grid-row: 2; } }
