@@ -3,6 +3,7 @@ import App from "../../src/App";
 import type { SessionRecord } from "../../src/types";
 import { navigationProjects, navigationSnapshot, navigationConversation } from "./collaboration-task-navigation-data";
 import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
+import { NATIVE_AGENT_CREATE_COMMANDS, type NativeAgentKind } from "../../src/nativeAgentSwitch";
 import "../../src/styles.css";
 import "../../src/styles/cowork.css";
 
@@ -152,6 +153,19 @@ const api = {
         };
         if(api.cliLaunch.hold)return new Promise<SessionRecord>(resolve=>api.cliLaunch.pending.push(()=>resolve(finish())));
         return finish();
+      }
+      const nativeKind = (Object.keys(NATIVE_AGENT_CREATE_COMMANDS) as NativeAgentKind[])
+        .find(kind => NATIVE_AGENT_CREATE_COMMANDS[kind] === command);
+      if (nativeKind) {
+        api.cliLaunch.calls.push({ command, args });
+        const record: SessionRecord = {
+          ...sessions[0], id: `chat-${api.cliLaunch.calls.length}`, title: nativeKind,
+          kind: 'terminal', shell: null, agentRuntimeKind: nativeKind,
+          providerId: `local-runtime-${nativeKind}`, providerName: nativeKind,
+          cwd: String(args?.cwd), projectId: args?.projectId as string | null,
+        };
+        sessions = [...sessions, record];
+        return record;
       }
     }
     if(command==="plugin:window|is_fullscreen") { if(api.fullscreen.readFails)throw Error("fixture fullscreen read rejected");return api.fullscreen.value; }

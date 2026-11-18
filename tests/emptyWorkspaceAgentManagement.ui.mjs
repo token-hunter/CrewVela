@@ -75,6 +75,8 @@ try {
  // Retain the chosen directory when launching after management.
  const calls=await page.evaluate(()=>window.directoryMock.calls.length);
  await popover.getByRole('button',{name:'DeepSeek Harness',exact:true}).click();
+ const chatLaunch = page.getByRole('dialog',{name:'新建会话',exact:true});
+ await chatLaunch.getByRole('button',{name:'启动',exact:true}).click();
  await page.locator('.harness-chat').waitFor();
  assert.ok(await page.getByText('DeepSeek Harness · agent-test',{exact:true}).count());
  assert.equal(await page.evaluate(()=>window.directoryMock.calls.length),calls);

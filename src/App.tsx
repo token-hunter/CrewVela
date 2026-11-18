@@ -1750,20 +1750,12 @@ export default function App() {
   // zcode CLI 是终端交互式 TUI：走通用 Runtime PTY 会话链路，与 ZCode Desktop 原生聊天分离。
   const openZCodeCli = useCallback(async (project?: SessionDirectory) => { setCliLaunchRequest({ runtime: "zcode_cli", project }); }, []);
 
-  // 按 Agent 新建会话：带项目则用项目目录，不带则走各 Agent 自己的选目录步骤。
-  // 空工作区与直接入口共用；CLI 进入启动设置，原生聊天沿用各自创建流程。
+  // 侧栏和空工作区共用新建会话弹窗，由用户确认最终工作目录。
   const startAgentSession = useCallback(
-    (runtime: Exclude<NewSessionAgent, "claude_code">, project?: SessionDirectory) => {
-      if (runtime === "deepseek_harness") void openDeepSeekHarness(project);
-      else if (runtime === "claude_chat") void openClaudeChat(project);
-      else if (runtime === "codex_chat") void openCodexChat(project);
-      else if (runtime === "kimi_chat") void openKimiChat(project);
-      else if (runtime === "opencode_chat") void openOpenCodeChat(project);
-      else if (runtime === "pi_chat") void openPiChat(project);
-      else if (runtime === "zcode") void openZCode(project);
-      else setCliLaunchRequest({ runtime, project });
+    (runtime: NewSessionAgent, project?: SessionDirectory) => {
+      setCliLaunchRequest({ runtime, project });
     },
-    [launchRuntimeSession, openClaudeChat, openCodexChat, openDeepSeekHarness, openKimiChat, openOpenCodeChat, openPiChat, openZCode],
+    [],
   );
 
   const switchNativeAgent = useCallback(async (source: SessionRecord, kind: NativeAgentKind) => {
@@ -2336,13 +2328,13 @@ export default function App() {
         logicalSessionId={logicalSessionId}
         onRelayDetails={openRelayDetails}
         onNewClaudeSession={openNewSessionDialog}
-        onOpenDeepSeekHarness={() => void openDeepSeekHarness()}
-        onOpenClaudeChat={() => void openClaudeChat()}
-        onOpenCodexChat={() => void openCodexChat()}
-        onOpenKimiChat={() => void openKimiChat()}
-        onOpenOpenCodeChat={() => void openOpenCodeChat()}
-        onOpenPiChat={() => void openPiChat()}
-            onOpenZCode={() => void openZCode()}
+        onOpenDeepSeekHarness={() => startAgentSession("deepseek_harness")}
+        onOpenClaudeChat={() => startAgentSession("claude_chat")}
+        onOpenCodexChat={() => startAgentSession("codex_chat")}
+        onOpenKimiChat={() => startAgentSession("kimi_chat")}
+        onOpenOpenCodeChat={() => startAgentSession("opencode_chat")}
+        onOpenPiChat={() => startAgentSession("pi_chat")}
+            onOpenZCode={() => startAgentSession("zcode")}
             onOpenZCodeCli={() => void openZCodeCli()}
         onNewTerminal={launchTerminal}
         onNewRuntimeSession={launchRuntime}
@@ -2503,7 +2495,6 @@ export default function App() {
                     onDirectoryChange={(directory) => setEmptyDirectories(current => ({ ...current, [workspace.activeTabId]: directory }))}
                     onLaunch={(runtime, project) => {
                       if (!isRuntimeEnabled(runtime)) return;
-                      if (runtime === "claude_code") { setCliLaunchRequest({ runtime, project: project ?? undefined }); return; }
                       startAgentSession(runtime, project ?? undefined);
                     }}
                   />

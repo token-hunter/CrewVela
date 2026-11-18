@@ -100,7 +100,11 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
       <label className="cli-launch-save"><input type="checkbox" checked={saveAsDefault} disabled={busy} onChange={event => setSaveAsDefault(event.target.checked)} />设为 {RUNTIME_LABELS[kind]} 的默认模式</label></>}
       {(error || availability.error) && <p className="cli-launch-error" role="alert">{error || availability.error}</p>}
       {!availability.ready && <button type="button" className="btn secondary" onClick={() => void availability.refresh()}>重新读取配置</button>}
-      <footer><button type="button" className="cli-launch-manage" disabled={busy} onClick={() => setManaging(true)}>管理默认模式</button><button type="button" className="btn secondary" disabled={busy} onClick={close}>取消</button><button type="submit" className="btn" disabled={!directory || (cli && !choice) || !availability.ready || busy || !availability.isRuntimeEnabled(kind)}>{pending ? "正在启动…" : "启动"}</button></footer>
+      <footer>
+        {cli && <button type="button" className="cli-launch-manage" disabled={busy} onClick={() => setManaging(true)}>管理默认模式</button>}
+        <button type="button" className="btn secondary" disabled={busy} onClick={close}>取消</button>
+        <button type="submit" className="btn" disabled={!directory || (cli && !choice) || !availability.ready || busy || !availability.isRuntimeEnabled(kind)}>{pending ? "正在启动…" : "启动"}</button>
+      </footer>
     </form>
     {managing && <RuntimeManagementDialog order={[...order.order, ...chatOrder.order]} orderError={order.error || chatOrder.error} onClose={() => setManaging(false)} onReorder={(kind, target, position) => {
       if (isCliRuntime(kind) && isCliRuntime(target)) order.reorder(kind, target, position);

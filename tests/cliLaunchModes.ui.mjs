@@ -8,7 +8,11 @@ const browser = await chromium.launch({ channel: 'chrome' });
 const errors = [];
 async function choose(page, kind) {
   await page.getByRole('button', {name:'新建会话',exact:true}).first().click();
-  const labels={claude_code:'Claude Code',codex:'Codex CLI',kimi_code:'Kimi Code',opencode:'OpenCode',pi:'Pi Agent',zcode_cli:'ZCode CLI'};
+  const labels = {
+    claude_code:'Claude Code', codex:'Codex CLI', kimi_code:'Kimi Code', opencode:'OpenCode', pi:'Pi Agent', zcode_cli:'ZCode CLI',
+    claude_chat:'Claude Code Chat', codex_chat:'Codex Chat', kimi_chat:'Kimi Code Chat', opencode_chat:'OpenCode Chat',
+    pi_chat:'Pi Chat', deepseek_harness:'DeepSeek Harness', zcode:'ZCode Desktop',
+  };
   await page.getByRole('menu',{name:'新建 Runtime 会话'}).getByRole('menuitem').filter({has:page.getByText(labels[kind],{exact:true})}).click();
   const dialog = page.getByRole('dialog', {name:'新建会话',exact:true});
   await dialog.waitFor(); return dialog;
@@ -17,9 +21,10 @@ try {
   for (const theme of ['dark', 'light']) {
     const page = await browser.newPage({viewport:{width:1440,height:1000}}); page.setDefaultTimeout(12000);
     page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(theme => localStorage.setItem('crewvela-appearance', JSON.stringify({theme})),theme);
     await page.goto(`${base}/tests/fixtures/app-session-async-ui.html?cli-launch=1`);
     await page.waitForFunction(()=>window.appSessionMock);
-    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+    await page.waitForFunction(theme => document.documentElement.dataset.appearanceTheme === theme,theme);
     let dialog = await choose(page,'codex');
     assert.equal(await dialog.getByRole('combobox',{name:'本次启动模式'}).inputValue(),'read_only');
     await dialog.screenshot({path:`${output}/launch-${theme}.png`});
@@ -48,7 +53,11 @@ try {
     await page.evaluate(()=>window.appSessionMock.cliLaunch.failSave=false);
     await management.getByRole('button',{name:'关闭',exact:true}).click();
     assert.equal(await dialog.getByRole('combobox',{name:'本次启动模式'}).inputValue(),'manual');
+    await dialog.getByRole('combobox',{name:'启动 Agent'}).selectOption('claude_chat');
+    assert.equal(await dialog.getByRole('combobox',{name:'本次启动模式'}).count(),0);
+    assert.equal(await dialog.getByRole('button',{name:'管理默认模式'}).count(),0);
     await dialog.getByRole('combobox',{name:'启动 Agent'}).selectOption('pi');
+    assert.equal(await dialog.getByRole('button',{name:'管理默认模式'}).isVisible(),true);
     assert.equal(await dialog.locator('option[value="yolo"]').count(),0);
     await dialog.getByRole('combobox',{name:'启动 Agent'}).selectOption('kimi_code');
     await dialog.getByRole('combobox',{name:'本次启动模式'}).selectOption('yolo');
@@ -104,8 +113,60 @@ try {
     await dialog.getByRole('button',{name:'启动',exact:true}).click();await dialog.waitFor({state:'detached'});
     const projectLaunch=await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1).args);
     assert.equal(projectLaunch.projectId,'fixture-project');assert.equal(projectLaunch.cwd,'C:\\fixture');assert.equal(projectLaunch.launchMode,'read_only');
+
+    const chatCommands = {
+      claude_chat:'create_claude_chat_session', codex_chat:'create_codex_chat_session', kimi_chat:'create_kimi_chat_session',
+      opencode_chat:'create_opencode_chat_session', pi_chat:'create_pi_chat_session',
+      deepseek_harness:'create_deepseek_harness_session', zcode:'create_zcode_session',
+    };
+    const chatActivity = () => page.evaluate(() => ({
+      launches: window.appSessionMock.cliLaunch.calls.filter(item => item.command.startsWith('create_')),
+      picks: window.appSessionMock.cliLaunch.pickerCalls.length,
+    }));
+    const initial = await chatActivity();
+    let expectedPicks = initial.picks;
+    let expectedLaunches = initial.launches.length;
+    for (const [kind, command] of Object.entries(chatCommands)) {
+      dialog = await choose(page,kind);
+      assert.equal(await dialog.getByRole('combobox',{name:'启动 Agent'}).inputValue(),kind);
+      assert.equal(await dialog.getByRole('combobox',{name:'本次启动模式'}).count(),0);
+      assert.equal(await dialog.getByRole('button',{name:'管理默认模式'}).count(),0);
+      const activity = await chatActivity();
+      assert.equal(activity.picks,expectedPicks,`${kind}: no automatic directory picker`);
+      assert.equal(activity.launches.length,expectedLaunches,`${kind}: no creation before confirmation`);
+
+      if (kind === 'claude_chat') {
+        await dialog.getByRole('button',{name:'取消',exact:true}).click();
+        await dialog.waitFor({state:'detached'});
+        assert.deepEqual(await chatActivity(),activity);
+        await page.locator('.session-project-head').filter({hasText:'Fixture project'}).hover();
+        await page.getByTitle('在「Fixture project」下新建会话').click();
+        await dialog.getByRole('combobox',{name:'启动 Agent'}).selectOption(kind);
+        assert.equal(await dialog.getByRole('combobox',{name:'工作目录'}).inputValue(),'fixture-project');
+        await dialog.screenshot({path:`${output}/chat-launch-${theme}.png`});
+        await page.setViewportSize({width:390,height:850});
+        assert.equal(await dialog.evaluate(el=>el.scrollWidth>el.clientWidth),false);
+        await dialog.screenshot({path:`${output}/chat-launch-narrow-${theme}.png`});
+        await page.setViewportSize({width:1440,height:1000});
+      }
+      await dialog.getByRole('combobox',{name:'工作目录'}).selectOption('second-project');
+      let expected = { cwd:'D:\\Second 项目', projectId:'second-project' };
+      if (kind === 'pi_chat') {
+        expected = { cwd:'G:\\临时目录', projectId:null };
+        await page.evaluate(path => window.appSessionMock.cliLaunch.pickerValue = path,expected.cwd);
+        await dialog.getByRole('button',{name:'浏览其他目录…'}).click();
+        await dialog.getByText('临时使用此目录，会话归入未分组').waitFor();
+        expectedPicks++;
+      }
+      await dialog.getByRole('button',{name:'启动',exact:true}).click();
+      await dialog.waitFor({state:'detached'});
+      const after = await chatActivity();
+      assert.equal(after.picks,expectedPicks);
+      assert.equal(after.launches.length,++expectedLaunches);
+      assert.deepEqual(after.launches.at(-1),{command,args:expected});
+    }
     await page.close();
   }
   assert.deepEqual(errors,[]);
-  console.log('PASS: real App launch routes, six per-agent defaults, temporary override, persisted defaults, cross-Agent selection, save failure blocks launch, pending dedup/close guard, mode labels, dark/light and narrow layouts');
+  console.log('PASS: real App launch routes for six CLIs and seven Chats, directory selection, mode controls, pending dedup/close guard, saved defaults, dark/light and narrow layouts');
 } finally { await browser.close(); }

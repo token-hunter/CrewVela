@@ -1,6 +1,6 @@
 // Run against Vite: node tests/emptyWorkspaceState.ui.mjs
 // 空工作区保留工作目录卡片与「选择 Agent」下拉，不展示吉祥物。
-// 勾选目录后在下拉里选一个 Agent，即在该目录开始会话；旧的标题、说明和提示都不再出现。
+// 勾选目录后在下拉里选一个 Agent，在新建弹窗确认该目录后开始会话。
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
@@ -98,7 +98,7 @@ try {
       await popover.waitFor();
       await page.keyboard.press("Escape");
 
-      // 从侧栏打开新会话不受上一次启动设置影响，原生聊天直接使用其独立入口。
+      // 从侧栏打开新会话不受上一次启动设置影响。
       await page.getByRole("button", { name: "新建会话", exact: true }).click();
       await page.getByRole("menu", { name: "新建 Runtime 会话" }).getByRole("menuitem").filter({ hasText: "Claude Code" }).first().click();
       const directLaunch = page.getByRole("dialog", { name: "新建会话", exact: true });
@@ -112,11 +112,12 @@ try {
       await directLaunch.waitFor({ state: "detached" });
       await page.getByText(`DeepSeek Harness · ${projectName}`, { exact: true }).first().waitFor();
     } else {
-      // 回车启动第一个匹配的 Agent：在勾选的项目里打开 DeepSeek Harness 原生会话。
+      // 回车选择第一个匹配的 Agent，再确认启动到勾选的项目。
       await pill.click();
       await popover.waitFor();
       await page.keyboard.type("deep");
       await page.keyboard.press("Enter");
+      await page.getByRole("dialog", { name: "新建会话", exact: true }).getByRole("button", { name: "启动", exact: true }).click();
       await page.locator(".harness-chat").waitFor();
       await page.getByText(`DeepSeek Harness · ${projectName}`).first().waitFor();
     }

@@ -63,6 +63,9 @@ try {
  const dialogCalls=await page.evaluate(()=>window.directoryMock.calls.length);
  await card.getByRole('button',{name:'选择 Agent',exact:true}).click();
  await page.getByRole('dialog',{name:'选择 Agent',exact:true}).getByRole('button',{name:'DeepSeek Harness',exact:true}).click();
+ const chatLaunch = page.getByRole('dialog',{name:'新建会话',exact:true});
+ assert.equal(await chatLaunch.locator('.cli-launch-directory-path').innerText(),custom);
+ await chatLaunch.getByRole('button',{name:'启动',exact:true}).click();
  await page.locator('.harness-chat').waitFor();
  assert.equal(await page.evaluate(()=>window.directoryMock.calls.length),dialogCalls,'Agent must not ask for directory again');
  assert.equal(await page.locator('.right-sidebar-start').getAttribute('data-workspace-root'),custom);
