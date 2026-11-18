@@ -89,7 +89,7 @@ try {
  await editor(chat).fill('hi');await editor(chat).press('Enter');
  await chat.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===3);
  assert.equal((await calls(chat,'ma_conversation_send')).at(-1).args.input.mode,'discussion','generate plan never becomes a sticky input mode');
- const history=await fresh('evidence=1&logs-only=1');
+ const history=await fresh('evidence=1&logs-only=1&launch-mode=1');
  await history.evaluate(()=>{
    const mock=window.conversationMock;
    const [old,latest]=mock.snapshot('A').tasks;
@@ -100,7 +100,7 @@ try {
    chat.messages.push({...chat.messages[0],id:'recent-topic',body:'最新讨论',createdAt:Date.now()});
    chat.rounds.push({...failedPlan,id:'recent-round',userMessageId:'recent-topic',mode:'discussion',status:'running',stopReason:null,createdAt:Date.now(),updatedAt:Date.now()});
  });
- await history.getByText('生成分工 · 未生成方案',{exact:true}).waitFor();
+ await history.getByText('分工未生成，开发尚未开始',{exact:true}).waitFor();
  await history.locator('[data-message-id="m1"]').getByText('分工格式校验失败',{exact:true}).waitFor();
  await tab(history,'任务执行').click();
  assert.equal(await history.locator('.team-task-detail').count(),0,'old failures remain collapsed');
@@ -112,8 +112,10 @@ try {
  await history.getByRole('button',{name:'查看记录',exact:true}).click();
  const records=history.getByRole('region',{name:'任务执行记录',exact:true});
  await records.getByText('尝试2日志0',{exact:false}).waitFor();
+ await records.locator('.team-run-launch-mode').getByText(/实际：Approve for me.*原因：已授权的可写任务继承管理 Runtime/).waitFor();
  await records.getByLabel('执行尝试').selectOption('evidence-1');
  await records.getByText('尝试1日志0',{exact:false}).waitFor();
+ assert.equal(await records.locator('.team-run-launch-mode').count(),0);
  assert.deepEqual((await calls(history,'ma_run_log_history')).map(item=>item.args.runId),['evidence-2','evidence-1']);
  await records.screenshot({path:`${out}/older-run-logs.png`});
  await history.getByRole('button',{name:'查看本轮聊天',exact:true}).click();

@@ -31,12 +31,16 @@ function RunLogs({ projectId, runId, live }: { projectId: string; runId: string;
     return () => { disposed = true; window.clearTimeout(timer); };
   }, [projectId, runId, live, retry]);
 
+  const modes = logs?.filter(log => log.stream === "launch_mode") ?? [];
+  const mode = modes[modes.length - 1];
+  const output = logs?.filter(log => log.seq !== mode?.seq) ?? [];
   return <>
     {error && <p role="alert">读取运行日志失败：{error} <button type="button" className="conversation-text-button" onClick={() => setRetry(value => value + 1)}>重新读取</button></p>}
     {!error && logs === null && <p role="status">正在读取运行日志…</p>}
     {!error && logs?.length === 0 && <p>{live ? "本次运行尚未产生可回看的日志。" : "本次运行没有可回看的日志。"}</p>}
-    {logs?.length === logLimit && <p>显示最近 {logLimit} 条日志</p>}
-    {!!logs?.length && <pre>{logs.map(log => log.content).join("\n")}</pre>}
+    {mode && <p className="team-run-launch-mode">{mode.content}</p>}
+    {(logs?.length ?? 0) >= logLimit && <p>显示最近 {logLimit} 条日志</p>}
+    {output.length > 0 && <pre>{output.map(log => log.content).join("\n")}</pre>}
   </>;
 }
 

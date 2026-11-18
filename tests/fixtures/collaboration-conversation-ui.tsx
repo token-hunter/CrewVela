@@ -68,6 +68,8 @@ if (params.get("header") === "1") { tasks.forEach(task=>{task.status="done";}); 
 const runHistory = params.get("evidence") === "1" ? [1,2].map(attempt=>({ id:`evidence-${attempt}`,projectId:"A",taskId:"t-build",agentId:"codex",attempt,status:"failed",sessionLocator:attempt===2?{stopUnverified:true}:null,leaseExpiresAt:0,lastHeartbeatAt:null,outputSummary:`尝试${attempt}输出`,error:attempt===2?"fixture 原进程停止状态待确认":"fixture 旧尝试失败",createdAt:clock+attempt,startedAt:clock,finishedAt:clock+attempt })) : [];
 if (dualViews) runHistory.push({id:"login-run",projectId:"A",taskId:"t-design",agentId:"claude",attempt:1,status:"running",sessionLocator:null,leaseExpiresAt:clock+60000,lastHeartbeatAt:clock,outputSummary:"开始实现登录页面",error:null,createdAt:clock,startedAt:clock,finishedAt:null});
 const runLogs = runHistory.flatMap(run=>Array.from({length:25},(_,seq)=>({seq,projectId:"A",taskId:run.taskId,runId:run.id,stream:"stdout",content:`尝试${run.attempt}日志${seq}`,createdAt:clock+seq})));
+if (params.has("launch-mode")) runLogs.unshift({ seq: -1, projectId: "A", taskId: "t-build", runId: "evidence-2",
+  stream: "launch_mode", content: "启动模式 · 已保存：Approve for me · 实际：Approve for me（Codex TUI） · 原因：已授权的可写任务继承管理 Runtime", createdAt: clock });
 if(params.get("copy")==="1") {
   chats.A.executionPlans=[];
   chats.A.messages=[message("m1","user","@Claude 请检查接口。\n保留第二行与缩进。"),message("m2","agent","**结果**：已核对。\n\n```ts\nconst answer = 42;\n```\n\n[文档](https://example.com/docs)","claude"),message("m3","agent","","codex","paused")];

@@ -1,4 +1,4 @@
-//! Standalone CLI launch choices. Do not apply project or chat permission profiles here.
+//! Native CLI launch choices shared by the standalone and collaboration launchers.
 use anyhow::{bail, Result};
 use serde::Deserialize;
 use std::{collections::BTreeMap, process::Command, sync::OnceLock};
@@ -16,6 +16,10 @@ pub fn validate(runtime: &str, mode: &str) -> Result<()> {
         bail!("不支持的 CLI 启动模式：{runtime} / {mode}");
     }
     Ok(())
+}
+
+pub(crate) fn label(runtime: &str, mode: &str) -> Option<&'static str> {
+    catalog().get(runtime)?.iter().find(|choice| choice.id == mode).map(|choice| choice.label.as_str())
 }
 
 pub fn resolve(runtime: &str, requested: Option<&str>, defaults: &BTreeMap<String, String>) -> Result<String> {

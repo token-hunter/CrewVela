@@ -1899,6 +1899,15 @@ impl MultiAgentStore {
             .query_map(params![project_id, run_id, limit.clamp(1, 2_000)], run_log_from_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         entries.reverse();
+        if !entries.iter().any(|entry| entry.stream == "launch_mode") {
+            if let Some(mode) = connection.query_row(
+                "SELECT seq,project_id,run_id,task_id,agent_id,stream,content,created_at FROM ma_run_logs
+                 WHERE project_id=?1 AND run_id=?2 AND stream='launch_mode' ORDER BY seq DESC LIMIT 1",
+                params![project_id, run_id], run_log_from_row,
+            ).optional()? {
+                entries.insert(0, mode);
+            }
+        }
         Ok(entries)
     }
 

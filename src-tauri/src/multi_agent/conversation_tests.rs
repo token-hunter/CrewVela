@@ -1170,6 +1170,7 @@ fn run_log_history_finds_old_output_outside_project_snapshot_and_checks_project(
     let snapshot = fixture.store.snapshot(&fixture.project).unwrap();
     let old = &snapshot.runs[0];
     let other = &snapshot.runs[1];
+    fixture.store.append_run_log(&old.id, "launch_mode", "实际：Auto（Claude Code CLI）").unwrap();
     fixture.store.append_run_log(&old.id, "stdout", "older saved output").unwrap();
     for index in 0..101 {
         fixture.store.append_run_log(&other.id, "stdout", &format!("newer output {index}")).unwrap();
@@ -1178,6 +1179,10 @@ fn run_log_history_finds_old_output_outside_project_snapshot_and_checks_project(
     let old_logs = fixture.store.logs_for_run(&fixture.project, &old.id, 200).unwrap();
     assert_eq!(old_logs.last().unwrap().content, "older saved output");
     assert!(old_logs.iter().all(|item| item.run_id == old.id));
+    let limited = fixture.store.logs_for_run(&fixture.project, &old.id, 1).unwrap();
+    assert_eq!(limited.len(), 2);
+    assert_eq!(limited[0].stream, "launch_mode");
+    assert_eq!(limited[1].content, "older saved output");
     assert!(fixture.store.logs_for_run("another-project", &old.id, 200).is_err());
 }
 
