@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, GearSix, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConversationMentionHighlight } from "./ConversationMentionHighlight";
 import { ResizableConversationComposer } from "./ResizableConversationComposer";
@@ -90,6 +90,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [showOlder, setShowOlder] = useState(false);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [exportNotice, setExportNotice] = useState<{ conversationId: string; filename: string } | null>(null);
+  const exporting = useRef(false);
   const [openDelegation, setOpenDelegation] = useState<{ conversationId: string; itemId: string } | null>(null);
   const delegationTrigger = useRef<HTMLButtonElement | null>(null);
   const [historySwitchError, setHistorySwitchError] = useState("");
@@ -283,6 +285,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const messages = orderedConversationMessages(conversation?.messages ?? [], projectId ?? "");
   const newConversationBlocked = busy || !!pending || !healthy || !active || !conversation || !!conversation.rounds.some(conversationIsActive);
   const clearBlocked = newConversationBlocked || !messages.length;
+  const exportBlocked = !active || !conversation || conversation.conversation.projectId !== projectId || !messages.some(message => message.body.trim());
   const clearChanged = !!clearConfirmation && (conversation?.conversation.id !== clearConfirmation.expectedConversationId || messages.length !== clearConfirmation.expectedMessageIds.length || messages.some(message => !clearConfirmation.expectedMessageIds.includes(message.id)));
   useEffect(() => {
     if (!pending || !conversation || conversation.conversation.projectId !== pending.projectId || projectId !== pending.projectId) return;
@@ -400,6 +403,24 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         setDraft(keptDraft); setClearConfirmation(null); setShowOlder(false);
       }
     } catch (reason) { if (mounted.current && currentProject.current === target.projectId && generation.current === epoch) setClearError(String(reason)); }
+  };
+  const exportConversation = async () => {
+    if (exportBlocked || exporting.current || !projectId || !conversation) return;
+    const conversationId = conversation.conversation.id;
+    const stillOpen = () => mounted.current && currentProject.current === projectId && currentConversation.current === conversationId;
+    exporting.current = true;
+    historyTrigger.current?.focus();
+    setHistoryMenuOpen(false);
+    setExportNotice(null);
+    setOperationError("");
+    try {
+      const filename = await invoke<string | null>("ma_conversation_export", { projectId, conversationId });
+      if (filename && stillOpen()) setExportNotice({ conversationId, filename });
+    } catch (reason) {
+      if (stillOpen()) setOperationError(`导出会话失败：${String(reason)}`);
+    } finally {
+      exporting.current = false;
+    }
   };
   const applyPlan = async (plan: ConversationExecutionPlan) => {
     if (!projectId) return;
@@ -542,7 +563,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         requestAnimationFrame(() => document.getElementById(`${workViewId}-${next}-tab`)?.focus());
       }} onClick={() => { setWorkView(value); setMembersOpen(null); setHistoryMenuOpen(false); }}>{label}{value === "tasks" && <span className="team-task-count">{tasks.length}</span>}</button>)}</div>
         <div className="conversation-history-actions"><button ref={historyTrigger} type="button" className="conversation-icon" aria-label="讨论记录操作" aria-haspopup="menu" aria-expanded={historyMenuOpen} aria-controls={historyMenuOpen ? historyMenuId : undefined} disabled={!projectId || busy || !active} onClick={() => { setMembersOpen(null); setHistoryMenuOpen(value => !value); }}><DotsThree size={21} /></button>
-          {historyMenuOpen && <div ref={historyMenu} id={historyMenuId} className="conversation-history-menu" role="menu" aria-label="讨论记录操作"><button type="button" role="menuitem" disabled={newConversationBlocked} title={conversation?.rounds.some(conversationIsActive) ? "团队正在回复，结束后可新建会话" : pending ? "请先核对未确认的发送" : "开始新的团队会话"} onClick={() => void startNewConversation()}><Plus size={17} />新建会话</button><button type="button" role="menuitem" disabled={!conversation} onClick={() => { historyTrigger.current?.focus(); setHistoryMenuOpen(false); setHistorySwitchError(""); setHistoryOpen(true); }}><ClockCounterClockwise size={17} />历史会话</button><button type="button" role="menuitem" disabled={clearBlocked} title={conversation?.rounds.some(conversationIsActive) ? "讨论进行中，结束后可清空" : pending ? "请先核对未确认的发送" : !messages.length ? "暂无讨论记录" : undefined} onClick={() => {
+          {historyMenuOpen && <div ref={historyMenu} id={historyMenuId} className="conversation-history-menu" role="menu" aria-label="讨论记录操作">
+          <button type="button" role="menuitem" disabled={newConversationBlocked} title={conversation?.rounds.some(conversationIsActive) ? "团队正在回复，结束后可新建会话" : pending ? "请先核对未确认的发送" : "开始新的团队会话"} onClick={() => void startNewConversation()}><Plus size={17} />新建会话</button>
+          <button type="button" role="menuitem" disabled={!conversation} onClick={() => { historyTrigger.current?.focus(); setHistoryMenuOpen(false); setHistorySwitchError(""); setHistoryOpen(true); }}><ClockCounterClockwise size={17} />历史会话</button>
+          <button type="button" role="menuitem" disabled={exportBlocked || exporting.current} title={exportBlocked ? "暂无可导出的消息" : "将当前团队会话保存为 Markdown"} onClick={() => void exportConversation()}><FileArrowDown size={17} />导出会话</button>
+          <button type="button" role="menuitem" disabled={clearBlocked} title={conversation?.rounds.some(conversationIsActive) ? "讨论进行中，结束后可清空" : pending ? "请先核对未确认的发送" : !messages.length ? "暂无讨论记录" : undefined} onClick={() => {
             if (clearBlocked || !projectId || !conversation) return;
             historyTrigger.current?.focus(); setHistoryMenuOpen(false); setClearError("");
             setClearConfirmation({ projectId, projectName: projects.find(project => project.id === projectId)?.name ?? "当前项目", expectedConversationId: conversation.conversation.id, expectedMessageIds: messages.map(message => message.id) });
@@ -557,6 +582,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     })}{!agents.length && <p>还没有团队成员。{onOpenProjectSettings && <button type="button" className="conversation-text-button" onClick={() => { setMembersOpen(null); onOpenProjectSettings(projectId ?? undefined); }}>添加成员</button>}</p>}</div>, document.body)}
 
     {(error || runtimeError) && <div className="conversation-error" role="alert"><WarningCircle size={17} /><span>{error || `读取 Runtime 启用状态失败：${runtimeError}`}</span><button type="button" disabled={busy || loading} onClick={() => { void loadProjects().catch(reason => setError(String(reason))); void refreshAvailability(); void refresh(); }}>重新读取</button></div>}
+    {exportNotice && exportNotice.conversationId === conversation?.conversation.id && <div className="conversation-progress conversation-export-status" role="status">已导出：{exportNotice.filename}</div>}
     <div id={`${workViewId}-chat-panel`} className="team-chat-panel" role="tabpanel" aria-labelledby={`${workViewId}-chat-tab`} hidden={workView !== "chat"}><div className="conversation-transcript" role="log" aria-label="团队对话" aria-live="polite" ref={transcript} onScroll={event => { const node = event.currentTarget; followMessages.current = node.scrollHeight - node.scrollTop - node.clientHeight < 90; }}>
       {!projectId ? <div className="conversation-empty"><ChatCircleText size={30} /><h2>让 Agent 组成团队</h2><p>创建一个协作项目，选择成员，在这里讨论或分工开发。</p><button type="button" className="conversation-primary" onClick={() => setCreatingProject(true)}>创建协作项目</button></div>
         : !conversation ? <p className="conversation-empty" role="status">{loading ? "正在读取协作会话…" : "协作会话尚未读取，请重试。"}</p>

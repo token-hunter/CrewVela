@@ -137,6 +137,12 @@ const mock = {
   release(command: string, value?: any, error?: string) { const index = pending.findIndex(item => item.command === command); if (index < 0) throw Error(`No pending ${command}`); const item = pending.splice(index, 1)[0]; if (error) item.reject(Error(error)); else item.resolve(value ?? (command === "ma_snapshot" ? snapshot(item.args.projectId) : chats[item.args.projectId ?? item.args.input.projectId])); },
   async invoke(command: string, args: any = {}) {
     calls.push({ command, args: structuredClone(args) });
+    if (command === "ma_conversation_export") {
+      if (chats[args.projectId]?.conversation.id !== args.conversationId) throw Error("会话已变化");
+      const scenario = new URLSearchParams(location.search).get("export");
+      if (scenario === "failure") throw Error("保存目录无写入权限");
+      return scenario === "cancel" ? null : "团队会话-测试.md";
+    }
     if(command === "plugin:clipboard-manager|write_text") {
       if(mock.holdCopy)await new Promise<void>(resolve=>mock.pendingCopies.push(resolve));
       if(mock.copyError)throw Error(mock.copyError);

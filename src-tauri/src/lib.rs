@@ -1098,6 +1098,34 @@ fn ma_conversation_snapshot(project_id: String, state: State<'_, MultiAgentStore
 }
 
 #[tauri::command]
+async fn ma_conversation_export(
+    project_id: String,
+    conversation_id: String,
+    window: tauri::WebviewWindow,
+    state: State<'_, MultiAgentStore>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let store = state.inner().clone();
+    let (filename, markdown) = blocking_command(move || {
+        store.export_conversation_markdown(&project_id, &conversation_id).map_err(to_err)
+    }).await?;
+    let (selected, selection) = tokio::sync::oneshot::channel();
+    window.dialog().file().set_parent(&window)
+        .set_title("导出团队会话")
+        .set_file_name(filename)
+        .add_filter("Markdown", &["md"])
+        .save_file(move |path| { let _ = selected.send(path); });
+    let Some(path) = selection.await.map_err(|_| "未能打开会话保存窗口")? else { return Ok(None); };
+    let path = path.into_path().map_err(to_err)?;
+    blocking_command(move || {
+        providers::write_atomic(&path, markdown.as_bytes())
+            .map_err(|error| format!("保存文件失败（{}）：{}", path.display(), error.root_cause()))?;
+        Ok(Some(path.file_name().unwrap_or_default().to_string_lossy().into_owned()))
+    }).await
+}
+
+#[tauri::command]
 async fn ma_conversation_design_delivery(project_id: String, conversation_id: String, delegation_id: String,
     state: State<'_, MultiAgentStore>) -> Result<multi_agent::DesignDelivery, String> {
     let store = state.inner().clone();
@@ -6358,6 +6386,7 @@ pub fn run() {
             ma_runtime_events,
             ma_send_message,
             ma_conversation_snapshot,
+            ma_conversation_export,
             ma_conversation_design_delivery,
             ma_conversation_run_transcript,
             ma_conversation_policy_set,

@@ -9,6 +9,7 @@ const errors = [];
 const trigger = page => page.getByRole('button', { name: '讨论记录操作', exact: true });
 const newItem = page => page.getByRole('menuitem', { name: '新建会话', exact: true });
 const historyItem = page => page.getByRole('menuitem', { name: '历史会话', exact: true });
+const exportItem = page => page.getByRole('menuitem', { name: '导出会话', exact: true });
 const clearItem = page => page.getByRole('menuitem', { name: '清空讨论记录', exact: true });
 const editor = page => page.locator('textarea');
 async function fresh(query = '', width = 780) {
@@ -33,10 +34,12 @@ try {
     await editor(page).fill('旧会话草稿');
     await page.getByRole('tab', { name: '任务执行', exact: true }).click();
     await trigger(page).click();
-    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['新建会话', '历史会话', '清空讨论记录']);
+    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['新建会话', '历史会话', '导出会话', '清空讨论记录']);
     await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'menuitem' && document.activeElement?.textContent === '新建会话');
     await page.keyboard.press('ArrowDown');
     assert.equal(await historyItem(page).evaluate(el => el === document.activeElement), true);
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await exportItem(page).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('ArrowDown');
     assert.equal(await clearItem(page).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('Home');
@@ -57,6 +60,7 @@ try {
     assert.equal(after.calls.find(c => c.command === 'ma_conversation_new').args.input.expectedConversationId, before.conversation.id);
     await trigger(page).click();
     assert.equal(await newItem(page).isEnabled(), true, 'empty conversation can still start a new one');
+    assert.equal(await exportItem(page).isDisabled(), true);
     assert.equal(await clearItem(page).isDisabled(), true);
     await page.keyboard.press('Escape');
     await page.screenshot({ path: `${out}/new-${theme}-${width}.png`, fullPage: true });
@@ -73,6 +77,26 @@ try {
     assert.equal(await page.locator('.conversation-message').count(), 0);
     assert.equal(await editor(page).inputValue(), '新会话草稿');
     assert.equal(await page.evaluate(() => window.conversationMock.calls.filter(c => c.command === 'ma_conversation_switch').length), 2);
+    await page.close();
+  }
+  for (const scenario of ['success', 'cancel', 'failure']) {
+    const page = await fresh(`export=${scenario}`);
+    await page.locator('.conversation-transcript').getByText(/拆解方案/).waitFor();
+    await editor(page).fill('保留这个草稿');
+    const before = await page.evaluate(() => structuredClone(window.conversationMock.chats.A));
+    await trigger(page).click();
+    await exportItem(page).click();
+    await page.waitForFunction(() => window.conversationMock.calls.some(call => call.command === 'ma_conversation_export'));
+    assert.deepEqual(await page.evaluate(() => window.conversationMock.calls.find(call => call.command === 'ma_conversation_export').args),
+      { projectId: 'A', conversationId: before.conversation.id });
+    if (scenario === 'success') await page.getByRole('status').filter({ hasText: '已导出：团队会话-测试.md' }).waitFor();
+    else if (scenario === 'failure') await page.getByRole('alert').filter({ hasText: '保存目录无写入权限' }).waitFor();
+    else {
+      assert.equal(await page.locator('.conversation-export-status').count(), 0);
+      assert.equal(await page.getByRole('alert').filter({ hasText: '导出会话失败' }).count(), 0);
+    }
+    assert.equal(await editor(page).inputValue(), '保留这个草稿');
+    assert.deepEqual(await page.evaluate(() => window.conversationMock.chats.A), before);
     await page.close();
   }
   const legacy = await fresh('legacy-history=1');

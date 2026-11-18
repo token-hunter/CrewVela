@@ -140,6 +140,7 @@
 .conversation-footer { position: relative; z-index: 2; flex: none; min-width: 0; padding: 8px 26px 13px; }
 .conversation-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 9px; padding: 7px 0; margin-bottom: 5px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-dim); }
 .conversation-progress .conversation-status-dot { margin: 0; }
+.conversation-export-status { display: block; flex: none; margin: 8px 26px 0; overflow-wrap: anywhere; }
 .conversation-progress > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .conversation-progress button { flex: none; }
 .conversation-composer.multi-agent-composer { display: flex; flex-direction: column; position: relative; margin: 0; padding: 10px 13px; border: 1px solid var(--border-strong); border-radius: 14px; background: transparent; min-width: 0; gap: 0; }

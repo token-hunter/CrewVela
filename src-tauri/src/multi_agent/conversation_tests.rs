@@ -292,6 +292,46 @@ fn clear_input(snapshot: &ConversationSnapshot) -> ConversationClearInput {
 }
 
 #[test]
+fn conversation_export_preserves_complete_markdown_and_current_session_scope() {
+    let fixture = Fixture::new();
+    let markdown = "导出测试\n\n```ts\nconst name = '中文';\n```";
+    let mut input = fixture.input();
+    input.body = markdown.into();
+    let first = fixture.run_input(input, &Replies::default());
+    let conversation_id = &first.conversation.id;
+    {
+        let connection = fixture.store.connection.lock().unwrap();
+        connection.execute("UPDATE ma_projects SET name=?1 WHERE id=?2", params!["项目/A?", &fixture.project]).unwrap();
+        for number in 0..101 {
+            let mut message = first.messages[0].clone();
+            message.id = id();
+            message.client_message_id = None;
+            message.created_at -= 102 - number;
+            message.body = format!("较早消息 {number:03}");
+            save_message(&connection, &format!("export-fixture:{number}"), &message).unwrap();
+        }
+    }
+    let (filename, exported) = fixture.store.export_conversation_markdown(&fixture.project, conversation_id).unwrap();
+    assert!(filename.starts_with("团队会话-项目_A_-") && filename.ends_with(".md"));
+    assert!(exported.starts_with("# 项目/A? · 团队会话"));
+    assert!(exported.contains(markdown) && exported.contains("## member-0 · "));
+    assert!(exported.find("较早消息 000").unwrap() < exported.find(markdown).unwrap());
+    assert_eq!(exported.matches("较早消息 ").count(), 101);
+    assert!(fixture.store.export_conversation_markdown("wrong-project", conversation_id).is_err());
+
+    let complete = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    let fresh = fixture.store.new_conversation(clear_input(&complete)).unwrap();
+    assert!(fixture.store.export_conversation_markdown(&fixture.project, conversation_id).unwrap_err().to_string().contains("已变化"));
+    assert!(fixture.store.export_conversation_markdown(&fixture.project, &fresh.conversation.id).unwrap_err().to_string().contains("暂无"));
+    fixture.store.switch_conversation(ConversationSwitchInput {
+        project_id: fixture.project.clone(),
+        expected_conversation_id: fresh.conversation.id,
+        conversation_id: conversation_id.clone(),
+    }).unwrap();
+    assert_eq!(fixture.store.export_conversation_markdown(&fixture.project, conversation_id).unwrap().1, exported);
+}
+
+#[test]
 fn new_conversation_preserves_old_evidence_and_isolates_new_context_durably() {
     let fixture = Fixture::new();
     let previous = fixture.run(&Replies::default());

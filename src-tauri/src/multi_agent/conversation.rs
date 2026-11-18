@@ -555,10 +555,62 @@ fn ensure_active_conversation(expected: Option<&str>, current: &CollaborationCon
     Ok(())
 }
 
+fn render_conversation_markdown(project: &str, messages: &[ConversationMessage], names: &HashMap<String, String>) -> String {
+    let heading_text = |value: &str| {
+        let mut escaped = String::new();
+        for ch in value.split_whitespace().collect::<Vec<_>>().join(" ").chars() {
+            if "\\`*_{}[]<>#|&".contains(ch) { escaped.push('\\'); }
+            escaped.push(ch);
+        }
+        escaped
+    };
+    let mut document = format!("# {} · 团队会话\n", heading_text(project));
+    for message in messages.iter().filter(|message| !message.body.trim().is_empty()) {
+        let speaker = match message.sender_type.as_str() {
+            "user" => "我",
+            "agent" => message.agent_id.as_ref().and_then(|id| names.get(id)).map(String::as_str).unwrap_or("历史成员"),
+            _ => "系统",
+        };
+        let stamp = chrono::DateTime::from_timestamp_millis(message.created_at)
+            .map(|date| date.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S %:z").to_string())
+            .unwrap_or_else(|| "时间未知".into());
+        document.push_str(&format!("\n## {} · {stamp}\n\n", heading_text(speaker)));
+        document.push_str(&message.body);
+        document.push('\n');
+    }
+    document
+}
+
 impl MultiAgentStore {
     pub fn conversation_snapshot(&self, project_id: &str) -> Result<ConversationSnapshot> {
         let connection = self.connection.lock().unwrap();
         snapshot_with(&connection, project_id)
+    }
+
+    pub(crate) fn export_conversation_markdown(&self, project_id: &str, conversation_id: &str) -> Result<(String, String)> {
+        let (project, created_at, messages, names) = {
+            let connection = self.connection.lock().unwrap();
+            let (project, created_at): (String, i64) = connection.query_row(
+                "SELECT p.name,c.created_at FROM ma_conversations c JOIN ma_projects p ON p.id=c.project_id
+                 WHERE c.project_id=?1 AND c.id=?2",
+                params![project_id, conversation_id], |row| Ok((row.get(0)?, row.get(1)?)),
+            ).optional()?.context("当前会话已变化，请切回原会话再导出")?;
+            sync_project_messages(&connection, project_id)?;
+            let messages = public_messages(&connection, project_id)?;
+            let mut agents = connection.prepare("SELECT id,name FROM ma_agents WHERE project_id=?1")?;
+            let names = agents.query_map([project_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+                .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+            (project, created_at, messages, names)
+        };
+        if !messages.iter().any(|message| !message.body.trim().is_empty()) { bail!("当前会话暂无可导出的消息"); }
+        let date = chrono::DateTime::from_timestamp_millis(created_at)
+            .map(|date| date.with_timezone(&chrono::Local).format("%Y%m%d-%H%M%S").to_string())
+            .unwrap_or_else(|| "历史记录".into());
+        let file_project: String = project.chars().map(|ch| {
+            if ch.is_control() || "<>:\"/\\|?*".contains(ch) { '_' } else { ch }
+        }).take(55).collect();
+        let filename = format!("团队会话-{}-{date}.md", file_project.trim_matches([' ', '.']));
+        Ok((filename, render_conversation_markdown(&project, &messages, &names)))
     }
 
     /// Rotate the public history boundary atomically. Task/run evidence and native
