@@ -876,6 +876,39 @@ async fn ma_project_git_status(root_path: String) -> Result<multi_agent::project
 }
 
 #[tauri::command]
+fn ma_member_library(state: State<'_, MultiAgentStore>) -> Result<multi_agent::member_library::LibrarySnapshot, String> {
+    state.library_snapshot().map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_member_library_import(input: multi_agent::member_library::LibraryImport, state: State<'_, MultiAgentStore>) -> Result<multi_agent::member_library::LibraryApplication, String> {
+    let _lifecycle = state.agent_lifecycle_guard();
+    state.import_default_team(input).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_member_library_apply(project_id: String, state: State<'_, MultiAgentStore>) -> Result<multi_agent::member_library::LibraryApplication, String> {
+    state.apply_default_team(&project_id).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_member_library_auto_apply(enabled: bool, state: State<'_, MultiAgentStore>) -> Result<(), String> {
+    state.set_library_auto_apply(enabled).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_member_library_update(
+    member_id: String, profile: multi_agent::member_library::LibraryProfile,
+    state: State<'_, MultiAgentStore>, sessions: State<'_, SessionManager>,
+) -> Result<(), String> {
+    let _lifecycle = state.agent_lifecycle_guard();
+    for agent_id in state.library_linked_agent_ids(&member_id).map_err(to_err)? {
+        ensure_member_terminal_idle(&sessions, &agent_id)?;
+    }
+    state.update_library_member(&member_id, profile).map_err(to_err)
+}
+
+#[tauri::command]
 fn ma_create_agent(
     input: CreateAgentInput,
     state: State<'_, MultiAgentStore>,
@@ -6365,6 +6398,11 @@ pub fn run() {
             ma_resolve_intervention,
             ma_create_project,
             ma_project_git_status,
+            ma_member_library,
+            ma_member_library_import,
+            ma_member_library_apply,
+            ma_member_library_auto_apply,
+            ma_member_library_update,
             ma_create_agent,
             ma_update_agent,
             ma_remove_agent,

@@ -10,6 +10,7 @@ pub(crate) mod project_git;
 mod plan_validation;
 mod runtime;
 mod store;
+pub(crate) use store::member_library;
 pub(crate) mod zcode;
 
 pub use bridge::{CollaborationAccess, CollaborationBridge};

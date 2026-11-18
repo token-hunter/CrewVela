@@ -29,8 +29,34 @@ function policyEntry(agentId: string | null) {
 if (fixtureState === "agents-empty") snapshot.agents = [];
 const projects: any[] = fixtureState === "empty" ? [] : [project];
 const snapshots = new Map([[project.id, snapshot]]);
+if (fixtureState === "library") {
+  project.name = "snake-git-test";
+  const origin = { ...project, id: "origin", name: "模型设置实测-20261115" };
+  const agents = [["前端开发", "claude_code", "worker", "ribbon"], ["后端开发", "codex", "worker", "gear"],
+    ["前端审查", "codex", "reviewer", "block"], ["后端审查", "claude_code", "reviewer", "orbit"],
+    ["联调集成", "codex", "integrator", "sprout"]].map(([name, runtimeKind, role, avatarId], index) => ({
+    ...snapshot.agents[0], id: `origin-${index}`, projectId: origin.id, name, runtimeKind, role, avatarId,
+  }));
+  projects.push(origin);
+  snapshots.set(origin.id, { ...structuredClone(snapshot), project: origin, agents });
+  snapshot.agents = [];
+}
+const library: { members: any[]; autoApply: boolean } = { members: [], autoApply: true };
+function applyFixtureTeam(projectId: string) {
+  const target = snapshots.get(projectId);
+  const skipped: string[] = [];
+  let added = 0;
+  for (const { id, profile, isDefault } of library.members.filter(row => row.profile.enabled)) {
+    if (!isDefault) continue;
+    if (target.agents.some((agent: any) => agent.name === profile.name || agent.libraryId === id)) { skipped.push(profile.name); continue; }
+    target.agents.push({ ...profile, id: `${projectId}-${id}`, projectId, libraryId: id });
+    added++;
+  }
+  return { added, skipped };
+}
 const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate: false, releaseCreate: null as (() => void) | null, pickerResult: null as string | null, pickerError: false,
   gitSetups: [] as any[], gitStatus: null as any, gitError: false,
+  libraryImports: [] as any[],
   removalRequests: [] as any[], removalBlockers: [] as string[], removedAgents: () => snapshot.agents.filter((agent: any) => agent.removedAt) };
 (window as any).projectMock = projectMock;
 (window as any).__TAURI_INTERNALS__ = { transformCallback: () => 1, async invoke(command: string, args: any) {
@@ -75,6 +101,23 @@ const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate:
     if (projectMock.gitError) throw Error("找不到 Git，请安装 Git 后重新检查。");
     return projectMock.gitStatus ?? { state: "missingRepository", repositoryPath: null, hasFiles: false, stagedFiles: [], stagedToken: null };
   }
+  if (command === "ma_member_library") return structuredClone(library);
+  if (command === "ma_member_library_import") {
+    const input = args.input;
+    projectMock.libraryImports.push(structuredClone(input));
+    library.members = snapshots.get(input.sourceProjectId).agents.filter((agent: any) => input.agentIds.includes(agent.id))
+      .map((profile: any) => ({ id: profile.id, profile, isDefault: true, runtimeLocked: false }));
+    return input.applyToProjectId ? applyFixtureTeam(input.applyToProjectId) : { added: 0, skipped: [] };
+  }
+  if (command === "ma_member_library_apply") return applyFixtureTeam(args.projectId);
+  if (command === "ma_member_library_auto_apply") { library.autoApply = args.enabled; return; }
+  if (command === "ma_member_library_update") {
+    const member = library.members.find(row => row.id === args.memberId);
+    member.profile = { ...member.profile, ...args.profile };
+    for (const item of snapshots.values()) item.agents = item.agents.map((agent: any) => agent.id === args.memberId || agent.libraryId === args.memberId
+      ? { ...agent, ...args.profile } : agent);
+    return;
+  }
   if (command === "ma_create_project") {
     projectMock.creates.push(args.input);
     projectMock.gitSetups.push(args.gitSetup ?? null);
@@ -83,6 +126,7 @@ const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate:
     const created = { ...project, ...args.input, id: `created-project-${projectMock.creates.length}` };
     projects.push(created);
     snapshots.set(created.id, { ...structuredClone(snapshot), project: created, agents: [], tasks: [], events: [] });
+    if (library.autoApply) applyFixtureTeam(created.id);
     return created;
   }
   if (["ma_probe_runtimes", "ma_check_runtime_updates"].includes(command)) return snapshot.agents.map((a: any) => ({ kind: a.runtimeKind, installed: true, version: "fixture", capabilities: [], error: null, ...(fixtureState === "runtime-update-failed" ? { version: "1.0.0", latestVersion: "2.0.0", updateAvailable: true, canAutoUpdate: true } : {}) }));
@@ -115,7 +159,7 @@ function Fixture() {
   return <main className="member-window-fixture">
     <style>{`.member-window-fixture{min-height:100vh;padding:16px;background:var(--bg);color:var(--text)}.member-fixture-controls{display:flex;gap:16px;margin-bottom:16px}.member-fixture-host{height:560px;overflow:auto;border:1px solid var(--border);padding:24px}.member-fixture-host.contained{transform:translateZ(0);contain:paint}.member-fixture-host .collab-project-runtime-bar{display:none}`}</style>
     <header className="member-fixture-controls"><label><input type="checkbox" checked={contained} onChange={e => setContained(e.target.checked)} />模拟设置页裁切容器</label><button onClick={() => { failNext = true; }}>下次保存失败</button><output>{result}</output></header>
-    <div className={`member-fixture-host${contained ? " contained" : ""}`}><CollaborationSettingsPanel onClose={() => setResult("返回应用")} initialTab="team" initialProjectId={fixtureState ? undefined : project.id} /></div>
+    <div className={`member-fixture-host${contained ? " contained" : ""}`}><CollaborationSettingsPanel onClose={() => setResult("返回应用")} initialTab="team" initialProjectId={!fixtureState || fixtureState === "library" ? project.id : undefined} /></div>
   </main>;
 }
 createRoot(document.getElementById("root")!).render(<Fixture />);

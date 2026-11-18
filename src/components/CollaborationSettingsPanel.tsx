@@ -8,6 +8,7 @@ import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { CollaborationAgentEditor, type AgentDraft } from "./CollaborationAgentEditor";
 import { CollaborationAgentRemovalDialog } from "./CollaborationAgentRemovalDialog";
+import { CollaborationMemberLibrary } from "./CollaborationMemberLibrary";
 import { CollaborationProjectDialog } from "./CollaborationProjectDialog";
 import { SettingsSection } from "./ui/SettingsSection";
 import { Modal } from "./ui/Modal";
@@ -249,6 +250,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   const memberMenuGroup = useId();
   const [editorProjectId, setEditorProjectId] = useState<string | null>(null);
   const [teamRoleFilter, setTeamRoleFilter] = useState<AgentRole | "all">("all");
+  const [teamPage, setTeamPage] = useState<"project" | "library">("project");
   const [teamSearch, setTeamSearch] = useState("");
 
   const [tab, setTab] = useState<string>(initialTab);
@@ -688,7 +690,12 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
       <section className="collab-handoff-panel"><header><h3>交接记录</h3></header>{health?.handoffs.slice(0,3).map((record) => <article key={record.id}><div><p>{sessionName(record.sourceId)} → {sessionName(record.targetId)}</p><small>{HANDOFF_LABELS[record.state] ?? record.state} · {record.consequence}</small></div><button onClick={() => requestHandoff(undefined,record.id)}>查看</button></article>)}{!health?.handoffs.length && <p className="collab-empty">暂无交接记录</p>}</section></aside></details></div>
       <p className="collab-sync-note"><ArrowClockwiseIcon size={16} />任务依赖与执行状态自动同步</p>
     </>}
-    {tab === "team" && (() => {
+    {tab === "team" && <div className="collab-team-page-toggle" role="group" aria-label="团队配置范围">
+      <button type="button" className={`collab-team-scope${teamPage === "project" ? " active" : ""}`} aria-pressed={teamPage === "project"} onClick={() => setTeamPage("project")}>当前项目</button>
+      <button type="button" className={`collab-team-scope${teamPage === "library" ? " active" : ""}`} aria-pressed={teamPage === "library"} onClick={() => setTeamPage("library")}>全局成员库</button>
+    </div>}
+    {tab === "team" && teamPage === "library" && <CollaborationMemberLibrary projects={projects} project={currentSnapshot?.project} onProjectChanged={() => void refreshSnapshot()} />}
+    {tab === "team" && teamPage === "project" && (() => {
       const query = teamSearch.trim().toLowerCase();
       const filteredAgents = enabledAgents.filter((agent) =>
         (teamRoleFilter === "all" || agent.role === teamRoleFilter)
@@ -700,7 +707,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
         ))}
         <div className="collab-team-search"><input aria-label="搜索成员" placeholder="搜索成员 / 职责…" value={teamSearch} onChange={(event) => setTeamSearch(event.target.value)} /></div>
         <button className="btn secondary" disabled={!currentSnapshot} title={memberUnavailableReason ?? undefined} aria-describedby={memberUnavailableReason ? "collab-member-unavailable" : undefined} onClick={() => { setEditorProjectId(currentSnapshot!.project.id); setEditingAgent(null); }}>新增成员</button>
-      </div>{memberUnavailableReason ? <p id="collab-member-unavailable" role="status">{memberUnavailableReason}</p> : <p>默认团队可自由编辑，点击名片调整人格、模型与职责。{hiddenMemberCount > 0 && ` 共 ${teamAgents.length} 位，隐藏 ${hiddenMemberCount} 位（对应 Runtime 未启用）。`}</p>}
+      </div>{memberUnavailableReason ? <p id="collab-member-unavailable" role="status">{memberUnavailableReason}</p> : <p>在此编辑当前项目的成员配置。跨项目配置可在全局成员库维护。{hiddenMemberCount > 0 && ` 共 ${teamAgents.length} 位，隐藏 ${hiddenMemberCount} 位（对应 Runtime 未启用）。`}</p>}
       </div><SettingsSection title="团队"><div className="collab-agent-card-grid">
         {filteredAgents.map((agent) => {
           const active = currentSnapshot?.runs.some((run) => run.agentId === agent.id && ["queued", "starting", "running", "waiting_input", "waiting_approval"].includes(run.status));

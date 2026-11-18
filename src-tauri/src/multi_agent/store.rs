@@ -32,6 +32,9 @@ pub struct MultiAgentStore {
 #[path = "delegation.rs"]
 pub(super) mod delegation;
 
+#[path = "member_library.rs"]
+pub(crate) mod member_library;
+
 impl MultiAgentStore {
     pub fn new() -> Result<Self> {
         Self::open_at(crate::providers::config_dir()?.join("multi-agent.db"))
@@ -49,6 +52,7 @@ impl MultiAgentStore {
             "PRAGMA foreign_keys = ON;\nPRAGMA journal_mode = WAL;\nPRAGMA synchronous = NORMAL;",
         )?;
         migrate(&connection)?;
+        member_library::migrate(&connection)?;
         super::conversation::migrate(&connection)?;
         delegation::migrate(&connection)?;
         connection.execute(
@@ -71,11 +75,17 @@ impl MultiAgentStore {
     }
 
     pub fn create_project(&self, input: CreateProjectInput) -> Result<MultiAgentProject> {
-        self.create_project_with_git(input, None)
+        self.create_project_inner(input, None, false)
     }
 
     pub(crate) fn create_project_with_git(
         &self, input: CreateProjectInput, git_setup: Option<super::project_git::ProjectGitPreparation>,
+    ) -> Result<MultiAgentProject> {
+        self.create_project_inner(input, git_setup, true)
+    }
+
+    fn create_project_inner(&self, input: CreateProjectInput,
+        git_setup: Option<super::project_git::ProjectGitPreparation>, use_default_team: bool,
     ) -> Result<MultiAgentProject> {
         let name = required(&input.name, "项目名称")?;
         let goal = required(&input.goal, "项目目标")?;
@@ -101,15 +111,16 @@ impl MultiAgentStore {
         };
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_millis();
-        let connection = self.connection.lock().unwrap();
-        connection.execute(
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
             "INSERT INTO ma_projects
              (id, name, goal, root_path, default_branch, status, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?6)",
             params![id, name, goal, canonical_root, default_branch, now],
         )?;
         append_event(
-            &connection,
+            &tx,
             &id,
             "project",
             &id,
@@ -119,7 +130,12 @@ impl MultiAgentStore {
             serde_json::json!({ "name": name, "goal": goal }),
             now,
         )?;
-        self.get_project_with(&connection, &id)
+        if use_default_team && member_library::auto_apply(&tx)? {
+            member_library::apply_default(&tx, &id)?;
+        }
+        let project = self.get_project_with(&tx, &id)?;
+        tx.commit()?;
+        Ok(project)
     }
 
     pub fn list_projects(&self) -> Result<Vec<MultiAgentProject>> {
@@ -285,6 +301,12 @@ impl MultiAgentStore {
             now,
         )?;
         let updated = get_agent_with(&tx, &input.agent_id)?;
+        if updated.name != previous.name || updated.runtime_kind != previous.runtime_kind
+            || updated.role != previous.role || updated.description != previous.description
+            || updated.persona != previous.persona || updated.persona_custom != previous.persona_custom
+            || updated.avatar_id != previous.avatar_id || updated.model != previous.model || updated.enabled != previous.enabled {
+            tx.execute("UPDATE ma_library_project_members SET follows_library=0 WHERE agent_id=?1", [&input.agent_id])?;
+        }
         tx.commit()?;
         Ok(updated)
     }

@@ -23,22 +23,24 @@ try {
     assert.equal(await page.locator('.collab-team-filter-pill').first().locator('b').textContent(), String(expected));
     assert.equal(await cards.count(), expected);
   }
-  await checkCounts(7);
+  // The preview team contains the seven current CLI runtimes. Legacy Desktop is existing-member only.
+  await checkCounts(6);
+  await page.getByRole('button', { name: /协作 Runtime/ }).click();
   for (const runtime of ['pi', 'opencode']) {
     const logos = page.locator(`.collab-runtime-chip img[data-runtime="${runtime}"], .collab-agent-card img[data-runtime="${runtime}"]`);
     assert.ok(await logos.count() >= 2, `${runtime} has toolbar and member logos`);
     for (const logo of await logos.all()) assert.match(await logo.evaluate(el => getComputedStyle(el).filter), /invert\(1\)/, `${runtime} is visible against the dark background`);
   }
-  assert.match(await page.locator('.collab-team-toolbar p').innerText(), /共 8 位，隐藏 1 位/);
+  assert.match(await page.locator('.collab-team-toolbar p').innerText(), /共 7 位，隐藏 1 位/);
   await mkdir('output/playwright', { recursive: true });
   await page.screenshot({ path: 'output/playwright/collaboration-member-counts.png' });
   await page.locator('.collab-team-search input').fill('前端');
   assert.equal(await cards.count(), 1);
-  assert.equal(await teamTab.locator('b').textContent(), '7');
+  assert.equal(await teamTab.locator('b').textContent(), '6');
   await page.locator('.collab-team-search input').fill('');
   await page.locator('.collab-team-filter-pill').filter({ hasText: '审查' }).click();
   assert.equal(await cards.count(), 1);
-  assert.equal(await teamTab.locator('b').textContent(), '7');
+  assert.equal(await teamTab.locator('b').textContent(), '6');
   await page.locator('.collab-team-filter-pill').first().click();
   async function setDisabled(disabledRuntimes) {
     await page.evaluate(disabled => {
@@ -48,11 +50,11 @@ try {
     }, disabledRuntimes);
   }
   await setDisabled([]);
-  await checkCounts(8);
+  await checkCounts(7);
   assert.doesNotMatch(await page.locator('.collab-team-toolbar p').innerText(), /隐藏/);
   await setDisabled(['claude_code', 'codex', 'kimi_code', 'pi', 'opencode', 'zcode_cli', 'deepseek_harness', 'zcode']);
   await checkCounts(0);
-  assert.match(await page.locator('.collab-team-toolbar p').innerText(), /共 8 位，隐藏 8 位/);
+  assert.match(await page.locator('.collab-team-toolbar p').innerText(), /共 7 位，隐藏 7 位/);
   console.log('PASS: counts agree with cards; hidden explanation; search/role filters; runtime changes; zero visible members');
 } finally {
   await browser.close();

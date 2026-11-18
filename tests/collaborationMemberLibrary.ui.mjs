@@ -1,0 +1,63 @@
+import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
+import { chromium } from "playwright";
+
+const base = process.env.CREWVELA_UI_URL || "http://127.0.0.1:1420";
+const browser = await chromium.launch({ channel: "chrome" });
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(`${base}/tests/fixtures/collaboration-member-dialog-ui.html?state=library`);
+  const projects = page.getByRole("combobox", { name: "当前项目", exact: true });
+  const libraryButton = page.getByRole("button", { name: "全局成员库", exact: true });
+  const projectButton = page.getByRole("button", { name: "当前项目", exact: true });
+  const table = page.getByRole("table");
+  const cards = page.locator(".collab-agent-card");
+  await page.getByText("暂无可用成员，点击右上角「新增成员」创建。", { exact: true }).waitFor();
+  assert.equal(await projects.inputValue(), "member-fixture");
+  await libraryButton.click();
+  await page.getByRole("button", { name: "从现有项目导入", exact: true }).click();
+  const importer = page.getByRole("dialog", { name: "从现有项目导入成员" });
+  assert.equal(await importer.getByLabel("来源项目").inputValue(), "origin");
+  const selected = importer.getByRole("group", { name: "待导入成员" });
+  await selected.waitFor();
+  assert.equal(await selected.locator("input:checked").count(), 5);
+  assert.equal(await importer.getByRole("checkbox", { name: "同时应用到「snake-git-test」" }).isChecked(), true);
+  await importer.getByRole("button", { name: "设为默认团队" }).click();
+  await importer.waitFor({ state: "detached" });
+  await table.getByText("联调集成", { exact: true }).waitFor();
+  assert.equal(await table.locator("tbody tr").count(), 5);
+  assert.match(await page.getByRole("status").filter({hasText: "已保存默认团队"}).innerText(), /5 位成员/);
+  assert.equal(await page.getByRole("checkbox", { name: "新项目自动使用" }).isChecked(), true);
+  mkdirSync("output/playwright", { recursive: true });
+  await page.locator(".member-fixture-host").evaluate(el => { el.style.height = "880px"; });
+  await page.screenshot({ path: "output/playwright/collaboration-member-library.png" });
+  await page.getByRole("button", { name: "应用到当前项目", exact: true }).click();
+  await page.getByRole("status").filter({hasText: "添加 0 位成员"}).waitFor();
+  await projectButton.click();
+  await cards.filter({hasText:"联调集成"}).waitFor();
+  assert.equal(await cards.count(), 5);
+
+  await libraryButton.click();
+  await page.getByRole("button", { name: "编辑 前端开发", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "编辑全局成员" });
+  await editor.getByLabel("职责定位").fill("实现并验证浏览器贪吃蛇");
+  await editor.getByRole("button", { name: "保存成员" }).click();
+  await editor.waitFor({ state: "detached" });
+  await projectButton.click();
+  await cards.getByText("实现并验证浏览器贪吃蛇", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "创建项目", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "创建协作项目" });
+  await form.getByLabel("项目名称", { exact: true }).fill("默认团队回归");
+  await form.getByLabel("项目目录", { exact: true }).fill("/fixture/new-library-project");
+  await form.getByLabel("项目目标", { exact: true }).fill("新项目自动带入成员");
+  await form.getByRole("button", { name: "创建项目", exact: true }).click();
+  await form.waitFor({ state: "detached" });
+  await cards.filter({hasText:"联调集成"}).waitFor();
+  assert.equal(await cards.count(), 5);
+  assert.equal(await projects.locator("option:checked").innerText(), "默认团队回归");
+  assert.deepEqual(errors, []);
+  console.log("PASS: import and apply five members in one step, no duplicate members, global editing, new project defaults");
+} finally { await browser.close(); }
