@@ -27,6 +27,16 @@ export function ControlWindow() {
   }, [theme]);
 
   useEffect(() => {
+    const openPreview = (event: Event) => {
+      const url = (event as CustomEvent<{ url?: string }>).detail?.url;
+      if (url) void emit("crewvela-project-preview-browse", { url })
+        .catch(reason => setError(`打开项目网页失败：${String(reason)}`));
+    };
+    window.addEventListener("crewvela:browse", openPreview);
+    return () => window.removeEventListener("crewvela:browse", openPreview);
+  }, []);
+
+  useEffect(() => {
     let disposed = false;
     let sessionTimer: number | undefined;
     let providerTimer: number | undefined;

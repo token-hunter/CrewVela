@@ -153,6 +153,9 @@ const planDraftBody = '```json\n' + JSON.stringify({ summary: "范围样例", ta
 const planRetryRequests = new Map<string, any>();
 const stagedAttachments = new Map<string, { id: string; name: string; bytes: number; mediaType: string }>();
 const mock = {
+  preview: { state: "idle", url: undefined as string | undefined, error: undefined as string | undefined, logs: undefined as string | undefined },
+  previewBrowsed: [] as string[],
+  previewVersion: "",
   clipboardWrites: [] as string[], copyError: "", holdCopy: false, pendingCopies: [] as Array<()=>void>, failPermission:false, stalePermission:false,
   calls, pending, chats, projects, snapshot, activityEvents, activityApprovals, runHistory, archivedConversations: [] as any[], holdProject: "", holdSend: false, holdClear: false, holdNew: false, failExecution: false, failApproval: false, failClear: false, failNew: false,
   release(command: string, value?: any, error?: string) { const index = pending.findIndex(item => item.command === command); if (index < 0) throw Error(`No pending ${command}`); const item = pending.splice(index, 1)[0]; if (error) item.reject(Error(error)); else item.resolve(value ?? (command === "ma_snapshot" ? snapshot(item.args.projectId) : chats[item.args.projectId ?? item.args.input.projectId])); },
@@ -340,6 +343,22 @@ const mock = {
     if (command === "ma_conversation_control") { const chat = chats[args.projectId]; if (chat.rounds.length) chat.rounds[chat.rounds.length - 1].status = params.get("stopping") === "1" ? "stopping" : args.action === "pause" ? "paused" : "cancelled"; if(params.get("activity")==="1"&&params.get("stopping")!=="1"){for(const item of chat.messages.filter((item:any)=>item.senderType==="agent"&&item.status==="running")){item.status=args.action==="pause"?"paused":"cancelled";item.updatedAt=Date.now();const run=runHistory.find(run=>run.id===item.runId);if(run){run.status=args.action==="pause"?"interrupted":"cancelled";run.finishedAt=Date.now();}}} return structuredClone(chat); }
     if (command === "ma_conversation_execute_plan") { if(mock.failApproval) throw Error("隔离测试：分工确认失败"); const chat = chats[args.input.projectId]; const plan = chat.executionPlans.find((item: any) => item.id === args.input.planId); plan.status = "applied"; plan.taskIds = ["t-design", "t-build", "t-review"]; return structuredClone(chat); }
     if (command === "workspace_reveal_path" && params.has("managed-test")) return null;
+    if (command === "ma_project_preview_status") return { ...mock.preview, logs: args.logs ? mock.preview.logs : undefined };
+    if (command === "ma_project_preview_save") {
+      chats[args.projectId].executionPlans.find((plan: any) => plan.id === args.planId).managed.preview = args.config;
+      return null;
+    }
+    if (command === "ma_project_preview_start") {
+      if (mock.previewVersion && args.confirmedVersion !== mock.previewVersion) return {
+        kind: "confirm", version: mock.previewVersion, message: "当前目录已切换版本，继续启动？",
+      };
+      if (mock.preview.state !== "running") mock.preview = { state: "starting", url: undefined, error: undefined, logs: undefined };
+      return { kind: "status", status: { ...mock.preview } };
+    }
+    if (command === "ma_project_preview_stop") {
+      mock.preview = { state: "idle", url: undefined, error: undefined, logs: undefined };
+      return mock.preview;
+    }
     if (command === "ma_pause_project" || command === "ma_start_project") { if(mock.failExecution) return {accepted:false,message:"隔离测试：执行控制未确认"}; projects.find(project => project.id === args.projectId)!.status = command === "ma_pause_project" ? "paused" : "active"; return { accepted: true, projectId: args.projectId }; }
     if (command === "ma_confirm_run_stopped") { if(params.get("confirm-fails")==="1")throw Error("fixture 确认失败"); const run=runHistory.find(run=>run.id===args.runId);if(!run||args.confirmedStopped!==true)throw Error("Wrong run confirmation");run.sessionLocator=null;return null; }
     if (["ma_probe_runtimes","ma_check_runtime_updates"].includes(command)) return agents.map(agent=>({kind:agent.runtimeKind,installed:true,version:"fixture",capabilities:[],error:null}));
@@ -357,6 +376,9 @@ const mock = {
     throw Error(`隔离页面未模拟 ${command}`);
   },
 };
+window.addEventListener("crewvela:browse", (event) => {
+  mock.previewBrowsed.push((event as CustomEvent<{ url: string }>).detail.url);
+});
 if(params.get("queued")==="1") {
  const input={projectId:"A",clientMessageId:"pending-original",body:"@Codex 先回答这个问题",participantAgentIds:["codex"],mode:"discussion",intent:"chat",maxRounds:1,maxDurationSeconds:600};
  chats.A.rounds[0].status=params.get("unconfirmed")==="1"?"unconfirmed":"needs_decision";

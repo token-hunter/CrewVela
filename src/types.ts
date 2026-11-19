@@ -1036,6 +1036,13 @@ export interface ConversationPlannedTask {
   writePaths: string[];
   dependsOn: string[];
 }
+export interface ProjectPreviewConfig {
+  program: string;
+  args: string[];
+  workingDirectory: string;
+  url: string | null;
+}
+
 export interface ConversationExecutionPlan {
   id: string;
   projectId: string;
@@ -1051,6 +1058,7 @@ export interface ConversationExecutionPlan {
     summary: string | null;
     commit: string | null;
     verificationCommand: string | null;
+    preview?: ProjectPreviewConfig;
   };
   createdAt: number;
 }

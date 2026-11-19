@@ -1,6 +1,6 @@
 import { Play, Square, Stack } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
-import { invoke } from "@tauri-apps/api/core";
+import { ProjectPreviewActions } from "./ProjectPreviewActions";
 import type { AgentProfile, ConversationExecutionPlan } from "../types";
 
 export function ConversationPlanCard({ plan, agents, blocked, paused, onConfirm, onAdjust, onTasks }: {
@@ -23,10 +23,9 @@ export function ConversationPlanCard({ plan, agents, blocked, paused, onConfirm,
       <header className="team-plan-heading"><Stack size={23} /><h3>{ready ? "成品已交付" : managed.status === "failed" ? "全自动托管未交付" : paused && managed.status === "running" ? "全自动托管已暂停" : "全自动托管中"}</h3></header>
       {summary && <p className="team-plan-summary">{summary}</p>}
       {ready && <p className="team-plan-acceptance">验收通过 <code>{managed.verificationCommand}</code> · {managed.target.branch}（{managed.commit?.slice(0, 8)}）</p>}
-      <div className="team-plan-actions">
-        {ready && <button type="button" className="conversation-primary" onClick={() => void invoke("workspace_reveal_path", { root: managed.target.root, relativePath: "README.md" })}>查看启动说明</button>}
-        {plan.status === "applied" && <button type="button" className="conversation-text-button" onClick={onTasks}>查看任务执行</button>}
-      </div>
+      {ready ? <ProjectPreviewActions projectId={plan.projectId} planId={plan.id} config={managed.preview} root={managed.target.root}
+        onTasks={plan.status === "applied" ? onTasks : undefined} />
+        : plan.status === "applied" && <div className="team-plan-actions"><button type="button" className="conversation-text-button" onClick={onTasks}>查看任务执行</button></div>}
     </section>;
   }
   const pending = plan.status === "pending";

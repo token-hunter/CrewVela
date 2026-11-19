@@ -274,12 +274,40 @@ try {
  await outcome.getByRole('heading',{name:'成品已交付',exact:true}).waitFor();
  await outcome.getByRole('button',{name:'查看启动说明',exact:true}).click();
  assert.deepEqual((await calls(managed,'workspace_reveal_path')).at(-1).args,{root:'/fixture/todo-app',relativePath:'README.md'});
+ await outcome.getByRole('button',{name:'启动项目',exact:true}).click();
+ const previewConfig = managed.getByRole('dialog',{name:'配置项目启动',exact:true});
+ await previewConfig.getByLabel('启动程序').fill('node');
+ await previewConfig.getByLabel('启动参数（每行一个）').fill('server.js');
+ await previewConfig.getByRole('checkbox',{name:/PORT=0/}).check();
+ await previewConfig.getByRole('button',{name:'保存并启动',exact:true}).click();
+ await outcome.getByText('正在等待本地服务响应…',{exact:true}).waitFor();
+ assert.deepEqual((await calls(managed,'ma_project_preview_save')).at(-1).args.config,{program:'node',args:['server.js'],workingDirectory:'.',url:null});
+ await managed.evaluate(()=>Object.assign(window.conversationMock.preview,{state:'running',url:'http://127.0.0.1:49201/'}));
+ await outcome.getByRole('button',{name:'打开网页',exact:true}).waitFor();
+ await managed.waitForFunction(()=>window.conversationMock.previewBrowsed.length === 1);
+ await outcome.getByRole('button',{name:'打开网页',exact:true}).click();
+ assert.deepEqual(await managed.evaluate(()=>window.conversationMock.previewBrowsed),['http://127.0.0.1:49201/','http://127.0.0.1:49201/']);
+ await outcome.getByRole('button',{name:'停止项目',exact:true}).click();
+ await outcome.getByRole('button',{name:'启动项目',exact:true}).waitFor();
+ await managed.evaluate(()=>window.conversationMock.previewVersion='current-version');
+ managed.once('dialog', dialog=>dialog.dismiss());
+ await outcome.getByRole('button',{name:'启动项目',exact:true}).click();
+ await managed.waitForFunction(()=>window.conversationMock.calls.filter(call=>call.command==='ma_project_preview_start').length === 2);
+ managed.once('dialog', dialog=>dialog.accept());
+ await outcome.getByRole('button',{name:'启动项目',exact:true}).click();
+ await outcome.getByText('正在等待本地服务响应…',{exact:true}).waitFor();
+ assert.equal((await calls(managed,'ma_project_preview_start')).at(-1).args.confirmedVersion,'current-version');
+ await managed.evaluate(()=>Object.assign(window.conversationMock.preview,{state:'failed',error:'项目进程已退出（7）',logs:'测试启动日志'}));
+ await outcome.getByText('项目进程已退出（7）',{exact:true}).waitFor();
+ await outcome.getByText('启动日志',{exact:true}).click();
+ await outcome.getByText('测试启动日志',{exact:true}).waitFor();
+ assert.equal((await calls(managed,'ma_project_preview_save')).length,1,'saved project can restart without reconfiguration');
  assert.equal((await calls(managed,'ma_conversation_execute_plan')).length,0);
  await managed.evaluate(()=>Object.assign(window.conversationMock.chats.A.executionPlans[0].managed,{
    status:'failed',summary:'最终验收连续三次未通过',commit:null,verificationCommand:null,
  }));
  await outcome.getByText('最终验收连续三次未通过',{exact:true}).waitFor();
- assert.equal(await outcome.getByRole('button',{name:'查看启动说明',exact:true}).count(),0);
+ assert.equal(await outcome.getByRole('button',{name:'启动项目',exact:true}).count(),0);
  await managed.evaluate(()=>{
    const chat = window.conversationMock.chats.A;
    chat.messages.push(

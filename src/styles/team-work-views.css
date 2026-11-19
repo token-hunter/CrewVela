@@ -45,6 +45,13 @@
 .team-plan-contract > div { padding:10px 0; border-bottom:1px solid var(--border); }
 .team-plan-contract p { margin:4px 0; overflow-wrap:anywhere; }
 .team-plan-actions { display:flex; align-items:center; flex-wrap:wrap; gap:24px; margin-top:15px; }
+.project-preview-feedback { font-size:13px; margin:8px 0 0; color:var(--text-dim); overflow-wrap:anywhere; }
+.project-preview-feedback[role="alert"] { color:var(--danger); }
+.project-preview-logs { margin-top:8px; font-size:13px; }
+.project-preview-logs pre { max-height:180px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.project-preview-config form { display:grid; gap:12px; }
+.project-preview-config .project-preview-dynamic { display:flex; align-items:center; gap:8px; }
+.project-preview-config .project-preview-dynamic input { width:auto; }
 .team-work-views .team-plan-actions .conversation-primary { display:inline-flex; align-items:center; gap:9px; padding:8px 20px; min-height:44px; min-width:min(220px,100%); border-radius:9px; font-size:19px; font-weight:700; line-height:1.25; background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
 .team-work-views .team-plan-actions .conversation-primary:hover { background:var(--accent-strong); border-color:var(--accent-strong); }
 .team-work-views .team-plan-adjust { color:var(--text-dim); }

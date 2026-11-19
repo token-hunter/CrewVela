@@ -1272,6 +1272,29 @@ fn ma_conversation_send(input: multi_agent::ConversationSendInput,
 }
 
 #[tauri::command]
+async fn ma_project_preview_save(project_id: String, plan_id: String, config: multi_agent::project_preview::PreviewConfig,
+    store: State<'_, MultiAgentStore>) -> Result<(), String> {
+    let store = store.inner().clone();
+    blocking_command(move || store.save_project_preview(&project_id, &plan_id, config).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_project_preview_start(app: AppHandle, project_id: String, plan_id: String, confirmed_version: Option<String>) -> Result<multi_agent::project_preview::PreviewStart, String> {
+    blocking_command(move || app.state::<multi_agent::project_preview::ProjectPreviews>()
+        .start(&app.state::<MultiAgentStore>(), &project_id, &plan_id, confirmed_version).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_project_preview_status(app: AppHandle, project_id: String, logs: bool) -> Result<multi_agent::project_preview::PreviewStatus, String> {
+    blocking_command(move || Ok(app.state::<multi_agent::project_preview::ProjectPreviews>().status(&project_id, logs))).await
+}
+
+#[tauri::command]
+async fn ma_project_preview_stop(app: AppHandle, project_id: String) -> Result<multi_agent::project_preview::PreviewStatus, String> {
+    blocking_command(move || Ok(app.state::<multi_agent::project_preview::ProjectPreviews>().stop(&project_id))).await
+}
+
+#[tauri::command]
 fn ma_conversation_interrupt(input: multi_agent::ConversationInterruptInput,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
@@ -6263,6 +6286,7 @@ pub fn run() {
             app.manage(UsageTracker::default());
             app.manage(MultiAgentSupervisor::default());
             app.manage(multi_agent::ConversationSupervisor::default());
+            app.manage(multi_agent::project_preview::ProjectPreviews::default());
             let session_manager = SessionManager::new()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             let native_acp = NativeAcpSessions::open_at(config_dir.join("deepseek-harness-sessions.json"))
@@ -6513,6 +6537,10 @@ pub fn run() {
             ma_conversation_stage_attachments,
             ma_conversation_preview_image,
             ma_conversation_open_attachment,
+            ma_project_preview_save,
+            ma_project_preview_start,
+            ma_project_preview_status,
+            ma_project_preview_stop,
             ma_conversation_plan_retry_input,
             ma_conversation_interrupt,
             ma_conversation_control,

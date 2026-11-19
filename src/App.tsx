@@ -2072,8 +2072,20 @@ export default function App() {
       void selectRightSidebarTab("browser");
     };
     window.addEventListener("crewvela:browse", onBrowse);
-    return () => window.removeEventListener("crewvela:browse", onBrowse);
-  }, [selectRightSidebarTab]);
+    let disposed = false;
+    const unlisten = UI_PREVIEW ? undefined : listen<{ url: string }>("crewvela-project-preview-browse", ({ payload }) => {
+      if (disposed || !payload.url) return;
+      window.dispatchEvent(new CustomEvent("crewvela:browse", { detail: payload }));
+      const main = getCurrentWindow();
+      void main.show().then(() => main.setFocus())
+        .catch(error => showError(`显示项目网页失败：${String(error)}`));
+    }).catch(error => { if (!disposed) showError(`监听项目预览事件失败：${String(error)}`); });
+    return () => {
+      disposed = true;
+      window.removeEventListener("crewvela:browse", onBrowse);
+      void unlisten?.then(remove => remove?.());
+    };
+  }, [selectRightSidebarTab, showError]);
 
   const detachControl = useCallback(async () => {
     try {

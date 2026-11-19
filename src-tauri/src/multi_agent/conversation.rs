@@ -2311,6 +2311,7 @@ fn discussion_prompt(
         format!("{review_contract}\n本轮已由用户明确启动全自动托管。计划通过检查后系统会执行。\
           计划必须有开发、独立只读审查和唯一最终集成任务，每个开发任务安排一项直接依赖它的审查。\
           集成任务须依赖全部审查，负责真正的端到端验收以及项目根目录 README.md 的启动和使用说明。\
+          如果是可本地预览的网页应用，集成任务的 writePaths 应包含 crewvela.launch.json，用于记录经过实测的本地启动配置。\
           开发与集成各指定一条可执行的测试命令（node --test <项目内测试文件>、npm test、python -m unittest、cargo test、go test ./... 或 dotnet test）。\
           把编写相应测试纳入任务及写入范围。集成测试须覆盖需求中的主要流程，不能只检查文件存在。\
           如果能按工程惯例做合理选择，直接做决定。上一轮校验信息：{}",
@@ -2745,7 +2746,7 @@ impl MultiAgentStore {
         let stamp = now();
         for task in &plan.tasks {
             let task_id = &ids[&task.key];
-            let description = format!(
+            let mut description = format!(
                 "{}\n\n用户确认的目录范围：{}。禁止写入范围外文件；产物提交前会检查实际改动。{}",
                 task.description,
                 if task.write_paths.is_empty() {
@@ -2755,6 +2756,10 @@ impl MultiAgentStore {
                 },
                 attachment_context
             );
+            if plan.managed.is_some() && task.write_paths.iter().any(|path| path == super::project_preview::MANIFEST) {
+                description.push_str("\n\n");
+                description.push_str(super::project_preview::MANIFEST_INSTRUCTIONS);
+            }
             tx.execute("INSERT INTO ma_tasks(id,project_id,parent_id,stage,title,description,acceptance_criteria,verification_command,status,assignee_agent_id,reviewer_agent_id,workspace_mode,priority,required_capabilities_json,max_attempts,retry_backoff_seconds,next_retry_at,created_at,updated_at) VALUES(?1,?2,NULL,0,?3,?4,?5,?6,?7,?8,?9,?10,0,'[]',3,5,NULL,?11,?11)",params![task_id,input.project_id,task.title,description,task.acceptance_criteria,task.verification_command,if task.depends_on.is_empty(){"ready"}else{"blocked"},task.assignee_agent_id,task.reviewer_agent_id,task.workspace_mode.as_str(),stamp])?;
             tx.execute("INSERT INTO ma_conversation_task_scopes(task_id,plan_id,write_paths_json) VALUES(?1,?2,?3)",params![task_id,plan.id,serde_json::to_string(&task.write_paths)?])?;
         }

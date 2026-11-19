@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::conversation::{ConversationExecutionPlan, ConversationSendInput};
 use super::executor::{git_head, hidden_command};
+use super::project_preview::PreviewConfig;
 use super::{
     AgentRuntimeKind, MultiAgentProject, MultiAgentSnapshot, MultiAgentStore, ProjectStatus,
     TaskStatus, WorkspaceMode,
@@ -29,6 +30,8 @@ pub(super) struct ManagedDelivery {
     pub summary: Option<String>,
     pub commit: Option<String>,
     pub verification_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<PreviewConfig>,
 }
 
 impl ManagedDelivery {
@@ -39,6 +42,7 @@ impl ManagedDelivery {
             summary: None,
             commit: None,
             verification_command: None,
+            preview: None,
         }
     }
 }
@@ -274,6 +278,7 @@ impl MultiAgentStore {
         match result {
             Ok((hash, command, summary)) => {
                 managed.status = "completed".into();
+                managed.preview = PreviewConfig::from_delivery(Path::new(&managed.target.root), &hash);
                 managed.commit = Some(hash);
                 managed.verification_command = Some(command);
                 managed.summary = Some(summary);
