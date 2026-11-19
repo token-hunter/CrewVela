@@ -27,6 +27,7 @@ use super::{
 
 const RUN_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const STALE_PROMPT_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+const MANAGED_CODEX_TASK_POINTER: &str = "Do task: env CV_TASK";
 const VISIBLE_RUNTIME_INTERRUPT_TIMEOUT: Duration = Duration::from_secs(3);
 const SUPERVISOR_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const STREAM_CAPTURE_PREFIX_BYTES: usize = 256 * 1024;
@@ -37,6 +38,9 @@ const RUNTIME_EVENT_MAX_BYTES: usize = 1024 * 1024;
 const NATIVE_PROMPT_RENDER_TIMEOUT: Duration = Duration::from_secs(2);
 const NATIVE_PROMPT_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const NATIVE_PROMPT_POST_RENDER_DELAY: Duration = Duration::from_millis(80);
+
+mod codex_paste;
+mod managed_startup;
 
 pub(crate) fn external_command_path(path: &std::path::Path) -> PathBuf {
     let raw = path.to_string_lossy();
@@ -81,6 +85,7 @@ pub struct RuntimeRequest {
     pub terminal_host: AgentTerminalHost,
     design_context: String,
     launch: CollaborationLaunchMode,
+    managed: bool,
 }
 
 #[derive(Debug)]
@@ -139,6 +144,16 @@ impl CollaborationLaunchMode {
 }
 
 impl RuntimeRequest {
+    fn managed_native(&self) -> bool {
+        self.managed && self.task.workspace_mode == WorkspaceMode::Worktree
+    }
+
+    fn managed_codex_review(&self) -> bool {
+        self.managed && self.task.workspace_mode == WorkspaceMode::ReadOnly
+            && self.agent.runtime_kind == AgentRuntimeKind::Codex
+            && self.agent.role == AgentRole::Reviewer
+    }
+
     fn log_launch(&self, actual: &str, channel: &str) -> Result<()> {
         self.store.append_run_log(&self.run_id, "launch_mode", &format!(
             "启动模式 · 已保存：{} · 实际：{actual}（{channel}） · 原因：{}",
@@ -313,6 +328,19 @@ impl AgentTerminalHost {
             cwd: request.cwd.display().to_string(),
         })?;
         let environment: TerminalEnvironment = command.get_envs().map(|(key, value)| (key.to_os_string(), value.map(|value| value.to_os_string()))).collect();
+        let lifecycle = request.managed_native().then(|| self.sessions.lifecycle_lock(&session.id));
+        let _lifecycle_guard = lifecycle.as_ref().map(|lock| lock.lock().unwrap());
+        if request.managed_native() {
+            self.sessions.ingest_events()?;
+            session = self.sessions.get(&session.id).context("原成员终端已不可用")?;
+            if session.archived_at.is_some() || session.retired_agent_runtime {
+                return Err(PermanentRunError("原成员终端已归档或退役，托管任务已停止".into()).into());
+            }
+            if session.pty_id.is_some_and(|id| self.pty.is_running(id)) && !session.runtime_command_host
+                && !self.sessions.is_ready_for_prompt(&session.id) {
+                return Err(PermanentRunError("成员原生终端正在运行或等待人工输入，已保留当前会话并停止托管派发".into()).into());
+            }
+        }
         let reusable = self
             .native_runtimes
             .lock()
@@ -367,12 +395,14 @@ impl AgentTerminalHost {
                 self.sessions
                     .configure_pi_readiness(&mut native_command, &session.id)?;
             }
+            // Managed startup handles menus after checking the rendered selection.
             let id = self.pty.open_agent_program(
                 &native_command,
                 &session.id,
-                auto_confirm_workspace_trust,
+                auto_confirm_workspace_trust && !request.managed_native(),
             )?;
-            session = match self.sessions.attach_runtime(&session.id, id) {
+            let bind_workspace = request.managed_native() || std::path::Path::new(&session.cwd) != request.cwd;
+            session = match self.sessions.attach_runtime_in(&session.id, id, bind_workspace.then_some(request.cwd.as_path())) {
                 Ok(session) => session,
                 Err(error) => {
                     self.pty.kill(id).map_err(|error| anyhow!(UnverifiedStop(error.to_string())))?;
@@ -409,17 +439,38 @@ impl AgentTerminalHost {
         request: &RuntimeRequest,
         cancelled: &AtomicBool,
         auto_confirm_workspace_trust: bool,
+        expected_id: Option<&str>,
     ) -> Result<RuntimeResult> {
-        let (mut session, mut pty_id, mut started) =
-            self.ensure_native_session(kind, request, command, auto_confirm_workspace_trust)?;
+        let (session, pty_id, started) = self.ensure_native_session(kind, request, command, auto_confirm_workspace_trust)?;
+        let result = self.execute_native_turn(kind, command, prompt, request, cancelled, auto_confirm_workspace_trust,
+            expected_id, session.clone(), pty_id, started);
+        if request.managed_native() && result.as_ref().is_err_and(|error| error.downcast_ref::<UnverifiedStop>().is_none()) {
+            // A hook, DB or read error can happen between explicit stop paths.
+            // Only this run has this exact configuration and bridge credentials.
+            let lifecycle = self.sessions.lifecycle_lock(&session.id);
+            let _guard = lifecycle.lock().unwrap();
+            let ours = self.native_runtimes.lock().unwrap().get(&session.id)
+                .filter(|binding| binding.matches_command(command)).map(|binding| binding.pty_id);
+            if let Some(pty_id) = ours {
+                if self.sessions.get(&session.id).is_some_and(|record| record.pty_id == Some(pty_id)) {
+                    self.stop_native_runtime(&session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?;
+                }
+            }
+        }
+        result
+    }
+
+    fn execute_native_turn(
+        &self, kind: AgentRuntimeKind, command: &Command, prompt: &str, request: &RuntimeRequest, cancelled: &AtomicBool,
+        auto_confirm_workspace_trust: bool, expected_id: Option<&str>, mut session: SessionRecord, mut pty_id: u32, mut started: bool,
+    ) -> Result<RuntimeResult> {
         if let Err(error) = self.wait_until_native_ready(
             kind,
             &session,
             pty_id,
             cancelled,
             started,
-            &request.store,
-            &request.project.id,
+            request,
         ) {
             if !missing_pty_session_error(&error) {
                 return Err(error);
@@ -436,14 +487,9 @@ impl AgentTerminalHost {
                 pty_id,
                 cancelled,
                 started,
-                &request.store,
-                &request.project.id,
+                request,
             ) {
-                self.stop_native_runtime(
-                    &session,
-                    pty_id,
-                    request.store.handoff_in_progress(&request.project.id)?,
-                )?;
+                if !request.managed_native() { self.stop_native_runtime(&session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?; }
                 return Err(error);
             }
         }
@@ -451,7 +497,17 @@ impl AgentTerminalHost {
         self.sessions.ingest_events()?;
         let baseline_revision = self.sessions.agent_turn_revision(&session.id);
         request.store.bind_pty_execution(&request.run_id, pty_id)?;
-        let mut cursor = self.pty.transcript_cursor(pty_id)?;
+        let managed_codex = kind == AgentRuntimeKind::Codex && request.managed_native();
+        // ConPTY delivers CR and LF as separate newlines to Codex's composer.
+        // Use the same canonical prompt for the paste, its count and the hook.
+        let normalized = (managed_codex && prompt.contains('\r')).then(|| prompt.replace("\r\n", "\n").replace('\r', "\n"));
+        let prompt = normalized.as_deref().unwrap_or(prompt);
+        let (mut cursor, mut codex_confirmation) = if managed_codex {
+            let (cursor, baseline, size) = self.pty.transcript_frame_since(pty_id, 0)?;
+            (cursor, Some(codex_paste::Confirmation::begin(size, &baseline, prompt)?))
+        } else {
+            (self.pty.transcript_cursor(pty_id)?, None)
+        };
         self.sessions.register_agent_prompt(&session.id, prompt);
         self.sessions
             .mark_agent_activity(&session.id, SessionStatus::Running, None)?;
@@ -471,13 +527,27 @@ impl AgentTerminalHost {
                     }
                 })
         } else {
+            let paste = codex_confirmation.as_ref().map_or_else(
+                || utf8_bracketed_paste(prompt), codex_paste::Confirmation::bracketed_paste);
             submit_native_prompt(
-                prompt,
+                &paste,
                 |bytes| self.pty.write(pty_id, bytes),
-                || self.wait_until_native_prompt_rendered(pty_id, cursor, prompt, cancelled),
+                || self.wait_until_native_prompt_rendered(pty_id, cursor, prompt, cancelled, request.managed_native(), codex_confirmation.as_mut()),
                 || {
                     if cancelled.load(Ordering::Acquire) {
                         Err(anyhow!("Agent 任务已取消"))
+                    } else if request.managed_native() {
+                        if kind == AgentRuntimeKind::Codex {
+                            self.sessions.ingest_events()?;
+                            if self.sessions.agent_turn_revision(&session.id) != baseline_revision
+                                || self.sessions.get(&session.id).is_some_and(|record| record.status == SessionStatus::Waiting) {
+                                return Err(PermanentRunError("Codex 在粘贴期间出现其他轮次或人工请求，托管任务未提交".into()).into());
+                            }
+                        }
+                        let identity = if kind == AgentRuntimeKind::ClaudeCode {
+                            Some(confirmed_native_identity(request, &self.sessions, &session.id, pty_id, expected_id)?)
+                        } else { None };
+                        request.store.checkpoint_native_dispatch(&request.run_id, pty_id, identity.as_deref().map(|id| ("sessionId", id)))
                     } else {
                         Ok(())
                     }
@@ -497,6 +567,9 @@ impl AgentTerminalHost {
         let started_at = Instant::now();
         let mut capture = RuntimeStreamCapture::default();
         let mut codex_completion_fallback = CodexNativeCompletionFallback::default();
+        let mut late_restricted_open = managed_startup::Confirmation::default();
+        let mut late_restricted_choice = None;
+        let mut restricted_opened_at = None;
         loop {
             if cancelled.load(Ordering::Acquire) {
                 self.stop_native_runtime(
@@ -521,10 +594,47 @@ impl AgentTerminalHost {
             if !bytes.is_empty() {
                 capture.append(&bytes);
             }
+            if managed_codex && transcript_changed {
+                // The TUI can redraw the folder-access menu after the first
+                // composer submission. Opening restricted preserves the
+                // pending turn and never changes saved trust.
+                let (_, frame, size) = self.pty.transcript_frame_since(pty_id, 0)?;
+                late_restricted_choice = managed_startup::choice(size, &String::from_utf8_lossy(&frame))
+                    .filter(|choice| *choice == managed_startup::Choice::CodexRestricted);
+            }
+            if managed_codex {
+                let now = Instant::now();
+                if let Some(input) = late_restricted_open.input(late_restricted_choice, now) {
+                    self.pty.write(pty_id, input)?;
+                    restricted_opened_at = Some(now);
+                    request.store.append_run_log(&request.run_id, "system", "Codex 在接收任务后以受限方式继续打开工作树，未重发任务。")?;
+                } else if late_restricted_choice.is_some() && restricted_opened_at.is_some_and(|since| since.elapsed() >= Duration::from_secs(5)) {
+                    self.sessions.clear_agent_prompt(&session.id);
+                    self.stop_native_runtime(&session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?;
+                    return Err(PermanentRunError("Codex 未离开受限打开页面，已保留工作树与任务记录".into()).into());
+                }
+            }
+            if request.managed_native() && (self.sessions.get(&session.id).is_some_and(|record| record.pty_id == Some(pty_id)
+                && record.status == SessionStatus::Waiting) || (transcript_changed && managed_approval_dialog(&capture.output()))) {
+                self.sessions.clear_agent_prompt(&session.id);
+                self.stop_native_runtime(&session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?;
+                return Err(PermanentRunError("原生 CLI 需要人工授权或输入，托管任务已停止；请检查原生终端的审批配置".into()).into());
+            }
             if let Some(hook_summary) =
                 self.sessions
                     .agent_turn_summary_after(&session.id, baseline_revision, prompt)
             {
+                if request.managed_native() {
+                    let id = confirmed_native_identity(request, &self.sessions, &session.id, pty_id, expected_id)?;
+                    let key = if kind == AgentRuntimeKind::Codex { "threadId" } else { "sessionId" };
+                    request.store.checkpoint_native_dispatch(&request.run_id, pty_id, Some((key, &id)))?;
+                    anyhow::ensure!(!hook_summary.trim().is_empty(), "原生 CLI 已结束本轮，但未返回任务结果");
+                    let mut locator = request.resume_locator.clone().context("缺少托管工作树定位")?;
+                    locator[key] = id.into();
+                    locator["ptyId"] = pty_id.into();
+                    let summary = hook_summary.replace(&request.collaboration.token, "[REDACTED]");
+                    return Ok(RuntimeResult { summary, session_locator: locator });
+                }
                 if kind == AgentRuntimeKind::Pi && hook_summary.trim().is_empty() {
                     return Err(anyhow!(self
                         .sessions
@@ -574,6 +684,11 @@ impl AgentTerminalHost {
                         self.sessions.clear_agent_prompt(&session.id);
                         return Err(anyhow!("{} 执行失败：{error}", request.agent.name));
                     }
+                    if request.managed_native() {
+                        self.sessions.clear_agent_prompt(&session.id);
+                        self.stop_native_runtime(&session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?;
+                        return Err(PermanentRunError("Codex 已返回输入框，但未收到原任务的原生回执，托管已停止".into()).into());
+                    }
                     let summary = terminal_output_summary(&transcript);
                     if summary.trim().is_empty() {
                         return Err(anyhow!("{} 未返回可用结果", request.agent.name));
@@ -622,20 +737,58 @@ impl AgentTerminalHost {
         pty_id: u32,
         cancelled: &AtomicBool,
         freshly_started: bool,
-        store: &MultiAgentStore,
-        project_id: &str,
+        request: &RuntimeRequest,
     ) -> Result<()> {
         let started = Instant::now();
         let mut cursor = 0;
         let mut startup_capture = RuntimeStreamCapture::default();
         let mut codex_update_skipped = false;
+        let mut managed_codex_startup = codex_paste::Startup::default();
+        let mut workspace_confirmation = managed_startup::Confirmation::default();
+        let mut startup_choice = None;
+        let mut claude_composer_visible = false;
+        let managed_startup = request.managed_native() && freshly_started;
+        if managed_startup {
+            let (workspace, _) = verify_delivery_worktree(&request.project, &request.cwd)?;
+            let expected = crate::providers::config_dir()?.join("worktrees")
+                .join(&request.project.id).join(&request.task.id).canonicalize()?;
+            anyhow::ensure!(workspace.parent() == Some(expected.as_path()), "原生托管仅能确认本任务的独立工作树");
+        }
         loop {
             if cancelled.load(Ordering::Acquire) {
-                self.stop_native_runtime(session, pty_id, store.handoff_in_progress(project_id)?)?;
+                self.stop_native_runtime(session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?;
                 return Err(anyhow!("Agent 任务已取消"));
             }
             self.sessions.ingest_events()?;
-            if kind == AgentRuntimeKind::Codex && freshly_started {
+            if managed_startup {
+                let (next, bytes, size) = self.pty.transcript_frame_since(pty_id, cursor)?;
+                cursor = next;
+                if !bytes.is_empty() {
+                    startup_capture.append(&bytes);
+                    let transcript = startup_capture.output();
+                    if kind == AgentRuntimeKind::Codex {
+                        managed_codex_startup.observe(size, &transcript, Instant::now())?;
+                    } else if kind == AgentRuntimeKind::ClaudeCode {
+                        claude_composer_visible = managed_startup::claude_composer(size, transcript.as_bytes(), None);
+                    }
+                    startup_choice = managed_startup::choice(size, &transcript).filter(|choice| matches!(
+                        (kind, choice),
+                        (AgentRuntimeKind::ClaudeCode, managed_startup::Choice::ClaudeExit | managed_startup::Choice::ClaudeTrust)
+                            | (AgentRuntimeKind::Codex, managed_startup::Choice::CodexRestricted)
+                    ));
+                }
+                if let Some(input) = workspace_confirmation.input(startup_choice, Instant::now()) {
+                    self.pty.write(pty_id, input)?;
+                    if input == b"\r" {
+                        let detail = if kind == AgentRuntimeKind::Codex {
+                            "Codex 以受限方式打开本次托管工作树，未保存仓库信任。"
+                        } else {
+                            "Claude Code 已确认本次托管任务的独立工作树。"
+                        };
+                        request.store.append_run_log(&request.run_id, "system", detail)?;
+                    }
+                }
+            } else if kind == AgentRuntimeKind::Codex && freshly_started {
                 let (next_cursor, bytes) = self.pty.transcript_since(pty_id, cursor)?;
                 cursor = next_cursor;
                 startup_capture.append(&bytes);
@@ -644,6 +797,10 @@ impl AgentTerminalHost {
                 && freshly_started
                 && !codex_update_skipped
                 && codex_native_update_prompt(&startup_capture.output())
+                && (!request.managed_native() || {
+                    let (_, bytes, size) = self.pty.transcript_frame_since(pty_id, 0)?;
+                    codex_paste::update_menu_is_selected(size, &bytes)?
+                })
             {
                 self.pty.write(pty_id, b"\x1b[B\r")?;
                 codex_update_skipped = true;
@@ -651,7 +808,9 @@ impl AgentTerminalHost {
             let ready = match kind {
                 AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Pi => {
                     self.sessions.is_ready_for_prompt(&session.id)
+                        && (!managed_startup || kind != AgentRuntimeKind::ClaudeCode || claude_composer_visible)
                 }
+                AgentRuntimeKind::Codex if freshly_started && request.managed_native() => managed_codex_startup.ready(Instant::now()),
                 AgentRuntimeKind::Codex => {
                     self.sessions.is_ready_for_prompt(&session.id)
                         || (freshly_started && codex_native_prompt_ready(&startup_capture.output()))
@@ -662,10 +821,23 @@ impl AgentTerminalHost {
                 return Ok(());
             }
             if !self.pty.is_running(pty_id) {
+                let details = if request.managed_native() { managed_startup_detail(&startup_capture.output()) } else { String::new() };
                 self.stop_native_runtime(session, pty_id, false)?;
-                return Err(anyhow!("{} 原生会话启动失败", session.title));
+                return Err(anyhow!("{} 原生会话启动失败{details}", session.title));
             }
             if started.elapsed() >= Duration::from_secs(45) {
+                if request.managed_native() {
+                    let error = if kind == AgentRuntimeKind::Codex && freshly_started {
+                        managed_codex_startup.timeout(&session.title)
+                    } else if startup_choice.is_some() {
+                        PermanentRunError(format!("{} 工作树信任菜单未完成确认，托管任务未提交", session.title)).into()
+                    } else {
+                        let details = managed_startup_detail(&startup_capture.output());
+                        PermanentRunError(format!("{} 原生会话未就绪，已停止托管；请检查 CLI 的登录、工作区信任和审批设置{details}", session.title)).into()
+                    };
+                    self.stop_native_runtime(session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?;
+                    return Err(error);
+                }
                 return Err(anyhow!(
                     "{} 原生会话尚未就绪，请在可视终端中处理登录或权限提示",
                     session.title
@@ -681,18 +853,57 @@ impl AgentTerminalHost {
         mut cursor: u64,
         prompt: &str,
         cancelled: &AtomicBool,
+        require_paste: bool,
+        mut codex_confirmation: Option<&mut codex_paste::Confirmation<'_>>,
     ) -> Result<()> {
         let started = Instant::now();
         let mut capture = RuntimeStreamCapture::default();
+        let managed_claude = require_paste && codex_confirmation.is_none();
+        let mut claude_echo_since = None;
         loop {
             if cancelled.load(Ordering::Acquire) {
                 return Err(anyhow!("Agent 任务已取消"));
             }
-            let (next_cursor, bytes) = self.pty.transcript_since(pty_id, cursor)?;
+            if managed_claude {
+                let (_, frame, size) = self.pty.transcript_frame_since(pty_id, 0)?;
+                if managed_approval_dialog(&String::from_utf8_lossy(&frame)) {
+                    return Err(PermanentRunError("原生终端显示审批面板，已停止提交托管任务".into()).into());
+                }
+                if managed_startup::claude_composer(size, &frame, Some(prompt)) {
+                    let now = Instant::now();
+                    let since = *claude_echo_since.get_or_insert(now);
+                    if now.duration_since(since) >= NATIVE_PROMPT_POST_RENDER_DELAY {
+                        anyhow::ensure!(self.pty.is_running(pty_id), "原生 Agent 会话在提交 Prompt 前已退出");
+                        return Ok(());
+                    }
+                } else {
+                    claude_echo_since = None;
+                }
+                anyhow::ensure!(self.pty.is_running(pty_id), "原生 Agent 会话在提交 Prompt 前已退出");
+                anyhow::ensure!(started.elapsed() < NATIVE_PROMPT_RENDER_TIMEOUT, "Claude Code 输入框未显示完整的托管任务指令，任务未提交");
+                std::thread::sleep(NATIVE_PROMPT_POLL_INTERVAL);
+                continue;
+            }
+            let (next_cursor, bytes, size) = if codex_confirmation.is_some() {
+                let (next, bytes, size) = self.pty.transcript_frame_since(pty_id, cursor)?;
+                (next, bytes, Some(size))
+            } else {
+                let (next, bytes) = self.pty.transcript_since(pty_id, cursor)?;
+                (next, bytes, None)
+            };
             cursor = next_cursor;
-            if !bytes.is_empty() {
+            if let (Some(confirmation), Some(size)) = (codex_confirmation.as_deref_mut(), size) {
+                if confirmation.observe(size, &bytes, Instant::now())? {
+                    anyhow::ensure!(self.pty.is_running(pty_id), "原生 Agent 会话在提交 Prompt 前已退出");
+                    return Ok(());
+                }
+            } else if !bytes.is_empty() {
                 capture.append(&bytes);
-                if native_prompt_paste_rendered(prompt, &capture.output()) {
+                let screen = capture.output();
+                if require_paste && managed_approval_dialog(&screen) {
+                    return Err(PermanentRunError("原生终端显示审批面板，已停止提交托管任务".into()).into());
+                }
+                if native_prompt_paste_rendered(prompt, &screen) {
                     std::thread::sleep(NATIVE_PROMPT_POST_RENDER_DELAY);
                     return Ok(());
                 }
@@ -701,6 +912,10 @@ impl AgentTerminalHost {
                 return Err(anyhow!("原生 Agent 会话在提交 Prompt 前已退出"));
             }
             if started.elapsed() >= NATIVE_PROMPT_RENDER_TIMEOUT {
+                if let Some(confirmation) = codex_confirmation.as_deref() {
+                    bail!("原生输入框未确认收到托管任务，提交已停止（{}）", confirmation.wait_reason());
+                }
+                if require_paste { bail!("原生输入框未确认收到托管任务，提交已停止"); }
                 return Ok(());
             }
             std::thread::sleep(NATIVE_PROMPT_POLL_INTERVAL);
@@ -1297,7 +1512,14 @@ impl MultiAgentSupervisor {
                     &store, &thread_project_id, Arc::clone(&cancelled),
                     terminal_host.clone(), collaboration_bridge.clone(), false, supervisor.run_stops.clone(),
                 );
-                if let Err(ref error) = result { eprintln!("[crewvela] 项目调度已停止: {error:#}"); }
+                if let Err(ref error) = result {
+                    eprintln!("[crewvela] 项目调度已停止: {error:#}");
+                    if let Ok(Some(plan)) = store.managed_plan_running(&thread_project_id) {
+                        if let Err(failure) = store.finish_managed_plan(&plan.id, Err(format!("调度器停止：{error:#}"))) {
+                            eprintln!("[crewvela] 保存托管结果失败: {failure:#}");
+                        }
+                    }
+                }
                 if !supervisor.finish_scheduler_pass(&thread_project_id, &cancelled, result.is_ok()) {
                     break;
                 }
@@ -1434,6 +1656,9 @@ impl MultiAgentSupervisor {
             return Ok(ProjectExecutionReceipt { project_id: project_id.to_string(), accepted: false, message: format!("取消尚未完成：{}", stopped.message) });
         }
         let count = store.cancel_project_tasks(project_id)?;
+        if let Some(plan) = store.managed_plan_running(project_id)? {
+            store.finish_managed_plan(&plan.id, Err("用户已取消本轮托管。".into()))?;
+        }
         Ok(ProjectExecutionReceipt {
             project_id: project_id.to_string(),
             accepted: true,
@@ -1505,14 +1730,19 @@ fn schedule_until_idle(
             let _ = store.recover_expired_leases(project_id)?;
             let _ = store.route_runnable_tasks(project_id)?;
         }
+        let eligible_at = now_millis_for_scheduler();
         if !message_only {
-            store.ensure_runnable_wakeups(project_id)?;
+            store.ensure_runnable_wakeups_at(project_id, eligible_at)?;
         }
-        let candidates = store.runnable_tasks(project_id)?;
+        let managed_plan = if message_only { None } else { store.managed_plan_running(project_id)? };
+        let candidates = store.runnable_tasks_at(project_id, eligible_at)?;
         let project = store.project(project_id)?;
         let git_project = is_git_worktree(PathBuf::from(&project.root_path).as_path());
         let mut scheduled_any = false;
         for (task, agent) in candidates {
+            if managed_plan.as_ref().is_some_and(|plan| !plan.task_ids.contains(&task.id)) {
+                continue;
+            }
             if message_only && !task.id.starts_with("cli-message-") {
                 continue;
             }
@@ -1576,6 +1806,7 @@ fn schedule_until_idle(
             let collaboration_bridge = collaboration_bridge.clone();
             let completion_tx = completion_tx.clone();
             let run_id = run.id.clone();
+            let managed = managed_plan.is_some();
             std::thread::spawn(move || {
                 let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
                     execute_run(
@@ -1596,6 +1827,12 @@ fn schedule_until_idle(
                         "执行线程异常退出，调度器已回收并按重试策略处理",
                         None,
                     );
+                } else if managed {
+                    if let Ok(Err(error)) = &result {
+                        // Most failures are recorded by execute_run. Settle early
+                        // adapter or storage errors before releasing this slot.
+                        let _ = store.fail_run_with_retry(&run_id, &format!("{error:#}"), None);
+                    }
                 }
                 let _ = store.finish_wakeup(&wakeup.id, succeeded);
                 run_stops.lock().unwrap().remove(&run_id);
@@ -1603,25 +1840,34 @@ fn schedule_until_idle(
             });
         }
 
+        let mut completed_since_selection = false;
         while let Ok(completion) = completion_rx.try_recv() {
             active_runs.remove(&completion.run_id);
+            completed_since_selection = true;
         }
 
         if active_runs.is_empty() && !scheduled_any {
+            if completed_since_selection {
+                // Completion can make dependents or retries eligible after we selected candidates.
+                continue;
+            }
             if message_only {
                 return Ok(());
             }
             let snapshot = store.snapshot(project_id)?;
-            let now = now_millis_for_scheduler();
             let has_delayed_retry = snapshot.tasks.iter().any(|task| {
                 matches!(
                     task.status,
                     super::TaskStatus::Ready | super::TaskStatus::ChangesRequested
-                ) && task.next_retry_at.is_some_and(|retry_at| retry_at > now)
+                ) && task.next_retry_at.is_some_and(|retry_at| retry_at > eligible_at)
             });
             if has_delayed_retry {
                 std::thread::sleep(Duration::from_millis(250));
                 continue;
+            }
+            if let Some(plan) = &managed_plan {
+                store.settle_idle_managed_plan(&snapshot, plan)?;
+                return Ok(());
             }
             match CollaborationGovernance::new(store.clone()).evaluate_quiescence(project_id)? {
                 WatchdogDisposition::Scheduled => {
@@ -1800,6 +2046,17 @@ pub(super) fn execute_run(
     agent.model = None;
     let mut task = task;
     let discussion = super::conversation::is_conversation_task(&task.id);
+    let managed_target = store.managed_task_target(&task.id)?;
+    if let Some(target) = &managed_target {
+        let preflight = (|| {
+            anyhow::ensure!(store.managed_plan_running(&project.id)?.is_some_and(|plan| plan.task_ids.contains(&task.id)), "该托管任务已结束，请启动新一轮托管");
+            target.check_before_start(&project.root_path)
+        })();
+        if let Err(error) = preflight {
+            store.fail_run_permanently(&run_id, &error.to_string(), None)?;
+            return Err(error);
+        }
+    }
     let design_task = is_design_task(&task.id);
     let (design_checkpoint, design_context) = if task.id.starts_with("conversation-task-") {
         match store.pending_design_checkpoint(&task, &agent)
@@ -1815,9 +2072,13 @@ pub(super) fn execute_run(
     };
     let native_discussion = discussion && store.conversation_task_policy(&task.id, &agent.id)?.uses_native_capabilities();
     task.workspace_mode = if native_discussion { WorkspaceMode::SharedWrite } else { execution_workspace_mode(&task, agent.runtime_kind) };
-    let launch = match crate::runtime_preferences::get().and_then(|preferences| CollaborationLaunchMode::resolve(
-        agent.runtime_kind, task.workspace_mode, &task.id, preferences.default_launch_modes.get(agent.runtime_kind.as_str()).cloned(),
-    )) {
+    let launch = match crate::runtime_preferences::get().and_then(|preferences| {
+        let saved = preferences.default_launch_modes.get(agent.runtime_kind.as_str()).cloned();
+        if managed_target.is_some() {
+            super::managed_delivery::check_launch_mode(agent.runtime_kind, task.workspace_mode, saved.as_deref())?;
+        }
+        CollaborationLaunchMode::resolve(agent.runtime_kind, task.workspace_mode, &task.id, saved)
+    }) {
         Ok(launch) => launch,
         Err(error) => {
             let _ = store.append_run_log(&run_id, "launch_mode", &format!("启动模式 · 实际：未启动 · 原因：{error}"));
@@ -1844,12 +2105,16 @@ pub(super) fn execute_run(
         store.latest_session_locator(&task.id)?
     };
     let dependency_artifacts = store.dependency_artifacts(&task.id)?;
+    let managed_native = managed_target.is_some() && task.workspace_mode == WorkspaceMode::Worktree;
+    let had_workspace = resume_locator.is_some();
     let (resumable_cwd, resume_locator) = if message_turn {
         (None, resume_locator)
     } else {
         validated_resume_locator(&project, &task, resume_locator)
     };
-    let workspace = if let Some(checkpoint) = &design_checkpoint {
+    let workspace = if managed_native && had_workspace && resumable_cwd.is_none() {
+        Err(anyhow!("原托管任务工作树已不可用，无法在原目录恢复会话"))
+    } else if let Some(checkpoint) = &design_checkpoint {
         verified_design_workspace(checkpoint, resumable_cwd)
     } else if native_discussion {
         let path = PathBuf::from(&project.root_path);
@@ -1867,6 +2132,22 @@ pub(super) fn execute_run(
         }
     };
     let workspace = workspace.and_then(|cwd| {
+        let cwd = if managed_target.is_some()
+            && task.workspace_mode == WorkspaceMode::ReadOnly
+            && agent.runtime_kind == AgentRuntimeKind::ClaudeCode
+        {
+            // On Windows, CrewVela's app data can be a junction. Claude's read
+            // permission matches the real cwd, not an alias in the task prompt.
+            external_command_path(&cwd.canonicalize()?)
+        } else {
+            cwd
+        };
+        if managed_native {
+            let task_root = crate::providers::config_dir()?.join("worktrees").join(&project.id).join(&task.id);
+            let (repo, _) = verify_delivery_worktree(&project, &cwd)?;
+            anyhow::ensure!(repo.parent() == Some(task_root.canonicalize()?.as_path()),
+                "无法核实此工作树归属原托管任务");
+        }
         if design_task {
             let head = store.design_source_head(&task.id)?;
             if !valid_commit_hash(&head) || !git_commit_exists(&cwd, &head) {
@@ -1883,7 +2164,7 @@ pub(super) fn execute_run(
     let cwd = match workspace {
         Ok(cwd) => cwd,
         Err(error) => {
-            if design_checkpoint.is_some() {
+            if design_checkpoint.is_some() || (managed_native && had_workspace) {
                 store.fail_run_permanently(&run_id, &error.to_string(), None)?;
             } else {
                 let _ = store.fail_run_with_retry(&run_id, &error.to_string(), None);
@@ -1897,7 +2178,18 @@ pub(super) fn execute_run(
         } else {
             None
         };
-    let conversation_scope_baseline = if !message_turn && is_git_worktree(&cwd) { Some(git_head(&cwd)?) } else { None };
+    let conversation_scope_baseline = if managed_native {
+        let baseline = match resume_locator.as_ref() {
+            Some(old) => old["managedBaseline"].as_str().unwrap_or(&managed_target.as_ref().unwrap().base).to_owned(),
+            None => git_head(&cwd)?,
+        };
+        if !valid_commit_hash(&baseline) || delivery_git(&cwd, &["merge-base", "--is-ancestor", &baseline, "HEAD"]).is_err() {
+            let error = anyhow!("托管任务的原工作树基线已不可用，拒绝从新的 HEAD 重新计算写入范围");
+            store.fail_run_permanently(&run_id, &error.to_string(), None)?;
+            return Err(error);
+        }
+        Some(baseline)
+    } else if !message_turn && is_git_worktree(&cwd) { Some(git_head(&cwd)?) } else { None };
     let _ = store.append_run_log(&run_id, "system", &format!("工作目录：{}", cwd.display()));
     if message_turn && task.workspace_mode == WorkspaceMode::SharedWrite {
         let _ = store.append_run_log(&run_id, "system", "使用独立可写消息工作区并保留成员原权限；此 Runtime 不提供强制只读边界，禁止修改业务文件");
@@ -1923,13 +2215,23 @@ pub(super) fn execute_run(
             }
         }),
     });
+    let mut resume_locator = resume_locator;
+    let initial_locator = if managed_native {
+        match managed_native_locator(agent.runtime_kind, &cwd, launch.mode(), conversation_scope_baseline.as_deref().context("缺少托管工作树基线")?, resume_locator.as_ref()) {
+            Ok(locator) => { resume_locator = Some(locator.clone()); Some(locator) }
+            Err(error) => {
+                store.fail_run_permanently(&run_id, &error.to_string(), None)?;
+                return Err(error);
+            }
+        }
+    } else if design_checkpoint.is_some() { resume_locator.clone() }
+    else { Some(serde_json::json!({"cwd": cwd, "adapter": agent.runtime_kind})) };
     store.update_run(UpdateRunInput {
         run_id: run_id.clone(),
         status: RunStatus::Running,
         output_summary: None,
         error: None,
-        session_locator: if design_checkpoint.is_some() { resume_locator.clone() }
-            else { Some(serde_json::json!({"cwd": cwd, "adapter": agent.runtime_kind})) },
+        session_locator: initial_locator,
     })?;
     if design_checkpoint.is_some() {
         store.mark_design_resumed(&run_id, &task.id)?;
@@ -1959,6 +2261,7 @@ pub(super) fn execute_run(
         terminal_host,
         design_context,
         launch,
+        managed: managed_target.is_some(),
     };
     let adapter = adapter_for(agent.runtime_kind);
     debug_assert_eq!(adapter.kind(), agent.runtime_kind);
@@ -2016,7 +2319,14 @@ pub(super) fn execute_run(
             let content_hash = if message_turn {
                 None
             } else {
-                if let Err(error) = verify_conversation_workspace_scope(store, &request.task.id, &cwd, conversation_scope_baseline.as_deref()) {
+                let scope = verify_conversation_workspace_scope(store, &request.task.id, &cwd, conversation_scope_baseline.as_deref())
+                    .and_then(|()| {
+                        if request.managed && request.task.workspace_mode == WorkspaceMode::Worktree {
+                            verify_design_repository_boundary(&cwd, conversation_scope_baseline.as_deref().context("缺少工作树基线")?)?;
+                        }
+                        Ok(())
+                    });
+                if let Err(error) = scope {
                     store.fail_run_permanently(&run_id, &error.to_string(), Some(result.session_locator))?;
                     return Err(error);
                 }
@@ -2033,6 +2343,32 @@ pub(super) fn execute_run(
                     }
                 }
             };
+            if let Some(target) = &managed_target {
+                if request.task.workspace_mode == WorkspaceMode::Worktree {
+                    let valid = (|| {
+                        anyhow::ensure!(acceptance_verified, "托管交付缺少已通过的验收测试");
+                        let hash = content_hash.as_deref().context("托管任务缺少 Git 交付")?;
+                        let workspace = cwd.display().to_string();
+                        let scopes = store.managed_write_paths(&request.task.id)?;
+                        validate_planned_delivery(&request.project, &workspace, hash, &scopes)?;
+                        if request.agent.role == AgentRole::Integrator {
+                            anyhow::ensure!(!cancelled.load(Ordering::Acquire) && store.project(&request.project.id)?.status == ProjectStatus::Active,
+                                "项目已停止，未合入交付");
+                            anyhow::ensure!(store.managed_plan_running(&request.project.id)?.is_some_and(|plan| plan.task_ids.contains(&request.task.id)), "本轮托管已结束，未合入交付");
+                            target.merge(&request.project, hash)?;
+                        }
+                        Ok(())
+                    })();
+                    if let Err(error) = valid {
+                        if cancelled.load(Ordering::Acquire) && store.project(&request.project.id)?.status == ProjectStatus::Paused {
+                            store.pause_run(&run_id)?;
+                        } else {
+                            store.fail_run_with_retry(&run_id, &format!("托管验收失败：{error:#}"), Some(result.session_locator))?;
+                        }
+                        return Err(error);
+                    }
+                }
+            }
             if let Err(error) = store.finalize_successful_run(
                 &run_id,
                 &cwd.display().to_string(),
@@ -2077,23 +2413,31 @@ pub(super) fn execute_run(
             } else {
                 RunStatus::Failed
             };
+            let message = if managed_native { format!("{error:#}") } else { error.to_string() };
             if status == RunStatus::Failed {
-                let locator = Some(serde_json::json!({"cwd": cwd}));
+                let locator = if managed_native { None } else { Some(serde_json::json!({"cwd": cwd})) };
+                if managed_native && store.latest_session_locator(&request.task.id)?.is_some_and(|saved| {
+                    saved["managedPromptDispatched"] == true && locator_string(Some(&saved), &["threadId", "sessionId"]).is_none()
+                }) {
+                    let reason = format!("{message}；任务已派发，尚未获得可恢复的原生会话 ID，已保留原工作树并停止重复派发");
+                    store.fail_run_permanently(&run_id, &reason, None)?;
+                    return Err(anyhow!(reason));
+                }
                 if error.downcast_ref::<PermanentRunError>().is_some() {
-                    let _ = store.fail_run_permanently(&run_id, &error.to_string(), locator);
+                    let _ = store.fail_run_permanently(&run_id, &message, locator);
                 } else {
-                    let _ = store.fail_run_with_retry(&run_id, &error.to_string(), locator);
+                    let _ = store.fail_run_with_retry(&run_id, &message, locator);
                 }
             } else {
                 let _ = store.update_run(UpdateRunInput {
                     run_id: run_id.clone(),
                     status,
                     output_summary: None,
-                    error: Some(error.to_string()),
-                    session_locator: Some(serde_json::json!({"cwd": cwd})),
+                    error: Some(message.clone()),
+                    session_locator: if managed_native { None } else { Some(serde_json::json!({"cwd": cwd})) },
                 });
             }
-            let _ = store.append_run_log(&run_id, "stderr", &format!("执行失败：{error}"));
+            let _ = store.append_run_log(&run_id, "stderr", &format!("执行失败：{message}"));
             Err(error)
         }
     }
@@ -2150,6 +2494,36 @@ fn validated_resume_locator(
     }
 }
 
+/// Carry only native identity across attempts. A previous process/transport and
+/// its run-scoped bridge token must never be mistaken for the new execution.
+fn managed_native_locator(
+    kind: AgentRuntimeKind, cwd: &std::path::Path, saved_mode: Option<&str>, baseline: &str,
+    previous: Option<&serde_json::Value>,
+) -> Result<serde_json::Value> {
+    let mode = saved_mode.unwrap_or("workspace-write/never");
+    let mut locator = serde_json::json!({"adapter":kind, "cwd":cwd, "managedLaunchMode":mode, "managedBaseline":baseline});
+    if let Some(old) = previous {
+        anyhow::ensure!(old["adapter"].as_str().is_none_or(|adapter| adapter == kind.as_str()),
+            "原托管任务的 Runtime 已变更，无法用其他 Runtime 恢复会话");
+        anyhow::ensure!(old["managedLaunchMode"].as_str().is_none_or(|previous| previous == mode),
+            "原托管任务使用的启动模式已变更，请恢复原模式后重试");
+        let keys: &[&str] = match kind {
+            AgentRuntimeKind::ClaudeCode => &["sessionId", "session_id"],
+            AgentRuntimeKind::Codex => &["threadId", "thread_id"],
+            _ => bail!("不支持恢复此托管 Runtime"),
+        };
+        if let Some(id) = locator_string(Some(old), keys) {
+            anyhow::ensure!(old["adapter"] == kind.as_str() && uuid::Uuid::parse_str(id).is_ok(),
+                "托管运行记录缺少可核验的原生会话身份");
+            locator[keys[0]] = id.into();
+        } else {
+            anyhow::ensure!(old["managedPromptDispatched"] != true,
+                "任务已向原生会话提交，但未收到可恢复的会话 ID；已保留原工作树并停止重复派发");
+        }
+    }
+    Ok(locator)
+}
+
 fn workspace_can_resume(
     project: &MultiAgentProject,
     task: &MultiAgentTask,
@@ -2194,7 +2568,7 @@ fn checkpoint_task_workspace(
     Ok(Some(commit_task_worktree(cwd, &request.task.title)?))
 }
 
-fn commit_task_worktree(cwd: &std::path::Path, title: &str) -> Result<String> {
+pub(super) fn commit_task_worktree(cwd: &std::path::Path, title: &str) -> Result<String> {
     let status = hidden_command("git")
         .arg("-C")
         .arg(cwd)
@@ -2281,10 +2655,7 @@ pub(super) fn validate_planned_delivery(
     Ok(())
 }
 
-pub(super) fn checkpoint_resumed_delivery(
-    project: &MultiAgentProject, task: &MultiAgentTask, workspace_uri: &str, recorded: &str, scopes: &[String],
-) -> Result<String> {
-    let cwd = std::path::Path::new(workspace_uri);
+fn verify_delivery_worktree(project: &MultiAgentProject, cwd: &std::path::Path) -> Result<(PathBuf, PathBuf)> {
     let project_dir = std::path::Path::new(&project.root_path);
     let (repo, relative) = git_repository_layout(cwd)?;
     let (project_repo, project_relative) = git_repository_layout(project_dir)?;
@@ -2294,6 +2665,15 @@ pub(super) fn checkpoint_resumed_delivery(
         Ok(std::fs::canonicalize(std::str::from_utf8(&output)?.trim())?)
     };
     anyhow::ensure!(common_git_dir(&repo)? == common_git_dir(&project_repo)?, "原任务工作树与项目不属于同一个 Git 仓库");
+    Ok((repo, relative))
+}
+
+pub(super) fn checkpoint_resumed_delivery(
+    project: &MultiAgentProject, task: &MultiAgentTask, workspace_uri: &str, recorded: &str, scopes: &[String],
+) -> Result<String> {
+    let cwd = std::path::Path::new(workspace_uri);
+    let project_dir = std::path::Path::new(&project.root_path);
+    let (repo, relative) = verify_delivery_worktree(project, cwd)?;
     anyhow::ensure!(valid_commit_hash(recorded) && git_commit_exists(project_dir, recorded), "原交付提交已不可用");
     delivery_git(cwd, &["merge-base", "--is-ancestor", recorded, "HEAD"])
         .context("原会话工作树未沿用已登记的交付提交")?;
@@ -2608,7 +2988,7 @@ fn spawn_passive_stream_reader<R: Read + Send + 'static>(mut reader: R) -> Runti
     RuntimeStreamReader { completion, capture, active, thread: Some(thread) }
 }
 
-fn verify_task_acceptance(
+pub(super) fn verify_task_acceptance(
     task: &MultiAgentTask,
     cwd: &PathBuf,
     cancelled: &AtomicBool,
@@ -2625,7 +3005,20 @@ fn verify_task_acceptance(
     if let Some((store, run_id)) = telemetry {
         let _ = store.append_run_log(run_id, "system", &format!("运行验收命令：{verification}"));
     }
-    let (mut command, stdin_payload) = verification_process(verification)?;
+    let managed = match telemetry {
+        Some((store, _)) => store.managed_task_target(&task.id)?.is_some(),
+        None => false,
+    };
+    let (mut command, stdin_payload) = if managed {
+        let (command, test_path) = super::managed_delivery::verification(verification)?;
+        if let Some(test_path) = test_path {
+            let path = cwd.join(test_path).canonicalize().context("计划指定的验收测试文件不存在")?;
+            anyhow::ensure!(path.is_file() && path.starts_with(cwd.canonicalize()?), "验收测试文件不在任务工作目录中");
+        }
+        (command, None)
+    } else {
+        verification_process(verification)?
+    };
     command
         .current_dir(external_command_path(cwd))
         .stdin(if stdin_payload.is_some() {
@@ -2928,6 +3321,7 @@ fn execute_preferred_acp(
     request: &RuntimeRequest,
     cancelled: &AtomicBool,
 ) -> Result<Option<RuntimeResult>> {
+    if request.managed_native() { return Ok(None); }
     let discussion = super::conversation::is_conversation_task(&request.task.id);
     let research_policy = if discussion {
         let policy = request.store.conversation_task_policy(&request.task.id, &request.agent.id)?;
@@ -3590,14 +3984,7 @@ fn configure_collaboration_mcp(command: &mut Command, request: &RuntimeRequest) 
             command.arg("--mcp-config").arg(config.to_string());
         }
         AgentRuntimeKind::Codex => {
-            command.env("CREWVELA_AGENT_TOKEN", &request.collaboration.token);
-            command.arg("-c").arg(format!(
-                "mcp_servers.crewvela.url={}",
-                serde_json::to_string(&mcp_url)?
-            ));
-            command
-                .arg("-c")
-                .arg("mcp_servers.crewvela.bearer_token_env_var=\"CREWVELA_AGENT_TOKEN\"");
+            configure_codex_collaboration_mcp(command, &mcp_url, &request.collaboration.token, request.managed_codex_review())?;
         }
         AgentRuntimeKind::KimiCode => {
             command.env("CREWVELA_AGENT_TOKEN", &request.collaboration.token);
@@ -3623,6 +4010,24 @@ fn configure_collaboration_mcp(command: &mut Command, request: &RuntimeRequest) 
     Ok(())
 }
 
+fn configure_codex_collaboration_mcp(command: &mut Command, mcp_url: &str, token: &str, managed_review: bool) -> Result<()> {
+    command.env("CREWVELA_AGENT_TOKEN", token);
+    command.arg("-c").arg(format!("mcp_servers.crewvela.url={}", serde_json::to_string(mcp_url)?));
+    command.arg("-c").arg("mcp_servers.crewvela.bearer_token_env_var=\"CREWVELA_AGENT_TOKEN\"");
+    if managed_review {
+        // These capabilities use a per-run lease on CrewVela's own bridge.
+        // The bridge still checks the run, project, reviewer and review target.
+        let tools = ["cc_task_read", "cc_review_submit", "cc_artifact_inspect", "cc_knowledge_search", "cc_memory_search", "cc_heartbeat"];
+        // Windows PowerShell invoking npm's codex.cmd strips embedded double quotes.
+        let allowlist = tools.map(|tool| format!("'{tool}'")).join(",");
+        command.arg("-c").arg(format!("mcp_servers.crewvela.enabled_tools=[{allowlist}]"));
+        for tool in tools {
+            command.arg("-c").arg(format!("mcp_servers.crewvela.tools.{tool}.approval_mode='approve'"));
+        }
+    }
+    Ok(())
+}
+
 fn configure_codex_base(command: &mut Command, request: &RuntimeRequest, channel: &str) -> Result<()> {
     let session = request
         .terminal_host
@@ -3637,7 +4042,10 @@ fn configure_codex_base(command: &mut Command, request: &RuntimeRequest, channel
         })?;
     crate::pty::configure_codex_cli_identity(command, &session.id)?;
     configure_collaboration_mcp(command, request)?;
-    let needs_cli = request_requires_session_cli(request)?;
+    if request.managed {
+        configure_codex_unattended_tools(command);
+    }
+    let needs_cli = !request.managed && request_requires_session_cli(request)?;
     if !(needs_cli && request.task.workspace_mode == WorkspaceMode::ReadOnly) {
         command.arg("-C").arg(external_command_path(&request.cwd));
     }
@@ -3654,7 +4062,11 @@ fn configure_codex_base(command: &mut Command, request: &RuntimeRequest, channel
             request.agent.permission_profile,
         )
     };
-    if request.launch.mode().is_some() {
+    if request.managed && request.launch.mode().is_none() {
+        let sandbox = if request.task.workspace_mode == WorkspaceMode::ReadOnly { "read-only" } else { "workspace-write" };
+        command.args(["--sandbox", sandbox, "--ask-for-approval", "never"]);
+        request.log_launch(&format!("{sandbox} · never"), channel)?;
+    } else if request.launch.mode().is_some() {
         request.launch.configure(request.agent.runtime_kind, command)?;
         request.log_saved_launch(channel)?;
     } else if needs_cli && request.task.workspace_mode == WorkspaceMode::ReadOnly {
@@ -3690,6 +4102,33 @@ fn configure_codex_base(command: &mut Command, request: &RuntimeRequest, channel
     Ok(())
 }
 
+fn configure_codex_unattended_tools(command: &mut Command) {
+    // CrewVela starts the standalone CLI without the OS package identity that
+    // Codex Desktop's registered Core runner requires. Use the CLI's normal
+    // sandbox while retaining the task's existing permission profile.
+    #[cfg(windows)]
+    command.env_remove("CODEX_WINDOWS_REGISTERED_CORE");
+    // Desktop tools can request app access independently of the CLI's launch
+    // mode. Keep the user's desktop outside the managed task's permissions.
+    command.args(["--disable", "computer_use", "--disable", "browser_use",
+        "--disable", "browser_use_external", "--disable", "in_app_browser"]);
+    for plugin in ["computer-use@openai-bundled", "unified-computer-use@openai-bundled"] {
+        command.arg("-c").arg(format!("plugins.'{plugin}'.enabled=false"));
+    }
+}
+
+fn configure_codex_restricted_workspace(command: &mut Command, cwd: &std::path::Path) -> Result<()> {
+    let mut paths = [external_command_path(cwd), external_command_path(&cwd.canonicalize()?)];
+    paths.sort();
+    let mut keys = paths.iter().map(|path| serde_json::to_string(&path.to_string_lossy()))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    keys.dedup();
+    let scoped = keys.into_iter().map(|key| format!(r#"{key} = {{ trust_level = "untrusted" }}"#))
+        .collect::<Vec<_>>().join(", ");
+    command.arg("-c").arg(format!("projects={{{scoped}}}"));
+    Ok(())
+}
+
 fn configure_claude_interactive(
     command: &mut Command,
     permission_mode: &str,
@@ -3708,6 +4147,27 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
         AgentRuntimeKind::ClaudeCode
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        // Each managed run gets fresh bridge credentials, confined to its own
+        // configuration file. Both the native TUI and the read-only host use it.
+        let managed_mcp = if request.managed {
+            let config = claude_agent_mcp_config(
+                &serde_json::Map::new(),
+                &format!("{}/mcp", request.collaboration.endpoint),
+                &request.collaboration.token,
+            );
+            Some(RuntimePromptFile::create_mcp_config(
+                &runtime_prompt_directory()?, &request.run_id, &config,
+            )?)
+        } else { None };
+        if let Some(config_file) = managed_mcp.as_ref().filter(|_| !request.managed_native()) {
+            let mut command = Command::new(resolve_runtime(self.kind())?);
+            command.arg("--mcp-config").arg(external_command_path(&config_file.path));
+            command.args(["--print", "--output-format", "json", "--strict-mcp-config"]);
+            command.args(["--tools", "Read,Grep,Glob", "--allowedTools", "mcp__crewvela__cc_task_read,mcp__crewvela__cc_review_submit",
+                "--permission-mode", "dontAsk"]);
+            request.log_launch("dontAsk · 只读工具", "Claude Code 托管审查")?;
+            return execute_command(self.kind(), command, Some(render_task_prompt(request)), request, cancelled);
+        }
         if let Some(result) = execute_preferred_acp(
             ManagedAcpKind::ClaudeCode,
             &["sessionId", "session_id"],
@@ -3717,9 +4177,14 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
             return Ok(result);
         }
         let mut command = runtime_command(self.kind())?;
-        configure_collaboration_mcp(&mut command, request)?;
-        if let Some(tool) = scoped_design_tool(request)? {
-            command.arg("--allowedTools").arg(format!("mcp__crewvela__{tool}"));
+        if let Some(config_file) = managed_mcp.as_ref() {
+            if let Some(home) = std::env::var_os("CLAUDE_CONFIG_DIR") { command.env("CLAUDE_CONFIG_DIR", home); }
+            command.arg("--mcp-config").arg(external_command_path(&config_file.path)).arg("--strict-mcp-config");
+        } else {
+            configure_collaboration_mcp(&mut command, request)?;
+            if let Some(tool) = scoped_design_tool(request)? {
+                command.arg("--allowedTools").arg(format!("mcp__crewvela__{tool}"));
+            }
         }
         let native = native_conversation(request)?;
         let (permission_mode, skip_permissions) = if request.task.id.starts_with("cli-message-") && !native {
@@ -3739,12 +4204,23 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
             command.arg("--allowedTools").arg(format!("Bash({cli} sessions),Bash({cli} send:*),Bash({bash_cli} sessions),Bash({bash_cli} send:*)"))
                 .arg("--disallowedTools").arg("Write,Edit,NotebookEdit");
         }
-        if let Some(session_id) = locator_string(
+        let resume_id = locator_string(
             request.resume_locator.as_ref(),
             &["sessionId", "session_id"],
-        ) {
+        );
+        let full_prompt = render_task_prompt(request);
+        let managed_prompt = if request.managed_native() {
+            let (file, brief) = managed_claude_prompt_file(
+                &mut command, &runtime_prompt_directory()?, &request.run_id, &full_prompt,
+            )?;
+            request.store.append_run_log(&request.run_id, "system", "Claude Code 将从本次运行的临时文件读取完整任务与审查记录。")?;
+            Some((file, brief))
+        } else { None };
+        let new_id = (request.managed_native() && resume_id.is_none()).then(|| uuid::Uuid::new_v4().to_string());
+        if let Some(session_id) = resume_id {
             command.arg("--resume").arg(session_id);
         } else {
+            if let Some(id) = &new_id { command.arg("--session-id").arg(id); }
             command
                 .arg("--name")
                 .arg(format!("CrewVela · {}", request.task.title));
@@ -3776,7 +4252,15 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
             })
             .collect::<HashMap<_, _>>();
         let settings_json = crate::pty::build_settings_json(&environment, &hook_command);
-        if request.launch.mode().is_some() {
+        let _managed_settings;
+        if request.managed_native() {
+            _managed_settings = RuntimePromptFile::create_config(
+                &runtime_prompt_directory()?, &request.run_id, "settings", settings_json.as_bytes(),
+            )?;
+            command.arg("--settings").arg(external_command_path(&_managed_settings.path));
+            request.launch.configure(self.kind(), &mut command)?;
+            request.log_saved_launch("Claude Code 原生交互终端 · 托管工作树")?;
+        } else if request.launch.mode().is_some() {
             request.launch.configure(self.kind(), &mut command)?;
             command.arg("--settings").arg(&settings_json);
             request.log_saved_launch("Claude Code CLI")?;
@@ -3791,10 +4275,11 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
         request.terminal_host.execute_native(
             self.kind(),
             &command,
-            &render_task_prompt(request),
+            managed_prompt.as_ref().map_or(full_prompt.as_str(), |(_, brief)| brief.as_str()),
             request,
             cancelled,
             request.launch.mode().map_or(skip_permissions, |mode| mode == "yolo"),
+            resume_id.or(new_id.as_deref()),
         )
     }
 }
@@ -3804,6 +4289,14 @@ impl AgentRuntimeAdapter for CodexAdapter {
         AgentRuntimeKind::Codex
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if request.managed && !request.managed_native() {
+            let mut command = runtime_command(self.kind())?;
+            configure_codex_base(&mut command, request, "Codex 托管")?;
+            command.args(["exec", "--json"]);
+            append_codex_images(&mut command, request)?;
+            command.arg("-");
+            return execute_command(self.kind(), command, Some(render_task_prompt(request)), request, cancelled);
+        }
         if let Some(result) = execute_preferred_acp(
             ManagedAcpKind::Codex,
             &["sessionId", "threadId", "thread_id"],
@@ -3813,10 +4306,25 @@ impl AgentRuntimeAdapter for CodexAdapter {
             return Ok(result);
         }
         let mut command = runtime_command(self.kind())?;
-        configure_codex_base(&mut command, request, "Codex TUI")?;
-        command
-            .arg("--no-alt-screen")
-            .arg("--dangerously-bypass-hook-trust");
+        // Windows PTYs also import the registry environment. Use the same
+        // Codex home as the parent that validates this run's notify identity.
+        if request.managed_native() {
+            if let Some(home) = std::env::var_os("CODEX_HOME") { command.env("CODEX_HOME", home); }
+        }
+        configure_codex_base(&mut command, request,
+            if request.managed_native() { "Codex 原生交互终端 · 托管工作树" } else { "Codex TUI" })?;
+        if request.managed_native() {
+            configure_codex_restricted_workspace(&mut command, &request.cwd)?;
+        }
+        command.arg("--no-alt-screen");
+        if !request.managed { command.arg("--dangerously-bypass-hook-trust"); }
+        let prompt = render_task_prompt(request);
+        let prompt_file = request.managed_native().then(|| -> Result<_> {
+            let file = managed_codex_prompt_file(&mut command, &runtime_prompt_directory()?, &request.run_id, &prompt)?;
+            request.store.append_run_log(&request.run_id, "system", "Codex 将从本次运行的临时文件读取完整任务与交付记录。")?;
+            Ok(file)
+        }).transpose()?;
+        let native_prompt = if prompt_file.is_some() { MANAGED_CODEX_TASK_POINTER } else { &prompt };
         let app_session = request
             .terminal_host
             .sessions
@@ -3835,24 +4343,23 @@ impl AgentRuntimeAdapter for CodexAdapter {
         command
             .arg("-c")
             .arg(format!("notify={}", serde_json::to_string(&notify)?));
-        if let Some(thread_id) =
-            locator_string(request.resume_locator.as_ref(), &["threadId", "thread_id"])
-        {
+        let thread_id = locator_string(request.resume_locator.as_ref(), &["threadId", "thread_id"]);
+        if let Some(thread_id) = thread_id {
             command.arg("resume").arg(thread_id);
         }
         append_codex_images(&mut command, request)?;
         command.current_dir(external_command_path(&request.cwd));
-        let prompt = render_task_prompt(request);
         match request.terminal_host.execute_native(
             self.kind(),
             &command,
-            &prompt,
+            native_prompt,
             request,
             cancelled,
-            request.launch.mode().map_or(request.agent.permission_profile == PermissionProfile::Yolo, |mode| mode == "yolo"),
+            !request.managed && request.launch.mode().map_or(request.agent.permission_profile == PermissionProfile::Yolo, |mode| mode == "yolo"),
+            thread_id,
         ) {
             Ok(result) => Ok(result),
-            Err(error) if codex_native_startup_failure(&error) => {
+            Err(error) if !request.managed && codex_native_startup_failure(&error) => {
                 let _ = request.store.append_run_log(
                     &request.run_id,
                     "system",
@@ -4070,6 +4577,7 @@ impl AgentRuntimeAdapter for PiAdapter {
             request,
             cancelled,
             false,
+            None,
         )?;
         let app_session = request
             .terminal_host
@@ -4148,6 +4656,79 @@ struct RuntimePromptFile {
     path: PathBuf,
 }
 
+fn managed_codex_prompt_file(
+    command: &mut Command, directory: &std::path::Path, run_id: &str, prompt: &str,
+) -> Result<RuntimePromptFile> {
+    // Keep the full handoff in a private file. The input must fit unwrapped
+    // even in a narrow terminal sharing the workspace with other Agents.
+    let file = RuntimePromptFile::create_private(directory, &format!("{run_id}.codex.md"), prompt.as_bytes())
+        .context("无法保存完整的 Codex 托管任务说明")?;
+    let path = external_command_path(&file.path);
+    let path = path.to_str().context("Codex 托管任务说明路径无法转换为 UTF-8")?;
+    let path = if cfg!(windows) { path.replace('\\', "/") } else { path.to_owned() };
+    crate::pty::configure_codex_tool_env(command, "CV_TASK", &path)?;
+    Ok(file)
+}
+
+fn managed_claude_prompt_file(
+    command: &mut Command, directory: &std::path::Path, run_id: &str, prompt: &str,
+) -> Result<(RuntimePromptFile, String)> {
+    let id = uuid::Uuid::parse_str(run_id).context("托管任务缺少有效的运行标识")?.simple().to_string();
+    let variable = format!("CV_{}", &id[..5]);
+    let file = RuntimePromptFile::create_private(directory, &format!("{run_id}.claude.md"), prompt.as_bytes())
+        .context("无法保存完整的 Claude Code 托管任务")?;
+    let path = external_command_path(&file.path);
+    // A resumed model can mistake the short variable name for a task ID and
+    // reload the original task. Give this process the exact Read path, including
+    // on rework, without pasting the full task into the terminal.
+    command.arg("--append-system-prompt").arg(format!(
+        "For the current CrewVela turn, when you receive Read ${variable}, first use the Read tool on this exact file: {}. It is the current task, including any rework instructions. The token is an environment-variable reference. Read the new file even when resuming an existing conversation.",
+        path.display()
+    ));
+    command.env(&variable, path);
+    // Different runs have different literal echoes, even in the same session.
+    Ok((file, format!("Read ${variable}")))
+}
+
+fn confirmed_native_identity(
+    request: &RuntimeRequest, sessions: &SessionManager, app_session: &str, pty_id: u32, expected: Option<&str>,
+) -> Result<String> {
+    let current = sessions.get(app_session).context("托管成员终端已不存在")?;
+    anyhow::ensure!(current.pty_id == Some(pty_id) && !current.runtime_command_host
+        && current.multi_agent_project_id.as_deref() == Some(&request.project.id)
+        && current.multi_agent_agent_id.as_deref() == Some(&request.agent.id)
+        && current.agent_runtime_kind.as_deref() == Some(request.agent.runtime_kind.as_str())
+        && std::path::Path::new(&current.cwd) == request.cwd
+        && uuid::Uuid::parse_str(&current.claude_session_id).is_ok()
+        && expected.is_none_or(|id| current.claude_session_id == id),
+        "无法核实本次托管工作树的原生会话身份");
+    Ok(current.claude_session_id)
+}
+
+fn managed_startup_detail(raw: &str) -> String {
+    let plain = strip_terminal_control_sequences(raw).to_ascii_lowercase();
+    for diagnostic in ["registered core launch requires an installed app", "windows sandbox failed",
+        "sign in to continue", "not logged in", "authentication required", "do you trust the contents of this directory"] {
+        if plain.contains(diagnostic) { return format!("（{diagnostic}）"); }
+    }
+    String::new()
+}
+
+fn managed_approval_dialog(raw: &str) -> bool {
+    let frame = strip_terminal_control_sequences(runtime_prompt_frame(raw)).to_ascii_lowercase();
+    let words = frame.split_whitespace().collect::<Vec<_>>().join(" ");
+    if words.contains("allow codex to use ") && words.contains("app:")
+        && words.contains("allow for this session") && words.contains("enter to submit")
+    {
+        return true;
+    }
+    // A command preview or the general "Esc to interrupt" busy footer is not a
+    // permission request. Require the CLI question and its actionable choices.
+    ["would you like to run the following command", "would you like to apply the following",
+        "would you like to allow"].iter().any(|question| frame.contains(question))
+        && frame.contains("1. yes, proceed") && (frame.contains("2. no,") || frame.contains("3. no,"))
+}
+
 impl RuntimePromptFile {
     fn create(request: &RuntimeRequest, prompt: &str) -> Result<Self> {
         let directory = runtime_prompt_directory()?;
@@ -4157,6 +4738,37 @@ impl RuntimePromptFile {
         std::fs::write(&path, prompt)
             .with_context(|| format!("写入临时任务说明失败：{}", path.display()))?;
         Ok(Self { path })
+    }
+
+    fn create_mcp_config(
+        directory: &std::path::Path,
+        run_id: &str,
+        config: &serde_json::Value,
+    ) -> Result<Self> {
+        Self::create_config(directory, run_id, "mcp", &serde_json::to_vec(config)?)
+    }
+
+    fn create_config(directory: &std::path::Path, run_id: &str, purpose: &str, contents: &[u8]) -> Result<Self> {
+        Self::create_private(directory, &format!("{run_id}.{purpose}.json"), contents)
+            .context("无法保存托管 CLI 配置")
+    }
+
+    fn create_private(directory: &std::path::Path, name: &str, contents: &[u8]) -> Result<Self> {
+        std::fs::create_dir_all(directory).context("无法创建托管任务临时目录")?;
+        let path = directory.join(name);
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&path).context("无法创建托管任务临时文件")?;
+        let temporary = Self { path };
+        let written = file.write_all(contents).context("无法写入托管任务临时文件");
+        drop(file);
+        written?;
+        Ok(temporary)
     }
 }
 
@@ -4192,6 +4804,9 @@ fn cleanup_stale_runtime_prompts() {
                     extension.to_string_lossy().as_ref(),
                     "md" | "ps1" | "txt" | "jsonl"
                 )
+            }) || path.file_name().is_some_and(|name| {
+                let name = name.to_string_lossy();
+                name.ends_with(".mcp.json") || name.ends_with(".settings.json")
             });
             if stale && removable {
                 let _ = std::fs::remove_file(path);
@@ -4250,7 +4865,11 @@ fn execute_command(
         request,
         cancelled,
     )?;
-    let stdout = visible.output;
+    let stdout = if request.managed {
+        visible.output.replace(&request.collaboration.token, "[REDACTED]")
+    } else {
+        visible.output
+    };
     if kind == AgentRuntimeKind::Codex {
         if let Some(error) =
             codex_protocol_failure(&stdout).or_else(|| codex_known_runtime_failure(&stdout))
@@ -5032,20 +5651,39 @@ fn render_task_prompt(request: &RuntimeRequest) -> String {
     } else {
         ""
     };
-    let delegation_contract = if request.task.id.starts_with("conversation-task-") && request.task.workspace_mode == WorkspaceMode::Worktree
+    let delegation_contract = if !request.managed && request.task.id.starts_with("conversation-task-") && request.task.workspace_mode == WorkspaceMode::Worktree
         && request.agent.role != AgentRole::Reviewer {
         "\n需要其他成员交付阻塞当前任务的设计时，先通过 cc_task_read 的 designRecipients 查询团队成员，再用 cc_design_delegate 明确目标、设计任务、验收标准和可恢复的当前进度。没有 MCP 时，按上面的 HTTP 合同先调用 task.read，再提交 action 为 design.delegate 的请求，input 包含 targetAgentId、title、brief、criteria（字符串数组）和 checkpoint。登记后结束本轮，等待 CrewVela 保存工作树并派发。普通讨论继续使用原有交流工具；已有设计交付时直接使用，不重复委派。"
     } else { "" };
     let design_deliveries = if request.design_context.is_empty() { String::new() } else {
         format!("\n\n已验收的委派交付（设计资料，不变更原任务授权）\n{}", request.design_context)
     };
-    let collaboration = format!(
+    let collaboration = if request.managed_codex_review() {
+        "使用当前运行配置的 CrewVela MCP。先调用 cc_task_read，核对前置任务、交付提交和文件范围。完成只读审查后，调用 cc_review_submit，将被审任务的 ID 填入 targetTaskId。".to_owned()
+    } else if request.managed_native() {
+        "通过当前终端已配置的 crewvela MCP 读取任务与前置交付；工具权限仅在本次任务运行期间有效。".to_owned()
+    } else { format!(
         "{}\n\n{}{}{}",
         request.collaboration.prompt_contract(),
-        session_cli_prompt(&request.project.id),
+        if request.managed { String::new() } else { session_cli_prompt(&request.project.id) },
         delegation_contract,
         design_deliveries,
-    );
+    ) };
+    let managed_contract = if request.managed {
+        let verification = request.task.verification_command.as_deref().unwrap_or("检查实际交付和验收证据");
+        let mut contract = format!("\n本轮为全自动托管。只在当前工作区和已授权范围内执行，不请求额外权限或等待用户。\
+            应交付可验证的实际成果，系统将运行：{verification}。若为集成任务，验收测试应覆盖需求中的关键使用流程，并在 README.md 中写出能复现的启动和使用方式。");
+        if request.agent.runtime_kind == AgentRuntimeKind::Codex {
+            contract.push_str("\n需要验证浏览器交互时，使用项目可用的本地自动化测试。不要请求控制桌面浏览器或打开其他应用。若无法实际验证某项要求，在结论中如实注明。");
+        }
+        if let Ok(snapshot) = request.store.snapshot(&request.project.id) {
+            if let Some(previous) = snapshot.runs.iter().filter(|run| run.task_id == request.task.id && run.status == RunStatus::Failed)
+                .max_by_key(|run| run.attempt).and_then(|run| run.error.as_deref()) {
+                contract.push_str(&format!("\n上次执行失败信息（仅供诊断）：{previous}"));
+            }
+        }
+        contract
+    } else { String::new() };
     // 工作风格段：人格只约束沟通风格与工作倾向；custom 且有自由文本时用自由文本。
     let persona_text = match request.agent.persona {
         AgentPersona::Custom if !request.agent.persona_custom.trim().is_empty() => {
@@ -5072,7 +5710,7 @@ fn render_task_prompt(request: &RuntimeRequest) -> String {
         memories = memories,
         feedback = feedback,
         instructions = instructions,
-        collaboration = collaboration,
+        collaboration = format!("{collaboration}{managed_contract}"),
         review_contract = review_contract,
     )
 }
@@ -5274,16 +5912,20 @@ fn codex_native_turn_returned_to_composer(raw: &str) -> bool {
         >= 2
 }
 
+fn utf8_bracketed_paste(prompt: &str) -> Vec<u8> {
+    let mut paste = b"\x1b[200~".to_vec();
+    paste.extend_from_slice(prompt.as_bytes());
+    paste.extend_from_slice(b"\x1b[201~");
+    paste
+}
+
 fn submit_native_prompt(
-    prompt: &str,
+    paste: &[u8],
     mut write: impl FnMut(&[u8]) -> Result<()>,
     mut wait_until_rendered: impl FnMut() -> Result<()>,
     mut ensure_not_cancelled: impl FnMut() -> Result<()>,
 ) -> Result<()> {
-    let mut paste = b"\x1b[200~".to_vec();
-    paste.extend_from_slice(prompt.as_bytes());
-    paste.extend_from_slice(b"\x1b[201~");
-    write(&paste)?;
+    write(paste)?;
     wait_until_rendered()?;
     ensure_not_cancelled()?;
     write(b"\r")
@@ -5351,8 +5993,12 @@ pub(crate) fn interactive_runtime_prompt_ready(kind: AgentRuntimeKind, raw: &str
 pub(crate) fn codex_terminal_state(raw: &str) -> Option<(bool, usize)> {
     let frame = runtime_prompt_frame(raw);
     let frame_start = raw.len() - frame.len();
-    frame.match_indices("\x1b]7501;").filter_map(|(start, prefix)| {
-        let message = &frame[start + prefix.len()..];
+    last_codex_terminal_state(frame).map(|(ready, end)| (ready, frame_start + end))
+}
+
+fn last_codex_terminal_state(raw: &str) -> Option<(bool, usize)> {
+    raw.match_indices("\x1b]7501;").filter_map(|(start, prefix)| {
+        let message = &raw[start + prefix.len()..];
         let end = message.find('\x07').into_iter().chain(message.find("\x1b\\")).min()?;
         let fields = message[..end].split(':').collect::<Vec<_>>();
         if !fields.contains(&"app=codex") { return None; }
@@ -5362,7 +6008,7 @@ pub(crate) fn codex_terminal_state(raw: &str) -> Option<(bool, usize)> {
             _ => None,
         };
         let terminator_length = if message.as_bytes()[end] == 7 { 1 } else { 2 };
-        Some(ready.map(|ready| (ready, frame_start + start + prefix.len() + end + terminator_length)))
+        Some(ready.map(|ready| (ready, start + prefix.len() + end + terminator_length)))
     }).last().flatten()
 }
 
@@ -5533,7 +6179,7 @@ fn prepare_workspace(
     prepare_workspace_in(&worktrees_root, project, task, run_id, dependency_artifacts)
 }
 
-fn prepare_workspace_in(
+pub(super) fn prepare_workspace_in(
     worktrees_root: &std::path::Path,
     project: &MultiAgentProject,
     task: &MultiAgentTask,
@@ -5808,6 +6454,111 @@ fn workspace_content_hash(cwd: &std::path::Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn managed_codex_disables_desktop_tools_for_the_current_process() {
+        let mut command = std::process::Command::new("codex");
+        super::configure_codex_unattended_tools(&mut command);
+        let args: Vec<_> = command.get_args().map(|arg| arg.to_str().unwrap()).collect();
+        for feature in ["computer_use", "browser_use", "browser_use_external", "in_app_browser"] {
+            assert!(args.windows(2).any(|pair| pair == ["--disable", feature]));
+        }
+        for plugin in ["computer-use@openai-bundled", "unified-computer-use@openai-bundled"] {
+            let setting = format!("plugins.'{plugin}'.enabled=false");
+            assert!(args.windows(2).any(|pair| pair == ["-c", setting.as_str()]));
+        }
+        #[cfg(windows)]
+        assert_eq!(command.get_envs().collect::<Vec<_>>(), vec![(std::ffi::OsStr::new("CODEX_WINDOWS_REGISTERED_CORE"), None)]);
+        #[cfg(not(windows))]
+        assert!(command.get_envs().next().is_none());
+    }
+
+    #[test]
+    fn managed_codex_detects_a_wrapped_desktop_permission_dialog() {
+        let dialog = "Field 1/1\nAllow Codex to use Google\nChrome?\nApp: Google Chrome\n1. Allow\n2. Allow for this\n   session\n3. Always allow\noption 1/4 | enter to submit |\nesc to cancel";
+        assert!(super::managed_approval_dialog(dialog));
+        assert!(!super::managed_approval_dialog("The manual asks: Allow Codex to use Google Chrome?"));
+    }
+
+    #[test]
+    fn managed_codex_large_prompt_keeps_the_complete_task_outside_the_pty() {
+        use super::{managed_codex_prompt_file, MANAGED_CODEX_TASK_POINTER};
+        use std::process::Command;
+
+        let directory = std::env::temp_dir().join(format!("CrewVela 托管任务 {}", uuid::Uuid::new_v4()));
+        let mut command = Command::new("codex");
+        let full = format!("完整的验收与交付记录\n{}\n最后的联调验收指令", "前端审查记录\n".repeat(9000));
+        let file = managed_codex_prompt_file(&mut command, &directory, "long", &full).unwrap();
+        let path = file.path.clone();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), full);
+        assert!(MANAGED_CODEX_TASK_POINTER.is_ascii() && !MANAGED_CODEX_TASK_POINTER.contains('\n') && MANAGED_CODEX_TASK_POINTER.len() <= 21);
+        assert!(MANAGED_CODEX_TASK_POINTER.contains("CV_TASK"));
+        let value = command.get_envs().find(|(key, _)| *key == "CV_TASK").unwrap().1.unwrap();
+        assert_eq!(std::path::Path::new(value).canonicalize().unwrap(), path.canonicalize().unwrap());
+        let configured = format!("shell_environment_policy.set.CV_TASK={}", serde_json::to_string(value.to_str().unwrap()).unwrap());
+        assert!(command.get_args().any(|arg| arg == configured.as_str()));
+        assert!(managed_codex_prompt_file(&mut command, &directory, "long", &full).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), full);
+        drop(file);
+        assert!(!path.exists());
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn managed_codex_review_authorizes_only_its_scoped_bridge_tools() {
+        use super::configure_codex_collaboration_mcp;
+        use std::process::Command;
+
+        let args = |managed| {
+            let mut command = Command::new("codex");
+            configure_codex_collaboration_mcp(&mut command, "http://127.0.0.1:9000/mcp", "dummy", managed).unwrap();
+            command.get_args().map(|arg| arg.to_str().unwrap().to_owned()).collect::<Vec<_>>()
+        };
+        let managed = args(true);
+        for tool in ["cc_task_read", "cc_review_submit", "cc_artifact_inspect", "cc_knowledge_search", "cc_memory_search", "cc_heartbeat"] {
+            assert!(managed.contains(&format!("mcp_servers.crewvela.tools.{tool}.approval_mode='approve'")), "{tool}");
+        }
+        assert!(managed.iter().any(|arg| arg == "mcp_servers.crewvela.enabled_tools=['cc_task_read','cc_review_submit','cc_artifact_inspect','cc_knowledge_search','cc_memory_search','cc_heartbeat']"));
+        assert!(!managed.iter().any(|arg| arg.contains("cc_approval_request") || arg.contains("cc_artifact_publish") || arg.contains("default_tools_approval_mode")));
+        assert!(!args(false).iter().any(|arg| arg.contains("approval_mode") || arg.contains("enabled_tools")));
+    }
+
+    #[test]
+    fn managed_native_permissions_require_unattended_worktree_modes() {
+        use super::super::managed_delivery::check_launch_mode;
+        use super::{AgentRuntimeKind::{ClaudeCode, Codex}, WorkspaceMode::{ReadOnly, SharedWrite, Worktree}};
+        for (kind, modes) in [(ClaudeCode, vec!["manual", "accept_edits", "plan", "yolo", "cli_default"]),
+            (Codex, vec!["workspace", "read_only", "yolo", "cli_default"])] {
+            assert!(check_launch_mode(kind, Worktree, Some("auto")).is_ok());
+            assert!(check_launch_mode(kind, SharedWrite, Some("auto")).is_err());
+            for mode in modes {
+                assert!(check_launch_mode(kind, Worktree, Some(mode)).is_err());
+                assert!(check_launch_mode(kind, ReadOnly, Some(mode)).is_ok());
+            }
+        }
+        assert!(check_launch_mode(Codex, Worktree, None).is_ok());
+        assert!(check_launch_mode(ClaudeCode, Worktree, None).is_err());
+    }
+
+    #[test]
+    fn managed_native_retry_discards_process_identity_and_rejects_an_unknown_submitted_thread() {
+        use serde_json::json;
+        let cwd = std::path::Path::new("worktree");
+        let id = uuid::Uuid::new_v4().to_string();
+        let mut old = json!({"adapter":"codex","thread_id":id,"cwd":cwd,"managedLaunchMode":"auto","ptyId":4,"transport":"pty","managedPromptDispatched":true});
+        let resume = |old: &serde_json::Value| managed_native_locator(AgentRuntimeKind::Codex, cwd, Some("auto"), "base", Some(old));
+        assert_eq!(resume(&old).unwrap(), json!({"adapter":"codex","threadId":id,"cwd":cwd,"managedLaunchMode":"auto","managedBaseline":"base"}));
+        old["managedLaunchMode"] = "workspace".into();
+        assert!(resume(&old).is_err());
+        old["managedLaunchMode"] = "auto".into();
+        old["adapter"] = "claude_code".into();
+        assert!(resume(&old).is_err());
+        old["adapter"] = "codex".into();
+        old.as_object_mut().unwrap().remove("thread_id");
+        assert!(resume(&old).is_err());
+        old["managedPromptDispatched"] = false.into();
+        assert!(resume(&old).is_ok());
+    }
+
     #[test]
     fn collaboration_launch_uses_native_saved_flags_for_writable_tasks() {
         use super::{AgentRuntimeKind as Kind, CollaborationLaunchMode, WorkspaceMode};
@@ -6587,6 +7338,40 @@ mod tests {
         host.prepare_project_sessions(&store, &project.id).unwrap();
         assert_eq!(sessions.list().len(), 8);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn managed_claude_mcp_config_survives_powershell_and_npm_cmd_shim() {
+        let root = std::env::temp_dir().join(format!("crewvela mcp {}", uuid::Uuid::new_v4()));
+        let config = claude_agent_mcp_config(&serde_json::Map::new(), "http://127.0.0.1:1/mcp", "fixture-token");
+        let file = RuntimePromptFile::create_mcp_config(&root, "run", &config).unwrap();
+        let probe = root.join("probe.cjs");
+        std::fs::write(&probe, r#"
+const [flag, configPath, ...args] = process.argv.slice(2);
+if (flag !== "--mcp-config" || args.join(" ") !== "--print --strict-mcp-config") process.exit(2);
+console.log(JSON.stringify(JSON.parse(require("node:fs").readFileSync(configPath, "utf8"))));
+"#).unwrap();
+        let shim = root.join("claude.cmd");
+        let node = which::which("node").unwrap();
+        std::fs::write(&shim, format!("@\"{}\" \"{}\" %*\r\n", node.display(), probe.display())).unwrap();
+        let mut command = Command::new(shim);
+        command.arg("--mcp-config").arg(&file.path).args(["--print", "--strict-mcp-config"]);
+        let output = root.join("output.jsonl");
+        let script = root.join("launch.ps1");
+        let exit = root.join("exit.txt");
+        let script_text = powershell_runtime_script(AgentRuntimeKind::ClaudeCode, &command, None, &output, &exit, "__MCP_DONE__:");
+        assert!(!script_text.contains("fixture-token"));
+        std::fs::write(&script, format!("\u{feff}{script_text}")).unwrap();
+        let result = Command::new("powershell.exe").args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]).arg(&script).output().unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        let raw = std::fs::read_to_string(&output).unwrap();
+        assert_eq!(std::fs::read_to_string(&exit).unwrap().trim(), "0", "{raw}");
+        let actual: serde_json::Value = serde_json::from_str(raw.trim()).unwrap();
+        assert_eq!(actual, config);
+        let path = file.path.clone();
+        drop(file);
+        assert!(!path.exists());
     }
 
     #[cfg(windows)]
@@ -7898,7 +8683,7 @@ exit 0
 
         let events = std::cell::RefCell::new(Vec::new());
         submit_native_prompt(
-            "检查当前项目",
+            &utf8_bracketed_paste("检查当前项目"),
             |bytes| {
                 events.borrow_mut().push(InputEvent::Write(bytes.to_vec()));
                 Ok(())
@@ -7924,7 +8709,7 @@ exit 0
     fn native_agent_prompt_is_not_submitted_after_cancellation() {
         let writes = std::cell::RefCell::new(Vec::new());
         let error = submit_native_prompt(
-            "检查当前项目",
+            &utf8_bracketed_paste("检查当前项目"),
             |bytes| {
                 writes.borrow_mut().push(bytes.to_vec());
                 Ok(())

@@ -197,6 +197,9 @@
 .conversation-recipient-menu { position: absolute; z-index: 8; left: 0; right: 0; bottom: calc(100% + 8px); max-height: min(290px, calc(64dvh - 170px)); overflow: auto; padding: 10px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--bg-elev); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); }
 .conversation-recipient-menu > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 8px; font-size: 13px; }
 .conversation-recipient-menu header button { border: 0; background: transparent; color: var(--accent); font-size: 12px; }
+.conversation-recipient-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.conversation-recipient-actions button { min-height: 25px; padding: 2px 6px; border-radius: 4px; }
+.conversation-recipient-actions button[aria-pressed="true"] { background: var(--bg-hover); }
 .conversation-recipient-menu label { display: flex; align-items: center; gap: 10px; padding: 8px 4px; cursor: pointer; }
 .conversation-recipient-menu input { width: 15px; height: 15px; accent-color: var(--accent); }
 .conversation-recipient-menu img { width: 23px; height: 23px; object-fit: contain; }

@@ -1002,12 +1002,16 @@ export interface ConversationDesignDelivery {
   markdown: string;
   acceptanceEvidence: Array<{ criterion: string; evidence: string; met: boolean }>;
 }
+export type ConversationChatDispatch =
+  | { kind: "parallel" }
+  | { kind: "assigned"; agentId: string };
 export interface ConversationRound {
   id: string;
   projectId: string;
   conversationId: string;
   userMessageId: string;
   participantAgentIds: string[];
+  chatDispatch?: ConversationChatDispatch;
   mode: ConversationMode;
   intent?: ConversationIntent;
   status: ConversationStatus;
@@ -1016,6 +1020,7 @@ export interface ConversationRound {
   currentRound: number;
   deadlineAt: number;
   stopReason: string | null;
+  managedTarget?: { root: string; branch: string };
   createdAt: number;
   updatedAt: number;
 }
@@ -1040,6 +1045,13 @@ export interface ConversationExecutionPlan {
   tasks: ConversationPlannedTask[];
   status: "pending" | "applied" | "superseded";
   taskIds: string[];
+  managed?: {
+    target: { root: string; branch: string };
+    status: "planning" | "running" | "completed" | "failed";
+    summary: string | null;
+    commit: string | null;
+    verificationCommand: string | null;
+  };
   createdAt: number;
 }
 export interface ConversationHardBoundary {
@@ -1101,12 +1113,14 @@ export interface ConversationSnapshot {
 }
 export interface ConversationSendInput {
   nativeCapabilities?: boolean;
+  managed?: boolean;
   projectId: string;
   expectedConversationId?: string;
   clientMessageId: string;
   body: string;
   attachmentIds?: string[];
   participantAgentIds: string[];
+  chatDispatch?: ConversationChatDispatch;
   mode: ConversationMode;
   intent?: ConversationIntent;
   taskRules?: ConversationTaskRules;
@@ -1123,6 +1137,7 @@ export interface ConversationInterruptInput {
   body: string;
   /** Omit only for legacy pause-only interjections. New clients preserve the full request. */
   participantAgentIds?: string[];
+  chatDispatch?: ConversationChatDispatch;
   mode?: ConversationMode;
   intent?: ConversationIntent;
   taskRules?: ConversationTaskRules;

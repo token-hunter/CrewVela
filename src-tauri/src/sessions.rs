@@ -1403,6 +1403,12 @@ impl SessionManager {
     }
 
     pub fn attach_runtime(&self, id: &str, pty_id: u32) -> Result<SessionRecord> {
+        self.attach_runtime_in(id, pty_id, None)
+    }
+
+    // A member reuses its app panel across tasks. Bind the new native process
+    // to the real task worktree before validating any provider hook or thread.
+    pub(crate) fn attach_runtime_in(&self, id: &str, pty_id: u32, managed_cwd: Option<&std::path::Path>) -> Result<SessionRecord> {
         let _approval_registry = self.approval_registry.read().unwrap();
         let approval_gate = self.approval_lock(id);
         let _approval_gate = approval_gate.lock().unwrap();
@@ -1416,6 +1422,13 @@ impl SessionManager {
             .iter_mut()
             .find(|session| session.id == id)
             .ok_or_else(|| anyhow!("未找到会话: {id}"))?;
+        if let Some(cwd) = managed_cwd {
+            anyhow::ensure!(session.multi_agent_agent_id.is_some(), "托管终端缺少成员身份");
+            session.cwd = cwd.to_string_lossy().into_owned();
+            session.claude_session_id.clear();
+            session.waiting_since = None;
+            session.waiting_reason = None;
+        }
         session.pty_id = Some(pty_id);
         session.status = if session.kind == SessionKind::Terminal {
             SessionStatus::Running

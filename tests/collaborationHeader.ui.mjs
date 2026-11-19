@@ -36,7 +36,7 @@ try {
     await trigger.click();const menu=page.locator('.conversation-member-menu');await menu.waitFor();
     assert.equal(await menu.getByRole('checkbox').count(),3);
     await menu.getByRole('checkbox',{name:'聊天-ZCodeCLI',exact:true}).uncheck();
-    assert.equal(await page.locator('.conversation-target').innerText(),'已选 2 位成员');
+    assert.equal(await page.locator('.conversation-target').innerText(),'发给全体 · 3 位');
     assert.match(await trigger.getAttribute('aria-label'),/已选 2 位，共 3 位/);
     let rect=(await geometry(page)).menu;assert.ok(rect.left>=0&&rect.right<=size.width+1&&rect.top>=0&&rect.bottom<=size.height+1);
     await page.mouse.move(8,70);
@@ -81,7 +81,11 @@ try {
   await keyboard.keyboard.press('Space');await keyboard.keyboard.press('Tab');assert.equal(await keyboard.locator('.conversation-member-menu input').nth(1).evaluate(el=>el===document.activeElement),true);
   await keyboard.keyboard.press('Space');await keyboard.keyboard.press('Escape');assert.equal(await keyboardTrigger.evaluate(el=>el===document.activeElement),true);
   assert.match(await keyboardTrigger.getAttribute('aria-label'),/已选 1 位，共 3 位/);await keyboard.getByRole('combobox',{name:'给团队发消息',exact:true}).fill('检查接口');await keyboard.getByRole('button',{name:'发送消息',exact:true}).click();
-  await keyboard.getByRole('button',{name:/暂停讨论/}).waitFor();assert.deepEqual(await keyboard.evaluate(()=>window.conversationMock.calls.find(item=>item.command==='ma_conversation_send').args.input.participantAgentIds),['kimi']);await keyboard.close();
+  await keyboard.getByRole('combobox',{name:'给团队插话',exact:true}).waitFor();
+  assert.deepEqual(await keyboard.evaluate(()=>window.conversationMock.calls.find(item=>item.command==='ma_conversation_send').args.input.participantAgentIds),['claude','codex','kimi']);
+  await keyboard.getByRole('button',{name:'讨论记录操作',exact:true}).click();
+  await keyboard.getByRole('menuitem',{name:'暂停讨论',exact:true}).waitFor();
+  await keyboard.close();
   const instances=await fresh('instances=2');await instances.locator('[data-instance="0"] .conversation-members-trigger').click();await instances.evaluate(()=>window.conversationMock.selectInstance(1));
   await instances.waitForFunction(()=>!document.querySelector('.conversation-member-menu'));await instances.locator('[data-instance="1"] .conversation-members-trigger').click();assert.equal(await instances.locator('.conversation-member-menu').count(),1);
   await instances.evaluate(()=>window.conversationMock.setActive(false));await instances.locator('.conversation-member-menu').waitFor({state:'detached'});await instances.close();

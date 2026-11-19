@@ -14,6 +14,8 @@ mod work_views;
 mod research_policy;
 #[path = "conversation_activity_tests.rs"]
 mod activity;
+#[path = "managed_native_tests.rs"]
+mod managed_native;
 
 struct Fixture {
     store: MultiAgentStore,
@@ -89,6 +91,72 @@ fn invalid_conversation_attachment_never_queues_a_turn() {
     assert!(fixture.store.conversation_snapshot(&fixture.project).unwrap().messages.is_empty());
 }
 
+#[test]
+fn assigned_team_chat_keeps_all_recipients_and_launches_only_the_owner() {
+    let fixture = Fixture::new();
+    let mut input = fixture.input();
+    input.body = "谁能帮我启动这个项目？".into();
+    input.chat_dispatch = Some(ConversationChatDispatch::Assigned { agent_id: id() });
+    assert!(fixture.store.begin_conversation(input.clone()).is_err());
+    input.chat_dispatch = Some(ConversationChatDispatch::Assigned { agent_id: fixture.agents[1].clone() });
+    let executor = ScriptedReplies::new(vec!["服务已启动".into()]);
+    let chat = fixture.run_input(input.clone(), &executor);
+    assert_eq!(chat.rounds[0].participant_agent_ids, fixture.agents);
+    assert_eq!(chat.rounds[0].chat_dispatch, input.chat_dispatch);
+    assert_eq!(chat.rounds[0].status, "completed");
+    let calls = executor.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, fixture.agents[1]);
+}
+
+struct ParallelReplies {
+    active: std::sync::atomic::AtomicUsize,
+    started: std::sync::atomic::AtomicUsize,
+    peak: std::sync::atomic::AtomicUsize,
+}
+impl DiscussionExecutor for ParallelReplies {
+    fn execute(&self, store: &MultiAgentStore, _task: &str, run: &str, agent: &str, _: &AtomicBool) -> Result<()> {
+        store.update_run(UpdateRunInput { run_id: run.into(), status: RunStatus::Running,
+            output_summary: None, error: None, session_locator: None })?;
+        let active = self.active.fetch_add(1, Ordering::AcqRel) + 1;
+        self.peak.fetch_max(active, Ordering::AcqRel);
+        self.started.fetch_add(1, Ordering::Release);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while self.started.load(Ordering::Acquire) < 3 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let result = store.finalize_successful_run(run, "isolated", &format!("成员 {agent} 的回复"), false, None, None);
+        self.active.fetch_sub(1, Ordering::AcqRel);
+        result
+    }
+}
+
+#[test]
+fn team_chat_runs_independent_replies_with_bounded_parallelism() {
+    let mut fixture = Fixture::new();
+    for index in 2..5 {
+        let member = fixture.store.create_agent(CreateAgentInput {
+            avatar_id: None, project_id: fixture.project.clone(), name: format!("member-{index}"),
+            runtime_kind: AgentRuntimeKind::Codex, role: AgentRole::Worker, description: String::new(),
+            persona: Default::default(), persona_custom: String::new(), model: None,
+            permission_profile: PermissionProfile::Default, max_concurrency: 1,
+        }).unwrap();
+        fixture.agents.push(member.id);
+    }
+    let mut input = fixture.input();
+    input.body = "大家各自介绍一下".into();
+    input.chat_dispatch = Some(ConversationChatDispatch::Parallel);
+    let replies = ParallelReplies { active: 0.into(), started: 0.into(), peak: 0.into() };
+    let chat = fixture.run_input(input, &replies);
+    assert_eq!(replies.peak.load(Ordering::Acquire), 3, "three agents must overlap");
+    assert_eq!(replies.started.load(Ordering::Acquire), 5);
+    assert_eq!(chat.rounds[0].status, "completed", "{:?}", chat.rounds[0].stop_reason);
+    let replies = chat.messages.iter().filter(|message| message.sender_type == "agent").collect::<Vec<_>>();
+    assert_eq!(replies.len(), 5);
+    assert!(replies.iter().all(|reply| reply.status == "completed"
+        && reply.reply_to_message_id.as_deref() == Some(chat.rounds[0].user_message_id.as_str())));
+}
+
 impl Fixture {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!("crewvela-conversation-{}", id()));
@@ -134,7 +202,7 @@ impl Fixture {
         }
     }
     fn input(&self) -> ConversationSendInput {
-        ConversationSendInput { native_capabilities: false, expected_conversation_id: None,
+        ConversationSendInput { native_capabilities: false, managed: false, expected_conversation_id: None, chat_dispatch: None,
             project_id: self.project.clone(),
             client_message_id: "user-1".into(),
             body: "Discuss the project".into(),
@@ -271,7 +339,7 @@ fn controlled_reply(body: &str, control: Value) -> String {
 fn interjection(input: &ConversationSendInput) -> ConversationInterruptInput {
     ConversationInterruptInput { native_capabilities: None, expected_conversation_id: input.expected_conversation_id.clone(), project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
         body: input.body.clone(), attachment_ids: input.attachment_ids.clone(), participant_agent_ids: Some(input.participant_agent_ids.clone()), mode: Some(input.mode.clone()),
-        intent: Some(input.intent.clone()), max_rounds: Some(input.max_rounds), max_duration_seconds: Some(input.max_duration_seconds), task_rules: input.task_rules.clone() }
+        intent: Some(input.intent.clone()), chat_dispatch: input.chat_dispatch.clone(), max_rounds: Some(input.max_rounds), max_duration_seconds: Some(input.max_duration_seconds), task_rules: input.task_rules.clone() }
 }
 impl DiscussionExecutor for Replies {
     fn execute(
@@ -859,6 +927,33 @@ impl DiscussionExecutor for StopDuringRun {
         })?;
         bail!("cancelled")
     }
+}
+
+#[test]
+fn stopping_parallel_chat_settles_all_running_replies() {
+    let fixture = Fixture::new();
+    let mut input = fixture.input();
+    input.chat_dispatch = Some(ConversationChatDispatch::Parallel);
+    let (round, _) = fixture.store.begin_conversation(input).unwrap();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    std::thread::scope(|scope| {
+        let supervisor = scope.spawn(|| run_discussion(&fixture.store, &round.id, &cancelled,
+            &StopDuringRun { unconfirmed: false, interrupt: false }));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let overlapping = loop {
+            let running = fixture.store.snapshot(&fixture.project).unwrap().runs.iter()
+                .filter(|run| run.status == RunStatus::Running).count();
+            if running == 2 || Instant::now() >= deadline { break running; }
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        fixture.store.request_conversation_stop(&fixture.project, "paused", "测试暂停", None).unwrap();
+        supervisor.join().unwrap().unwrap();
+        assert_eq!(overlapping, 2);
+    });
+    assert_eq!(fixture.store.conversation_round(&round.id).unwrap().status, "paused");
+    let runs = fixture.store.snapshot(&fixture.project).unwrap().runs;
+    assert_eq!(runs.len(), 2);
+    assert!(runs.iter().all(|run| run.status == RunStatus::Cancelled));
 }
 
 #[test]
@@ -1817,6 +1912,137 @@ fn resumed_delivery_replaces_an_empty_commit_before_releasing_the_review() {
         task_id: review.id, agent_id: fixture.agents[1].clone(), lease_seconds: 120,
     }).unwrap();
     assert!(fixture.store.update_resumed_delivery(&task).unwrap_err().to_string().contains("后续任务已开始"));
+}
+
+fn managed_plan_fixture() -> (Fixture, ConversationSendInput, String) {
+    let fixture = Fixture::at(std::env::temp_dir().join(format!("cv-{}", &id()[..8])));
+    fixture.git();
+    let agent = |name: &str, runtime: &str, role: &str| fixture.store.create_agent(
+        serde_json::from_value(json!({"projectId":fixture.project,"name":name,"runtimeKind":runtime,"role":role})).unwrap()
+    ).unwrap().id;
+    let reviewer = agent("Reviewer", "claude_code", "reviewer");
+    let integrator = agent("Integrator", "codex", "integrator");
+    let mut input = fixture.input();
+    input.participant_agent_ids.extend([reviewer.clone(), integrator.clone()]);
+    input.managed = true;
+    input.mode = "execution_plan".into();
+    input.body = "开发并交付可运行的演示项目".into();
+    let mut draft = fixture.draft();
+    let implementation = &mut draft.tasks[0];
+    implementation.verification_command = Some("node --test src/owned/check.test.js".into());
+    let review = ConversationPlannedTask { key:"review".into(), title:"review".into(),
+        assignee_agent_id:reviewer, workspace_mode:WorkspaceMode::ReadOnly, write_paths:vec![],
+        verification_command:None, depends_on:vec![implementation.key.clone()], ..implementation.clone() };
+    let integration = ConversationPlannedTask { key:"integration".into(), title:"integration".into(),
+        assignee_agent_id:integrator, write_paths:vec!["README.md".into(),"tests".into()],
+        verification_command:Some("node --test tests/acceptance.test.js".into()),
+        depends_on:vec![review.key.clone()], ..implementation.clone() };
+    draft.tasks.extend([review,integration]);
+    (fixture, input, json!({"summary":draft.summary,"tasks":draft.tasks}).to_string())
+}
+
+#[test]
+fn managed_plan_retries_validation_and_delivers_only_after_review_and_tests() {
+    use crate::multi_agent::executor::{commit_task_worktree, git_head, prepare_workspace_in, verify_task_acceptance};
+    use crate::multi_agent::{RequestApprovalInput, ReviewVerdict, SubmitReviewDecisionInput};
+    let (fixture, input, plan_json) = managed_plan_fixture();
+    let replies = ScriptedReplies::new(vec!["invalid plan".into(),plan_json]);
+    let chat = fixture.run_input(input, &replies);
+    assert_eq!(replies.calls.lock().unwrap().len(), 2, "invalid draft automatically retried");
+    assert_eq!(chat.rounds[0].status, "completed");
+    let store = &fixture.store;
+    let plan = &chat.execution_plans[0];
+    let mut execute = ConversationExecutePlanInput {
+        project_id: fixture.project.clone(), plan_id: plan.id.clone(), client_request_id: "manual-button".into(),
+    };
+    assert!(store.apply_conversation_plan(&execute).is_err());
+    execute.client_request_id = format!("managed-{}", plan.id);
+    assert!(store.apply_conversation_plan(&execute).is_err());
+    let ids = store.apply_conversation_plan_in(&execute, true).unwrap();
+    let project = store.project(&fixture.project).unwrap();
+    let root = fixture.root.join("project");
+    let initial = git_head(&root).unwrap();
+    let plan = store.managed_plan_running(&fixture.project).unwrap().unwrap();
+    let target = &plan.managed.as_ref().unwrap().target;
+    let stop = AtomicBool::new(false);
+    let claim = |index: usize| {
+        let task = store.snapshot(&fixture.project).unwrap().tasks.into_iter().find(|task| task.id == ids[index]).unwrap();
+        let run = store.claim_task(ClaimTaskInput {
+            task_id: task.id.clone(), agent_id:task.assignee_agent_id.clone().unwrap(), lease_seconds:120,
+        }).unwrap();
+        store.update_run(UpdateRunInput {run_id:run.id.clone(), status:RunStatus::Running, output_summary:None,error:None,session_locator:None}).unwrap();
+        let dependencies = store.dependency_artifacts(&task.id).unwrap();
+        let worktree = prepare_workspace_in(&fixture.root.join("w"), &project, &task, &run.id, &dependencies).unwrap();
+        (task,run,worktree)
+    };
+    let write = |path: &std::path::Path, value: &str| {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path,value).unwrap();
+    };
+    let test_script = "const test = require('node:test'); test('it runs', () => require('node:assert').equal(1+1,2));";
+    let finish = |run: &crate::multi_agent::AgentRun, path: &std::path::Path, verified:bool, hash:Option<&str>| {
+        store.finalize_successful_run(&run.id,path.to_str().unwrap(),"verified output",verified,hash,None).unwrap()
+    };
+    let source = "src/owned/check.test.js";
+    let reworked = format!("{test_script}\n// Reworked after review");
+    for (verdict, contents) in [(ReviewVerdict::ChangesRequested,test_script), (ReviewVerdict::Approved,reworked.as_str())] {
+        let (task, run, path) = claim(0);
+        assert!(store.request_approval(RequestApprovalInput {
+            project_id:fixture.project.clone(),task_id:Some(task.id.clone()),run_id:Some(run.id.clone()),
+            approval_type:"runtime_permission".into(),summary:"extra scope".into(),
+        }).is_err());
+        write(&path.join(source), contents);
+        assert!(verify_task_acceptance(&task,&path,&stop,Some((store,&run.id))).unwrap());
+        let hash = commit_task_worktree(&path,&task.title).unwrap();
+        finish(&run,&path,true,Some(&hash));
+        let (_,review,checked) = claim(1);
+        assert_eq!(std::fs::read_to_string(checked.join(source)).unwrap().replace("\r\n", "\n"), contents);
+        store.submit_review_decision(SubmitReviewDecisionInput {
+            review_run_id:review.id.clone(),target_task_id:task.id,verdict,summary:"review verdict".into(),
+        }).unwrap();
+        finish(&review,&checked,false,None);
+    }
+    assert_eq!(git_head(&root).unwrap(), initial);
+    let (task, failed_run, failed_path) = claim(2);
+    write(&failed_path.join("tests/acceptance.test.js"), "require('node:test')('fails', () => { throw Error('test regression'); });");
+    let error = verify_task_acceptance(&task, &failed_path, &stop, Some((store, &failed_run.id))).unwrap_err();
+    store.fail_run_with_retry(&failed_run.id, &error.to_string(), None).unwrap();
+    assert_eq!(git_head(&root).unwrap(), initial);
+    {
+        let connection = store.connection.lock().unwrap();
+        connection.execute("UPDATE ma_tasks SET next_retry_at=0 WHERE id=?1 AND next_retry_at IS NOT NULL", [&task.id]).unwrap();
+    }
+    let (task,run,path) = claim(2);
+    write(&path.join("README.md"), "Run the demonstration with Node.js.");
+    write(&path.join("tests/acceptance.test.js"), test_script);
+    let verified = verify_task_acceptance(&task,&path,&stop,Some((store,&run.id))).unwrap();
+    let hash = commit_task_worktree(&path,&task.title).unwrap();
+    assert!(store.finalize_successful_run(&run.id,path.to_str().unwrap(),"missing merge",verified,Some(&hash),None).is_err());
+    target.merge(&project,&hash).unwrap();
+    finish(&run,&path,verified,Some(&hash));
+    let snapshot=store.snapshot(&fixture.project).unwrap();
+    assert!(snapshot.approvals.is_empty(), "no manual delivery approval at any stage");
+    store.settle_idle_managed_plan(&snapshot,&plan).unwrap();
+    let result=store.conversation_snapshot(&fixture.project).unwrap().execution_plans.remove(0).managed.unwrap();
+    assert_eq!(result.status,"completed");
+    assert_eq!(result.commit.as_deref(),Some(hash.as_str()));
+    assert!(root.join("README.md").is_file());
+    assert!(root.join("tests/acceptance.test.js").is_file());
+    assert_eq!(std::fs::read_to_string(root.join(source)).unwrap().replace("\r\n", "\n"), reworked);
+    assert_eq!(store.project(&fixture.project).unwrap().status,ProjectStatus::Completed);
+}
+
+#[test]
+fn managed_plan_reports_exhaustion_without_dispatching_work() {
+    let (fixture, input, _) = managed_plan_fixture();
+    let replies=ScriptedReplies::new(vec!["bad format".into(),"bad format".into(),"bad format".into()]);
+    let chat=fixture.run_input(input,&replies);
+    assert_eq!(replies.calls.lock().unwrap().len(),3);
+    assert_eq!(chat.rounds[0].status,"failed");
+    assert!(chat.rounds[0].stop_reason.as_deref().unwrap().contains("3 次"));
+    assert!(chat.execution_plans.is_empty());
+    assert!(super::super::managed_delivery::verification("node --test ../../outside.js").is_err());
+    assert!(super::super::managed_delivery::verification("npm test && exit 0").is_err());
 }
 
 #[test]

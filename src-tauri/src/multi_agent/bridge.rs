@@ -323,6 +323,7 @@ fn dispatch(
     let _runtime_lease = crate::runtime_preferences::acquire(profile.runtime_kind)?;
     match command {
         CollaborationCommand::DesignDelegate { input } => {
+            anyhow::ensure!(store.managed_task_target(&scope.task_id)?.is_none(), "托管任务须按现有分工完成，不能临时扩大执行范围");
             let id = store.request_design(&scope.run_id, &scope.agent_id, input)?;
             Ok(serde_json::json!({"delegationId":id,"status":"checkpointing",
                 "next":"结束本轮。正常退出后由 CrewVela 保存检查点并派发设计任务，请勿继续修改原任务。"}))

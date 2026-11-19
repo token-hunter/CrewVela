@@ -238,6 +238,85 @@ try {
  await editor(chat).fill('hi');await editor(chat).press('Enter');
  await chat.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===3);
  assert.equal((await calls(chat,'ma_conversation_send')).at(-1).args.input.mode,'discussion','generate plan never becomes a sticky input mode');
+ const managed = await fresh('natural=1&empty=1&managed-test=1');
+ await editor(managed).fill('开发并交付可运行的贪吃蛇游戏');
+ const startManaged = managed.getByRole('button',{name:'全自动托管',exact:true});
+ managed.once('dialog',dialog=>dialog.dismiss());
+ await startManaged.click();
+ assert.equal((await calls(managed,'ma_conversation_send')).length,0);
+ await Promise.all([managed.waitForEvent('dialog').then(async confirmation=>{
+   const message = confirmation.message();
+   await confirmation.accept();
+   assert.match(message, /main.*\/fixture\/todo-app/s);
+ }),startManaged.click()]);
+ await managed.getByText('全自动托管 · 正在生成分工',{exact:true}).waitFor();
+ const sent = (await calls(managed,'ma_conversation_send')).at(-1).args.input;
+ assert.equal(sent.managed,true);
+ assert.equal(sent.nativeCapabilities,false);
+ assert.equal(sent.mode,'execution_plan');
+ assert.equal(sent.chatDispatch,undefined);
+ assert.deepEqual(sent.participantAgentIds,['claude','codex','kimi']);
+ await managed.evaluate(()=>{
+   const chat = window.conversationMock.chats.A;
+   const round = chat.rounds.at(-1);
+   round.status = 'completed';
+   const delivery = {id:'managed-result',projectId:'A',roundId:round.id,messageId:'managed-proposal',
+     summary:'贪吃蛇交付',tasks:[],status:'applied',taskIds:['t-build'],createdAt:Date.now(),
+     managed:{target:round.managedTarget,status:'running',summary:null,commit:null,verificationCommand:null}};
+   chat.messages.push({...chat.messages[0],id:delivery.messageId,roundId:round.id,senderType:'agent',agentId:'claude',body:'',kind:'plan',phase:'plan',createdAt:Date.now()});
+   chat.executionPlans.push(delivery);
+ });
+ const outcome = managed.getByRole('region',{name:'全自动托管结果',exact:true});
+ await outcome.getByRole('heading',{name:'全自动托管中',exact:true}).waitFor();
+ await managed.evaluate(()=>Object.assign(window.conversationMock.chats.A.executionPlans[0].managed,{
+   status:'completed',summary:'成品通过启动和计分测试',commit:'c4cb7a9e',verificationCommand:'node --test tests/acceptance.test.js',
+ }));
+ await outcome.getByRole('heading',{name:'成品已交付',exact:true}).waitFor();
+ await outcome.getByRole('button',{name:'查看启动说明',exact:true}).click();
+ assert.deepEqual((await calls(managed,'workspace_reveal_path')).at(-1).args,{root:'/fixture/todo-app',relativePath:'README.md'});
+ assert.equal((await calls(managed,'ma_conversation_execute_plan')).length,0);
+ await managed.evaluate(()=>Object.assign(window.conversationMock.chats.A.executionPlans[0].managed,{
+   status:'failed',summary:'最终验收连续三次未通过',commit:null,verificationCommand:null,
+ }));
+ await outcome.getByText('最终验收连续三次未通过',{exact:true}).waitFor();
+ assert.equal(await outcome.getByRole('button',{name:'查看启动说明',exact:true}).count(),0);
+ await managed.evaluate(()=>{
+   const chat = window.conversationMock.chats.A;
+   chat.messages.push(
+     {...chat.messages[0],id:'retry-1',taskId:'t-build',senderType:'system',kind:'status',status:'failed',body:'托管运行第一次失败'},
+     {...chat.messages[0],id:'retry-2',taskId:'t-build',senderType:'system',kind:'status',status:'failed',body:'托管运行第二次失败'},
+     {...chat.messages[0],id:'manual-error',taskId:'t-design',senderType:'system',kind:'status',status:'failed',body:'人工流程仍显示执行失败'},
+   );
+   chat.executionPlans[0].managed.summary = 'MCP config file not found: path/{mcpServers:{Authorization:Bearer fixture-secret}}';
+ });
+ await outcome.getByText(/Windows 未能正确传递 MCP 配置/).waitFor();
+ await managed.getByText('人工流程仍显示执行失败',{exact:true}).waitFor();
+ assert.equal(await managed.getByText(/托管运行第.次失败|fixture-secret/).count(),0);
+ const managedBefore=await managed.evaluate(()=>structuredClone(window.conversationMock.chats.A));
+ const expectedManagedIds=managedBefore.messages.map(message=>message.id).sort();
+ const recordsMenu=managed.getByRole('button',{name:'讨论记录操作',exact:true});
+ await recordsMenu.click();
+ await managed.getByRole('menuitem',{name:'新建会话',exact:true}).click();
+ await managed.waitForFunction(oldId=>window.conversationMock.chats.A.conversation.id!==oldId
+   || document.querySelector('.conversation-error')?.textContent.includes('讨论记录已变化'),managedBefore.conversation.id);
+ const newCall=(await calls(managed,'ma_conversation_new')).at(-1);
+ assert.deepEqual([...newCall.args.input.expectedMessageIds].sort(),expectedManagedIds,'new chat validates hidden managed messages too');
+ await outcome.waitFor({state:'detached'});
+ assert.equal(await managed.locator('.conversation-message').count(),0);
+ assert.deepEqual(await managed.evaluate(()=>window.conversationMock.archivedConversations[0]),managedBefore);
+ await recordsMenu.click();
+ await managed.getByRole('menuitem',{name:'历史会话',exact:true}).click();
+ const archived=managed.getByRole('dialog',{name:'历史会话',exact:true});
+ await archived.getByRole('button',{name:/开发并交付可运行的贪吃蛇游戏/}).click();
+ await outcome.waitFor();
+ assert.equal(await managed.getByText(/托管运行第.次失败/).count(),0);
+ await recordsMenu.click();
+ await managed.getByRole('menuitem',{name:'清空讨论记录',exact:true}).click();
+ const clearManaged=managed.getByRole('dialog',{name:'清空讨论记录',exact:true});
+ await clearManaged.getByRole('button',{name:'清空记录',exact:true}).click();
+ await clearManaged.waitFor({state:'detached'});
+ const clearCall=(await calls(managed,'ma_conversation_clear')).at(-1);
+ assert.deepEqual([...clearCall.args.input.expectedMessageIds].sort(),expectedManagedIds,'clear uses the same snapshot');
  const history=await fresh('evidence=1&logs-only=1&launch-mode=1');
  await history.evaluate(()=>{
    const mock=window.conversationMock;
@@ -292,5 +371,5 @@ try {
  await editor(short).evaluate(node=>node.style.height='999px');
  assert.equal(await short.evaluate(()=>document.querySelector('.conversation-footer').getBoundingClientRect().bottom<=innerHeight+1),true,'resizing in a short window keeps send controls on screen');
  assert.deepEqual(errors,[]);
- console.log('PASS team work views: real tab separation, draft and scroll retention, one-shot planning, full plan contract, explicit/idempotent approval, task selection/dependencies/evidence, truthful progress, scheduler pause/resume/failure, related chat, keyboard, project isolation, dark/light/320px.');
+ console.log('PASS team work views: draft and sent image previews, document attachments, real tab separation, draft and scroll retention, one-shot planning, full plan contract, explicit/idempotent approval, task selection/dependencies/evidence, truthful progress, scheduler pause/resume/failure, related chat, keyboard, project isolation, dark/light/320px.');
 }finally{for(const context of contexts)await context.close();await browser.close();}

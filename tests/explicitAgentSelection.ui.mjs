@@ -11,13 +11,13 @@ try {
   const picker = page.locator('.conversation-recipient-menu');
   assert.equal(await picker.getByRole('checkbox').count(), 3);
   assert.equal(await picker.getByText('群组', { exact: true }).count(), 0);
-  await picker.getByRole('button', { name: '全选 / 取消全选', exact: true }).click();
+  await picker.getByRole('button', { name: '取消全选', exact: true }).click();
   assert.equal(await picker.locator('input:checked').count(), 0);
   await picker.getByRole('checkbox').nth(1).check(); await picker.getByRole('checkbox').nth(2).check();
   assert.equal(await picker.locator('input:checked').count(), 2);
   assert.equal(await picker.isVisible(), true);
   await picker.getByRole('checkbox').nth(1).uncheck();
-  await page.locator('.conversation-target').click(); await editor.press('Enter');
+  await page.locator('.conversation-target').click(); await editor.fill('@Kimi Code 自我介绍一下'); await editor.press('Enter');
   await page.getByRole('combobox', { name: '给团队插话', exact: true }).waitFor();
   const first = await page.evaluate(() => window.conversationMock.calls.find(item => item.command === 'ma_conversation_send').args.input);
   assert.deepEqual(first.participantAgentIds, ['kimi']); assert.equal(first.projectId, 'A');

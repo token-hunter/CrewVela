@@ -109,6 +109,8 @@ pub struct ConversationRound {
     pub conversation_id: String,
     pub user_message_id: String,
     pub participant_agent_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_dispatch: Option<ConversationChatDispatch>,
     pub mode: String,
     #[serde(default = "default_intent")]
     pub intent: String,
@@ -120,6 +122,8 @@ pub struct ConversationRound {
     pub stop_reason: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) managed_target: Option<super::managed_delivery::ManagedTarget>,
     /// Immutable permission ceilings captured when the user message is accepted.
     /// Absence on old queued requests means the original no-tools policy.
     #[serde(default)]
@@ -151,6 +155,8 @@ pub struct ConversationExecutionPlan {
     pub status: String,
     pub task_ids: Vec<String>,
     pub created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) managed: Option<super::managed_delivery::ManagedDelivery>,
 }
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -178,7 +184,11 @@ pub struct ConversationSendInput {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachment_ids: Vec<String>,
     pub participant_agent_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_dispatch: Option<ConversationChatDispatch>,
     pub mode: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub managed: bool,
     #[serde(default = "default_intent")]
     pub intent: String,
     #[serde(default = "default_rounds")]
@@ -191,6 +201,13 @@ pub struct ConversationSendInput {
     /// omit this and retain their original restricted execution contract.
     #[serde(default)]
     pub native_capabilities: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ConversationChatDispatch {
+    Parallel,
+    Assigned { agent_id: String },
 }
 
 #[derive(Debug, Serialize)]
@@ -257,6 +274,14 @@ impl MultiAgentStore {
     pub(crate) fn conversation_plan_preflight(&self, input: &ConversationSendInput) -> Result<Vec<ConversationPlanIssue>> {
         if input.mode != "execution_plan" { return Ok(Vec::new()); }
         validate_send_input(&mut input.clone())?;
+        if input.managed {
+            let connection = self.connection.lock().unwrap();
+            let (root, branch) = connection.query_row("SELECT root_path,default_branch FROM ma_projects WHERE id=?1",
+                [&input.project_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+            if let Err(error) = super::managed_delivery::prepare(&connection, input, root, branch) {
+                return Ok(vec![ConversationPlanIssue { kind: "member", message: format!("{error:#}") }]);
+            }
+        }
         let (root, roster) = {
             let connection = self.connection.lock().unwrap();
             let root: String = connection.query_row("SELECT root_path FROM ma_projects WHERE id=?1",
@@ -330,6 +355,8 @@ pub struct ConversationInterruptInput {
     pub attachment_ids: Vec<String>,
     #[serde(default)]
     pub participant_agent_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub chat_dispatch: Option<ConversationChatDispatch>,
     #[serde(default)]
     pub mode: Option<String>,
     #[serde(default)]
@@ -603,6 +630,12 @@ fn validate_send_input(input: &mut ConversationSendInput) -> Result<()> {
     if input.mode == "execution_plan" {
         ensure!(!input.body.is_empty(), "请填写要完成的目标，再生成分工");
     }
+    if input.managed {
+        if input.mode != "execution_plan" || input.task_rules.is_some() {
+            bail!("全自动托管需要独立的工程分工请求");
+        }
+        input.native_capabilities = false;
+    }
     if !matches!(input.intent.as_str(), "chat" | "exchange") {
         bail!("无效群聊意图");
     }
@@ -610,8 +643,17 @@ fn validate_send_input(input: &mut ConversationSendInput) -> Result<()> {
         bail!("接话预算必须为 1–3，最长 1800 秒，最短 60 秒");
     }
     let unique = input.participant_agent_ids.iter().collect::<HashSet<_>>();
-    if unique.is_empty() || unique.len() > 8 || unique.len() != input.participant_agent_ids.len() {
-        bail!("请选择 1–8 位不重复的实际成员");
+    if unique.is_empty() || unique.len() != input.participant_agent_ids.len() {
+        bail!("请选择至少 1 位不重复的实际成员");
+    }
+    if input.mode == "execution_plan" && unique.len() > 8 {
+        bail!("生成分工时请选择 1–8 位成员");
+    }
+    if let Some(dispatch) = &input.chat_dispatch {
+        ensure!(input.mode == "discussion" && input.intent == "chat", "只有普通聊天支持指定回复方式");
+        if let ConversationChatDispatch::Assigned { agent_id } = dispatch {
+            ensure!(unique.contains(agent_id), "接手成员必须是本条消息的收件成员");
+        }
     }
     Ok(())
 }
@@ -955,14 +997,17 @@ impl MultiAgentStore {
                 }
             }
         }
-        let project_status: String = tx.query_row(
-            "SELECT status FROM ma_projects WHERE id=?1",
+        let (project_status, root, branch): (String, String, String) = tx.query_row(
+            "SELECT status,root_path,default_branch FROM ma_projects WHERE id=?1",
             [&input.project_id],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
         if project_status == "cancelled" {
             bail!("项目已取消，不能启动讨论");
         }
+        let managed_target = if input.managed {
+            Some(super::managed_delivery::prepare(&tx, &input, root, branch)?)
+        } else { None };
         // Validate the whole roster before persisting/dispatching the first turn.
         // Keep this under the transaction, and after the idempotent receipt lookup.
         let mut manual_members = Vec::new();
@@ -995,6 +1040,7 @@ impl MultiAgentStore {
             conversation_id: conversation.id.clone(),
             user_message_id: message_id.clone(),
             participant_agent_ids: input.participant_agent_ids,
+            chat_dispatch: input.chat_dispatch,
             mode: input.mode,
             intent: input.intent,
             status: "queued".into(),
@@ -1005,6 +1051,7 @@ impl MultiAgentStore {
             stop_reason: None,
             created_at: stamp,
             updated_at: stamp,
+            managed_target,
             member_policies,
         };
         let message = ConversationMessage {
@@ -1087,9 +1134,10 @@ impl MultiAgentStore {
             let mut request = ConversationSendInput {
                 expected_conversation_id: input.expected_conversation_id.clone(),
                 project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
-                body: body.clone(), participant_agent_ids: participants,
+                body: body.clone(), participant_agent_ids: participants, chat_dispatch: input.chat_dispatch,
                 attachment_ids: input.attachment_ids.clone(),
                 mode: input.mode.unwrap_or_else(|| "discussion".into()),
+                managed: false,
                 intent: input.intent.unwrap_or_else(default_intent),
                 max_rounds: input.max_rounds.unwrap_or_else(default_rounds),
                 max_duration_seconds: input.max_duration_seconds.unwrap_or_else(default_duration),
@@ -1409,6 +1457,13 @@ fn refresh_round_wait_state(connection: &Connection, project: &str) -> Result<()
         if round.status=="unconfirmed" {
             let unsafe_owner=runs.iter().any(|(status,locator)|matches!(run_status(status,locator.as_deref()),"queued"|"running"|"waiting_approval"|"needs_decision"|"unconfirmed"));
             if !unsafe_owner {round.status="needs_decision".into();round.stop_reason=Some("原执行已确认停止；请明确开始新轮，不会自动重复派发".into());round.updated_at=now();save_round(connection,&round)?;}
+        } else if matches!(round.chat_dispatch, Some(ConversationChatDispatch::Parallel)) {
+            let projected = if runs.iter().any(|(status, _)| status == "waiting_approval") { "waiting_approval" } else { "running" };
+            if round.status != projected {
+                round.status = projected.into();
+                round.updated_at = now();
+                save_round(connection, &round)?;
+            }
         } else if let Some((status,locator))=current {
             let projected=run_status(status,locator.as_deref());
             if matches!(projected,"running"|"waiting_approval") && round.status!=projected {round.status=projected.into();round.updated_at=now();save_round(connection,&round)?;}
@@ -1428,6 +1483,7 @@ impl ConversationSupervisor {
         input: ConversationSendInput,
         host: AgentTerminalHost,
         bridge: CollaborationBridge,
+        engineering: super::MultiAgentSupervisor,
     ) -> Result<()> {
         let mut active = self.active.lock().unwrap();
         let (round, created) = store.begin_conversation(input)?;
@@ -1436,12 +1492,12 @@ impl ConversationSupervisor {
         }
         let flag = Arc::new(AtomicBool::new(false));
         active.insert(round.project_id.clone(), flag.clone());
-        self.spawn_round(store, round, flag, host, bridge);
+        self.spawn_round(store, round, flag, host, bridge, Some(engineering));
         Ok(())
     }
 
     fn spawn_round(&self, store: MultiAgentStore, mut round: ConversationRound,
-        flag: Arc<AtomicBool>, host: AgentTerminalHost, bridge: CollaborationBridge) {
+        flag: Arc<AtomicBool>, host: AgentTerminalHost, bridge: CollaborationBridge, engineering: Option<super::MultiAgentSupervisor>) {
         let owner = self.clone();
         std::thread::spawn(move || {
             let runner = ExistingRunExecutor { host, bridge };
@@ -1465,6 +1521,13 @@ impl ConversationSupervisor {
                 .is_some_and(|f| Arc::ptr_eq(f, &flag))
             {
                 break;
+            }
+            if round.managed_target.is_some() && !flag.load(Ordering::Acquire) {
+                if let Some(engineering) = &engineering {
+                    if let Err(error) = store.start_managed_round(&round.id, engineering, &runner.host, &runner.bridge) {
+                        let _ = store.finish_conversation(&round.id, "failed", Some(format!("托管未能开始执行：{error:#}")));
+                    }
+                }
             }
             let unconfirmed = store.conversation_round(&round.id).is_ok_and(|round| round.status == "unconfirmed");
             if unconfirmed {
@@ -1501,7 +1564,7 @@ impl ConversationSupervisor {
         } else if let Some(round) = store.start_queued_conversation(&project)? {
             let flag = Arc::new(AtomicBool::new(false));
             active.insert(project, flag.clone());
-            self.spawn_round(store.clone(), round, flag, host, bridge);
+            self.spawn_round(store.clone(), round, flag, host, bridge, None);
         } else {
             store.settle_queued_conversation_inputs(&project, "needs_decision")?;
         }
@@ -1543,7 +1606,7 @@ impl ConversationSupervisor {
     }
 }
 
-trait DiscussionExecutor {
+trait DiscussionExecutor: Sync {
     fn execute(
         &self,
         store: &MultiAgentStore,
@@ -1592,6 +1655,192 @@ fn run_discussion(
     cancelled: &Arc<AtomicBool>,
     executor: &impl DiscussionExecutor,
 ) -> Result<()> {
+    let round = store.conversation_round(round_id)?;
+    if matches!(round.chat_dispatch, Some(ConversationChatDispatch::Parallel)) {
+        return run_parallel_chat(store, &round, cancelled, executor);
+    }
+    let managed = round.managed_target.is_some();
+    for attempt in 0..if managed { 3 } else { 1 } {
+        run_discussion_attempt(store, round_id, cancelled, executor, attempt, managed)?;
+        let round = store.conversation_round(round_id)?;
+        if !managed || round.status != "running" || cancelled.load(Ordering::Acquire) {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+enum DiscussionTurnResult {
+    Stopped,
+    Blocked(String),
+    Executed { run_id: String, outcome: Result<()>, reply: ConversationMessage },
+}
+
+fn execute_discussion_turn(
+    store: &MultiAgentStore, round: &ConversationRound, turn: &Turn,
+    executor: &impl DiscussionExecutor, cancelled: &AtomicBool, stop_dispatch: impl Fn() -> Result<bool>,
+) -> Result<DiscussionTurnResult> {
+    let run = loop {
+        if stop_dispatch()? {
+            cancel_unclaimed_turn(store, turn)?;
+            return Ok(DiscussionTurnResult::Stopped);
+        }
+        // Existing persistent claim logic enforces all per-agent concurrency and manual-control rules.
+        match store.claim_task(ClaimTaskInput {
+            task_id: turn.task_id.clone(),
+            agent_id: turn.agent_id.clone(),
+            lease_seconds: 120,
+        }) {
+            Ok(run) => break run,
+            Err(error) => {
+                let state = store.agent_profile(&turn.agent_id)?;
+                let project = store.snapshot(&state.project_id)?;
+                let manual = project.agent_sessions.iter().any(|s| {
+                    s.agent_id == turn.agent_id && s.control_mode == super::AgentControlMode::Manual
+                });
+                if !state.enabled
+                    || manual
+                    || project.project.status == super::ProjectStatus::Cancelled
+                    || crate::runtime_preferences::ensure_available(state.runtime_kind).is_err()
+                {
+                    cancel_unclaimed_turn(store, turn)?;
+                    return Ok(DiscussionTurnResult::Blocked(error.to_string()));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+    };
+    sync_round(store, &turn.round_id, &turn.phase, turn.cycle, "running")?;
+    let outcome = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        executor.execute(store, &turn.task_id, &run.id, &turn.agent_id, cancelled)
+    })) {
+        Ok(outcome) => outcome,
+        Err(_) => {
+            store
+                .mark_run_stop_unverified(&run.id, "讨论执行线程异常退出，未确认原进程停止")?;
+            Err(anyhow!("讨论执行线程异常退出"))
+        }
+    };
+    if let Err(error) = &outcome {
+        // The executor has returned (and its process cleanup contract applies).
+        // Settle early storage/protocol failures too; never release a quarantined owner.
+        if let Some(current) = store
+            .snapshot(&round.project_id)?
+            .runs
+            .into_iter()
+            .find(|r| r.id == run.id)
+        {
+            if matches!(
+                current.status,
+                super::RunStatus::Starting
+                    | super::RunStatus::Running
+                    | super::RunStatus::WaitingInput
+                    | super::RunStatus::WaitingApproval
+            ) && !current
+                .session_locator
+                .as_ref()
+                .is_some_and(|locator| locator["stopUnverified"] == true)
+            {
+                store.fail_run_permanently(
+                    &run.id,
+                    &error.to_string(),
+                    current.session_locator,
+                )?;
+            }
+        }
+    }
+    store.conversation_snapshot(&round.project_id)?;
+    // Scheduling consumes exact-run evidence; the public snapshot has already
+    // removed internal control text and may omit an intentionally silent turn.
+    let reply = message_with(&store.connection.lock().unwrap(), &turn.id)?;
+    Ok(DiscussionTurnResult::Executed { run_id: run.id, outcome, reply })
+}
+
+fn run_parallel_chat(
+    store: &MultiAgentStore, round: &ConversationRound, cancelled: &Arc<AtomicBool>,
+    executor: &impl DiscussionExecutor,
+) -> Result<()> {
+    let _deadline = DeadlineGuard::start(store.clone(), round.clone(), cancelled.clone(), Arc::new(AtomicBool::new(false)));
+    let pending = Mutex::new(round.participant_agent_ids.iter().enumerate());
+    let unconfirmed = AtomicBool::new(false);
+    let outcomes = std::thread::scope(|scope| {
+        let workers = (0..round.participant_agent_ids.len().min(3)).map(|_| scope.spawn(|| {
+            let mut outcomes = Vec::new();
+            let stop_dispatch = || Ok(unconfirmed.load(Ordering::Acquire) || discussion_stop_requested(store, &round.id, cancelled)?);
+            loop {
+                let next = pending.lock().unwrap().next();
+                let Some((ordinal, agent)) = next else { break; };
+                let run = || {
+                    if stop_dispatch()? { return Ok(None); }
+                    let turn = match prepare_turn_addressed(store, &round.id, ordinal, "chat", ordinal as u32, agent, None) {
+                        Ok(turn) => turn,
+                        Err(_) if stop_dispatch()? => return Ok(None),
+                        Err(error) => return Err(error),
+                    };
+                    parallel_reply_outcome(store, round, agent,
+                        execute_discussion_turn(store, round, &turn, executor, cancelled, stop_dispatch)?)
+                };
+                match run() {
+                    Ok(Some(("unconfirmed", reason))) => {
+                        unconfirmed.store(true, Ordering::Release);
+                        outcomes.push(("unconfirmed", reason));
+                        break;
+                    }
+                    Ok(Some(outcome)) => outcomes.push(outcome),
+                    Ok(None) => {}
+                    Err(error) => outcomes.push(("failed", format!("成员执行失败：{error:#}"))),
+                }
+            }
+            outcomes
+        })).collect::<Vec<_>>();
+        workers.into_iter().flat_map(|worker| worker.join().unwrap()).collect::<Vec<_>>()
+    });
+    if unconfirmed.load(Ordering::Acquire) {
+        return store.finish_conversation(&round.id, "unconfirmed", Some("有成员的进程停止未确认，请到任务详情核对原进程".into()));
+    }
+    if stop_if_requested(store, &round.id, cancelled)? { return Ok(()); }
+    let status = ["failed", "needs_decision"].into_iter()
+        .find(|status| outcomes.iter().any(|(value, _)| value == status)).unwrap_or("completed");
+    let reason = (!outcomes.is_empty()).then(|| outcomes.into_iter().map(|(_, reason)| reason).collect::<Vec<_>>().join("；"));
+    store.finish_conversation(&round.id, status, reason)
+}
+
+fn parallel_reply_outcome(
+    store: &MultiAgentStore, round: &ConversationRound, agent: &str, result: DiscussionTurnResult,
+) -> Result<Option<(&'static str, String)>> {
+    let (run_id, outcome, reply) = match result {
+        DiscussionTurnResult::Stopped => return Ok(None),
+        DiscussionTurnResult::Blocked(reason) => return Ok(Some(("needs_decision", reason))),
+        DiscussionTurnResult::Executed { run_id, outcome, reply } => (run_id, outcome, reply),
+    };
+    if reply.status == "unconfirmed" { return Ok(Some(("unconfirmed", String::new()))); }
+    outcome?;
+    if reply.status != "completed" {
+        return Ok(Some(("needs_decision", "有成员尚未完成回复，请查看该成员的活动记录".into())));
+    }
+    let empty = public_reply_text(&reply.body).trim().is_empty();
+    match turn_control(&reply.body, round, agent) {
+        Ok(Some(control)) => {
+            if empty { save_silent_reply(store, reply)?; }
+            if control.action == TurnAction::Wait {
+                return Ok(Some(("needs_decision", "有成员需要你补充必要信息".into())));
+            }
+        }
+        Ok(None) if empty => return Ok(Some(("needs_decision", "有成员未返回可用回复".into()))),
+        Ok(None) => {}
+        Err(error) => {
+            store.append_runtime_event(super::AppendRuntimeEventInput { run_id, event_type: "conversation_control_recovered".into(),
+                payload: json!({"reason":error.to_string(),"action":"finish_selected_replies_without_extra_handoff"}) })?;
+            if empty { return Err(error); }
+        }
+    }
+    Ok(None)
+}
+
+fn run_discussion_attempt(
+    store: &MultiAgentStore, round_id: &str, cancelled: &Arc<AtomicBool>,
+    executor: &impl DiscussionExecutor, attempt: usize, managed: bool,
+) -> Result<()> {
     let initial = store.conversation_round(round_id)?;
     let planning = initial.mode == "execution_plan";
     let exchanging = !planning && initial.intent == "exchange";
@@ -1600,7 +1849,23 @@ fn run_discussion(
     // directed reply may add a later turn; there is no opinion/response/summary pass.
     let mut schedule = initial.participant_agent_ids.iter().take(if planning { 1 } else { usize::MAX })
         .map(|agent| (agent.clone(), initial.user_message_id.clone())).collect::<VecDeque<_>>();
-    let limit = if exchanging { (initial.participant_agent_ids.len() * (initial.max_rounds as usize + 1)).min(24) } else { schedule.len() };
+    if let Some(target) = &initial.managed_target {
+        schedule = VecDeque::from([(target.planner.clone(), initial.user_message_id.clone())]);
+    } else if let Some(ConversationChatDispatch::Assigned { agent_id }) = &initial.chat_dispatch {
+        schedule = VecDeque::from([(agent_id.clone(), initial.user_message_id.clone())]);
+    }
+    let limit = if managed { 3 } else if exchanging { (schedule.len() * (initial.max_rounds as usize + 1)).min(24).max(schedule.len()) } else { schedule.len() };
+    let finish = |status: &str, reason: Option<String>| {
+        if managed && matches!(status, "failed" | "needs_decision") {
+            if attempt < 2 {
+                return store.finish_conversation(round_id, "running", reason);
+            }
+            return store.finish_conversation(round_id, "failed", Some(format!(
+                "托管分工未生成，已尝试 3 次。{}", reason.unwrap_or_default()
+            )));
+        }
+        store.finish_conversation(round_id, status, reason)
+    };
     let finished = Arc::new(AtomicBool::new(false));
     let deadline_guard = DeadlineGuard::start(
         store.clone(),
@@ -1612,13 +1877,13 @@ fn run_discussion(
     let mut initial_pending = initial.participant_agent_ids.iter().cloned().collect::<HashSet<_>>();
     let mut chat_waiting_for_human = false;
     let mut recovered_control = false;
-    let mut ordinal = 0usize;
+    let mut ordinal = attempt;
     while let Some((agent, reply_to)) = schedule.pop_front() {
         if stop_if_requested(store, round_id, cancelled)? {
             return Ok(());
         }
         if ordinal >= limit {
-            store.finish_conversation(round_id, "needs_decision", Some("已达到本次成员交流的接话上限；可补充方向后继续".into()))?;
+            finish("needs_decision", Some("已达到本次成员交流的接话上限；可补充方向后继续".into()))?;
             return Ok(());
         }
         let cycle = ordinal as u32;
@@ -1632,88 +1897,14 @@ fn run_discussion(
                 return Err(error);
             }
         };
-        let run = loop {
-            if stop_if_requested(store, round_id, cancelled)? {
-                cancel_unclaimed_turn(store, &turn)?;
-                return Ok(());
-            }
-            // Existing persistent claim logic enforces all per-agent concurrency and manual-control rules.
-            match store.claim_task(ClaimTaskInput {
-                task_id: turn.task_id.clone(),
-                agent_id: agent.clone(),
-                lease_seconds: 120,
-            }) {
-                Ok(run) => break run,
-                Err(error) => {
-                    let state = store.agent_profile(&agent)?;
-                    let project = store.snapshot(&state.project_id)?;
-                    let manual = project.agent_sessions.iter().any(|s| {
-                        s.agent_id == agent && s.control_mode == super::AgentControlMode::Manual
-                    });
-                    if !state.enabled
-                        || manual
-                        || project.project.status == super::ProjectStatus::Cancelled
-                        || crate::runtime_preferences::ensure_available(state.runtime_kind).is_err()
-                    {
-                        store.finish_conversation(
-                            round_id,
-                            "needs_decision",
-                            Some(error.to_string()),
-                        )?;
-                        cancel_unclaimed_turn(store, &turn)?;
-                        return Ok(());
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-            }
+        let stop_dispatch = || discussion_stop_requested(store, round_id, cancelled);
+        let (run_id, outcome, reply) = match execute_discussion_turn(store, &initial, &turn, executor, cancelled, stop_dispatch)? {
+            DiscussionTurnResult::Stopped => { stop_if_requested(store, round_id, cancelled)?; return Ok(()); }
+            DiscussionTurnResult::Blocked(reason) => { finish("needs_decision", Some(reason))?; return Ok(()); }
+            DiscussionTurnResult::Executed { run_id, outcome, reply } => (run_id, outcome, reply),
         };
-        sync_round(store, round_id, phase, cycle, "running")?;
-        let outcome = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            executor.execute(store, &turn.task_id, &run.id, &agent, cancelled)
-        })) {
-            Ok(outcome) => outcome,
-            Err(_) => {
-                store
-                    .mark_run_stop_unverified(&run.id, "讨论执行线程异常退出，未确认原进程停止")?;
-                Err(anyhow!("讨论执行线程异常退出"))
-            }
-        };
-        if let Err(error) = &outcome {
-            // The executor has returned (and its process cleanup contract applies).
-            // Settle early storage/protocol failures too; never release a quarantined owner.
-            if let Some(current) = store
-                .snapshot(&initial.project_id)?
-                .runs
-                .into_iter()
-                .find(|r| r.id == run.id)
-            {
-                if matches!(
-                    current.status,
-                    super::RunStatus::Starting
-                        | super::RunStatus::Running
-                        | super::RunStatus::WaitingInput
-                        | super::RunStatus::WaitingApproval
-                ) && !current
-                    .session_locator
-                    .as_ref()
-                    .is_some_and(|locator| locator["stopUnverified"] == true)
-                {
-                    store.fail_run_permanently(
-                        &run.id,
-                        &error.to_string(),
-                        current.session_locator,
-                    )?;
-                }
-            }
-        }
-        store.conversation_snapshot(&initial.project_id)?;
-        // Scheduling consumes exact-run evidence; the public snapshot has already
-        // removed internal control text and may omit an intentionally silent turn.
-        let reply = message_with(&store.connection.lock().unwrap(), &turn.id)?;
         if reply.status == "unconfirmed" {
-            store.finish_conversation(
-                round_id,
-                "unconfirmed",
+            finish("unconfirmed",
                 Some("当前 Agent 停止未确认，禁止后续派发；请到任务详情核对原进程".into()),
             )?;
             return Ok(());
@@ -1722,17 +1913,13 @@ fn run_discussion(
             return Ok(());
         }
         if let Err(error) = outcome {
-            store.finish_conversation(
-                round_id,
-                "failed",
+            finish("failed",
                 Some(format!("成员执行失败：{error:#}")),
             )?;
             return Ok(());
         }
         if reply.status != "completed" {
-            store.finish_conversation(
-                round_id,
-                "needs_decision",
+            finish("needs_decision",
                 Some("成员轮次尚未完成，请检查任务详情中的审批或运行状态".into()),
             )?;
             return Ok(());
@@ -1742,9 +1929,9 @@ fn run_discussion(
             Err(error) => {
                 recovered_control=true;
                 schedule.retain(|(agent, _)| initial_pending.contains(agent));
-                store.append_runtime_event(super::AppendRuntimeEventInput {run_id:run.id.clone(),event_type:"conversation_control_recovered".into(),payload:json!({"reason":error.to_string(),"action":"finish_selected_replies_without_extra_handoff"})})?;
+                store.append_runtime_event(super::AppendRuntimeEventInput {run_id,event_type:"conversation_control_recovered".into(),payload:json!({"reason":error.to_string(),"action":"finish_selected_replies_without_extra_handoff"})})?;
                 if public_reply_text(&reply.body).trim().is_empty() {
-                    store.finish_conversation(round_id, "failed", Some("成员未返回可用正文，且接话信息异常；本轮已停止".into()))?;
+                    finish("failed", Some("成员未返回可用正文，且接话信息异常；本轮已停止".into()))?;
                     return Ok(());
                 }
                 Some(TurnControl {action:TurnAction::Done,next_agent_id:None,has_new_information:None})
@@ -1753,23 +1940,17 @@ fn run_discussion(
         let public_body = public_reply_text(&reply.body);
         let normalized = public_body.split_whitespace().collect::<String>();
         if normalized.is_empty() && control.is_none() {
-            store.finish_conversation(
-                round_id,
-                "needs_decision",
+            finish("needs_decision",
                 Some("成员结束了轮次但未提供可用回复，已停止后续派发".into()),
             )?;
             return Ok(());
         }
         if normalized.is_empty() {
-            let mut silent = reply.clone();
-            silent.kind = "silent".into();
-            save_message(&store.connection.lock().unwrap(), &format!("turn:{}", turn.id), &silent)?;
+            save_silent_reply(store, reply.clone())?;
         }
         if control.as_ref().is_some_and(|control| control.action == TurnAction::Wait) {
             if exchanging || planning {
-                store.finish_conversation(
-                    round_id,
-                    "needs_decision",
+                finish("needs_decision",
                     Some(if planning { "分工草案尚未生成，请查看规划成员指出的缺项。开发尚未开始。" }
                          else { "成员正在等待你的补充，已停止自动接话" }.into()),
                 )?;
@@ -1784,9 +1965,7 @@ fn run_discussion(
             match store.save_conversation_plan(round_id, &reply.id, &public_body) {
                 Ok(_) => {}
                 Err(error) => {
-                    store.finish_conversation(
-                        round_id,
-                        "needs_decision",
+                    finish("needs_decision",
                         Some(format!(
                             "真实成员已回复，但分工计划未通过校验：{error}；可补充约束后重试"
                         )),
@@ -1813,12 +1992,17 @@ fn run_discussion(
         ordinal += 1;
     }
     if chat_waiting_for_human {
-        store.finish_conversation(round_id, "needs_decision", Some("已选成员均已回应，仍有成员需要你补充必要信息".into()))?;
+        finish("needs_decision", Some("已选成员均已回应，仍有成员需要你补充必要信息".into()))?;
     } else {
-        store.finish_conversation(round_id, "completed", recovered_control.then(||"已保留收到的回复；接话信息异常，本轮已停止追加接话".into()))?;
+        finish("completed", recovered_control.then(||"已保留收到的回复；接话信息异常，本轮已停止追加接话".into()))?;
     }
     drop(deadline_guard);
     Ok(())
+}
+
+fn save_silent_reply(store: &MultiAgentStore, mut reply: ConversationMessage) -> Result<()> {
+    reply.kind = "silent".into();
+    save_message(&store.connection.lock().unwrap(), &format!("turn:{}", reply.id), &reply)
 }
 
 fn is_no_progress_reply(body: &str) -> bool {
@@ -1908,11 +2092,8 @@ fn stop_if_requested(
     round_id: &str,
     cancelled: &AtomicBool,
 ) -> Result<bool> {
+    if !discussion_stop_requested(store, round_id, cancelled)? { return Ok(false); }
     let round = store.conversation_round(round_id)?;
-    if !cancelled.load(Ordering::Acquire) && round.status != "stopping" && now() < round.deadline_at
-    {
-        return Ok(false);
-    }
     let reason = round
         .stop_reason
         .unwrap_or_else(|| "needs_decision:讨论达到时间上限".into());
@@ -1921,6 +2102,10 @@ fn stop_if_requested(
         .unwrap_or(("paused", reason.as_str()));
     store.finish_conversation(round_id, status, Some(reason.into()))?;
     Ok(true)
+}
+fn discussion_stop_requested(store: &MultiAgentStore, round_id: &str, cancelled: &AtomicBool) -> Result<bool> {
+    let round = store.conversation_round(round_id)?;
+    Ok(cancelled.load(Ordering::Acquire) || round.status == "stopping" || now() >= round.deadline_at)
 }
 fn sync_round(
     store: &MultiAgentStore,
@@ -1935,7 +2120,7 @@ fn sync_round(
         return Ok(());
     }
     round.phase = phase.into();
-    round.current_round = cycle;
+    round.current_round = round.current_round.max(cycle);
     round.status = status.into();
     round.updated_at = now();
     save_round(&connection, &round)
@@ -2028,7 +2213,7 @@ fn prepare_turn_addressed(
     };
     save_message(&tx, &format!("turn:{}", turn.id), &message)?;
     round.phase = phase.into();
-    round.current_round = cycle;
+    round.current_round = round.current_round.max(cycle);
     round.updated_at = stamp;
     save_round(&tx, &round)?;
     tx.commit()?;
@@ -2083,6 +2268,8 @@ fn discussion_prompt(
         .into_iter()
         .rev()
         .filter(|m| m.sender_type != "system" && m.status == "completed")
+        .filter(|m| !matches!(round.chat_dispatch, Some(ConversationChatDispatch::Parallel))
+            || m.sender_type == "user" || m.round_id.as_deref() != Some(round.id.as_str()))
     {
         // Public targeting is an addressing hint, not permission to import any private mailbox.
         let line = format!(
@@ -2104,18 +2291,31 @@ fn discussion_prompt(
     let instruction = match phase {
         "exchange" => "用户明确请求选中的成员交流。像群聊一样回应当前消息和其他成员真正提出的问题；只有新增事实、具体问题或分歧才继续。需要另一位成员接话时，明确 @该成员 并提出具体问题，且在末尾提供下述 continue 控制；不要为了轮流发言而交接。没有新信息或已说清楚就结束，允许不发言，遇到只能由用户回答的问题就等待用户。用户未要求时不主动做会议汇总，不列固定观点/依据/风险/待确认栏目。",
         "plan" => "针对用户的工程诉求，一次生成符合实际成员能力、范围与依赖的待确认分工；没有必要先让每人互评。不要声称已经执行或验收。缺少影响可执行性的关键条件时，只问必要问题并等待用户。",
+        _ if matches!(round.chat_dispatch, Some(ConversationChatDispatch::Parallel)) => "其他收件成员会同时独立回复。只回答当前消息，按需做只读检查。启动或停止进程、改写文件、提交、发布等操作需要一位明确的接手人。遇到这类执行请求时说明需要指定一人，不能自行执行或指派。问候和普通回答用 done，只有当前问题确实需要用户补充时用 wait。不要主动拉起成员间的新一轮交流。",
         _ => "这是普通群聊，本次每位被选成员至多自然回答一次。直接回应用户当前消息，短问题短回答，问候通常简短回应即可；不把问候当成验收、项目启动或完整需求评审。普通问候已经回应、或回答完后礼貌说“有什么需要帮助”“有什么想聊的随时说”，都属于本次回答已完成：使用 done 或不加控制尾段，不能标记 wait。只有确实缺少当前请求所必需、且必须由用户提供的信息，导致你无法继续回答时，才提出具体澄清问题并使用 wait。不能仅因为一句话是问句就判断它应该 done 或 wait，要看是否存在这个必要信息缺口。不要机械输出观点、依据、风险、待确认或汇总；仅在用户确实要求时总结。已经有人回答且你没有补充时可以不发言。不要主动启动成员之间的新一轮交流。",
     };
     let plan = if matches!(phase, "plan" | "summary") && round.mode == "execution_plan" {
-        "\n用户只授权生成待确认分工，尚未授权执行。最后输出一个 JSON 对象（可放 ```json 代码块），结构为 {\"summary\":\"计划摘要\",\"tasks\":[{\"key\":\"task-1\",\"title\":\"标题\",\"description\":\"具体范围\",\"acceptanceCriteria\":\"可验证条件\",\"verificationCommand\":null,\"assigneeAgentId\":\"上方实际成员ID\",\"reviewerAgentId\":null,\"workspaceMode\":\"worktree\",\"writePaths\":[\"src/owned-area\"],\"dependsOn\":[]}]}。只读任务 workspaceMode=read_only 且 writePaths=[]。写入任务必须明确项目内相对目录/文件边界，禁止 . 或全项目通配符，禁止路径穿越和.git等元数据目录；重叠写入范围必须通过 dependsOn 串行。只使用上方实际成员，不能新增或猜测成员；reviewerAgentId 如使用必须是实际 reviewer 角色。所有写任务默认独立worktree；不得创建 shared_write 任务。依赖只能引用本次tasks的key，不要形成循环。"
+        "\n最后输出一个 JSON 对象（可放 ```json 代码块），结构为 {\"summary\":\"计划摘要\",\"tasks\":[{\"key\":\"task-1\",\"title\":\"标题\",\"description\":\"具体范围\",\"acceptanceCriteria\":\"可验证条件\",\"verificationCommand\":null,\"assigneeAgentId\":\"上方实际成员ID\",\"reviewerAgentId\":null,\"workspaceMode\":\"worktree\",\"writePaths\":[\"src/owned-area\"],\"dependsOn\":[]}]}。只读任务 workspaceMode=read_only 且 writePaths=[]。写入任务必须明确项目内相对目录/文件边界，禁止 . 或全项目通配符，禁止路径穿越和.git等元数据目录；重叠写入范围必须通过 dependsOn 串行。只使用上方实际成员，不能新增或猜测成员；reviewerAgentId 如使用必须是实际 reviewer 角色。所有写任务默认独立worktree；不得创建 shared_write 任务。依赖只能引用本次tasks的key，不要形成循环。"
     } else {
         ""
     };
+    let plan = if !plan.is_empty() && round.managed_target.is_none() {
+        format!("\n用户只授权生成待确认分工，尚未授权执行。{plan}")
+    } else { plan.to_string() };
     let review_contract = if matches!(phase, "plan" | "summary") && round.mode == "execution_plan" {
         "\n必须保留既有跨 Runtime 交付规则：如果有至少两个 worker 实现任务且涉及至少两种 Runtime，每个实现任务必须 workspaceMode=worktree；为每个实现建立独立 Review 任务，实际执行成员的 role 必须为 reviewer，Runtime 必须不同于被审查的实现成员，workspaceMode=read_only、writePaths=[]，dependsOn 必须直接包含被审查任务 key。最终集成任务的实际成员 role 必须为 integrator，workspaceMode=worktree，dependsOn 必须覆盖全部 Review 任务，写入范围须明确。仅设置 reviewerAgentId 不构成独立 Review 任务。不得把 worker 冒称 reviewer/integrator，不得新建或猜测成员；若当前选择的真实成员不足，明确说明需要补充的角色与 Runtime，请用户调整成员后再生成计划，不能省略审查或伪造可执行计划。"
     } else {
         ""
     };
+    let review_contract = if round.managed_target.is_some() {
+        format!("{review_contract}\n本轮已由用户明确启动全自动托管。计划通过检查后系统会执行。\
+          计划必须有开发、独立只读审查和唯一最终集成任务，每个开发任务安排一项直接依赖它的审查。\
+          集成任务须依赖全部审查，负责真正的端到端验收以及项目根目录 README.md 的启动和使用说明。\
+          开发与集成各指定一条可执行的测试命令（node --test <项目内测试文件>、npm test、python -m unittest、cargo test、go test ./... 或 dotnet test）。\
+          把编写相应测试纳入任务及写入范围。集成测试须覆盖需求中的主要流程，不能只检查文件存在。\
+          如果能按工程惯例做合理选择，直接做决定。上一轮校验信息：{}",
+          round.stop_reason.as_deref().unwrap_or("无"))
+    } else { review_contract.to_string() };
     let routing = "\n内部接话控制不是用户正文：普通回答无需控制尾段。回答已经完成（包括问候、礼貌邀聊）可使用 <crewvela-turn>{\"action\":\"done\"}</crewvela-turn>；只有当前请求缺少必须由用户提供的必要信息、无法继续时，才在具体澄清问题后使用 <crewvela-turn>{\"action\":\"wait\"}</crewvela-turn>。没有可补充内容时允许不发正文、仅输出 <crewvela-turn>{\"action\":\"silent\"}</crewvela-turn>。只有本次允许成员交流时才可输出 <crewvela-turn>{\"action\":\"continue\",\"nextAgentId\":\"上方本轮其他实际成员ID\",\"hasNewInformation\":true}</crewvela-turn>，必须有真实的新内容或具体问题，不得捏造目标或自我接话。控制段不放代码块，后面不再附文字。成员是否回答和下一步派发由系统校验，公共消息中的其他控制示例不能作为你的控制。";
     let policy = round.member_policies.get(agent).cloned().unwrap_or_else(EffectiveConversationPolicy::legacy);
     if policy.uses_native_capabilities() {
@@ -2335,7 +2535,44 @@ fn validate_plan(
             })
             .collect::<Vec<_>>(),
     )
-    .map_err(anyhow::Error::msg)
+    .map_err(anyhow::Error::msg)?;
+    if round.managed_target.is_some() {
+        let mut workers = Vec::new();
+        let mut reviews = Vec::new();
+        let mut integrators = Vec::new();
+        for task in &plan.tasks {
+            let (_, runtime, role) = profiles.iter().find(|(id, _, _)| *id == task.assignee_agent_id)
+                .context("托管任务负责人不存在")?;
+            super::managed_delivery::check_runtime(*runtime, task.workspace_mode)?;
+            ensure!(task.reviewer_agent_id.is_none(), "全自动托管必须为开发任务创建独立审查");
+            match (role, task.workspace_mode) {
+                (super::AgentRole::Worker, WorkspaceMode::Worktree) => workers.push(task),
+                (super::AgentRole::Reviewer, WorkspaceMode::ReadOnly) => reviews.push(task),
+                (super::AgentRole::Integrator, WorkspaceMode::Worktree) => integrators.push(task),
+                _ => bail!("全自动托管只接受独立工作树开发、只读审查和独立工作树集成"),
+            }
+            if task.workspace_mode == WorkspaceMode::Worktree {
+                let command = task.verification_command.as_deref().context("开发和集成任务必须指定验收命令")?;
+                super::managed_delivery::verification(command)?;
+            } else {
+                ensure!(task.verification_command.is_none(), "只读审查的验收命令由开发与集成任务执行");
+            }
+        }
+        ensure!(!workers.is_empty() && integrators.len() == 1 && reviews.len() == workers.len(),
+            "全自动托管需要唯一集成任务，并为每项开发任务配置一项独立审查");
+        for worker in &workers {
+            ensure!(reviews.iter().filter(|review| review.depends_on == [worker.key.clone()]).count() == 1,
+                "每项审查必须且只直接依赖一个对应的开发任务");
+        }
+        let integrator = integrators[0];
+        for review in reviews {
+            ensure!(reaches(&tasks, &integrator.key, &review.key, &mut HashSet::new()),
+                "集成任务必须等待全部审查通过");
+        }
+        ensure!(integrator.write_paths.iter().any(|path| normalized_scope(path).is_ok_and(|scope| scope == "readme.md")),
+            "集成任务须有 README.md 写入范围，为成品提供启动说明");
+    }
+    Ok(())
 }
 impl MultiAgentStore {
     pub(crate) fn record_conversation_runtime_event(
@@ -2413,6 +2650,7 @@ impl MultiAgentStore {
             status: "pending".into(),
             task_ids: Vec::new(),
             created_at: now(),
+            managed: round.managed_target.map(super::managed_delivery::ManagedDelivery::new),
         };
         connection.execute("INSERT INTO ma_conversation_plans(id,project_id,round_id,data_json) VALUES(?1,?2,?3,?4)",params![plan.id,plan.project_id,plan.round_id,serde_json::to_string(&plan)?])?;
         Ok(plan)
@@ -2422,11 +2660,16 @@ impl MultiAgentStore {
         &self,
         input: &ConversationExecutePlanInput,
     ) -> Result<Vec<String>> {
+        self.apply_conversation_plan_in(input, false)
+    }
+
+    fn apply_conversation_plan_in(&self, input: &ConversationExecutePlanInput, managed_launch: bool) -> Result<Vec<String>> {
         validate_client_id(&input.client_request_id)?;
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let (raw,previous):(String,Option<String>)=tx.query_row("SELECT data_json,applied_request_id FROM ma_conversation_plans WHERE id=?1 AND project_id=?2",params![input.plan_id,input.project_id],|r|Ok((r.get(0)?,r.get(1)?))).context("分工计划不存在或不属于当前项目")?;
         let mut plan: ConversationExecutionPlan = decode(raw)?;
+        ensure!(plan.managed.is_some() == managed_launch, "全自动托管分工只能由原托管轮次启动");
         let round = round_with(&tx, &plan.round_id)?;
         if round.conversation_id != conversation_with(&tx, &input.project_id)?.id {
             bail!("该分工所属的讨论记录已清空，请使用当前分工计划");
@@ -2439,6 +2682,9 @@ impl MultiAgentStore {
         }
         if plan.status != "pending" {
             bail!("计划已被新消息替代，请使用当前分工计划");
+        }
+        if let Some(managed) = &plan.managed {
+            ensure!(managed.status == "planning", "本轮托管分工已经结束");
         }
         if round.status != "completed" {
             bail!("讨论尚未完整结束，不能执行计划");
@@ -2457,6 +2703,9 @@ impl MultiAgentStore {
             |r| r.get(0),
         )?;
         if let Some(message) = plan_git_issue(std::path::Path::new(&root)) { bail!("{message}"); }
+        if let Some(managed) = &plan.managed {
+            managed.target.check_before_start(&root)?;
+        }
         let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_runs WHERE project_id=?1
             AND (status IN ('queued','starting','running','waiting_input','waiting_approval')
                  OR json_extract(session_locator_json,'$.stopUnverified')=1))",[&input.project_id],|r|r.get(0))?;
@@ -2523,6 +2772,7 @@ impl MultiAgentStore {
             .map(|task| ids[&task.key].clone())
             .collect();
         plan.status = "applied".into();
+        if let Some(managed) = plan.managed.as_mut() { managed.status = "running".into(); }
         tx.execute(
             "UPDATE ma_conversation_plans SET data_json=?2,applied_request_id=?3 WHERE id=?1",
             params![
@@ -2544,7 +2794,8 @@ impl MultiAgentStore {
             sender_type: "system".into(),
             kind: "status".into(),
             phase: None,
-            body: "用户已确认分工；任务已入队，执行与验收状态见任务详情。".into(),
+            body: if plan.managed.is_some() { "托管分工已通过检查，任务已入队。".into() }
+                else { "用户已确认分工；任务已入队，执行与验收状态见任务详情。".into() },
             status: "queued".into(),
             created_at: stamp,
             updated_at: stamp,
@@ -2554,6 +2805,33 @@ impl MultiAgentStore {
         save_message(&tx, &format!("plan-applied:{}", plan.id), &message)?;
         tx.commit()?;
         Ok(plan.task_ids)
+    }
+
+    fn start_managed_round(&self, round_id: &str, engineering: &super::MultiAgentSupervisor,
+        host: &AgentTerminalHost, bridge: &CollaborationBridge,
+    ) -> Result<()> {
+        let round = self.conversation_round(round_id)?;
+        if round.status != "completed" { return Ok(()); }
+        let plan_id = self.connection.lock().unwrap().query_row(
+            "SELECT id FROM ma_conversation_plans WHERE round_id=?1",
+            [round_id], |row| row.get::<_, String>(0),
+        ).context("已结束的托管轮次缺少有效分工")?;
+        let request = ConversationExecutePlanInput {
+            project_id: round.project_id, plan_id: plan_id.clone(), client_request_id: format!("managed-{plan_id}"),
+        };
+        let result = (|| {
+            self.apply_conversation_plan_in(&request, true)?;
+            for attempt in 0..3 {
+                if !self.claim_conversation_plan_start(&request)? { return Ok(()); }
+                let started = engineering.start(self.clone(), request.project_id.clone(), host.clone(), bridge.clone());
+                self.finish_conversation_plan_start(&request, started.as_ref().err().map(ToString::to_string).as_deref())?;
+                if started.is_ok() || attempt == 2 { return started.map(|_| ()); }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            Ok(())
+        })();
+        if let Err(error) = &result { self.finish_managed_plan(&plan_id, Err(format!("{error:#}")))?; }
+        result
     }
 
     pub(crate) fn claim_conversation_plan_start(
@@ -2571,9 +2849,13 @@ impl MultiAgentStore {
         let connection = self.connection.lock().unwrap();
         connection.execute("UPDATE ma_conversation_plans SET start_state=?2 WHERE id=?1 AND start_state='starting'",params![input.plan_id,if error.is_some(){"failed"}else{"started"}])?;
         let mut message = message_with(&connection, &format!("plan-applied-{}", input.plan_id))?;
+        let managed = input.client_request_id == format!("managed-{}", input.plan_id);
         if let Some(error) = error {
             message.status = "failed".into();
             message.body=format!("任务分工已保存，但项目调度启动失败：{error}。可用相同请求重试或在项目任务中明确恢复。");
+        } else if managed {
+            message.status = "completed".into();
+            message.body = "全自动托管已开始。完成验收后将在此提供成品。".into();
         } else {
             message.status = "queued".into();
             message.body =

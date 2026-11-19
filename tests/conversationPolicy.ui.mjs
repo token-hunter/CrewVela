@@ -15,9 +15,10 @@ try {
   assert.equal(await check.isEnabled(), true, "all native members must remain selectable");
   assert.equal(await check.isChecked(), true);
  }
- await members.getByRole("button", { name: "全选 / 取消全选" }).click();
+ await members.getByRole("button", { name: "全选", exact: true }).click();
+ await members.getByRole("button", { name: "取消全选", exact: true }).click();
  for (const check of await members.getByRole("checkbox").all()) assert.equal(await check.isChecked(), false);
- await members.getByRole("button", { name: "全选 / 取消全选" }).click();
+ await members.getByRole("button", { name: "全选", exact: true }).click();
  mkdirSync("output/playwright", { recursive: true });
  await page.screenshot({ path: "output/playwright/native-group-all-members.png" });
  await page.locator(".conversation-target").click();

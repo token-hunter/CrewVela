@@ -96,12 +96,22 @@ try {
   assert.equal(await menu.getByRole("button", { name: "插入所选", exact: true }).isEnabled(), true);
   await editor.press("Enter");
   assert.equal(await editor.inputValue(), "@模型验收-Codex ");
+  await page.waitForFunction(() => {
+    const editor = document.querySelector('.conversation-composer textarea');
+    return document.activeElement === editor && editor.selectionStart === editor.value.length;
+  });
   checks.push("过滤无结果仍能确认已选成员，不会把 Enter 误当发送");
 
   // Filtering must retain checked identities outside the current result set.
   await editor.fill("前文\n@ 尾文");
+  await page.waitForFunction(() => {
+    const editor = document.querySelector('.conversation-composer textarea');
+    return editor.selectionStart === editor.value.length;
+  });
   await editor.press("Home");
+  await page.waitForFunction(() => document.querySelector('.conversation-composer textarea').selectionStart === 3);
   await editor.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector('.conversation-composer textarea').selectionStart === 4);
   await menu.getByRole("button", { name: "多选", exact: true }).click();
   await menu.getByRole("option").nth(0).click();
   await editor.pressSequentially("Codex");
@@ -124,7 +134,7 @@ try {
   await menu.getByRole("option").first().click();
   await page.getByRole("combobox", { name: "协作项目", exact: true }).selectOption("B");
   await page.getByRole("combobox", { name: "协作项目", exact: true }).selectOption("A");
-  await page.locator('.conversation-target').filter({hasText:'已选 4 位成员'}).waitFor();
+  await page.getByRole('button',{name:'选择参与成员，已选 4 位，共 4 位'}).waitFor();
   await editor.fill("");
   await editor.fill("@");
   await menu.getByRole("button", { name: "多选", exact: true }).click();
@@ -134,7 +144,7 @@ try {
   for (const [width, theme] of [[780, "light"], [390, "dark"]]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto(base + fixture + `&theme=${theme}`);
-    await page.locator('.conversation-target').filter({hasText:'已选 4 位成员'}).waitFor();
+    await page.getByRole('button',{name:'选择参与成员，已选 4 位，共 4 位'}).waitFor();
     await editor.fill("");
     await editor.fill("@");
     await menu.getByRole("button", { name: "多选", exact: true }).click();

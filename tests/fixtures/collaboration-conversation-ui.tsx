@@ -22,6 +22,13 @@ const agents = params.get("header") === "1"
   ? [{ ...agent("claude", "模型验收-Claude", "claude_code", "worker"), avatarId: "orbit" }, { ...agent("codex", "模型验收-Codex", "codex", "worker"), avatarId: "block" }, { ...agent("kimi", "聊天-ZCodeCLI", "zcode_cli", "orchestrator"), avatarId: "sprout" }]
   : [agent("claude", "Claude Code", "claude_code", "orchestrator"), agent("codex", "Codex", "codex", "worker"), agent("kimi", "Kimi Code", "kimi_code", "reviewer")];
 if (params.get("native") === "1") agents.push({ ...agent("zcode-review", "语义复核员", "zcode_cli", "reviewer"), avatarId: "ribbon" });
+if (params.get("reply-routing") === "1") {
+  agents[0].name = "后端审查";
+  agents[0].role = "reviewer";
+  agents[1].name = "后端开发";
+  agents[2].name = "联调集成";
+  agents[2].role = "integrator";
+}
 if (params.get("members") === "none") agents.length = 0;
 if (params.get("members") === "many") for (let i=0;i<24;i++) agents.push(agent(`extra-${i}`, `开发成员-${i}：很长的成员名称用于检查省略与布局`, "codex", "worker"));
 let projects = [
@@ -290,7 +297,12 @@ const mock = {
         let user=chat.messages.find((m: any)=>m.clientMessageId===input.clientMessageId);
         if(user){user.status="completed";user.queuedInput=null;}else{user={...message(input.clientMessageId,"user",input.body,null,"completed","message"),clientMessageId:input.clientMessageId,createdAt:clock+50000,attachments:input.attachmentIds?.map((id: string) => stagedAttachments.get(id))};chat.messages.push(user);}
         const roundId=`round-${input.clientMessageId}`;
-        chat.rounds.push({id:roundId,projectId:input.projectId,conversationId:chat.conversation.id,userMessageId:user.id,participantAgentIds:input.participantAgentIds,mode:input.mode,intent:input.intent,status:"completed",phase:input.mode==="execution_plan"?"plan":input.intent==="exchange"?"exchange":"chat",maxRounds:input.maxRounds,currentRound:0,deadlineAt:clock+600000,stopReason:null,createdAt:clock+50000,updatedAt:clock+50000});
+        chat.rounds.push({id:roundId,projectId:input.projectId,conversationId:chat.conversation.id,userMessageId:user.id,participantAgentIds:input.participantAgentIds,chatDispatch:input.chatDispatch,mode:input.mode,intent:input.intent,status:"completed",phase:input.mode==="execution_plan"?"plan":input.intent==="exchange"?"exchange":"chat",maxRounds:input.maxRounds,currentRound:0,deadlineAt:clock+600000,stopReason:null,createdAt:clock+50000,updatedAt:clock+50000});
+        if (input.managed && params.has("managed-test")) {
+          const { rootPath: root, defaultBranch: branch } = projects.find(project => project.id === input.projectId)!;
+          Object.assign(chat.rounds.at(-1), { status: "running", managedTarget: { root, branch } });
+          return structuredClone(chat);
+        }
         if (firstPlan) {
           planRetryRequests.set(roundId, structuredClone(input));
           chat.rounds.at(-1).status = "running";
@@ -312,7 +324,8 @@ const mock = {
             roundId, phase: "chat", replyToMessageId: user.id, createdAt: clock + 50008 });
           return structuredClone(chat);
         }
-        for(const [index,agentId] of input.participantAgentIds.entries()) chat.messages.push({...message(`natural-${chat.messages.length}`,"agent",input.intent==="exchange"?(index===0?"@Codex 我建议先核对接口，你觉得呢？":"我看到了前面的建议，接口一致，可以开始下一步。"):"你好！有什么需要我帮忙？",agentId),roundId,phase:"chat",replyToMessageId:index?chat.messages.at(-1).id:user.id,createdAt:clock+50001+index});
+        const responding = input.chatDispatch?.kind === "assigned" ? [input.chatDispatch.agentId] : input.participantAgentIds;
+        for(const [index,agentId] of responding.entries()) chat.messages.push({...message(`natural-${chat.messages.length}`,"agent",input.intent==="exchange"?(index===0?"@Codex 我建议先核对接口，你觉得呢？":"我看到了前面的建议，接口一致，可以开始下一步。"):"你好！有什么需要我帮忙？",agentId),roundId,phase:"chat",replyToMessageId:input.intent==="exchange"&&index?chat.messages.at(-1).id:user.id,createdAt:clock+50001+index});
         return structuredClone(chat);
       }
       if (failBeforeSave) { failBeforeSave = false; throw Error("隔离测试：响应丢失，发送结果未确认"); }
@@ -326,6 +339,7 @@ const mock = {
     }
     if (command === "ma_conversation_control") { const chat = chats[args.projectId]; if (chat.rounds.length) chat.rounds[chat.rounds.length - 1].status = params.get("stopping") === "1" ? "stopping" : args.action === "pause" ? "paused" : "cancelled"; if(params.get("activity")==="1"&&params.get("stopping")!=="1"){for(const item of chat.messages.filter((item:any)=>item.senderType==="agent"&&item.status==="running")){item.status=args.action==="pause"?"paused":"cancelled";item.updatedAt=Date.now();const run=runHistory.find(run=>run.id===item.runId);if(run){run.status=args.action==="pause"?"interrupted":"cancelled";run.finishedAt=Date.now();}}} return structuredClone(chat); }
     if (command === "ma_conversation_execute_plan") { if(mock.failApproval) throw Error("隔离测试：分工确认失败"); const chat = chats[args.input.projectId]; const plan = chat.executionPlans.find((item: any) => item.id === args.input.planId); plan.status = "applied"; plan.taskIds = ["t-design", "t-build", "t-review"]; return structuredClone(chat); }
+    if (command === "workspace_reveal_path" && params.has("managed-test")) return null;
     if (command === "ma_pause_project" || command === "ma_start_project") { if(mock.failExecution) return {accepted:false,message:"隔离测试：执行控制未确认"}; projects.find(project => project.id === args.projectId)!.status = command === "ma_pause_project" ? "paused" : "active"; return { accepted: true, projectId: args.projectId }; }
     if (command === "ma_confirm_run_stopped") { if(params.get("confirm-fails")==="1")throw Error("fixture 确认失败"); const run=runHistory.find(run=>run.id===args.runId);if(!run||args.confirmedStopped!==true)throw Error("Wrong run confirmation");run.sessionLocator=null;return null; }
     if (["ma_probe_runtimes","ma_check_runtime_updates"].includes(command)) return agents.map(agent=>({kind:agent.runtimeKind,installed:true,version:"fixture",capabilities:[],error:null}));

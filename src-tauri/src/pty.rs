@@ -673,6 +673,14 @@ impl PtyManager {
         Ok(transcript.since(cursor))
     }
 
+    pub(crate) fn transcript_frame_since(&self, id: u32, cursor: u64) -> Result<(u64, Vec<u8>, PtySize)> {
+        let session = self.session_arc(id)?;
+        let s = session.lock().unwrap();
+        let size = s.master.get_size()?;
+        let (next, bytes) = s.transcript.lock().unwrap().since(cursor);
+        Ok((next, bytes, size))
+    }
+
     pub fn transcript_tail(&self, id: u32, max_bytes: usize) -> Result<Vec<u8>> {
         let session = self.session_arc(id)?;
         let s = session.lock().unwrap();
@@ -1082,13 +1090,18 @@ pub(crate) fn configure_codex_cli_identity(
         ("CREWVELA_SESSION_ID", app_session_id.to_string()),
         ("CREWVELA_CLI", executable.display().to_string()),
     ] {
-        command.env(key, &value);
-        command.arg("-c").arg(format!(
-            "shell_environment_policy.set.{key}={}",
-            serde_json::to_string(&value)?
-        ));
+        configure_codex_tool_env(command, key, &value)?;
     }
 
+    Ok(())
+}
+
+pub(crate) fn configure_codex_tool_env(command: &mut Command, key: &str, value: &str) -> Result<()> {
+    command.env(key, value);
+    command.arg("-c").arg(format!(
+        "shell_environment_policy.set.{key}={}",
+        serde_json::to_string(value)?
+    ));
     Ok(())
 }
 fn build_agent_program_command(command: &Command) -> CommandBuilder {

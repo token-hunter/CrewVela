@@ -1,4 +1,4 @@
-import type { AgentProfile, ConversationMessage, ConversationMode, ConversationRound, ConversationStatus } from "./types";
+import type { AgentProfile, AgentRole, ConversationChatDispatch, ConversationMessage, ConversationMode, ConversationRound, ConversationStatus } from "./types";
 import { hasMentionToken, replaceMentionToken } from "./multiAgentMention.ts";
 
 export const CONVERSATION_STATUS: Record<ConversationStatus, string> = {
@@ -60,7 +60,12 @@ export function conversationMentionToken(agent: AgentProfile, agents: AgentProfi
   return `@${agent.name}${duplicate ? `#${agent.id}` : ""}`;
 }
 /** Bind only enabled, current-project identities. Unknown @ targets must never become a team broadcast. */
-export function conversationRecipients(body: string, selected: string[], agents: AgentProfile[], projectId: string): string[] {
+export function conversationRecipients(
+  body: string,
+  selected: readonly string[],
+  agents: AgentProfile[],
+  projectId: string,
+): string[] {
   const enabled = agents.filter(agent => agent.enabled && agent.projectId === projectId);
   let remaining = body;
   const mentioned = new Set<string>();
@@ -72,9 +77,33 @@ export function conversationRecipients(body: string, selected: string[], agents:
   }
   const unknown = remaining.match(/(?:^|\s)(@[^\s@]+)/u)?.[1];
   if (unknown) throw new Error(`未找到明确的项目成员 ${unknown}，请从成员列表选择。`);
-  const ids = enabled.filter(agent => mentioned.size ? mentioned.has(agent.id) : selected.includes(agent.id)).map(agent => agent.id);
-  if (!ids.length) throw new Error("请选择至少一位项目成员。");
-  return ids;
+  const candidates = enabled.filter(agent => mentioned.size
+    ? mentioned.has(agent.id)
+    : selected.includes(agent.id));
+  if (!candidates.length) throw new Error("请选择至少一位项目成员。");
+  return candidates.map(agent => agent.id);
+}
+
+export function conversationChatDispatch(body: string, recipients: readonly AgentProfile[], ruleAgentId?: string): {
+  intent: "chat" | "exchange";
+  chatDispatch?: ConversationChatDispatch;
+} {
+  const request = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+  const launch = /(?:启动|运行|重启|停止|关掉).{0,18}(?:项目|服务|程序|应用|游戏|成品)|(?:把|将).{0,12}(?:项目|服务|程序|应用|游戏).{0,8}(?:启动|运行|重启|停止|关掉)|(?:跑|运行|启动)起来|(?:打不开|访问不了|连不上).{0,12}(?:地址|网页|服务|页面)|(?:地址|网页|服务|页面).{0,12}(?:打不开|访问不了|连不上)|\b(?:start|run|restart|stop|launch)\s+(?:(?:this|the|my|our)\s+)?(?:project|server|app|application|game)\b/iu.test(request);
+  const explanation = /(?:只|仅|先)\s*(?:分析|讨论|解释|说明)|(?:如何|怎么|怎样|何时|什么时候)\s*(?:启动|运行|重启|停止|执行|操作)|(?:不要|无需|先不|别)\s*(?:启动|运行|重启|执行|动手)|\b(?:how to|how do (?:i|we)|do not|don't)\b/iu.test(request);
+  const review = /(?:审查|审阅|复审).{0,16}(?:代码|改动|提交|实现)|\breview\s+(?:(?:this|the|my|our)\s+)?(?:code|changes|commit|implementation)\b/iu.test(request);
+  const operation = /(?:谁(?:能|来|可以)|请|帮我|麻烦|直接|马上|^\s*)(?:帮我|实际|先|去|直接|把|将|给我|你们|大家|每人|各自|分别|一起|\s)*(?:运行|执行|运行一下|跑一下|重跑|部署|发布|安装|提交|删除|写入|上传|修改|添加|启动|重启|停止)|\b(?:please\s+|can someone\s+)?(?:run|deploy|install|execute|restart|stop)\s+(?:the\s+)?(?:tests?|command|script|service|server|app|project)\b/iu.test(request.replace(/(?:^|\s)@[^\s@]+\s*/gu, " "));
+  if (!ruleAgentId && (explanation || !(launch || operation || (review && !/(?:各自|每[人位]|分别|独立|everyone|each)/iu.test(request))))) {
+    const intent = conversationRequestIntent(body);
+    return { intent, chatDispatch: intent === "chat" && recipients.length > 1 ? { kind: "parallel" } : undefined };
+  }
+  const roles: AgentRole[] = launch ? ["integrator", "worker", "orchestrator", "reviewer"]
+    : review ? ["reviewer", "worker", "integrator", "orchestrator"]
+    : ["worker", "integrator", "orchestrator", "reviewer"];
+  const owner = ruleAgentId
+    ? recipients.find(agent => agent.id === ruleAgentId)
+    : roles.map(role => recipients.find(agent => agent.role === role)).find(Boolean) ?? recipients[0];
+  return { intent: "chat", chatDispatch: owner ? { kind: "assigned", agentId: owner.id } : undefined };
 }
 export function orderedConversationMessages(messages: ConversationMessage[], projectId: string): ConversationMessage[] {
   const unique = new Map<string, ConversationMessage>();

@@ -1260,12 +1260,14 @@ fn ma_conversation_open_attachment(project_id: String, conversation_id: String, 
 fn ma_conversation_send(input: multi_agent::ConversationSendInput,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
+    engineering: State<'_, MultiAgentSupervisor>,
     admission: State<'_, runtime_admission::RuntimeAdmission>,
 ) -> Result<multi_agent::ConversationSnapshot, String> {
     let _admission = admission.admit().map_err(to_err)?;
     let project_id = input.project_id.clone();
     supervisor.send(state.inner().clone(), input,
-        multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone()).map_err(to_err)?;
+        multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone(),
+        engineering.inner().clone()).map_err(to_err)?;
     state.conversation_snapshot(&project_id).map_err(to_err)
 }
 
@@ -6307,6 +6309,8 @@ pub fn run() {
                 .recover_interrupted_runs_at_startup()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             multi_agent_store.recover_conversations_at_startup()
+                .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+            multi_agent_store.recover_managed_deliveries_at_startup()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             if !test_profile::active() {
             let collaboration_bridge = CollaborationBridge::start(multi_agent_store.clone())

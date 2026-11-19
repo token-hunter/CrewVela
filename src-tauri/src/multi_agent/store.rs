@@ -878,7 +878,12 @@ impl MultiAgentStore {
         get_wakeup_with(&connection, &id)
     }
 
+    #[cfg(test)]
     pub fn ensure_runnable_wakeups(&self, project_id: &str) -> Result<usize> {
+        self.ensure_runnable_wakeups_at(project_id, now_millis())
+    }
+
+    pub(super) fn ensure_runnable_wakeups_at(&self, project_id: &str, eligible_at: i64) -> Result<usize> {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_project_exists(&tx, project_id)?;
@@ -888,7 +893,7 @@ impl MultiAgentStore {
              WHERE t.project_id = ?1 AND t.status IN ('ready','changes_requested')
                AND t.assignee_agent_id IS NOT NULL
                AND a.enabled = 1 AND a.runtime_kind IN ('claude_code','codex','kimi_code','pi','opencode','deepseek_harness','zcode','zcode_cli')
-               AND (t.next_retry_at IS NULL OR t.next_retry_at <= CAST(strftime('%s','now') AS INTEGER) * 1000)
+               AND (t.next_retry_at IS NULL OR t.next_retry_at <= ?2)
                AND NOT EXISTS (
                    SELECT 1 FROM ma_task_dependencies d
                    JOIN ma_tasks dependency ON dependency.id = d.depends_on_task_id
@@ -900,7 +905,7 @@ impl MultiAgentStore {
                )",
         )?;
         let tasks = statement
-            .query_map(params![project_id], |row| {
+            .query_map(params![project_id, eligible_at], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -1265,6 +1270,9 @@ impl MultiAgentStore {
         if run.project_id != input.project_id || run.task_id != input.task_id {
             return Err(anyhow!("产物必须属于当前 Run 的项目和任务"));
         }
+        if matches!(artifact_type, "git_commit" | "workspace") && super::managed_delivery::task_target(&tx, &input.task_id)?.is_some() {
+            return Err(anyhow!("托管任务的 Git 交付由 CrewVela 在测试通过后登记"));
+        }
         let artifact = ArtifactRecord {
             id: uuid::Uuid::new_v4().to_string(),
             project_id: input.project_id,
@@ -1322,6 +1330,9 @@ impl MultiAgentStore {
         ensure_project_exists(&tx, &input.project_id)?;
         if let Some(task_id) = input.task_id.as_deref() {
             ensure_task_in_project(&tx, task_id, &input.project_id)?;
+            if super::managed_delivery::task_target(&tx, task_id)?.is_some() {
+                return Err(anyhow!("全自动托管只允许本任务范围内已授权的操作"));
+            }
         }
         if let Some(run_id) = input.run_id.as_deref() {
             let run = get_run_with(&tx, run_id)?;
@@ -2112,6 +2123,10 @@ impl MultiAgentStore {
     }
 
     pub fn runnable_tasks(&self, project_id: &str) -> Result<Vec<(MultiAgentTask, AgentProfile)>> {
+        self.runnable_tasks_at(project_id, now_millis())
+    }
+
+    pub(super) fn runnable_tasks_at(&self, project_id: &str, eligible_at: i64) -> Result<Vec<(MultiAgentTask, AgentProfile)>> {
         let disabled = crate::runtime_preferences::get()?.disabled_runtimes;
         let connection = self.connection.lock().unwrap();
         ensure_project_exists(&connection, project_id)?;
@@ -2138,7 +2153,7 @@ impl MultiAgentStore {
                    SELECT 1 FROM ma_runs other_run WHERE other_run.agent_id = a.id
                      AND other_run.status IN ('queued','starting','running','waiting_input','waiting_approval')
                ))
-               AND (t.next_retry_at IS NULL OR t.next_retry_at <= CAST(strftime('%s','now') AS INTEGER) * 1000)
+               AND (t.next_retry_at IS NULL OR t.next_retry_at <= ?2)
                AND NOT EXISTS (
                    SELECT 1 FROM ma_agent_sessions s
                    WHERE s.project_id = t.project_id AND s.agent_id = a.id
@@ -2156,7 +2171,7 @@ impl MultiAgentStore {
                ) < a.max_concurrency
              ORDER BY t.stage, t.priority DESC, t.created_at",
         )?;
-        let rows = statement.query_map(params![project_id], |row| {
+        let rows = statement.query_map(params![project_id, eligible_at], |row| {
             Ok((task_from_row(row)?, agent_from_row_offset(row, 19)?))
         })?;
         let rows = rows.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -2301,6 +2316,7 @@ impl MultiAgentStore {
 
     pub fn dependency_artifacts(&self, task_id: &str) -> Result<Vec<ArtifactRecord>> {
         let connection = self.connection.lock().unwrap();
+        let managed = super::managed_delivery::task_target(&connection, task_id)?.is_some();
         let mut statement = connection.prepare(
             "WITH RECURSIVE dependency_walk(task_id, depth) AS (
                  SELECT depends_on_task_id, 1 FROM ma_task_dependencies WHERE task_id = ?1
@@ -2323,10 +2339,16 @@ impl MultiAgentStore {
              FROM dependency_tasks d
              JOIN ma_artifacts a ON a.task_id = d.task_id
              JOIN ma_tasks task ON task.id = a.task_id
+             WHERE NOT ?2 OR (a.artifact_type <> 'workspace' AND (
+                 a.artifact_type <> 'git_commit' OR a.run_id = (
+                     SELECT id FROM ma_runs WHERE task_id = task.id AND status = 'succeeded'
+                     ORDER BY attempt DESC, created_at DESC LIMIT 1
+                 )
+             ))
              ORDER BY d.depth DESC, a.created_at, a.id",
         )?;
         let items = statement
-            .query_map(params![task_id], |row| {
+            .query_map(params![task_id, managed], |row| {
                 Ok(ArtifactRecord {
                     id: row.get(0)?,
                     project_id: row.get(1)?,
@@ -2584,6 +2606,16 @@ impl MultiAgentStore {
         validate_run_transition(run.status, RunStatus::Succeeded)?;
         let task = get_task_with(&tx, &run.task_id)?;
         let producer = get_agent_with(&tx, &run.agent_id)?;
+        let managed_target = super::managed_delivery::task_target(&tx, &run.task_id)?;
+        if let Some(target) = &managed_target {
+            if task.workspace_mode == WorkspaceMode::Worktree {
+                anyhow::ensure!(acceptance_verified && content_hash.is_some(), "托管交付必须先通过验收测试并保存 Git 提交");
+                if producer.role == AgentRole::Integrator {
+                    anyhow::ensure!(Some(super::executor::git_head(Path::new(&target.root))?.as_str()) == content_hash,
+                        "托管集成提交尚未合入授权交付分支");
+                }
+            }
+        }
         let message_turn = task.id.starts_with("cli-message-");
         let review_decision = if producer.role == AgentRole::Reviewer && !message_turn {
             Some(
@@ -2662,6 +2694,7 @@ impl MultiAgentStore {
             ],
         )?;
         let is_watchdog_review = super::governance::watchdog_target(&tx, &run.task_id)?.is_some();
+        let managed = managed_target.is_some();
         let next_status = if message_turn {
             Some("done")
         } else if producer.role == AgentRole::Reviewer {
@@ -2679,7 +2712,7 @@ impl MultiAgentStore {
             }
         } else if acceptance_verified
             && task.reviewer_agent_id.is_none()
-            && producer.role != AgentRole::Integrator
+            && (producer.role != AgentRole::Integrator || managed)
         {
             Some("done")
         } else {
@@ -3483,6 +3516,26 @@ impl MultiAgentStore {
         let run = get_run_with(&tx, run_id)?;
         ensure_no_handoff(&tx, &run.project_id)?;
         tx.execute("UPDATE ma_runs SET session_locator_json = json_remove(COALESCE(session_locator_json, '{}'), '$.transport', '$.ptyId') WHERE id = ?1", [run_id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(super) fn checkpoint_native_dispatch(
+        &self, run_id: &str, pty_id: u32, identity: Option<(&str, &str)>,
+    ) -> Result<()> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let run = get_run_with(&tx, run_id)?;
+        ensure_no_handoff(&tx, &run.project_id)?;
+        let mut patch = serde_json::json!({"managedPromptDispatched":true});
+        if let Some((key, id)) = identity { patch[key] = id.into(); }
+        let changed = tx.execute(
+            "UPDATE ma_runs SET session_locator_json=json_patch(session_locator_json,?3)
+             WHERE id=?1 AND status='running' AND json_extract(session_locator_json,'$.ptyId')=?2
+             AND json_extract(session_locator_json,'$.transport')='pty'",
+            params![run_id, pty_id, patch.to_string()],
+        )?;
+        anyhow::ensure!(changed == 1, "当前托管任务的终端归属已变更");
         tx.commit()?;
         Ok(())
     }
@@ -7081,6 +7134,27 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_ne!(retry_wakeup.id, stale_wakeup.id);
+    }
+
+    #[test]
+    fn retry_becomes_runnable_at_the_same_millisecond_as_its_wakeup() {
+        let fixture = TestStore::new();
+        let project = fixture.project();
+        let agent = fixture.agent(&project.id, "Codex");
+        let store = fixture.store();
+        let task = fixture.task(&project.id, &agent.id, "重新审查");
+        let retry_at = (now_millis() / 1000 + 60) * 1000 + 270;
+        store.connection.lock().unwrap().execute(
+            "UPDATE ma_tasks SET next_retry_at = ?2 WHERE id = ?1", params![task.id, retry_at],
+        ).unwrap();
+
+        assert!(store.runnable_tasks_at(&project.id, retry_at - 1).unwrap().is_empty());
+        assert_eq!(store.ensure_runnable_wakeups_at(&project.id, retry_at - 1).unwrap(), 0);
+        let runnable = store.runnable_tasks_at(&project.id, retry_at).unwrap();
+        assert_eq!(runnable.len(), 1);
+        assert_eq!(runnable[0].0.id, task.id);
+        assert_eq!(store.ensure_runnable_wakeups_at(&project.id, retry_at).unwrap(), 1);
+        assert!(store.claim_task_wakeup(&task.id).unwrap().is_some());
     }
 
     #[test]

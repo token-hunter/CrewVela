@@ -5,6 +5,7 @@ mod conversation_activity;
 mod direct_message;
 mod domain;
 mod executor;
+mod managed_delivery;
 mod governance;
 pub(crate) mod project_git;
 mod plan_validation;
