@@ -225,12 +225,12 @@ fn reply_only_is_an_immutable_request_ceiling_and_does_not_leak_to_followups() {
     let mut next = fixture.input(); next.client_message_id = "research-followup".into(); next.body = "读取项目代码分析原因".into();
     let (round, _) = fixture.store.begin_conversation(next).unwrap();
     assert!(round.member_policies.values().all(EffectiveConversationPolicy::allows_tools));
-    let prompt = discussion_prompt(&fixture.store.connection.lock().unwrap(), &round, "chat", 0, &fixture.agents[0]).unwrap();
+    let prompt = discussion_prompt(&fixture.store, &fixture.store.connection.lock().unwrap(), &round, "chat", 0, &fixture.agents[0]).unwrap();
     assert!(prompt.contains("过去的临时验收禁令和执行授权不自动延续"));
     assert!(prompt.contains("本次允许研究"));
     let mut old = serde_json::to_value(&round).unwrap(); old.as_object_mut().unwrap().remove("memberPolicies");
     let old: ConversationRound = serde_json::from_value(old).unwrap();
-    let old_prompt = discussion_prompt(&fixture.store.connection.lock().unwrap(), &old, "chat", 0, &fixture.agents[0]).unwrap();
+    let old_prompt = discussion_prompt(&fixture.store, &fixture.store.connection.lock().unwrap(), &old, "chat", 0, &fixture.agents[0]).unwrap();
     assert!(old_prompt.contains("本次为纯回复"));
 }
 

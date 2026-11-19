@@ -162,6 +162,12 @@
 .conversation-message.plan-continuation > .conversation-avatar { visibility: hidden; height: 0; }
 .conversation-message.plan-continuation .conversation-message-content > header { display: none; }
 .conversation-composer-actions { display: flex; align-items: center; gap: 10px; padding-top: 4px; }
+.conversation-composer-actions > .conversation-add-attachment { margin-left: auto; }
+.conversation-composer-actions > .conversation-add-attachment + .conversation-send { margin-left: 0; }
+.conversation-attachments { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin: 6px 0; }
+.collaboration-conversation .conversation-attachments > button { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 27px; padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-hover); color: var(--text); font-size: 12px; }
+.conversation-attachments > button > svg { flex: none; }
+.conversation-attachments > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-target { display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; max-width: calc(100% - 100px); min-height: 31px; padding: 4px 7px; border: 0; border-radius: 6px; color: var(--text); background: var(--bg-hover); font-size: 12px !important; }
 .conversation-target span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-target svg { flex: none; }

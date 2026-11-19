@@ -23,7 +23,7 @@ pub(crate) use direct_message::{
     DirectMessageParticipant, DirectMessageRequest,
 };
 pub use domain::*;
-pub use conversation::{CollaborationConversation, ConversationMessage, ConversationRound,
+pub use conversation::{CollaborationConversation, ConversationAttachment, ConversationMessage, ConversationRound,
     ConversationPlannedTask, ConversationExecutionPlan, ConversationSnapshot,
     ConversationSendInput, ConversationInterruptInput, ConversationExecutePlanInput, ConversationClearInput,
     ConversationSupervisor};

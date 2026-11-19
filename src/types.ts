@@ -940,6 +940,13 @@ export interface ConversationHistoryEntry {
   current: boolean;
   legacy: boolean;
 }
+export interface ConversationAttachment {
+  id: string;
+  name: string;
+  bytes: number;
+  mediaType: string;
+}
+
 export interface ConversationMessage {
   id: string;
   /** Present on human messages; server id is separate and stable across retries. */
@@ -955,6 +962,7 @@ export interface ConversationMessage {
   kind: "message" | "reply" | "status" | "plan";
   phase: ConversationPhase | null;
   body: string;
+  attachments?: ConversationAttachment[];
   status: ConversationStatus;
   createdAt: number;
   updatedAt: number;
@@ -1097,6 +1105,7 @@ export interface ConversationSendInput {
   expectedConversationId?: string;
   clientMessageId: string;
   body: string;
+  attachmentIds?: string[];
   participantAgentIds: string[];
   mode: ConversationMode;
   intent?: ConversationIntent;
@@ -1110,6 +1119,7 @@ export interface ConversationInterruptInput {
   nativeCapabilities?: boolean;
   projectId: string;
   clientMessageId: string;
+  attachmentIds?: string[];
   body: string;
   /** Omit only for legacy pause-only interjections. New clients preserve the full request. */
   participantAgentIds?: string[];

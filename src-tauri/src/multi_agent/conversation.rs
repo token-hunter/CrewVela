@@ -8,7 +8,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -17,6 +17,10 @@ use super::{
     AgentRuntimeKind, AgentTerminalHost, ClaimTaskInput, CollaborationBridge, MultiAgentStore,
     WorkspaceMode,
 };
+
+#[path = "conversation_attachments.rs"]
+pub(super) mod attachments;
+pub use attachments::ConversationAttachment;
 
 #[path = "conversation_policy.rs"]
 mod policy;
@@ -81,6 +85,8 @@ pub struct ConversationMessage {
     pub kind: String,
     pub phase: Option<String>,
     pub body: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<ConversationAttachment>,
     pub status: String,
     pub created_at: i64,
     pub updated_at: i64,
@@ -162,6 +168,8 @@ pub struct ConversationSendInput {
     pub expected_conversation_id: Option<String>,
     pub client_message_id: String,
     pub body: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachment_ids: Vec<String>,
     pub participant_agent_ids: Vec<String>,
     pub mode: String,
     #[serde(default = "default_intent")]
@@ -311,6 +319,8 @@ pub struct ConversationInterruptInput {
     pub expected_conversation_id: Option<String>,
     pub client_message_id: String,
     pub body: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachment_ids: Vec<String>,
     #[serde(default)]
     pub participant_agent_ids: Option<Vec<String>>,
     #[serde(default)]
@@ -576,12 +586,15 @@ fn turn_control(raw: &str, round: &ConversationRound, speaker: &str) -> Result<O
 
 fn validate_send_input(input: &mut ConversationSendInput) -> Result<()> {
     validate_client_id(&input.client_message_id)?;
-    input.body = bounded_text(&input.body, "消息")?;
+    input.body = message_body(&input.body, &input.attachment_ids, "消息")?;
     if input.task_rules.as_ref().is_some_and(|rules| !matches!(rules.tools.as_str(), "research" | "none") || rules.instructions.chars().count() > MAX_MESSAGE) {
         bail!("无效的本次任务规则");
     }
     if !matches!(input.mode.as_str(), "discussion" | "execution_plan") {
         bail!("无效会话模式");
+    }
+    if input.mode == "execution_plan" {
+        ensure!(!input.body.is_empty(), "请填写要完成的目标，再生成分工");
     }
     if !matches!(input.intent.as_str(), "chat" | "exchange") {
         bail!("无效群聊意图");
@@ -626,6 +639,13 @@ fn bounded_text(value: &str, label: &str) -> Result<String> {
         bail!("{label}不能为空且不得超过 {MAX_MESSAGE} 字符");
     }
     Ok(value.into())
+}
+fn message_body(value: &str, attachment_ids: &[String], label: &str) -> Result<String> {
+    ensure!(attachment_ids.len() <= attachments::MAX_FILES, "每条消息最多添加 {} 个附件", attachments::MAX_FILES);
+    if !attachment_ids.is_empty() && value.trim().is_empty() {
+        return Ok(String::new());
+    }
+    bounded_text(value, label)
 }
 fn validate_client_id(value: &str) -> Result<()> {
     if value.is_empty()
@@ -682,7 +702,7 @@ fn render_conversation_markdown(project: &str, messages: &[ConversationMessage],
         escaped
     };
     let mut document = format!("# {} · 团队会话\n", heading_text(project));
-    for message in messages.iter().filter(|message| !message.body.trim().is_empty()) {
+    for message in messages.iter().filter(|message| !message.body.trim().is_empty() || !message.attachments.is_empty()) {
         let speaker = match message.sender_type.as_str() {
             "user" => "我",
             "agent" => message.agent_id.as_ref().and_then(|id| names.get(id)).map(String::as_str).unwrap_or("历史成员"),
@@ -694,11 +714,60 @@ fn render_conversation_markdown(project: &str, messages: &[ConversationMessage],
         document.push_str(&format!("\n## {} · {stamp}\n\n", heading_text(speaker)));
         document.push_str(&message.body);
         document.push('\n');
+        for file in &message.attachments {
+            document.push_str(&format!("\n- 附件：{}\n", heading_text(&file.name)));
+        }
     }
     document
 }
 
 impl MultiAgentStore {
+    pub fn stage_conversation_attachments(&self, project: &str, conversation: &str, paths: &[String]) -> Result<Vec<ConversationAttachment>> {
+        let directory = attachments::scope(&self.conversation_attachment_root, project, conversation)?;
+        {
+            let connection = self.connection.lock().unwrap();
+            ensure_active_conversation(Some(conversation), &conversation_with(&connection, project)?)?;
+        }
+        attachments::stage(&directory, paths)
+    }
+
+    fn resolve_conversation_attachments(&self, project: &str, conversation: &str, ids: &[String]) -> Result<Vec<ConversationAttachment>> {
+        if ids.is_empty() { return Ok(Vec::new()); }
+        ensure!(ids.iter().collect::<HashSet<_>>().len() == ids.len(), "不能重复发送同一附件");
+        let directory = attachments::scope(&self.conversation_attachment_root, project, conversation)?;
+        ids.iter().map(|id| attachments::resolve(&directory, id).map(|(file, _)| file)).collect()
+    }
+
+    pub fn conversation_attachment_path(&self, project: &str, conversation: &str, message: &str, id: &str) -> Result<std::path::PathBuf> {
+        let connection = self.connection.lock().unwrap();
+        let message = message_with(&connection, message)?;
+        ensure!(message.project_id == project && message.conversation_id == conversation
+            && message.attachments.iter().any(|file| file.id == id), "附件不属于此消息");
+        let directory = attachments::scope(&self.conversation_attachment_root, project, conversation)?;
+        Ok(attachments::resolve(&directory, id)?.1)
+    }
+
+    pub(super) fn conversation_task_images(&self, task: &str) -> Result<Vec<(std::path::PathBuf, String)>> {
+        let connection = self.connection.lock().unwrap();
+        let source_id: Option<String> = connection.query_row(
+            "SELECT json_extract(r.data_json,'$.userMessageId')
+             FROM ma_conversation_turns t JOIN ma_conversation_rounds r ON r.id=t.round_id WHERE t.task_id=?1
+             UNION ALL
+             SELECT json_extract(r.data_json,'$.userMessageId')
+             FROM ma_conversation_task_scopes s JOIN ma_conversation_plans p ON p.id=s.plan_id
+             JOIN ma_conversation_rounds r ON r.id=p.round_id WHERE s.task_id=?1 LIMIT 1",
+            [task], |row| row.get(0),
+        ).optional()?;
+        let Some(id) = source_id else { return Ok(Vec::new()); };
+        let message = message_with(&connection, &id)?;
+        if message.attachments.is_empty() { return Ok(Vec::new()); }
+        let directory = attachments::scope(&self.conversation_attachment_root, &message.project_id, &message.conversation_id)?;
+        message.attachments.iter()
+            .filter(|file| file.media_type.starts_with("image/"))
+            .map(|file| attachments::resolve(&directory, &file.id).map(|(_, path)| (super::executor::external_command_path(&path), file.media_type.clone())))
+            .collect()
+    }
+
     pub fn conversation_snapshot(&self, project_id: &str) -> Result<ConversationSnapshot> {
         let connection = self.connection.lock().unwrap();
         snapshot_with(&connection, project_id)
@@ -719,7 +788,7 @@ impl MultiAgentStore {
                 .collect::<rusqlite::Result<HashMap<_, _>>>()?;
             (project, created_at, messages, names)
         };
-        if !messages.iter().any(|message| !message.body.trim().is_empty()) { bail!("当前会话暂无可导出的消息"); }
+        if !messages.iter().any(|message| !message.body.trim().is_empty() || !message.attachments.is_empty()) { bail!("当前会话暂无可导出的消息"); }
         let date = chrono::DateTime::from_timestamp_millis(created_at)
             .map(|date| date.with_timezone(&chrono::Local).format("%Y%m%d-%H%M%S").to_string())
             .unwrap_or_else(|| "历史记录".into());
@@ -842,6 +911,7 @@ impl MultiAgentStore {
         }
         let conversation = conversation_with(&tx, &input.project_id)?;
         ensure_active_conversation(input.expected_conversation_id.as_deref(), &conversation)?;
+        let attachments = self.resolve_conversation_attachments(&input.project_id, &conversation.id, &input.attachment_ids)?;
         let queued = tx.query_row("SELECT data_json FROM ma_conversation_messages WHERE project_id=?1 AND source_key=?2",
             params![input.project_id, format!("interrupt:{}", input.client_message_id)], |row| row.get::<_, String>(0)).optional()?
             .map(decode::<ConversationMessage>).transpose()?;
@@ -935,6 +1005,7 @@ impl MultiAgentStore {
             kind: "message".into(),
             phase: None,
             body: input.body,
+            attachments,
             status: "completed".into(),
             created_at: queued.as_ref().map_or(stamp, |message| message.created_at),
             updated_at: stamp,
@@ -995,12 +1066,13 @@ impl MultiAgentStore {
 
     pub(crate) fn interrupt_conversation(&self, input: ConversationInterruptInput) -> Result<bool> {
         validate_client_id(&input.client_message_id)?;
-        let body = bounded_text(&input.body, "人工插话")?;
+        let body = message_body(&input.body, &input.attachment_ids, "人工插话")?;
         let queued_input = if let Some(participants) = input.participant_agent_ids {
             let mut request = ConversationSendInput {
                 expected_conversation_id: input.expected_conversation_id.clone(),
                 project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
                 body: body.clone(), participant_agent_ids: participants,
+                attachment_ids: input.attachment_ids.clone(),
                 mode: input.mode.unwrap_or_else(|| "discussion".into()),
                 intent: input.intent.unwrap_or_else(default_intent),
                 max_rounds: input.max_rounds.unwrap_or_else(default_rounds),
@@ -1017,7 +1089,9 @@ impl MultiAgentStore {
             if let Some(raw) = connection.query_row("SELECT data_json FROM ma_conversation_messages WHERE project_id=?1 AND source_key=?2",
                 params![input.project_id, source], |row| row.get::<_, String>(0)).optional()? {
                 let previous: ConversationMessage = decode(raw)?;
-                if previous.body != body { bail!("相同消息 ID 已用于不同人工插话"); }
+                if previous.body != body || !previous.attachments.iter().map(|file| &file.id).eq(&input.attachment_ids) {
+                    bail!("相同消息 ID 已用于不同人工插话");
+                }
                 if let Some(request) = &queued_input {
                     let dispatched = connection.query_row("SELECT request_json FROM ma_conversation_rounds WHERE project_id=?1 AND client_message_id=?2",
                         params![input.project_id, input.client_message_id], |row| row.get::<_, String>(0)).optional()?;
@@ -1041,10 +1115,11 @@ impl MultiAgentStore {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let conversation = conversation_with(&tx, &input.project_id)?;
         ensure_active_conversation(input.expected_conversation_id.as_deref(), &conversation)?;
+        let attachments = self.resolve_conversation_attachments(&input.project_id, &conversation.id, &input.attachment_ids)?;
         // The transaction is the final identity and manual-control gate, including concurrent retries.
         if let Some(raw) = tx.query_row("SELECT data_json FROM ma_conversation_messages WHERE project_id=?1 AND source_key=?2", params![input.project_id, source], |r| r.get::<_, String>(0)).optional()? {
             let previous: ConversationMessage = decode(raw)?;
-            if previous.body != body { bail!("相同消息 ID 已用于不同人工插话"); }
+            if previous.body != body || previous.attachments != attachments { bail!("相同消息 ID 已用于不同人工插话"); }
             if let Some(request) = &queued_input {
                 let dispatched = tx.query_row("SELECT request_json FROM ma_conversation_rounds WHERE project_id=?1 AND client_message_id=?2",
                     params![input.project_id, input.client_message_id], |row| row.get::<_, String>(0)).optional()?;
@@ -1082,6 +1157,7 @@ impl MultiAgentStore {
             kind: "message".into(),
             phase: None,
             body,
+            attachments,
             status: if queued_input.is_none() { "completed" } else if active.iter().any(|round| round.status == "unconfirmed") { "needs_decision" } else { "queued" }.into(),
             created_at: stamp,
             updated_at: stamp,
@@ -1292,6 +1368,7 @@ fn sync_project_messages(connection: &Connection, project: &str) -> Result<()> {
             kind: if successful { "reply" } else { "status" }.into(),
             phase: None,
             body: summary.or(error).unwrap_or_default(),
+            attachments: Vec::new(),
             status: run_status(&status, locator.as_deref()).into(),
             created_at: stamp,
             updated_at: stamp,
@@ -1908,7 +1985,7 @@ fn prepare_turn_addressed(
         || target.status != "completed" || target.sender_type == "system" {
         bail!("回复对象不属于当前已公开消息，未派发");
     }
-    let body = format!("{}\n\n本次直接回复的消息 ID：{reply_to}。回答这条消息提出的问题，不替其他成员发言。", discussion_prompt(&tx, &round, phase, cycle, agent)?);
+    let body = format!("{}\n\n本次直接回复的消息 ID：{reply_to}。回答这条消息提出的问题，不替其他成员发言。", discussion_prompt(store, &tx, &round, phase, cycle, agent)?);
     let stamp = now();
     let native = round.member_policies.get(agent).is_some_and(EffectiveConversationPolicy::uses_native_capabilities);
     tx.execute("INSERT INTO ma_tasks(id,project_id,parent_id,stage,title,description,acceptance_criteria,verification_command,status,assignee_agent_id,reviewer_agent_id,workspace_mode,priority,required_capabilities_json,max_attempts,retry_backoff_seconds,next_retry_at,created_at,updated_at) VALUES(?1,?2,NULL,0,?3,?4,'按当前用户请求回复公共会话；本轮回复不等于工程验收通过',NULL,'ready',?5,NULL,?7,0,'[]',1,5,NULL,?6,?6)",params![task_id,round.project_id,format!("团队会话 · {phase}"),body,agent,stamp,if native {"shared_write"} else {"read_only"}])?;
@@ -1927,6 +2004,7 @@ fn prepare_turn_addressed(
         kind: "reply".into(),
         phase: Some(phase.into()),
         body: String::new(),
+        attachments: Vec::new(),
         status: "queued".into(),
         created_at: stamp,
         updated_at: stamp,
@@ -1941,6 +2019,7 @@ fn prepare_turn_addressed(
     Ok(turn)
 }
 fn discussion_prompt(
+    store: &MultiAgentStore,
     connection: &Connection,
     round: &ConversationRound,
     phase: &str,
@@ -1975,6 +2054,13 @@ fn discussion_prompt(
         .collect::<rusqlite::Result<Vec<_>>>()?
         .join("\n");
     let messages = public_messages(connection, &round.project_id)?;
+    let current_attachments = &message_with(connection, &round.user_message_id)?.attachments;
+    let attachment_context = if current_attachments.is_empty() {
+        String::new()
+    } else {
+        let directory = attachments::scope(&store.conversation_attachment_root, &round.project_id, &round.conversation_id)?;
+        attachments::prompt_context(&directory, current_attachments, true)
+    };
     let mut context = Vec::new();
     let mut size = 0;
     for message in messages
@@ -1998,6 +2084,7 @@ fn discussion_prompt(
         context.push(line);
     }
     context.reverse();
+    if !attachment_context.is_empty() { context.push(attachment_context); }
     let instruction = match phase {
         "exchange" => "用户明确请求选中的成员交流。像群聊一样回应当前消息和其他成员真正提出的问题；只有新增事实、具体问题或分歧才继续。需要另一位成员接话时，明确 @该成员 并提出具体问题，且在末尾提供下述 continue 控制；不要为了轮流发言而交接。没有新信息或已说清楚就结束，允许不发言，遇到只能由用户回答的问题就等待用户。用户未要求时不主动做会议汇总，不列固定观点/依据/风险/待确认栏目。",
         "plan" => "针对用户的工程诉求，一次生成符合实际成员能力、范围与依赖的待确认分工；没有必要先让每人互评。不要声称已经执行或验收。缺少影响可执行性的关键条件时，只问必要问题并等待用户。",
@@ -2383,17 +2470,25 @@ impl MultiAgentStore {
             .iter()
             .map(|task| (task.key.clone(), format!("conversation-task-{}", id())))
             .collect::<HashMap<_, _>>();
+        let source = message_with(&tx, &round.user_message_id)?;
+        let attachment_context = if source.attachments.is_empty() {
+            String::new()
+        } else {
+            let directory = attachments::scope(&self.conversation_attachment_root, &round.project_id, &round.conversation_id)?;
+            attachments::prompt_context(&directory, &source.attachments, true)
+        };
         let stamp = now();
         for task in &plan.tasks {
             let task_id = &ids[&task.key];
             let description = format!(
-                "{}\n\n用户确认的目录范围：{}。禁止写入范围外文件；产物提交前会检查实际改动。",
+                "{}\n\n用户确认的目录范围：{}。禁止写入范围外文件；产物提交前会检查实际改动。{}",
                 task.description,
                 if task.write_paths.is_empty() {
                     "只读，无写入".into()
                 } else {
                     task.write_paths.join(", ")
-                }
+                },
+                attachment_context
             );
             tx.execute("INSERT INTO ma_tasks(id,project_id,parent_id,stage,title,description,acceptance_criteria,verification_command,status,assignee_agent_id,reviewer_agent_id,workspace_mode,priority,required_capabilities_json,max_attempts,retry_backoff_seconds,next_retry_at,created_at,updated_at) VALUES(?1,?2,NULL,0,?3,?4,?5,?6,?7,?8,?9,?10,0,'[]',3,5,NULL,?11,?11)",params![task_id,input.project_id,task.title,description,task.acceptance_criteria,task.verification_command,if task.depends_on.is_empty(){"ready"}else{"blocked"},task.assignee_agent_id,task.reviewer_agent_id,task.workspace_mode.as_str(),stamp])?;
             tx.execute("INSERT INTO ma_conversation_task_scopes(task_id,plan_id,write_paths_json) VALUES(?1,?2,?3)",params![task_id,plan.id,serde_json::to_string(&task.write_paths)?])?;
@@ -2438,6 +2533,7 @@ impl MultiAgentStore {
             created_at: stamp,
             updated_at: stamp,
             queued_input: None,
+            attachments: Vec::new(),
         };
         save_message(&tx, &format!("plan-applied:{}", plan.id), &message)?;
         tx.commit()?;

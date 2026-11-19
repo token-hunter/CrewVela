@@ -26,6 +26,7 @@ const MESSAGE_TASK_ACCEPTANCE: &str = "阅读并回应当前会话消息。回�
 #[derive(Clone)]
 pub struct MultiAgentStore {
     pub(super) connection: Arc<Mutex<Connection>>,
+    pub(super) conversation_attachment_root: PathBuf,
     agent_lifecycle: Arc<Mutex<()>>,
 }
 
@@ -70,6 +71,7 @@ impl MultiAgentStore {
         )?;
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
+            conversation_attachment_root: path.with_extension("attachments"),
             agent_lifecycle: Arc::new(Mutex::new(())),
         })
     }

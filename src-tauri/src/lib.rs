@@ -1237,6 +1237,20 @@ async fn ma_conversation_plan_retry_input(
 }
 
 #[tauri::command]
+async fn ma_conversation_stage_attachments(project_id: String, conversation_id: String, paths: Vec<String>,
+    state: State<'_, MultiAgentStore>) -> Result<Vec<multi_agent::ConversationAttachment>, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.stage_conversation_attachments(&project_id, &conversation_id, &paths).map_err(to_err)).await
+}
+
+#[tauri::command]
+fn ma_conversation_open_attachment(project_id: String, conversation_id: String, message_id: String, attachment_id: String,
+    state: State<'_, MultiAgentStore>) -> Result<(), String> {
+    let path = state.conversation_attachment_path(&project_id, &conversation_id, &message_id, &attachment_id).map_err(to_err)?;
+    tauri_plugin_opener::open_path(multi_agent::external_command_path(&path), None::<&str>).map_err(to_err)
+}
+
+#[tauri::command]
 fn ma_conversation_send(input: multi_agent::ConversationSendInput,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
@@ -6483,6 +6497,8 @@ pub fn run() {
             ma_conversation_switch,
             ma_conversation_send,
             ma_conversation_plan_preflight,
+            ma_conversation_stage_attachments,
+            ma_conversation_open_attachment,
             ma_conversation_plan_retry_input,
             ma_conversation_interrupt,
             ma_conversation_control,

@@ -21,6 +21,62 @@ struct Fixture {
     project: String,
     agents: Vec<String>,
 }
+
+#[test]
+fn conversation_attachments_are_snapshotted_scoped_and_delivered() {
+    let fixture = Fixture::new();
+    let conversation = fixture.store.conversation_snapshot(&fixture.project).unwrap().conversation.id;
+    let document = fixture.root.join("需求.md");
+    let image = fixture.root.join("截图.png");
+    std::fs::write(&document, "ORIGINAL_ATTACHMENT_TEXT").unwrap();
+    let png = b"\x89PNG\r\n\x1a\n";
+    std::fs::write(&image, png).unwrap();
+    let files = fixture.store.stage_conversation_attachments(&fixture.project, &conversation,
+        &[document.display().to_string(), image.display().to_string()]).unwrap();
+    std::fs::write(&document, "CHANGED_SOURCE").unwrap();
+    std::fs::remove_file(image).unwrap();
+    let mut input = fixture.input();
+    input.body.clear();
+    input.expected_conversation_id = Some(conversation.clone());
+    input.attachment_ids = files.iter().map(|file| file.id.clone()).collect();
+    let (round, started) = fixture.store.begin_conversation(input.clone()).unwrap();
+    assert!(started);
+    assert!(!fixture.store.begin_conversation(input.clone()).unwrap().1);
+    input.attachment_ids.reverse();
+    assert!(fixture.store.begin_conversation(input).is_err());
+    let turn = prepare_turn(&fixture.store, &round.id, 1, "chat", 0, &fixture.agents[0]).unwrap();
+    let (_, snapshot) = fixture.store.export_conversation_markdown(&fixture.project, &conversation).unwrap();
+    assert!(snapshot.contains("附件：需求.md"));
+    let images = fixture.store.conversation_task_images(&turn.task_id).unwrap();
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].1, "image/png");
+    assert_eq!(std::fs::read(&images[0].0).unwrap(), png);
+    let prompt = discussion_prompt(&fixture.store, &fixture.store.connection.lock().unwrap(),
+        &round, "chat", 0, &fixture.agents[0]).unwrap();
+    assert!(prompt.contains("ORIGINAL_ATTACHMENT_TEXT"));
+    assert!(!prompt.contains("CHANGED_SOURCE"));
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    let snapshot = reopened.conversation_snapshot(&fixture.project).unwrap();
+    assert_eq!(snapshot.messages[0].attachments, files);
+    assert!(reopened.conversation_attachment_path(&fixture.project, &id(), &round.user_message_id, &files[0].id).is_err());
+    let copied = reopened.conversation_attachment_path(&fixture.project, &conversation, &round.user_message_id, &files[0].id).unwrap();
+    assert_eq!(std::fs::read_to_string(copied).unwrap(), "ORIGINAL_ATTACHMENT_TEXT");
+}
+
+#[test]
+fn invalid_conversation_attachment_never_queues_a_turn() {
+    let fixture = Fixture::new();
+    let conversation = fixture.store.conversation_snapshot(&fixture.project).unwrap().conversation.id;
+    let wrong_type = fixture.root.join("假图片.png");
+    std::fs::write(&wrong_type, "not an image").unwrap();
+    assert!(fixture.store.stage_conversation_attachments(&fixture.project, &conversation, &[wrong_type.display().to_string()]).is_err());
+    let mut input = fixture.input();
+    input.attachment_ids = vec![id()];
+    assert!(fixture.store.interrupt_conversation(interjection(&input)).is_err());
+    assert!(fixture.store.begin_conversation(input).is_err());
+    assert!(fixture.store.conversation_snapshot(&fixture.project).unwrap().messages.is_empty());
+}
+
 impl Fixture {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!("crewvela-conversation-{}", id()));
@@ -70,6 +126,7 @@ impl Fixture {
             project_id: self.project.clone(),
             client_message_id: "user-1".into(),
             body: "Discuss the project".into(),
+            attachment_ids: Vec::new(),
             participant_agent_ids: self.agents.clone(),
             mode: "discussion".into(),
             intent: "chat".into(),
@@ -201,7 +258,7 @@ fn controlled_reply(body: &str, control: Value) -> String {
 
 fn interjection(input: &ConversationSendInput) -> ConversationInterruptInput {
     ConversationInterruptInput { native_capabilities: None, expected_conversation_id: input.expected_conversation_id.clone(), project_id: input.project_id.clone(), client_message_id: input.client_message_id.clone(),
-        body: input.body.clone(), participant_agent_ids: Some(input.participant_agent_ids.clone()), mode: Some(input.mode.clone()),
+        body: input.body.clone(), attachment_ids: input.attachment_ids.clone(), participant_agent_ids: Some(input.participant_agent_ids.clone()), mode: Some(input.mode.clone()),
         intent: Some(input.intent.clone()), max_rounds: Some(input.max_rounds), max_duration_seconds: Some(input.max_duration_seconds), task_rules: input.task_rules.clone() }
 }
 impl DiscussionExecutor for Replies {
@@ -2111,6 +2168,7 @@ fn conversation_cross_runtime_rechecks_changed_reviewer_at_approval() {
 fn conversation_plan_prompt_names_actual_roles_and_requires_the_shared_review_graph() {
     let (fixture, round, _) = cross_runtime_conversation_plan();
     let prompt = discussion_prompt(
+        &fixture.store,
         &fixture.store.connection.lock().unwrap(),
         &round,
         "summary",

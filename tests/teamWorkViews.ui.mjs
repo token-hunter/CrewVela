@@ -17,6 +17,25 @@ async function fresh(query='',width=680,height=980) {
  return p;
 }
 try {
+ const attachmentPage=await fresh('natural=1&attachments=1', 420);
+ await attachmentPage.getByRole('button',{name:'添加附件',exact:true}).click();
+ const staged=attachmentPage.getByLabel('待发送附件',{exact:true});
+ await staged.getByRole('button',{name:'移除附件 设计截图.png',exact:true}).waitFor();
+ await staged.getByRole('button',{name:'移除附件 需求说明.md',exact:true}).click();
+ assert.equal(await staged.getByRole('button').count(),1);
+ assert.equal(await editor(attachmentPage).inputValue(),'');
+ const attachmentSend=attachmentPage.getByRole('button',{name:'发送消息',exact:true});
+ await attachmentSend.click();
+ const sentAttachment=attachmentPage.getByLabel('消息附件',{exact:true}).getByRole('button',{name:'设计截图.png',exact:true});
+ await sentAttachment.waitFor();
+ await sentAttachment.click();
+ const attachmentCalls=await calls(attachmentPage,'ma_conversation_send');
+ assert.equal(attachmentCalls.length,1);
+ assert.equal(attachmentCalls[0].args.input.attachmentIds.length,1);
+ assert.equal(attachmentCalls[0].args.input.body,'');
+ assert.equal((await calls(attachmentPage,'ma_conversation_open_attachment'))[0].args.attachmentId,attachmentCalls[0].args.input.attachmentIds[0]);
+ assert.equal(await staged.count(),0);
+
  const plan=await fresh('plan=pending');
  await plan.getByRole('button',{name:'确认并开始执行',exact:true}).waitFor();
  assert.equal((await calls(plan,'ma_conversation_execute_plan')).length,0);

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -224,6 +225,7 @@ pub(crate) struct AcpConnection {
     context_usage_reported: bool,
     goal_supported: bool,
     plugin_supported: bool,
+    prompt_images_supported: bool,
     goal_reported: bool,
     goal: Option<CodexGoal>,
     goal_replies: GoalReplies,
@@ -616,6 +618,7 @@ impl AcpConnection {
             context_usage_reported: false,
             goal_supported: false,
             plugin_supported: false,
+            prompt_images_supported: false,
             goal_reported: false,
             goal: None,
             goal_replies: Arc::new(Mutex::new(HashMap::new())),
@@ -649,6 +652,8 @@ impl AcpConnection {
             .pointer("/agentCapabilities/mcpCapabilities/http")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        connection.prompt_images_supported =
+            initialized.pointer("/agentCapabilities/promptCapabilities/image").and_then(Value::as_bool) == Some(true);
         connection.goal_supported = adapter == ManagedAcpKind::Codex
             && initialized.pointer("/_meta/crewvelaGoal/nativeSubscriptions").and_then(Value::as_bool) == Some(true)
             && initialized.pointer("/_meta/goal/version").and_then(Value::as_u64) == Some(1)
@@ -1906,6 +1911,7 @@ pub(crate) fn execute_managed_research_acp(
     kind: ManagedAcpKind, app_session_id: &str, cwd: &str, prompt: &str,
     mcp_url: &str, token: &str, tools_enabled: bool, cancelled: &AtomicBool,
     update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
+    images: &[(PathBuf, String)],
 ) -> Result<ManagedAcpOutcome> {
     let permissions: ManagedPermissionHandler = Box::new(move |request, _| {
         let call = &request["params"]["toolCall"];
@@ -1916,7 +1922,7 @@ pub(crate) fn execute_managed_research_acp(
     });
     execute_managed_acp_inner(kind, app_session_id, cwd, None, prompt, mcp_url, token,
         ManagedAcpMode::ReadOnly, cancelled, None, Some(permissions), update_handler,
-        Some(ManagedResearchPolicy { tools_enabled }), None)
+        Some(ManagedResearchPolicy { tools_enabled }), None, images)
 }
 
 pub(crate) fn execute_managed_acp(
@@ -1933,9 +1939,10 @@ pub(crate) fn execute_managed_acp(
     permission_handler: Option<ManagedPermissionHandler>,
     update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
     scoped_design_tool: Option<&'static str>,
+    images: &[(PathBuf, String)],
 ) -> Result<ManagedAcpOutcome> {
     execute_managed_acp_inner(kind, app_session_id, cwd, resume_session_id, prompt, mcp_url, token,
-        mode, cancelled, model, permission_handler, update_handler, None, scoped_design_tool)
+        mode, cancelled, model, permission_handler, update_handler, None, scoped_design_tool, images)
 }
 
 fn execute_managed_acp_inner(
@@ -1953,6 +1960,7 @@ fn execute_managed_acp_inner(
     update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
     research: Option<ManagedResearchPolicy>,
     scoped_design_tool: Option<&'static str>,
+    images: &[(PathBuf, String)],
 ) -> Result<ManagedAcpOutcome> {
     let process_id = Arc::new(AtomicU32::new(0));
     // 保留配置中启用的 http 类型用户 server 一并交给 Agent；
@@ -2011,7 +2019,12 @@ fn execute_managed_acp_inner(
     if cancelled.load(Ordering::Acquire) {
         return Err(anyhow!("ACP Agent 任务已取消"));
     }
-    let result = connection.prompt_cancellable(prompt, Some(cancelled))?;
+    let result = if connection.prompt_images_supported && !images.is_empty() {
+        let content = managed_image_prompt(prompt, images)?;
+        connection.prompt_content_cancellable(content, Some(cancelled))?
+    } else {
+        connection.prompt_cancellable(prompt, Some(cancelled))?
+    };
     if result.cancelled || cancelled.load(Ordering::Acquire) {
         return Err(anyhow!("ACP Agent 任务已取消"));
     }
@@ -2034,6 +2047,23 @@ fn execute_managed_acp_inner(
     }))
     })();
     finish_managed_connection(connection, outcome)
+}
+
+fn managed_image_prompt(prompt: &str, images: &[(PathBuf, String)]) -> Result<Vec<Value>> {
+    const MAX_INLINE_BYTES: u64 = 12 * 1024 * 1024;
+    let mut remaining = MAX_INLINE_BYTES;
+    let mut content = vec![json!({"type":"text","text":prompt})];
+    for (path, mime_type) in images {
+        use std::io::Read;
+        let file = std::fs::File::open(path).context("无法读取待投递的图片附件")?;
+        if file.metadata()?.len() > remaining { continue; }
+        let mut data = Vec::new();
+        file.take(remaining + 1).read_to_end(&mut data)?;
+        if data.len() as u64 > remaining { continue; }
+        remaining -= data.len() as u64;
+        content.push(json!({"type":"image","mimeType":mime_type,"data":STANDARD.encode(data)}));
+    }
+    Ok(content)
 }
 
 fn finish_managed_connection(mut connection: AcpConnection, outcome: Result<ManagedAcpOutcome>) -> Result<ManagedAcpOutcome> {

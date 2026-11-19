@@ -90,6 +90,7 @@ fn durable_interruption_preserves_chat_plan_but_invalidates_for_explicit_replann
             .interrupt_conversation(ConversationInterruptInput { native_capabilities: None, expected_conversation_id: None,
                 project_id: fixture.project.clone(),
                 client_message_id: "interruption".into(),
+                attachment_ids: Vec::new(),
                 body: "new request".into(),
                 participant_agent_ids: Some(fixture.agents.clone()),
                 mode: Some(mode.into()),

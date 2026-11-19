@@ -144,6 +144,7 @@ let failSend = params.get("fail") === "send";
 let failBeforeSave = params.get("fail") === "send-before-save";
 const planDraftBody = '```json\n' + JSON.stringify({ summary: "范围样例", tasks: [{ writePaths: ["frontend/"] }] }, null, 2) + '\n```';
 const planRetryRequests = new Map<string, any>();
+const stagedAttachments = new Map<string, { id: string; name: string; bytes: number; mediaType: string }>();
 const mock = {
   clipboardWrites: [] as string[], copyError: "", holdCopy: false, pendingCopies: [] as Array<()=>void>, failPermission:false, stalePermission:false,
   calls, pending, chats, projects, snapshot, activityEvents, activityApprovals, runHistory, archivedConversations: [] as any[], holdProject: "", holdSend: false, holdClear: false, holdNew: false, failExecution: false, failApproval: false, failClear: false, failNew: false,
@@ -256,6 +257,15 @@ const mock = {
       chats[input.projectId] = { ...chat, conversation: { ...chat.conversation, id: crypto.randomUUID() }, messages: [], rounds: [], executionPlans: [] };
       return structuredClone(chats[input.projectId]);
     }
+    if (command === "ma_conversation_stage_attachments") {
+      return args.paths.map((path: string) => {
+        const file = { id: crypto.randomUUID(), name: path.split(/[\\/]/).pop()!, bytes: 21,
+          mediaType: path.endsWith(".png") ? "image/png" : "text/markdown" };
+        stagedAttachments.set(file.id, file);
+        return file;
+      });
+    }
+    if (command === "ma_conversation_open_attachment") return null;
     if (["ma_conversation_send", "ma_conversation_interrupt"].includes(command)) {
       const input = args.input, chat = chats[input.projectId];
       if (params.get("natural") === "1") {
@@ -265,7 +275,7 @@ const mock = {
         const firstPlan = planningStates && input.mode === "execution_plan" && !chat.rounds.some((item: any) => item.mode === "execution_plan");
         if (!planningStates) chat.rounds.forEach((round: any)=>{round.status="paused";});
         let user=chat.messages.find((m: any)=>m.clientMessageId===input.clientMessageId);
-        if(user){user.status="completed";user.queuedInput=null;}else{user={...message(input.clientMessageId,"user",input.body,null,"completed","message"),clientMessageId:input.clientMessageId,createdAt:clock+50000};chat.messages.push(user);}
+        if(user){user.status="completed";user.queuedInput=null;}else{user={...message(input.clientMessageId,"user",input.body,null,"completed","message"),clientMessageId:input.clientMessageId,createdAt:clock+50000,attachments:input.attachmentIds?.map((id: string) => stagedAttachments.get(id))};chat.messages.push(user);}
         const roundId=`round-${input.clientMessageId}`;
         chat.rounds.push({id:roundId,projectId:input.projectId,conversationId:chat.conversation.id,userMessageId:user.id,participantAgentIds:input.participantAgentIds,mode:input.mode,intent:input.intent,status:"completed",phase:input.mode==="execution_plan"?"plan":input.intent==="exchange"?"exchange":"chat",maxRounds:input.maxRounds,currentRound:0,deadlineAt:clock+600000,stopReason:null,createdAt:clock+50000,updatedAt:clock+50000});
         if (firstPlan) {
@@ -313,7 +323,7 @@ const mock = {
     if (command === "plugin:event|emit") return null;
     if (command === "ma_create_project") { const project = { ...args.input, id: crypto.randomUUID(), status: "active", createdAt: clock, updatedAt: clock }; projects = [...projects, project]; chats[project.id] = emptyChat(project.id); return project; }
     if (command === "ma_project_git_status") return { state: "missingRepository", repositoryPath: null, hasFiles: false, stagedFiles: [], stagedToken: null };
-    if (command === "plugin:dialog|open") return "/fixture/new-project";
+    if (command === "plugin:dialog|open") return params.has("attachments") ? ["/fixture/设计截图.png", "/fixture/需求说明.md"] : "/fixture/new-project";
     if (command === "get_runtime_preferences") return { disabledRuntimes: params.get("disabled") ? [params.get("disabled")] : [] };
     if (command === "plugin:event|listen") return 1;
     if (command === "plugin:event|unlisten") return null;

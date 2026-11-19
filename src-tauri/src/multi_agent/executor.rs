@@ -2941,6 +2941,7 @@ fn execute_preferred_acp(
         && (request.launch.mode().is_some() || request_requires_session_cli(request)?) {
         return Ok(None);
     }
+    let images = request.store.conversation_task_images(&request.task.id)?;
     let resume_session_id = locator_string(request.resume_locator.as_ref(), locator_keys);
     let mode = if native_discussion && request.agent.permission_profile == PermissionProfile::Default { ManagedAcpMode::Inherit } else { managed_acp_mode(
         request.task.workspace_mode, request.agent.permission_profile,
@@ -3084,7 +3085,7 @@ fn execute_preferred_acp(
         request.store.append_runtime_event(super::AppendRuntimeEventInput { run_id: request.run_id.clone(), event_type: "conversation_policy".into(), payload: serde_json::to_value(policy)? })?;
         crate::acp::execute_managed_research_acp(kind, &session.id, &request.cwd.display().to_string(),
             &render_task_prompt(request), &mcp_url, &request.collaboration.token,
-            policy.allows_tools(), cancelled, update_handler)
+            policy.allows_tools(), cancelled, update_handler, &images)
     } else { execute_managed_acp(
         kind,
         &session.id,
@@ -3099,6 +3100,7 @@ fn execute_preferred_acp(
         permission_handler,
         update_handler,
         scoped_design_tool(request)?,
+        &images,
     ) };
     let outcome = match outcome {
         Ok(outcome) => outcome,
@@ -3838,6 +3840,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
         {
             command.arg("resume").arg(thread_id);
         }
+        append_codex_images(&mut command, request)?;
         command.current_dir(external_command_path(&request.cwd));
         let prompt = render_task_prompt(request);
         match request.terminal_host.execute_native(
@@ -3857,12 +3860,24 @@ impl AgentRuntimeAdapter for CodexAdapter {
                 );
                 let mut fallback = runtime_command(self.kind())?;
                 configure_codex_base(&mut fallback, request, "Codex exec")?;
-                fallback.args(["exec", "--json", "-"]);
+                fallback.args(["exec", "--json"]);
+                append_codex_images(&mut fallback, request)?;
+                fallback.arg("-");
                 execute_command(self.kind(), fallback, Some(prompt), request, cancelled)
             }
             Err(error) => Err(error),
         }
     }
+}
+
+fn append_codex_images(command: &mut Command, request: &RuntimeRequest) -> Result<()> {
+    for (path, _) in request.store.conversation_task_images(&request.task.id)? {
+        // Codex treats commas in --image values as file separators.
+        if let Some(path) = path.to_str().filter(|path| !path.contains(',')) {
+            command.arg(format!("--image={path}"));
+        }
+    }
+    Ok(())
 }
 
 impl AgentRuntimeAdapter for KimiCodeAdapter {

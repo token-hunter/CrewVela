@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle } from "@phosphor-icons/react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Image, Paperclip, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle, X } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConversationMentionHighlight } from "./ConversationMentionHighlight";
 import { ResizableConversationComposer } from "./ResizableConversationComposer";
@@ -23,7 +24,7 @@ import { RUNTIME_LABELS } from "../runtimeLogos";
 import { visibleProjectTasks } from "../collaborationTasks";
 import { hasMentionToken, mentionTextSegments, selectMentionTokens } from "../multiAgentMention";
 import { useRuntimeAvailability } from "../runtimeAvailability";
-import type { AgentProfile, ConversationDesignDelegation, ConversationExecutionPlan, ConversationMessage, ConversationOriginalSession, ConversationRound, ConversationSendInput, ConversationSnapshot, MultiAgentProject, MultiAgentSnapshot, SessionRecord } from "../types";
+import type { AgentProfile, ConversationAttachment, ConversationDesignDelegation, ConversationExecutionPlan, ConversationMessage, ConversationOriginalSession, ConversationRound, ConversationSendInput, ConversationSnapshot, MultiAgentProject, MultiAgentSnapshot, SessionRecord } from "../types";
 import "../styles/collaboration-conversation.css";
 import "../styles/team-work-views.css";
 import "../styles/conversation-member-activity.css";
@@ -48,12 +49,25 @@ function save(key: string, value: string) { try { if (value) localStorage.setIte
 interface PendingSend extends ConversationSendInput { interrupt: boolean; preserveDraft?: boolean }
 interface PlanIssue { kind: "git" | "member"; message: string }
 const PLAN_VALIDATION_FAILURE = "真实成员已回复，但分工计划未通过校验：";
+const MAX_ATTACHMENTS = 8;
+const DOCUMENT_EXTENSIONS = ["pdf", "docx", "txt", "md", "csv"];
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"];
+const attachmentDraftKey = (projectId: string, conversationId: string) => `crewvela.team-attachment-draft.${projectId}.${conversationId}`;
+const fileName = (path: string) => path.split(/[\\/]/u).pop() || path;
+const isImagePath = (path: string) => IMAGE_EXTENSIONS.includes(path.split(".").pop()?.toLowerCase() ?? "");
+function storedAttachmentDraft(projectId: string, conversationId: string): string[] {
+  try {
+    const files: unknown = JSON.parse(stored(attachmentDraftKey(projectId, conversationId)));
+    return Array.isArray(files) ? files.filter((path): path is string => typeof path === "string").slice(0, MAX_ATTACHMENTS) : [];
+  } catch { return []; }
+}
 const planCanRetry = (round: ConversationRound) => ["failed", "needs_decision", "completed"].includes(round.status);
 const hasPlanJson = (body: string) => /^(?:\{\s*(?:"|$)|\[\s*(?:[{"]|$))/u.test(body.trimStart())
   || /^\s*```[ \t]*(?:json\b|\r?\n\s*[\[{])/imu.test(body);
 function sendPayload(item: PendingSend): ConversationSendInput {
   return { projectId: item.projectId, expectedConversationId: item.expectedConversationId, clientMessageId: item.clientMessageId,
     body: item.body, participantAgentIds: item.participantAgentIds, mode: item.mode, taskRules: item.taskRules,
+    ...(item.attachmentIds?.length ? { attachmentIds: item.attachmentIds } : {}),
     intent: item.intent ?? "chat", nativeCapabilities: item.nativeCapabilities ?? false,
     maxRounds: item.maxRounds ?? (item.intent === "exchange" ? 3 : 1), maxDurationSeconds: item.maxDurationSeconds ?? 600 };
 }
@@ -74,6 +88,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [conversation, setConversation] = useState<ConversationSnapshot | null>(null);
   const [activityNow, setActivityNow] = useState(Date.now);
   const [draft, setDraft] = useState("");
+  const [draftFiles, setDraftFiles] = useState<string[]>([]);
+  const [pickingFiles, setPickingFiles] = useState(false);
   const [archivedRuleId, setArchivedRuleId] = useState("");
   const [workView, setWorkView] = useState<"chat" | "tasks">("chat");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -139,6 +155,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       }
       currentConversation.current = id;
       setDraft(stored(draftKey(projectId, id)));
+      setDraftFiles(storedAttachmentDraft(projectId, id));
       setPending(storedPending(projectId, id));
       setShowOlder(false); setArchivedRuleId(""); setMembersOpen(null); setMentionOpen(false); setMentionSelection([]);
       setPlanIssues([]);
@@ -157,7 +174,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     setWorkView("chat"); setSelectedTaskId(null);
     setArchivedRuleId("");
     setPlanIssues([]);
-    setDraft(id ? stored(draftKey(id)) : ""); setPending(id ? storedPending(id) : null); followMessages.current = true;
+    setDraft(id ? stored(draftKey(id)) : ""); setDraftFiles([]); setPending(id ? storedPending(id) : null); followMessages.current = true;
     if (id) save(PROJECT_KEY, id);
   }, []);
   const loadProjects = useCallback(async () => {
@@ -303,7 +320,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const messages = orderedConversationMessages(conversation?.messages ?? [], projectId ?? "");
   const newConversationBlocked = busy || !!pending || !healthy || !active || !conversation || !!conversation.rounds.some(conversationIsActive);
   const clearBlocked = newConversationBlocked || !messages.length;
-  const exportBlocked = !active || !conversation || conversation.conversation.projectId !== projectId || !messages.some(message => message.body.trim());
+  const exportBlocked = !active || !conversation || conversation.conversation.projectId !== projectId || !messages.some(message => message.body.trim() || message.attachments?.length);
   const clearChanged = !!clearConfirmation && (conversation?.conversation.id !== clearConfirmation.expectedConversationId || messages.length !== clearConfirmation.expectedMessageIds.length || messages.some(message => !clearConfirmation.expectedMessageIds.includes(message.id)));
   useEffect(() => {
     if (!pending || !conversation || conversation.conversation.projectId !== pending.projectId || projectId !== pending.projectId) return;
@@ -329,6 +346,39 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     if (followMessages.current && transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight;
   }, [messages.length, messages[messages.length - 1]?.updatedAt, projectId, conversation?.conversation.id]);
   const changeDraft = (value: string) => { setDraft(value); setPlanIssues([]); if (projectId) save(draftKey(projectId, currentConversation.current), value); };
+  const changeDraftFiles = (paths: string[], id: string, conversationId: string) => {
+    setDraftFiles(paths);
+    save(attachmentDraftKey(id, conversationId), paths.length ? JSON.stringify(paths) : "");
+  };
+  const pickAttachments = async () => {
+    const id = projectId, conversationId = currentConversation.current;
+    if (!id || !conversationId || pickingFiles || busy || pending) return;
+    setPickingFiles(true);
+    setOperationError("");
+    try {
+      const selected = await open({ multiple: true, directory: false, title: "添加附件", filters: [
+        { name: "图片和文档", extensions: [...DOCUMENT_EXTENSIONS, ...IMAGE_EXTENSIONS] },
+        { name: "图片", extensions: IMAGE_EXTENSIONS },
+        { name: "文档", extensions: DOCUMENT_EXTENSIONS },
+      ] });
+      if (!selected || !mounted.current || currentProject.current !== id || currentConversation.current !== conversationId) return;
+      const paths = [...new Set([...draftFiles, ...(Array.isArray(selected) ? selected : [selected])])];
+      if (paths.length > MAX_ATTACHMENTS) {
+        setOperationError(`每条消息最多添加 ${MAX_ATTACHMENTS} 个附件。`);
+        return;
+      }
+      changeDraftFiles(paths, id, conversationId);
+    } catch (reason) {
+      if (mounted.current && currentProject.current === id && currentConversation.current === conversationId) setOperationError(`添加附件失败：${String(reason)}`);
+    } finally { if (mounted.current) setPickingFiles(false); }
+  };
+  const openAttachment = async (message: ConversationMessage, attachment: ConversationAttachment) => {
+    try {
+      await invoke("ma_conversation_open_attachment", { projectId: message.projectId, conversationId: message.conversationId, messageId: message.id, attachmentId: attachment.id });
+    } catch (reason) {
+      if (currentConversation.current === message.conversationId) setOperationError(`打开附件失败：${String(reason)}`);
+    }
+  };
   const mutationCall = async (command: string, args: Record<string, unknown>) => {
     if (mutation.current || !projectId || !active) return null;
     const id = projectId; const epoch = generation.current;
@@ -354,9 +404,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       if (!result) return;
       save(pendingKey(item.projectId, conversationId), "");
       if (!item.preserveDraft && stored(draftKey(item.projectId, conversationId)) === item.body) save(draftKey(item.projectId, conversationId), "");
+      if (!item.preserveDraft && item.attachmentIds?.length) save(attachmentDraftKey(item.projectId, conversationId), "");
       if (mounted.current && currentProject.current === item.projectId && currentConversation.current === conversationId) {
         setPending(null);
-        if (!item.preserveDraft) { setArchivedRuleId(""); setDraft(value => value === item.body ? "" : value); setMentionOpen(false); }
+        if (!item.preserveDraft) {
+          setArchivedRuleId(""); setDraft(value => value === item.body ? "" : value); setMentionOpen(false);
+          if (item.attachmentIds?.length) setDraftFiles([]);
+        }
         void refresh();
       }
     } catch { /* Retain the same identity and payload for a safe status check/retry. */ }
@@ -401,11 +455,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const submit = async (event?: FormEvent, bodyOverride?: string, requestPlan = false) => {
     event?.preventDefault();
     if (mentionOpen && mentionMultiple) return;
-    if (mutation.current || !projectId || !conversation || !healthy || !active || !runtimeReady || runtimeError || pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")) return;
+    if (mutation.current || pickingFiles || !projectId || !conversation || !healthy || !active || !runtimeReady || runtimeError || pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")) return;
     const body = (bodyOverride ?? draft).trim();
     const conversationId = conversation.conversation.id;
     const stillOpen = () => mounted.current && currentProject.current === projectId && currentConversation.current === conversationId;
-    if (!body || Array.from(body).length > 32000) { setOperationError("请输入 1–32000 字符的消息。"); return; }
+    if ((!body && !draftFiles.length) || Array.from(body).length > 32000) { setOperationError("请输入消息或添加附件，消息最多 32000 字符。"); return; }
     try {
       const ids = conversationRecipients(body, selected, agents, projectId);
       if (ids.some(id => !isRuntimeEnabled(agents.find(agent => agent.id === id)!.runtimeKind))) throw Error("目标成员的 Runtime 已停用，请在协作设置中启用后重试。");
@@ -426,6 +480,19 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           const issues = await invoke<PlanIssue[]>("ma_conversation_plan_preflight", { input: sendPayload(item) });
           if (!stillOpen()) return;
           if (issues.length) { setPlanIssues(issues); return; }
+        } finally {
+          mutation.current = false;
+          if (mounted.current) setBusy(false);
+        }
+      }
+      if (draftFiles.length) {
+        mutation.current = true;
+        setBusy(true);
+        setOperationError("");
+        try {
+          const attachments = await invoke<ConversationAttachment[]>("ma_conversation_stage_attachments", { projectId, conversationId, paths: draftFiles });
+          if (!stillOpen()) return;
+          item.attachmentIds = attachments.map(file => file.id);
         } finally {
           mutation.current = false;
           if (mounted.current) setBusy(false);
@@ -715,6 +782,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           {agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar">{message.senderType === "user" ? <User size={21} /> : <Robot size={21} />}</span>}
           <div className="conversation-message-content"><header><strong>{message.senderType === "user" ? "我" : agent?.name ?? "历史成员"}</strong></header>
             {!plan && (message.senderType === "agent" ? <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={conversationMemberActivity(message,snapshot?.runs.find(run=>run.id===message.runId),activityEvents,snapshot?.approvals ?? [],activityNow)} now={activityNow} onOpen={message.runId ? openOriginal : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"} completedLabel={planReplyRound ? "规划成员已回复" : undefined}>{message.body && !generatingPlan && !rawPlanReply ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity> : message.body ? <ConversationMarkdown body={message.body}/> : null)}
+             {!!message.attachments?.length && <div className="conversation-attachments" aria-label="消息附件">{message.attachments.map(file =>
+               <button key={file.id} type="button" title={file.name} onClick={() => void openAttachment(message, file)}>
+                 {file.mediaType.startsWith("image/") ? <Image size={15} /> : <Paperclip size={15} />}<span>{file.name}</span>
+               </button>
+             )}</div>}
             {message.queuedInput && <div className="conversation-progress"><span>{message.status === "queued" ? "等待前一轮确认停止后发送" : message.status === "cancelled" ? "这条消息尚未发送，已取消" : "这条消息尚未发送，等待你确认继续"}</span>{message.status === "needs_decision" && <button type="button" className="conversation-text-button" disabled={busy || !!pending || !healthy || !active || discussing} onClick={() => void mutationCall("ma_conversation_send", { input: message.queuedInput }).then(() => refresh()).catch(() => {})}>继续发送</button>}</div>}
             {plan && renderPlan(plan)}
             {rawPlanReply && !generatingPlan && <details className="conversation-raw-plan">
@@ -764,6 +836,12 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       {round && !planFailureInTranscript && ((!["running", "queued", "completed"].includes(round.status)) || round.stopReason) && <div className="conversation-progress" role="status"><span className={`conversation-status-dot ${round.status}`} /><span>{activeAgent ? `${activeAgent.name} · ` : ""}{round.status === "completed" ? "已回复" : CONVERSATION_STATUS[round.status]}{round.stopReason ? ` · ${round.stopReason}` : ""}</span>{discussing && <button className="conversation-text-button" type="button" disabled={busy || round.status === "stopping"} onClick={() => void control("pause")}><Pause size={13} />{round.status === "unconfirmed" ? "重新核对停止" : "暂停讨论"}</button>}{discussing && <button type="button" className="conversation-text-button" aria-label="结束本轮讨论" disabled={busy || round.status === "stopping"} onClick={() => void control("cancel")}><Stop size={13} />结束本轮</button>}{["paused", "cancelled"].includes(round.status) && <button className="conversation-text-button" type="button" disabled={busy || !!pending || !healthy} onClick={() => editor.current?.focus()}>继续输入</button>}</div>}
       {pending && <div className="conversation-send-pending" role="status"><span>{busy ? "正在发送…" : "本次发送结果未确认，重新核对会使用同一消息编号。"}</span>{!busy && <button type="button" onClick={() => void deliver(pending)}>核对并重试</button>}</div>}
       <ResizableConversationComposer onSubmit={event => void submit(event)}>
+         {!!draftFiles.length && <div className="conversation-attachments" aria-label="待发送附件">{draftFiles.map(path =>
+           <button key={path} type="button" title={fileName(path)} aria-label={`移除附件 ${fileName(path)}`} disabled={busy || !!pending || pickingFiles}
+             onClick={() => { if (projectId && currentConversation.current) changeDraftFiles(draftFiles.filter(file => file !== path), projectId, currentConversation.current); }}>
+             {isImagePath(path) ? <Image size={15} /> : <Paperclip size={15} />}<span>{fileName(path)}</span><X size={12} />
+           </button>
+         )}</div>}
         <div className="conversation-editor multi-agent-composer-editor" data-highlighted={highlightMentions}>
           {highlightMentions && <ConversationMentionHighlight textareaRef={editor} segments={mentionSegments}/> }
           <textarea ref={editor} onCompositionStart={() => setComposingMention(true)} onCompositionEnd={() => setComposingMention(false)} aria-label={discussing ? "给团队插话" : "给团队发消息"} role="combobox" aria-expanded={mentionOpen && !!mentionMatch && (mentionOptions.length > 0 || mentionMultiple)} aria-controls="conversation-mentions" aria-activedescendant={mentionOpen && mentionOptions.length ? `conversation-mentions-option-${Math.min(mentionIndex, mentionOptions.length - 1)}` : undefined} value={draft} placeholder="给团队发消息，@ 指定成员" disabled={!projectId} onChange={event => { changeDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionOpen(true); }} onSelect={event => { if (event.currentTarget.selectionStart !== mentionCursor) { setMentionCursor(event.currentTarget.selectionStart); setMentionOpen(true); } }} onKeyDown={event => {
@@ -778,7 +856,10 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           }} />
         </div>
         {mentionOpen && mentionMatch && (mentionOptions.length > 0 || mentionMultiple) && <AgentMentionMenu id="conversation-mentions" options={mentionOptions} activeIndex={Math.min(mentionIndex, mentionOptions.length - 1)} onHighlight={setMentionIndex} onSelect={mentionMultiple ? toggleMentionSelection : insertMention} allSelected={allMentionsSelected} onSelectAll={selectAllMentions} multiple={mentionMultiple} selectedKeys={mentionSelection} selectedCount={selectedMentionOptions.length} onMultipleChange={enabled => { if (enabled !== mentionMultiple) { setMentionMultiple(enabled); setMentionSelection([]); } }} onConfirm={insertSelectedMentions} />}
-        <div className="conversation-composer-actions"><button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"} aria-controls={membersOpen === "composer" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}><User size={16} /><span>{`已选 ${selected.length} 位成员`}</span><CaretDown size={12} /></button>{!!conversation?.archivedTaskRules?.length && <label className="conversation-task-rule">本次规则<select aria-label="本次规则" title={conversation.archivedTaskRules.find(rule => rule.id === archivedRuleId)?.instructions ?? "仅在本条请求生效，不自动延续到下一条"} value={archivedRuleId} disabled={busy || !!pending} onChange={event => setArchivedRuleId(event.target.value)}><option value="">无附加规则</option>{conversation.archivedTaskRules.map(rule => <option key={rule.id} value={rule.id}>{rule.agentId ? agents.find(agent => agent.id === rule.agentId)?.name ?? "历史成员" : "项目"} · {rule.label} · {new Date(rule.createdAt).toLocaleString("zh-CN")}</option>)}</select></label>}<button type="button" className="conversation-text-button team-generate-plan" title={canGeneratePlan ? undefined : "请填写要完成的目标，再生成分工"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button><button type="submit" className="conversation-send" aria-label={discussing ? "发送插话" : "发送消息"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || !draft.trim() || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}><PaperPlaneTilt size={21} weight="fill" /></button></div>
+        <div className="conversation-composer-actions"><button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"} aria-controls={membersOpen === "composer" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}><User size={16} /><span>{`已选 ${selected.length} 位成员`}</span><CaretDown size={12} /></button>{!!conversation?.archivedTaskRules?.length && <label className="conversation-task-rule">本次规则<select aria-label="本次规则" title={conversation.archivedTaskRules.find(rule => rule.id === archivedRuleId)?.instructions ?? "仅在本条请求生效，不自动延续到下一条"} value={archivedRuleId} disabled={busy || !!pending} onChange={event => setArchivedRuleId(event.target.value)}><option value="">无附加规则</option>{conversation.archivedTaskRules.map(rule => <option key={rule.id} value={rule.id}>{rule.agentId ? agents.find(agent => agent.id === rule.agentId)?.name ?? "历史成员" : "项目"} · {rule.label} · {new Date(rule.createdAt).toLocaleString("zh-CN")}</option>)}</select></label>}<button type="button" className="conversation-text-button team-generate-plan" title={canGeneratePlan ? undefined : "请填写要完成的目标，再生成分工"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button>
+           <button type="button" className="conversation-icon conversation-add-attachment" aria-label="添加附件" title="添加图片或文档"
+             disabled={!projectId || !conversation || !active || busy || !!pending || pickingFiles} onClick={() => void pickAttachments()}><Paperclip size={18} /></button>
+           <button type="submit" className="conversation-send" aria-label={discussing ? "发送插话" : "发送消息"} disabled={busy || pickingFiles || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || (!draft.trim() && !draftFiles.length) || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}><PaperPlaneTilt size={21} weight="fill" /></button></div>
         {membersOpen === "composer" && <div id={membersId} ref={membersMenu} className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>参与成员</strong><button type="button" onClick={() => { const eligible = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id)).map(agent => agent.id); setSelected(selected.length === eligible.length ? [] : eligible); }}>全选 / 取消全选</button></header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || (manualMembers.has(agent.id) && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? " · 用户接管中" : ""}</small></span></label>)}</div>}
       </ResizableConversationComposer>
     </footer></div>
