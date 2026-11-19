@@ -1285,13 +1285,13 @@ async fn ma_project_preview_start(app: AppHandle, project_id: String, plan_id: S
 }
 
 #[tauri::command]
-async fn ma_project_preview_status(app: AppHandle, project_id: String, logs: bool) -> Result<multi_agent::project_preview::PreviewStatus, String> {
-    blocking_command(move || Ok(app.state::<multi_agent::project_preview::ProjectPreviews>().status(&project_id, logs))).await
+async fn ma_project_preview_status(app: AppHandle, project_id: String, plan_id: String, logs: bool) -> Result<multi_agent::project_preview::PreviewStatus, String> {
+    blocking_command(move || Ok(app.state::<multi_agent::project_preview::ProjectPreviews>().status(&project_id, &plan_id, logs))).await
 }
 
 #[tauri::command]
-async fn ma_project_preview_stop(app: AppHandle, project_id: String) -> Result<multi_agent::project_preview::PreviewStatus, String> {
-    blocking_command(move || Ok(app.state::<multi_agent::project_preview::ProjectPreviews>().stop(&project_id))).await
+async fn ma_project_preview_stop(app: AppHandle, project_id: String, plan_id: String) -> Result<multi_agent::project_preview::PreviewStatus, String> {
+    blocking_command(move || Ok(app.state::<multi_agent::project_preview::ProjectPreviews>().stop(&project_id, &plan_id))).await
 }
 
 #[tauri::command]
@@ -6284,9 +6284,10 @@ pub fn run() {
             for warning in retired_integrations::retire_owned_skills(&config_dir, &app.state::<SkillCenter>()).map_err(|e| -> Box<dyn std::error::Error> { e.into() })? { eprintln!("[crewvela] {warning}"); }
             if !test_profile::active() { browser_control::refresh_installed_skill(app.handle()); }
             app.manage(UsageTracker::default());
-            app.manage(MultiAgentSupervisor::default());
+            let engineering = MultiAgentSupervisor::default();
+            app.manage(engineering.previews.clone());
+            app.manage(engineering);
             app.manage(multi_agent::ConversationSupervisor::default());
-            app.manage(multi_agent::project_preview::ProjectPreviews::default());
             let session_manager = SessionManager::new()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             let native_acp = NativeAcpSessions::open_at(config_dir.join("deepseek-harness-sessions.json"))

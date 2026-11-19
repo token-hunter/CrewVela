@@ -1400,6 +1400,7 @@ fn project_runtime_leases(
 
 #[derive(Clone, Default)]
 pub struct MultiAgentSupervisor {
+    pub(crate) previews: super::project_preview::ProjectPreviews,
     run_stops: Arc<Mutex<HashMap<String, (String, Arc<AtomicBool>)>>>,
     projects: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     wake_requests: Arc<Mutex<HashSet<String>>>,
@@ -1511,6 +1512,7 @@ impl MultiAgentSupervisor {
                 let result = schedule_until_idle(
                     &store, &thread_project_id, Arc::clone(&cancelled),
                     terminal_host.clone(), collaboration_bridge.clone(), false, supervisor.run_stops.clone(),
+                    &supervisor.previews,
                 );
                 if let Err(ref error) = result {
                     eprintln!("[crewvela] 项目调度已停止: {error:#}");
@@ -1588,6 +1590,7 @@ impl MultiAgentSupervisor {
                 collaboration_bridge,
                 true,
                 supervisor.run_stops.clone(),
+                &supervisor.previews,
             );
             supervisor
                 .message_projects
@@ -1694,6 +1697,7 @@ fn schedule_until_idle(
     collaboration_bridge: CollaborationBridge,
     message_only: bool,
     run_stops: Arc<Mutex<HashMap<String, (String, Arc<AtomicBool>)>>>,
+    previews: &super::project_preview::ProjectPreviews,
 ) -> Result<()> {
     #[derive(Debug)]
     struct ActiveRun {
@@ -1866,7 +1870,7 @@ fn schedule_until_idle(
                 continue;
             }
             if let Some(plan) = &managed_plan {
-                store.settle_idle_managed_plan(&snapshot, plan)?;
+                store.settle_idle_managed_plan(&snapshot, plan, previews)?;
                 return Ok(());
             }
             match CollaborationGovernance::new(store.clone()).evaluate_quiescence(project_id)? {
@@ -2352,6 +2356,11 @@ pub(super) fn execute_run(
                         let scopes = store.managed_write_paths(&request.task.id)?;
                         validate_planned_delivery(&request.project, &workspace, hash, &scopes)?;
                         if request.agent.role == AgentRole::Integrator {
+                            use super::project_preview::{PreviewConfig, MANIFEST};
+                            if scopes.iter().any(|scope| scope == MANIFEST) {
+                                PreviewConfig::from_delivery(&cwd, hash)?
+                                    .with_context(|| format!("网页成品缺少 {MANIFEST}，请验证启动方式后再提交"))?;
+                            }
                             anyhow::ensure!(!cancelled.load(Ordering::Acquire) && store.project(&request.project.id)?.status == ProjectStatus::Active,
                                 "项目已停止，未合入交付");
                             anyhow::ensure!(store.managed_plan_running(&request.project.id)?.is_some_and(|plan| plan.task_ids.contains(&request.task.id)), "本轮托管已结束，未合入交付");
@@ -6305,7 +6314,7 @@ fn integrate_dependency_commits(
     Ok(())
 }
 
-fn valid_commit_hash(commit: &str) -> bool {
+pub(super) fn valid_commit_hash(commit: &str) -> bool {
     matches!(commit.len(), 40 | 64)
         && commit
             .chars()
@@ -6373,7 +6382,7 @@ pub(super) fn git_head(workspace: &std::path::Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn git_repository_layout(root: &std::path::Path) -> Result<(PathBuf, PathBuf)> {
+pub(super) fn git_repository_layout(root: &std::path::Path) -> Result<(PathBuf, PathBuf)> {
     let project_root = std::fs::canonicalize(root)
         .with_context(|| format!("解析项目目录失败：{}", root.display()))?;
     let output = hidden_command("git")

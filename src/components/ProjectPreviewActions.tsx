@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { Play } from "@phosphor-icons/react";
-import type { ProjectPreviewConfig } from "../types";
+import type { DeliveryDemo, ProjectPreviewConfig } from "../types";
 import { Modal } from "./ui/Modal";
 
 interface PreviewStatus {
@@ -20,10 +20,11 @@ function browse(url: string) {
   window.dispatchEvent(new CustomEvent("crewvela:browse", { detail: { url } }));
 }
 
-export function ProjectPreviewActions({ projectId, planId, config, root, onTasks }: {
+export function ProjectPreviewActions({ projectId, planId, config, demo, root, onTasks }: {
   projectId: string;
   planId: string;
   config?: ProjectPreviewConfig;
+  demo?: DeliveryDemo;
   root: string;
   onTasks?: () => void;
 }) {
@@ -39,19 +40,23 @@ export function ProjectPreviewActions({ projectId, planId, config, root, onTasks
   const running = status.state === "starting" || status.state === "running";
   const editable = !running && status.state !== "stopFailed";
   const stored = saved ?? config;
+  const preparing = status.state === "starting" || (demo?.state === "preparing" && status.state === "idle");
+  const demoError = demo?.state === "unavailable" && status.state !== "running" && !preparing ? demo.error : undefined;
+  const feedback = error || status.error || demoError;
+  const demoAction = preparing ? "正在准备 Demo…" : demo?.state === "ready" || status.state === "running" ? "打开 Demo" : "重试 Demo";
 
   useEffect(() => {
     let current = true;
     const refresh = () => {
       if (action.current) return;
-      void invoke<PreviewStatus>("ma_project_preview_status", { projectId, logs: logsOpen })
+      void invoke<PreviewStatus>("ma_project_preview_status", { projectId, planId, logs: logsOpen })
         .then(value => { if (current && !action.current) setStatus(value); })
         .catch(reason => { if (current) setError(String(reason)); });
     };
     refresh();
-    const timer = running ? window.setInterval(refresh, 650) : undefined;
+    const timer = running || preparing ? window.setInterval(refresh, 650) : undefined;
     return () => { current = false; window.clearInterval(timer); };
-  }, [projectId, logsOpen, running]);
+  }, [projectId, planId, logsOpen, running, preparing]);
 
   useEffect(() => {
     if (!openAfterStart.current) return;
@@ -111,23 +116,25 @@ export function ProjectPreviewActions({ projectId, planId, config, root, onTasks
 
   return <>
     <div className="team-plan-actions">
-      {status.state === "running" && status.url ? <button type="button" className="conversation-primary" onClick={() => browse(status.url!)}>打开网页</button>
+      {demo ? (stored && <button type="button" className="conversation-primary" disabled={busy || preparing || status.state === "stopFailed"}
+        onClick={() => void withAction(launch)}><Play size={17} />{demoAction}</button>)
+        : status.state === "running" && status.url ? <button type="button" className="conversation-primary" onClick={() => browse(status.url!)}>打开网页</button>
         : <button type="button" className="conversation-primary" disabled={busy || !editable}
           onClick={() => stored ? void withAction(launch) : showConfig()}><Play size={17} />{status.state === "starting" ? "启动中…" : "启动项目"}</button>}
       {!editable && <button type="button" className="conversation-text-button" disabled={busy} onClick={() => void withAction(async () => {
         openAfterStart.current = false;
-        setStatus(await invoke<PreviewStatus>("ma_project_preview_stop", { projectId }));
-      })}>停止项目</button>}
+        setStatus(await invoke<PreviewStatus>("ma_project_preview_stop", { projectId, planId }));
+      })}>{demo ? "停止 Demo" : "停止项目"}</button>}
       <button type="button" className="conversation-text-button" onClick={() => void withAction(async () => {
         await invoke("workspace_reveal_path", { root, relativePath: "README.md" });
       })}>查看启动说明</button>
-      {stored && editable && <button type="button" className="conversation-text-button" disabled={busy} onClick={showConfig}>配置启动</button>}
+      {!demo && stored && editable && <button type="button" className="conversation-text-button" disabled={busy} onClick={showConfig}>配置启动</button>}
       {onTasks && <button type="button" className="conversation-text-button" onClick={onTasks}>查看任务执行</button>}
     </div>
-    {status.state === "starting" && <p className="project-preview-feedback" role="status">正在等待本地服务响应…</p>}
+    {preparing && <p className="project-preview-feedback" role="status">正在等待本地服务响应…</p>}
     {status.state === "running" && <p className="project-preview-feedback" role="status">运行中 · {status.url}</p>}
-    {(error || status.error) && <p className="project-preview-feedback" role="alert">{error || status.error}</p>}
-    {(status.state !== "idle" || error) && <details className="project-preview-logs" onToggle={event => setLogsOpen(event.currentTarget.open)}>
+    {feedback && <p className="project-preview-feedback" role="alert">{demo && "Demo 暂不可用。"}{feedback}</p>}
+    {(status.state !== "idle" || feedback) && <details className="project-preview-logs" onToggle={event => setLogsOpen(event.currentTarget.open)}>
       <summary>启动日志</summary><pre>{status.logs || "暂无启动输出"}</pre>
     </details>}
     {form && createPortal(<Modal className="collab-agent-editor project-preview-config" overlayClassName="dialog-overlay collab-agent-editor-overlay"

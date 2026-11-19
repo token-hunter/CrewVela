@@ -2311,7 +2311,7 @@ fn discussion_prompt(
         format!("{review_contract}\n本轮已由用户明确启动全自动托管。计划通过检查后系统会执行。\
           计划必须有开发、独立只读审查和唯一最终集成任务，每个开发任务安排一项直接依赖它的审查。\
           集成任务须依赖全部审查，负责真正的端到端验收以及项目根目录 README.md 的启动和使用说明。\
-          如果是可本地预览的网页应用，集成任务的 writePaths 应包含 crewvela.launch.json，用于记录经过实测的本地启动配置。\
+          如果成品是网页应用，集成任务的 writePaths 必须包含 crewvela.launch.json。其验收标准须包含启动本地 Demo、打开页面并验证核心操作。\
           开发与集成各指定一条可执行的测试命令（node --test <项目内测试文件>、npm test、python -m unittest、cargo test、go test ./... 或 dotnet test）。\
           把编写相应测试纳入任务及写入范围。集成测试须覆盖需求中的主要流程，不能只检查文件存在。\
           如果能按工程惯例做合理选择，直接做决定。上一轮校验信息：{}",

@@ -1043,6 +1043,8 @@ export interface ProjectPreviewConfig {
   url: string | null;
 }
 
+export type DeliveryDemo = { state: "preparing" | "ready" } | { state: "unavailable"; error: string };
+
 export interface ConversationExecutionPlan {
   id: string;
   projectId: string;
@@ -1059,6 +1061,7 @@ export interface ConversationExecutionPlan {
     commit: string | null;
     verificationCommand: string | null;
     preview?: ProjectPreviewConfig;
+    demo?: DeliveryDemo;
   };
   createdAt: number;
 }

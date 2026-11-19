@@ -1944,9 +1944,12 @@ fn managed_plan_fixture() -> (Fixture, ConversationSendInput, String) {
 #[test]
 fn managed_plan_retries_validation_and_delivers_only_after_review_and_tests() {
     use crate::multi_agent::executor::{commit_task_worktree, git_head, prepare_workspace_in, verify_task_acceptance};
+    use crate::multi_agent::project_preview::{DeliveryDemo, PreviewStart, ProjectPreviews, MANIFEST};
     use crate::multi_agent::{RequestApprovalInput, ReviewVerdict, SubmitReviewDecisionInput};
     let (fixture, input, plan_json) = managed_plan_fixture();
-    let replies = ScriptedReplies::new(vec!["invalid plan".into(),plan_json]);
+    let mut draft: serde_json::Value = serde_json::from_str(&plan_json).unwrap();
+    draft["tasks"][2]["writePaths"].as_array_mut().unwrap().extend([json!(MANIFEST), json!("server.js"), json!("public")]);
+    let replies = ScriptedReplies::new(vec!["invalid plan".into(),draft.to_string()]);
     let chat = fixture.run_input(input, &replies);
     assert_eq!(replies.calls.lock().unwrap().len(), 2, "invalid draft automatically retried");
     assert_eq!(chat.rounds[0].status, "completed");
@@ -2014,7 +2017,17 @@ fn managed_plan_retries_validation_and_delivers_only_after_review_and_tests() {
     }
     let (task,run,path) = claim(2);
     write(&path.join("README.md"), "Run the demonstration with Node.js.");
-    write(&path.join("tests/acceptance.test.js"), test_script);
+    let converter = std::env::var_os("CREWVELA_PREVIEW_TEST_CONVERTER").map(std::path::PathBuf::from);
+    if let Some(source) = &converter {
+        write(&path.join("server.js"), &std::fs::read_to_string(source.join("server.js")).unwrap());
+        write(&path.join("public/index.html"), &std::fs::read_to_string(source.join("public/index.html")).unwrap());
+        write(&path.join("tests/acceptance.test.js"), &std::fs::read_to_string(source.join("tests/integration.test.js")).unwrap());
+    } else {
+        write(&path.join("server.js"), r#"const server = require('node:http').createServer((_req, res) => res.end('delivered'));
+server.listen(Number(process.env.PORT), '127.0.0.1', () => console.log(`http://127.0.0.1:${server.address().port}/`));"#);
+        write(&path.join("tests/acceptance.test.js"), test_script);
+    }
+    write(&path.join(MANIFEST), r#"{"program":"node","args":["server.js"],"workingDirectory":".","url":null}"#);
     let verified = verify_task_acceptance(&task,&path,&stop,Some((store,&run.id))).unwrap();
     let hash = commit_task_worktree(&path,&task.title).unwrap();
     assert!(store.finalize_successful_run(&run.id,path.to_str().unwrap(),"missing merge",verified,Some(&hash),None).is_err());
@@ -2022,7 +2035,24 @@ fn managed_plan_retries_validation_and_delivers_only_after_review_and_tests() {
     finish(&run,&path,verified,Some(&hash));
     let snapshot=store.snapshot(&fixture.project).unwrap();
     assert!(snapshot.approvals.is_empty(), "no manual delivery approval at any stage");
-    store.settle_idle_managed_plan(&snapshot,&plan).unwrap();
+    let previews = ProjectPreviews::default();
+    let preview_status = || serde_json::to_value(previews.status(&fixture.project, &plan.id, true)).unwrap();
+    assert_eq!(preview_status()["state"], "idle", "preview waits for verified delivery");
+    store.settle_idle_managed_plan(&snapshot, &plan, &previews).unwrap();
+    let ready_url = || {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let status = preview_status();
+            let delivery = store.preview_delivery(&fixture.project, &plan.id, None).unwrap();
+            if status["state"] == "running" && matches!(delivery.demo, Some(DeliveryDemo::Ready)) {
+                break status["url"].as_str().unwrap().to_owned();
+            }
+            assert_ne!(status["state"], "failed", "{status}");
+            assert!(Instant::now() < deadline, "preview not available: {status}");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    };
+    let url = ready_url();
     let result=store.conversation_snapshot(&fixture.project).unwrap().execution_plans.remove(0).managed.unwrap();
     assert_eq!(result.status,"completed");
     assert_eq!(result.commit.as_deref(),Some(hash.as_str()));
@@ -2030,6 +2060,44 @@ fn managed_plan_retries_validation_and_delivers_only_after_review_and_tests() {
     assert!(root.join("tests/acceptance.test.js").is_file());
     assert_eq!(std::fs::read_to_string(root.join(source)).unwrap().replace("\r\n", "\n"), reworked);
     assert_eq!(store.project(&fixture.project).unwrap().status,ProjectStatus::Completed);
+    let check_demo = |url: &str| {
+        let script = if converter.is_some() {
+            r#"const assert = require('node:assert/strict');
+const { chromium } = require('playwright');
+(async () => {
+  const browser = await chromium.launch({ channel: 'chrome' });
+  try {
+    const page = await browser.newPage();
+    const response = await page.goto(process.argv[1]);
+    assert.equal(response.status(), 200);
+    await page.locator('#value-input').fill('25');
+    await page.getByRole('button', { name: '换算', exact: true }).click();
+    await page.locator('#result').filter({ hasText: /77/ }).waitFor();
+    assert.match(await page.locator('#result').innerText(), /25.*77/);
+    console.log('Browser verified the delivered converter: 25 C -> 77 F');
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });"#
+        } else {
+            "fetch(process.argv[1]).then(r => r.text()).then(body => require('node:assert/strict').equal(body, 'delivered')).catch(error => { console.error(error); process.exitCode = 1; });"
+        };
+        let output = std::process::Command::new("node").args(["-e", script, url])
+            .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap()).output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        eprint!("{}", String::from_utf8_lossy(&output.stdout));
+    };
+    check_demo(&url);
+    previews.stop(&fixture.project, &plan.id);
+    assert_eq!(preview_status()["state"], "idle");
+    let changed = "throw Error('new version is not the recorded demo');";
+    write(&root.join("server.js"), changed);
+    let newer = commit_task_worktree(&root, "new version").unwrap();
+    assert_ne!(newer, hash);
+    write(&root.join("local-only.txt"), "preserve user changes");
+    assert!(matches!(previews.start(store, &fixture.project, &plan.id, None).unwrap(), PreviewStart::Status { .. }));
+    check_demo(&ready_url());
+    assert_eq!(git_head(&root).unwrap(), newer);
+    assert_eq!(std::fs::read_to_string(root.join("local-only.txt")).unwrap(), "preserve user changes");
+    previews.stop(&fixture.project, &plan.id);
 }
 
 #[test]

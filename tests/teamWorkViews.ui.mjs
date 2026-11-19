@@ -302,6 +302,34 @@ try {
  await outcome.getByText('启动日志',{exact:true}).click();
  await outcome.getByText('测试启动日志',{exact:true}).waitFor();
  assert.equal((await calls(managed,'ma_project_preview_save')).length,1,'saved project can restart without reconfiguration');
+ await managed.evaluate(() => {
+   const mock = window.conversationMock;
+   const original = mock.chats.A.executionPlans[0];
+   mock.chats.A.executionPlans[0] = { ...original, id: 'managed-demo-result', managed: { ...original.managed, demo: { state: 'preparing' } } };
+   mock.preview = { state: 'starting' };
+   mock.previewVersion = '';
+ });
+ await outcome.getByRole('button',{name:'正在准备 Demo…',exact:true}).waitFor();
+ assert.equal(await outcome.getByRole('button',{name:'打开 Demo',exact:true}).count(),0);
+ await managed.evaluate(() => {
+   const mock = window.conversationMock;
+   mock.chats.A.executionPlans[0].managed.demo = { state: 'ready' };
+   mock.preview = { state: 'running', url: 'http://127.0.0.1:49202/' };
+ });
+ const openDemo = outcome.getByRole('button',{name:'打开 Demo',exact:true});
+ await openDemo.waitFor();
+ await outcome.screenshot({path:`${out}/managed-delivery-demo.png`});
+ await openDemo.click();
+ await managed.waitForFunction(() => window.conversationMock.previewBrowsed.at(-1) === 'http://127.0.0.1:49202/');
+ await outcome.getByRole('button',{name:'停止 Demo',exact:true}).click();
+ assert.equal((await calls(managed,'ma_project_preview_stop')).at(-1).args.planId,'managed-demo-result');
+ await openDemo.click();
+ await outcome.getByRole('button',{name:'正在准备 Demo…',exact:true}).waitFor();
+ assert.equal((await calls(managed,'ma_project_preview_start')).at(-1).args.planId,'managed-demo-result');
+ await managed.evaluate(() => { window.conversationMock.preview = { state: 'running', url: 'http://127.0.0.1:49203/' }; });
+ await managed.waitForFunction(() => window.conversationMock.previewBrowsed.at(-1) === 'http://127.0.0.1:49203/');
+ assert.equal(await managed.getByRole('dialog',{name:'配置项目启动',exact:true}).count(),0);
+ assert.equal((await calls(managed,'ma_project_preview_save')).length,1,'automatic preview never saves a manual configuration');
  assert.equal((await calls(managed,'ma_conversation_execute_plan')).length,0);
  await managed.evaluate(()=>Object.assign(window.conversationMock.chats.A.executionPlans[0].managed,{
    status:'failed',summary:'最终验收连续三次未通过',commit:null,verificationCommand:null,

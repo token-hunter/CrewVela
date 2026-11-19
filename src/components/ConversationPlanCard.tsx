@@ -23,7 +23,7 @@ export function ConversationPlanCard({ plan, agents, blocked, paused, onConfirm,
       <header className="team-plan-heading"><Stack size={23} /><h3>{ready ? "成品已交付" : managed.status === "failed" ? "全自动托管未交付" : paused && managed.status === "running" ? "全自动托管已暂停" : "全自动托管中"}</h3></header>
       {summary && <p className="team-plan-summary">{summary}</p>}
       {ready && <p className="team-plan-acceptance">验收通过 <code>{managed.verificationCommand}</code> · {managed.target.branch}（{managed.commit?.slice(0, 8)}）</p>}
-      {ready ? <ProjectPreviewActions projectId={plan.projectId} planId={plan.id} config={managed.preview} root={managed.target.root}
+      {ready ? <ProjectPreviewActions key={plan.id} projectId={plan.projectId} planId={plan.id} config={managed.preview} demo={managed.demo} root={managed.target.root}
         onTasks={plan.status === "applied" ? onTasks : undefined} />
         : plan.status === "applied" && <div className="team-plan-actions"><button type="button" className="conversation-text-button" onClick={onTasks}>查看任务执行</button></div>}
     </section>;

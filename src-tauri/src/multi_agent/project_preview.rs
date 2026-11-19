@@ -10,15 +10,23 @@ use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use tauri::Url;
 
-use super::executor::{external_command_path, git_head};
+use super::executor::{external_command_path, git_head, git_repository_layout, valid_commit_hash};
 use super::managed_delivery::{git, ManagedDelivery};
 use super::MultiAgentStore;
 
 pub(super) const MANIFEST: &str = "crewvela.launch.json";
-pub(super) const MANIFEST_INSTRUCTIONS: &str = r#"如果成品是可在本机启动的网页应用，请实际运行启动程序并验证页面返回成功。若写入范围包含 crewvela.launch.json，在项目根目录提交已验证的启动配置。JSON 示例 {"program":"node","args":["server.js"],"workingDirectory":".","url":"http://127.0.0.1:3000/"}。程序与参数分别填写，仅支持本机 HTTP 地址。如果支持 PORT=0 且会在标准输出打印实际 HTTP 地址，可将 url 设为 null。测试命令仍单独登记。"#;
+pub(super) const MANIFEST_INSTRUCTIONS: &str = r#"网页成品交付必须包含已实测的 crewvela.launch.json。请在独立工作树中启动，验证页面及核心操作，在项目根目录提交启动配置。Demo 会从干净的交付提交启动，启动步骤不能依赖本轮 Agent 留下的进程或未提交文件。JSON 示例 {"program":"node","args":["server.js"],"workingDirectory":".","url":null}。服务器须仅监听回环地址。优先支持 PORT=0 并在标准输出单独打印完整的本机 HTTP 地址；否则在 url 填写固定本地地址。核心操作的验收命令仍单独登记。"#;
 const PROBE_TIMEOUT: Duration = Duration::from_millis(250);
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 const LOG_LIMIT: usize = 16_384;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "camelCase")]
+pub(super) enum DeliveryDemo {
+    Preparing,
+    Ready,
+    Unavailable { error: String },
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -31,19 +39,26 @@ pub(crate) struct PreviewConfig {
 }
 
 impl PreviewConfig {
-    pub(super) fn from_delivery(root: &Path, commit: &str) -> Option<Self> {
-        let object = format!("{commit}:./{MANIFEST}");
-        let size = git(root, &["cat-file", "-s", &object])
-            .ok()?
-            .parse::<usize>()
-            .ok()?;
-        if size > 8192 {
-            return None;
+    pub(super) fn from_delivery(root: &Path, commit: &str) -> Result<Option<Self>> {
+        let entry = git(root, &["ls-tree", commit, "--", MANIFEST])?;
+        if entry.is_empty() {
+            return Ok(None);
         }
-        let source = git(root, &["show", &object]).ok()?;
-        let config: Self = serde_json::from_str(&source).ok()?;
-        config.validate(root).ok()?;
-        Some(config)
+        // Resolve the tree entry first. Git for Windows tries to stat a `sha:./path`
+        // argument in the current directory and can reject a valid long worktree.
+        let (metadata, name) = entry.split_once('\t').with_context(|| format!("无法辨认提交中的 {MANIFEST}"))?;
+        let mut fields = metadata.split_whitespace();
+        let (Some("100644" | "100755"), Some("blob"), Some(object), None) =
+            (fields.next(), fields.next(), fields.next(), fields.next()) else {
+            anyhow::bail!("提交中的 {MANIFEST} 必须是普通文件");
+        };
+        ensure!(name == MANIFEST && valid_commit_hash(object), "提交中的 {MANIFEST} 缺少有效对象");
+        let size = git(root, &["cat-file", "-s", object])?.parse::<usize>()?;
+        ensure!(size <= 8192, "{MANIFEST} 超过 8 KB");
+        let source = git(root, &["cat-file", "blob", object])?;
+        let config: Self = serde_json::from_str(&source).with_context(|| format!("无法读取 {MANIFEST}"))?;
+        config.validate(root)?;
+        Ok(Some(config))
     }
 
     fn validate(&self, root: &Path) -> Result<PathBuf> {
@@ -172,7 +187,7 @@ mod tests {
     fn wait_until(previews: &ProjectPreviews, project: &str, expected: &str) -> PreviewStatus {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let status = previews.status(project, true);
+            let status = previews.status(project, "plan", true);
             if status.state == expected {
                 return status;
             }
@@ -200,6 +215,27 @@ mod tests {
             url: None,
         };
         assert!(config.validate(Path::new(".")).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn delivery_manifest_is_read_from_its_blob_in_a_long_windows_worktree() {
+        if which::which("git").is_err() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("cv-preview-{}", uuid::Uuid::new_v4()));
+        let directory = root.join("w".repeat(207_usize.saturating_sub(root.as_os_str().len()).max(16)));
+        std::fs::create_dir_all(&directory).unwrap();
+        git(&directory, &["init", "-b", "main"]).unwrap();
+        git(&directory, &["config", "core.longpaths", "true"]).unwrap();
+        let manifest = directory.join(MANIFEST);
+        std::fs::write(&manifest, r#"{"program":"node","args":["server.js"],"workingDirectory":"."}"#).unwrap();
+        GitFixture::commit(&directory, "delivery with manifest");
+        let hash = git_head(&directory).unwrap();
+        std::fs::write(&manifest, "uncommitted working tree contents").unwrap();
+        let config = PreviewConfig::from_delivery(&directory, &hash).unwrap().unwrap();
+        assert_eq!(config.args, ["server.js"]);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -297,7 +333,7 @@ mod tests {
             panic!("expected existing process")
         };
         assert_eq!(repeated.url.as_deref(), Some(url.as_str()));
-        assert_eq!(previews.stop(&project.id).state, "idle");
+        assert_eq!(previews.stop(&project.id, "plan").state, "idle");
         assert!(readiness(&local_url(&url).unwrap()).is_none());
 
         std::fs::write(
@@ -307,9 +343,9 @@ mod tests {
         .unwrap();
         GitFixture::commit(&project_path, "delivery with launch manifest");
         let new_hash = git_head(&project_path).unwrap();
-        let recorded = PreviewConfig::from_delivery(&project_path, &new_hash).unwrap();
+        let recorded = PreviewConfig::from_delivery(&project_path, &new_hash).unwrap().unwrap();
         assert_eq!(recorded.args, ["server.js"]);
-        assert!(PreviewConfig::from_delivery(&project_path, &hash).is_none());
+        assert!(PreviewConfig::from_delivery(&project_path, &hash).unwrap().is_none());
         let PreviewStart::Confirm { version, .. } =
             previews.start(&store, &project.id, "plan", None).unwrap()
         else {
@@ -319,7 +355,7 @@ mod tests {
             .start(&store, &project.id, "plan", Some(version.clone()))
             .unwrap();
         wait_until(&previews, &project.id, "running");
-        assert_eq!(previews.stop(&project.id).state, "idle");
+        assert_eq!(previews.stop(&project.id, "plan").state, "idle");
         let mut failing = config;
         failing.args = vec![
             "-e".into(),
@@ -337,6 +373,14 @@ mod tests {
             .logs
             .unwrap()
             .contains("preview test failure"));
+        let nested = project_path.join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        std::fs::write(nested.join("index.html"), "nested demo").unwrap();
+        GitFixture::commit(&project_path, "nested project");
+        let checkout = PreviewCheckout::create(&nested, &git_head(&nested).unwrap()).unwrap();
+        assert_eq!(checkout.project_path, checkout.path.join("nested"));
+        assert_eq!(std::fs::read_to_string(checkout.project_path.join("index.html")).unwrap(), "nested demo");
+        drop(checkout);
         drop(store);
         drop(previews);
         std::fs::remove_dir_all(root).unwrap();
@@ -424,6 +468,32 @@ fn capture(reader: impl Read + Send + 'static, output: Arc<Mutex<Output>>, disco
 struct PreviewProcess {
     child: Child,
     _ownership: crate::acp::ProcessIdentityGuard,
+    _checkout: Option<PreviewCheckout>,
+}
+
+struct PreviewCheckout {
+    root: PathBuf,
+    path: PathBuf,
+    project_path: PathBuf,
+}
+
+impl PreviewCheckout {
+    fn create(root: &Path, commit: &str) -> Result<Self> {
+        ensure!(valid_commit_hash(commit), "交付提交无效");
+        let (root, project_relative) = git_repository_layout(root)?;
+        let path = std::env::temp_dir().join(format!("crewvela-demo-{}", uuid::Uuid::new_v4()));
+        git(&root, &["worktree", "add", "--detach", "--quiet", &path.to_string_lossy(), commit])
+            .context("无法检出 Demo 的交付版本")?;
+        Ok(Self { root, project_path: path.join(project_relative), path })
+    }
+}
+
+impl Drop for PreviewCheckout {
+    fn drop(&mut self) {
+        if let Err(error) = git(&self.root, &["worktree", "remove", "--force", &self.path.to_string_lossy()]) {
+            eprintln!("[crewvela] 清理 Demo 工作树失败：{error:#}");
+        }
+    }
 }
 
 struct Instance {
@@ -517,8 +587,18 @@ impl Instance {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct ProjectPreviews(Mutex<HashMap<String, Arc<Mutex<Instance>>>>);
+impl Drop for Instance {
+    fn drop(&mut self) {
+        if let Some(process) = &mut self.process {
+            let _ = crate::acp::stop_child_checked(&mut process.child);
+        }
+    }
+}
+
+type PreviewInstances = HashMap<(String, String), Arc<Mutex<Instance>>>;
+
+#[derive(Clone, Default)]
+pub(crate) struct ProjectPreviews(Arc<Mutex<PreviewInstances>>);
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -528,15 +608,15 @@ pub(crate) enum PreviewStart {
 }
 
 impl ProjectPreviews {
-    pub(crate) fn status(&self, project: &str, logs: bool) -> PreviewStatus {
-        let entry = self.0.lock().unwrap().get(project).cloned();
+    pub(crate) fn status(&self, project: &str, plan: &str, logs: bool) -> PreviewStatus {
+        let entry = self.0.lock().unwrap().get(&(project.into(), plan.into())).cloned();
         entry.map_or_else(PreviewStatus::default, |entry| {
             entry.lock().unwrap().status(logs)
         })
     }
 
-    pub(crate) fn stop(&self, project: &str) -> PreviewStatus {
-        let entry = self.0.lock().unwrap().get(project).cloned();
+    pub(crate) fn stop(&self, project: &str, plan: &str) -> PreviewStatus {
+        let entry = self.0.lock().unwrap().get(&(project.into(), plan.into())).cloned();
         entry.map_or_else(PreviewStatus::default, |entry| {
             let mut entry = entry.lock().unwrap();
             entry.finish(None);
@@ -554,36 +634,48 @@ impl ProjectPreviews {
         let delivery = store.preview_delivery(project, plan, None)?;
         let config = delivery.preview.context("请先配置项目启动方式")?;
         let root = Path::new(&delivery.target.root);
-        let cwd = config.validate(root)?;
+        let automatic = delivery.demo.is_some();
+        let key = (project.to_owned(), plan.to_owned());
         let mut instances = self.0.lock().unwrap();
-        if let Some(entry) = instances.get(project) {
-            let entry = entry.lock().unwrap();
+        if let Some(entry) = instances.get(&key) {
+            let mut entry = entry.lock().unwrap();
+            if automatic {
+                entry.poll();
+                if entry.status.state == "running" && !entry.status.url.as_deref().and_then(|url| local_url(url).ok())
+                    .as_ref().and_then(readiness).is_some_and(|code| (200..300).contains(&code))
+                {
+                    entry.finish(Some("Demo 服务已停止响应".into()));
+                }
+            }
             if entry.process.is_some() {
                 return Ok(PreviewStart::Status {
                     status: entry.status(false),
                 });
             }
         }
-        let head = git_head(root)?;
-        let branch = git(root, &["rev-parse", "--abbrev-ref", "HEAD"])?;
-        let dirty = !git(root, &["status", "--porcelain"])?.is_empty();
         let delivered = delivery.commit.as_deref().context("缺少交付提交")?;
-        let version = format!("{branch}:{head}:{dirty}");
-        if (head != delivered || branch != delivery.target.branch || dirty)
-            && confirmed.as_deref() != Some(&version)
-        {
-            return Ok(PreviewStart::Confirm {
-                version,
-                message: format!(
-                    "交付版本为 {}（{}）。当前目录为 {}（{}）{}。启动当前目录的版本？",
-                    delivery.target.branch,
-                    delivered.chars().take(8).collect::<String>(),
-                    branch,
-                    head.chars().take(8).collect::<String>(),
-                    if dirty { "，有未提交改动" } else { "" }
-                ),
-            });
-        }
+        let checkout = if automatic {
+            Some(PreviewCheckout::create(root, delivered)?)
+        } else {
+            let head = git_head(root)?;
+            let branch = git(root, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+            let dirty = !git(root, &["status", "--porcelain"])?.is_empty();
+            let version = format!("{branch}:{head}:{dirty}");
+            if (head != delivered || branch != delivery.target.branch || dirty)
+                && confirmed.as_deref() != Some(&version)
+            {
+                return Ok(PreviewStart::Confirm {
+                    version,
+                    message: format!(
+                        "交付版本为 {}（{}）。当前目录为 {}（{}）{}。启动当前目录的版本？",
+                        delivery.target.branch, delivered.chars().take(8).collect::<String>(), branch,
+                        head.chars().take(8).collect::<String>(), if dirty { "，有未提交改动" } else { "" }
+                    ),
+                });
+            }
+            None
+        };
+        let cwd = config.validate(checkout.as_ref().map_or(root, |checkout| checkout.project_path.as_path()))?;
         let fixed_url = config.url.as_deref().map(local_url).transpose()?;
         if let Some(url) = &fixed_url {
             ensure!(
@@ -621,6 +713,7 @@ impl ProjectPreviews {
             process: Some(PreviewProcess {
                 child,
                 _ownership: ownership,
+                _checkout: checkout,
             }),
             output,
             fixed_url,
@@ -633,16 +726,50 @@ impl ProjectPreviews {
         }));
         let status = entry.lock().unwrap().status(false);
         let observer = Arc::downgrade(&entry);
-        instances.insert(project.to_owned(), entry);
+        instances.insert(key.clone(), entry);
+        let registry = Arc::downgrade(&self.0);
+        let demo_store = automatic.then(|| store.clone());
         std::thread::spawn(move || {
-            while observer
-                .upgrade()
-                .is_some_and(|entry| entry.lock().unwrap().poll())
-            {
+            let mut demo_store = demo_store;
+            while let Some(entry) = observer.upgrade() {
+                let (alive, outcome) = {
+                    let mut entry = entry.lock().unwrap();
+                    let alive = entry.poll();
+                    let outcome = match entry.status.state {
+                        _ if demo_store.is_none() => None,
+                        "starting" => None,
+                        "running" => Some(DeliveryDemo::Ready),
+                        _ => Some(DeliveryDemo::Unavailable {
+                            error: entry.status.error.clone().unwrap_or_else(|| "Demo 启动已停止".into()),
+                        }),
+                    };
+                    (alive, outcome)
+                };
+                if let (Some(outcome), Some(registry)) = (outcome, registry.upgrade()) {
+                    let store = demo_store.take().expect("outcome requires a delivery store");
+                    let instances = registry.lock().unwrap();
+                    if instances.get(&key).is_some_and(|current| Arc::ptr_eq(current, &entry)) {
+                        if let Err(error) = store.record_demo(&key.0, &key.1, outcome) {
+                            eprintln!("[crewvela] 保存 Demo 状态失败：{error:#}");
+                        }
+                    }
+                }
+                drop(entry);
+                if !alive { break; }
                 std::thread::sleep(Duration::from_millis(300));
             }
         });
         Ok(PreviewStart::Status { status })
+    }
+
+    pub(super) fn prepare_delivery(&self, store: &MultiAgentStore, project: &str, plan: &str) -> Result<()> {
+        let delivery = store.preview_delivery(project, plan, None)?;
+        if matches!(delivery.demo, Some(DeliveryDemo::Preparing)) {
+            if let Err(error) = self.start(store, project, plan, None) {
+                store.record_demo(project, plan, DeliveryDemo::Unavailable { error: format!("{error:#}") })?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -669,6 +796,7 @@ impl MultiAgentStore {
             .context("此任务没有托管交付记录")?;
         ensure!(delivery.status == "completed", "项目完成交付后才能启动");
         if let Some(config) = update {
+            ensure!(delivery.demo.is_none(), "Demo 启动方式由交付提交提供");
             config.validate(Path::new(&delivery.target.root))?;
             delivery.preview = Some(config);
             connection.execute(
@@ -677,6 +805,20 @@ impl MultiAgentStore {
             )?;
         }
         Ok(plan_data.managed.expect("validated delivery"))
+    }
+
+    fn record_demo(&self, project: &str, plan: &str, status: DeliveryDemo) -> Result<()> {
+        use rusqlite::{params, TransactionBehavior};
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let raw: String = tx.query_row("SELECT data_json FROM ma_conversation_plans WHERE id=?1 AND project_id=?2", params![plan, project], |row| row.get(0))?;
+        let mut plan_data: super::ConversationExecutionPlan = serde_json::from_str(&raw)?;
+        if let Some(delivery) = plan_data.managed.as_mut().filter(|delivery| delivery.demo.is_some()) {
+            delivery.demo = Some(status);
+            tx.execute("UPDATE ma_conversation_plans SET data_json=?1 WHERE id=?2 AND project_id=?3", params![serde_json::to_string(&plan_data)?, plan, project])?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub(crate) fn save_project_preview(

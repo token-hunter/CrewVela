@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::conversation::{ConversationExecutionPlan, ConversationSendInput};
 use super::executor::{git_head, hidden_command};
-use super::project_preview::PreviewConfig;
+use super::project_preview::{DeliveryDemo, PreviewConfig, ProjectPreviews, MANIFEST};
 use super::{
     AgentRuntimeKind, MultiAgentProject, MultiAgentSnapshot, MultiAgentStore, ProjectStatus,
     TaskStatus, WorkspaceMode,
@@ -32,6 +32,8 @@ pub(super) struct ManagedDelivery {
     pub verification_command: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview: Option<PreviewConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub demo: Option<DeliveryDemo>,
 }
 
 impl ManagedDelivery {
@@ -43,6 +45,7 @@ impl ManagedDelivery {
             commit: None,
             verification_command: None,
             preview: None,
+            demo: None,
         }
     }
 }
@@ -278,7 +281,16 @@ impl MultiAgentStore {
         match result {
             Ok((hash, command, summary)) => {
                 managed.status = "completed".into();
-                managed.preview = PreviewConfig::from_delivery(Path::new(&managed.target.root), &hash);
+                let declared_demo = plan.tasks.iter().any(|task| task.write_paths.iter().any(|path| path == MANIFEST));
+                match PreviewConfig::from_delivery(Path::new(&managed.target.root), &hash) {
+                    Ok(Some(config)) => {
+                        managed.preview = Some(config);
+                        managed.demo = Some(DeliveryDemo::Preparing);
+                    }
+                    Ok(None) if !declared_demo => {}
+                    Ok(None) => managed.demo = Some(DeliveryDemo::Unavailable { error: format!("交付提交缺少 {MANIFEST}，请让联调成员补齐并验证启动方式。") }),
+                    Err(error) => managed.demo = Some(DeliveryDemo::Unavailable { error: format!("交付启动配置无效：{error:#}") }),
+                }
                 managed.commit = Some(hash);
                 managed.verification_command = Some(command);
                 managed.summary = Some(summary);
@@ -305,6 +317,7 @@ impl MultiAgentStore {
         &self,
         snapshot: &MultiAgentSnapshot,
         plan: &ConversationExecutionPlan,
+        previews: &ProjectPreviews,
     ) -> Result<()> {
         let tasks: Vec<_> = snapshot
             .tasks
@@ -399,13 +412,22 @@ impl MultiAgentStore {
             ProjectStatus::Paused
         };
         self.finish_managed_plan(&plan.id, result.map_err(|error| format!("{error:#}")))?;
+        let accepted = status == ProjectStatus::Completed;
         self.set_project_status(&snapshot.project.id, status)?;
+        if accepted {
+            previews.prepare_delivery(self, &snapshot.project.id, &plan.id)?;
+        }
         Ok(())
     }
 
     pub(crate) fn recover_managed_deliveries_at_startup(&self) -> Result<()> {
         let plans = {
             let connection = self.connection.lock().unwrap();
+            connection.execute(
+                "UPDATE ma_conversation_plans SET data_json=json_set(data_json,'$.managed.demo',json_object('state','unavailable','error',?1))
+                 WHERE json_extract(data_json,'$.managed.demo.state')='preparing'",
+                ["应用重启中断了 Demo 启动，可以重新打开 Demo。"],
+            )?;
             let mut statement = connection.prepare("SELECT id FROM ma_conversation_plans WHERE json_extract(data_json,'$.managed.status') IN ('planning','running')")?;
             let rows = statement
                 .query_map([], |row| row.get::<_, String>(0))?
