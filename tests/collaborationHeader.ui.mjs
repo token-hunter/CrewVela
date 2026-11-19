@@ -36,7 +36,8 @@ try {
     await trigger.click();const menu=page.locator('.conversation-member-menu');await menu.waitFor();
     assert.equal(await menu.getByRole('checkbox').count(),3);
     await menu.getByRole('checkbox',{name:'聊天-ZCodeCLI',exact:true}).uncheck();
-    assert.equal(await page.locator('.conversation-target').innerText(),'发给全体 · 3 位');
+    assert.equal(await page.locator('.conversation-target').innerText(),'分工与托管 · 已选 2 位');
+    assert.equal(await page.locator('.conversation-send-scope').innerText(),'发给全体 · 3 位');
     assert.match(await trigger.getAttribute('aria-label'),/已选 2 位，共 3 位/);
     let rect=(await geometry(page)).menu;assert.ok(rect.left>=0&&rect.right<=size.width+1&&rect.top>=0&&rect.bottom<=size.height+1);
     await page.mouse.move(8,70);

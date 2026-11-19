@@ -30,6 +30,7 @@ if (params.get("reply-routing") === "1") {
   agents[2].role = "integrator";
 }
 if (params.get("members") === "none") agents.length = 0;
+if (params.get("members") === "eight") for (let i=0;i<5;i++) agents.push(agent(`extra-${i}`, `开发成员-${i}`, "codex", "worker"));
 if (params.get("members") === "many") for (let i=0;i<24;i++) agents.push(agent(`extra-${i}`, `开发成员-${i}：很长的成员名称用于检查省略与布局`, "codex", "worker"));
 let projects = [
   { id: "A", name: "团队待办应用", rootPath: "/fixture/todo-app", goal: "实现团队待办应用", defaultBranch: "main", status: "active", createdAt: clock, updatedAt: clock },

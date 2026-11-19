@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Paperclip, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowElbowDownLeft, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Paperclip, Pause, Plus, Robot, Stop, User, WarningCircle, X } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConversationMentionHighlight } from "./ConversationMentionHighlight";
 import { ResizableConversationComposer } from "./ResizableConversationComposer";
@@ -106,6 +106,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [membersOpen, setMembersOpen] = useState<"header" | "composer" | null>(null);
   const [membersPosition, setMembersPosition] = useState({ left: 0, top: 0, width: MAX_MEMBER_MENU_WIDTH, maxHeight: 320 });
   const membersId = useId();
+  const sendScopeId = useId();
   const headerMemberTrigger = useRef<HTMLButtonElement>(null);
   const composerMemberTrigger = useRef<HTMLButtonElement>(null);
   const membersMenu = useRef<HTMLDivElement>(null);
@@ -681,9 +682,10 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const allRecipientsSelected = availableRecipients.length > 0
     && availableRecipients.length === selected.length && availableRecipients.every(id => selected.includes(id));
   const mentionCount = new Set(mentionTokens.filter(token => hasMentionToken(draft, token))).size;
-  const recipientLabel = conversationRequestMode(draft, "discussion", mentionTokens) === "execution_plan"
+  const sendScopeLabel = conversationRequestMode(draft, "discussion", mentionTokens) === "execution_plan"
     ? `分工 · ${mentionCount || selected.length} 位`
     : mentionCount ? `已 @ ${mentionCount} 位` : `发给全体 · ${availableRecipients.length} 位`;
+  const sendLabel = discussing ? "发送插话" : "发送消息";
   const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} agents={snapshot?.agents ?? []} blocked={busy || !healthy || discussing || !active} paused={snapshot?.project.status === "paused"} onConfirm={() => void applyPlan(plan)} onAdjust={() => editPlan(plan)} onTasks={() => setWorkView("tasks")} />;
 
   const conversationId = conversation?.conversation.id;
@@ -898,14 +900,25 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           }} />
         </div>
         {mentionOpen && mentionMatch && (mentionOptions.length > 0 || mentionMultiple) && <AgentMentionMenu id="conversation-mentions" options={mentionOptions} activeIndex={Math.min(mentionIndex, mentionOptions.length - 1)} onHighlight={setMentionIndex} onSelect={mentionMultiple ? toggleMentionSelection : insertMention} allSelected={allMentionsSelected} onSelectAll={selectAllMentions} multiple={mentionMultiple} selectedKeys={mentionSelection} selectedCount={selectedMentionOptions.length} onMultipleChange={enabled => { if (enabled !== mentionMultiple) { setMentionMultiple(enabled); setMentionSelection([]); } }} onConfirm={insertSelectedMentions} />}
-        <div className="conversation-composer-actions"><button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"} aria-controls={membersOpen === "composer" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}><User size={16} /><span>{recipientLabel}</span><CaretDown size={12} /></button>{!!conversation?.archivedTaskRules?.length && <label className="conversation-task-rule">本次规则<select aria-label="本次规则" title={conversation.archivedTaskRules.find(rule => rule.id === archivedRuleId)?.instructions ?? "仅在本条请求生效，不自动延续到下一条"} value={archivedRuleId} disabled={busy || !!pending} onChange={event => setArchivedRuleId(event.target.value)}><option value="">无附加规则</option>{conversation.archivedTaskRules.map(rule => <option key={rule.id} value={rule.id}>{rule.agentId ? agents.find(agent => agent.id === rule.agentId)?.name ?? "历史成员" : "项目"} · {rule.label} · {new Date(rule.createdAt).toLocaleString("zh-CN")}</option>)}</select></label>}<button type="button" className="conversation-text-button team-generate-plan" title={canGeneratePlan ? undefined : "请填写要完成的目标，再生成分工"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button>
+        <div className="conversation-composer-actions">
+          <button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"}
+            aria-controls={membersOpen === "composer" ? membersId : undefined} title="选择分工与托管成员。消息中有 @ 时，优先使用点名成员。"
+            onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}>
+            <User size={16} /><span>分工与托管 · 已选 {selected.length} 位</span><CaretDown size={12} />
+          </button>
+          {!!conversation?.archivedTaskRules?.length && <label className="conversation-task-rule">本次规则<select aria-label="本次规则" title={conversation.archivedTaskRules.find(rule => rule.id === archivedRuleId)?.instructions ?? "仅在本条请求生效，不自动延续到下一条"} value={archivedRuleId} disabled={busy || !!pending} onChange={event => setArchivedRuleId(event.target.value)}><option value="">无附加规则</option>{conversation.archivedTaskRules.map(rule => <option key={rule.id} value={rule.id}>{rule.agentId ? agents.find(agent => agent.id === rule.agentId)?.name ?? "历史成员" : "项目"} · {rule.label} · {new Date(rule.createdAt).toLocaleString("zh-CN")}</option>)}</select></label>}
+          <button type="button" className="conversation-text-button team-generate-plan" title={canGeneratePlan ? undefined : "请填写要完成的目标，再生成分工"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button>
           <button type="button" className="conversation-text-button team-generate-plan" title="一次授权，自动分工、开发、审查和验收"
             disabled={busy || discussing || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || archivedRuleId !== "" || ["stopping", "unconfirmed"].includes(round?.status ?? "")}
             onClick={() => void submit(undefined, undefined, true, true)}>全自动托管</button>
            <div className="conversation-composer-send-actions"><button type="button" className="conversation-icon conversation-add-attachment" aria-label="添加附件" title="添加图片或文档"
              disabled={!projectId || !conversation || !active || busy || !!pending || pickingFiles} onClick={() => void pickAttachments()}><Paperclip size={18} /></button>
-           <button type="submit" className="conversation-send" aria-label={discussing ? "发送插话" : "发送消息"} disabled={busy || pickingFiles || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || (!draft.trim() && !draftFiles.length) || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}><PaperPlaneTilt size={21} weight="fill" /></button></div></div>
-        {membersOpen === "composer" && <div id={membersId} ref={membersMenu} className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>分工参与成员</strong>
+           <span id={sendScopeId} className="conversation-send-scope">{sendScopeLabel}</span>
+           <button type="submit" className="conversation-send" aria-label={sendLabel} title={sendLabel} aria-describedby={sendScopeId}
+             disabled={busy || pickingFiles || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || (!draft.trim() && !draftFiles.length) || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}>
+             <ArrowElbowDownLeft size={20} aria-hidden="true" />
+           </button></div></div>
+        {membersOpen === "composer" && <div id={membersId} ref={membersMenu} className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>分工与托管成员</strong>
             <div className="conversation-recipient-actions">
               <button type="button" disabled={busy || !availableRecipients.length} onClick={() => setSelected(allRecipientsSelected ? [] : availableRecipients)}>{allRecipientsSelected ? "取消全选" : "全选"}</button>
             </div>

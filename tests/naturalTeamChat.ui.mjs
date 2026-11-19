@@ -18,7 +18,7 @@ try{
   assert.equal((await call(p,'ma_conversation_execute_plan')).length,0,'Planning never grants execution permission');if(body==='hi'){mkdirSync('.scratch/natural-team-chat-20261117/ui',{recursive:true});await p.screenshot({path:'.scratch/natural-team-chat-20261117/ui/hello.png'});}await p.close();
  }
  const routing=await fresh('empty=1&natural=1&reply-routing=1',320);
- await routing.locator('.conversation-target').getByText('发给全体 · 3 位',{exact:true}).waitFor();
+ await routing.locator('.conversation-send-scope').getByText('发给全体 · 3 位',{exact:true}).waitFor();
  const launchRequest='谁能帮我启动这个项目？';
  await send(routing,launchRequest);
  await routing.locator('.conversation-message.user header small').getByText('接手成员 · 联调集成',{exact:true}).waitFor();
@@ -44,6 +44,43 @@ try{
  await routing.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===4);
  assert.deepEqual((await call(routing,'ma_conversation_send'))[3].args.input.chatDispatch,{kind:'assigned',agentId:'kimi'});
  await routing.close();
+ const counts = await fresh('empty=1&natural=1&members=eight', 420);
+ const pickerButton = counts.locator('.conversation-target');
+ const sendScope = counts.locator('.conversation-send-scope');
+ const draft = counts.getByRole('combobox', {name:/给团队/});
+ await pickerButton.getByText('分工与托管 · 已选 8 位', {exact:true}).waitFor();
+ await pickerButton.click();
+ const options = counts.locator('.conversation-recipient-menu').getByRole('checkbox');
+ for (let index=3;index<8;index++) await options.nth(index).uncheck();
+ await counts.keyboard.press('Escape');
+ assert.equal(await pickerButton.innerText(),'分工与托管 · 已选 3 位');
+ assert.equal(await sendScope.innerText(),'发给全体 · 8 位');
+ for (const label of [pickerButton.locator('span'), sendScope]) {
+  assert.equal(await label.evaluate(element=>element.scrollWidth<=element.clientWidth),true);
+ }
+ await send(counts,'大家好');
+ await counts.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===1);
+ const selected = ['claude','codex','kimi'];
+ const recipients = [...selected,...Array.from({length:5},(_,index)=>`extra-${index}`)];
+ assert.deepEqual((await call(counts,'ma_conversation_send'))[0].args.input.participantAgentIds,recipients);
+ await draft.fill('@Codex 解释这个函数');
+ assert.equal(await sendScope.innerText(),'已 @ 1 位');
+ await counts.getByRole('button',{name:'发送消息',exact:true}).click();
+ await counts.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===2);
+ assert.deepEqual((await call(counts,'ma_conversation_send'))[1].args.input.participantAgentIds,['codex']);
+ await draft.fill('开发一个待办列表项目');
+ assert.equal(await sendScope.innerText(),'分工 · 3 位');
+ await counts.getByRole('button',{name:'生成分工',exact:true}).click();
+ await counts.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===3);
+ assert.deepEqual((await call(counts,'ma_conversation_send'))[2].args.input.participantAgentIds,selected);
+ await draft.fill('开发一个待办列表项目');
+ counts.once('dialog', dialog=>dialog.accept());
+ await counts.getByRole('button',{name:'全自动托管',exact:true}).click();
+ await counts.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===4);
+ const managed = (await call(counts,'ma_conversation_send'))[3].args.input;
+ assert.equal(managed.managed,true);
+ assert.deepEqual(managed.participantAgentIds,selected);
+ await counts.close();
  const goal = '@Claude Code @Codex 开发一个贪吃蛇小游戏。前后端分别开发，交叉审查后再由集成成员联调。';
  const blocked = await fresh('empty=1&natural=1&plan-blocked=1');
  await send(blocked,goal);
