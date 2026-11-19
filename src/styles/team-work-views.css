@@ -1,4 +1,4 @@
-.collaboration-conversation.team-work-views { font-size:17px; }
+.collaboration-conversation.team-work-views { --team-chat-width:880px; font-size:17px; }
 .team-work-views .team-chat-panel { display:flex; flex:1; min-height:0; flex-direction:column; }
 .team-work-views [hidden] { display:none !important; }
 .team-work-views .conversation-header { padding:14px 34px 0; }
@@ -10,12 +10,13 @@
 .team-work-views .conversation-modes button { display:inline-flex; align-items:center; gap:6px; min-height:54px; padding:10px 12px; font-size:18px; }
 .team-work-views .team-task-count { font-size:14px; font-weight:400; }
 .team-work-views .conversation-transcript { padding:36px 28px 16px; }
+.team-work-views .conversation-transcript-inner { display:contents; }
 .team-work-views .conversation-message { margin-bottom:22px; }
 .team-work-views .conversation-avatar { width:42px; height:42px; }
-.team-work-views .conversation-message-content > header strong { font-size:18px; }
-.team-work-views .conversation-message-body { font-size:18px; }
+.team-work-views .conversation-message-content > header strong,
+.team-work-views .conversation-message-body { font-size:var(--text-2xl); }
 .team-work-views .conversation-footer { padding:12px 20px 18px; }
-.team-work-views .conversation-composer { border-radius:16px; padding:10px 18px 8px; }
+.team-work-views .conversation-composer.multi-agent-composer { border-radius:16px; padding:10px 18px 8px; }
 .team-work-views .conversation-composer textarea { min-height:64px; height:64px; max-height:min(240px,max(64px,calc(100dvh - 360px))); font-size:16px; }
 .team-work-views .conversation-target { min-height:34px; font-size:14px !important; }
 .team-work-views .team-generate-plan { margin-left:10px; color:var(--text-dim); font-size:14px; }
@@ -98,23 +99,34 @@
 .team-work-views .team-record-button { color:var(--text); font-size:17px; }
 .team-related-chat { margin-left:auto; font-size:13px; }
 .team-tasks-empty { color:var(--text-dim); padding:40px 0; }
+@container (min-width:1000px) {
+  .team-work-views .conversation-transcript { scrollbar-gutter:stable both-edges; }
+  .team-work-views .conversation-transcript-inner { display:flow-root; }
+  .team-work-views .conversation-header > :is(.conversation-heading, .conversation-context-row, .conversation-tabs-row),
+  .team-work-views > :is(.conversation-error, .conversation-export-status),
+  .team-work-views .conversation-transcript-inner,
+  .team-work-views .conversation-footer > * {
+    box-sizing:border-box;
+    inline-size:100%;
+    max-inline-size:var(--team-chat-width);
+    margin-inline:auto;
+  }
+}
 @container (max-width:500px) {
   .team-work-views .conversation-header { padding:14px 16px 0; }
-  .team-work-views .conversation-heading select { font-size:17px; }
   .team-work-views .conversation-transcript { padding:20px 16px 12px; }
-  .team-work-views .conversation-message-body { font-size:14px; }
   .team-work-views .conversation-message.plan-continuation { margin-left:0; }
   .team-work-views .team-plan-card { padding:16px 13px; }
   .team-plan-row { grid-template-columns:minmax(0,1fr) minmax(80px,.7fr); padding:10px; gap:8px; }
   .team-plan-row > strong { gap:9px; }
-  .team-plan-description { grid-column:1/-1; padding-left:25px; font-size:12px; }
-  .team-work-views .team-plan-summary { padding-left:0; font-size:14px; }
+  .team-plan-description { grid-column:1/-1; padding-left:25px; }
+  .team-work-views .team-plan-summary { padding-left:0; }
   .team-work-views .team-plan-contract { margin:12px 0; }
   .team-work-views .team-plan-contract > summary { position:static; }
   .team-plan-actions { gap:16px; }
   .team-work-views .conversation-footer { padding:10px 12px 14px; }
-  .team-work-views .conversation-composer { padding:12px; }
-  .team-work-views .team-generate-plan { margin-left:0; font-size:12px; }
+  .team-work-views .conversation-composer.multi-agent-composer { padding:12px; }
+  .team-work-views .team-generate-plan { margin-left:0; }
   .team-tasks-panel { padding:20px 14px; }
   .team-work-views button.team-task-row { grid-template-columns:minmax(100px,1fr) minmax(70px,.8fr); padding:12px; gap:8px; }
   .team-task-row > .team-task-status { grid-column:2; text-align:left; }
@@ -127,7 +139,6 @@
 }
 
 .team-work-views .conversation-context .conversation-task-link { font-size:16px; }
-@container(max-width:500px) { .team-work-views .conversation-context .conversation-task-link { font-size:13px; } }
 
 :root:not([data-theme="light"]):is([data-appearance-accent="clay"],:not([data-appearance-accent])) .team-work-views .team-plan-actions .conversation-primary { color:#fff; }
 .team-task-row > .team-task-status:not(.running):not(.claimed) { justify-self:end; padding:2px 8px; border-radius:7px; background:var(--bg-hover); }

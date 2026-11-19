@@ -165,22 +165,12 @@
 
 @container delegation-layout (min-width: 941px) {
   .has-delegation .team-work-views .conversation-header { padding: 20px 38px 0; }
-  .has-delegation .team-work-views .conversation-heading select { font-size: 27px; height: 38px; }
   .has-delegation .team-work-views .conversation-context-row { margin-bottom: 8px; }
-  .has-delegation .team-work-views .conversation-context .conversation-task-link { font-size: 17px; }
-  .has-delegation .team-work-views .conversation-members .conversation-members-trigger { min-height: 46px; font-size: 18px; }
-  .has-delegation .team-work-views .conversation-member-preview img { width: 29px; height: 29px; }
-  .has-delegation .team-work-views .conversation-modes button { font-size: 20px; min-height: 54px; }
   .has-delegation .team-work-views .conversation-transcript { padding: 44px 38px 16px; }
   .has-delegation .delegation-message { gap: 19px; margin-bottom: 32px; }
-  .has-delegation .delegation-message .conversation-avatar { width: 52px; height: 52px; border-radius: 15px; padding: 8px; }
-  .has-delegation .delegation-message .conversation-message-content > header strong { font-size: 20px; }
-  .has-delegation .delegation-message .conversation-message-body { font-size: 20px; line-height: 1.65; }
   .has-delegation .team-work-views .conversation-footer { padding: 12px 24px 44px 26px; }
   .has-delegation .conversation-composer.multi-agent-composer { min-height: 138px; }
   .has-delegation .conversation-composer .multi-agent-composer-editor { flex: 1; }
-  .has-delegation .team-work-views .conversation-composer .conversation-target { min-height: 41px; }
-  .has-delegation .conversation-send { width: 43px; height: 43px; }
 }
 
 @container delegation-layout (max-width: 940px) {

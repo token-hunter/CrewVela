@@ -36,6 +36,104 @@ try {
  assert.equal((await calls(attachmentPage,'ma_conversation_open_attachment'))[0].args.attachmentId,attachmentCalls[0].args.input.attachmentIds[0]);
  assert.equal(await staged.count(),0);
 
+ for (const theme of ['dark', 'light']) {
+  const p = await fresh(`markdown=1&activity=1&theme=${theme}`, 1800);
+  const layout = p.locator('.conversation-delegation-layout');
+  const user = p.locator('[data-message-id="a0"]');
+  const agent = p.locator('[data-message-id="m90"]');
+  await agent.locator('.conversation-message-body').waitFor();
+  const typography = (message) => message.evaluate(node => {
+   const sender = node.querySelector('.conversation-message-content > header strong');
+   const body = node.querySelector('.conversation-message-body');
+   return { sender: getComputedStyle(sender).fontSize, body: getComputedStyle(body).fontSize };
+  });
+  await p.getByRole('button',{name:'查看活动',exact:true}).first().click();
+  const surfaces = () => layout.evaluate(node => {
+   const sizes = {
+    '.conversation-heading select':['fontSize','height'],
+    '.conversation-heading > .conversation-icon svg':['width','height'],
+    '.conversation-task-link':['fontSize'],
+    '.conversation-members-trigger':['fontSize','minHeight'],
+    '.conversation-member-preview img':['width','height'],
+    '.conversation-modes button':['fontSize','minHeight'],
+    '.conversation-avatar':['width','height'],
+    '.member-activity-state':['fontSize'],
+    '.member-activity-state > svg':['width','height'],
+    '.member-activity-toggle':['fontSize'],
+    '.member-activity-details li':['fontSize'],
+    '.conversation-composer textarea':['fontSize'],
+    '.conversation-target':['fontSize','minHeight'],
+    '.team-generate-plan':['fontSize'],
+    '.conversation-send':['width','height'],
+   };
+   return Object.fromEntries(Object.entries(sizes).map(([selector,properties]) => {
+    const element = node.querySelector(selector);
+    if (!element) throw new Error(`Missing measured control: ${selector}`);
+    const style = getComputedStyle(element);
+    return [selector,Object.fromEntries(properties.map(property => [property,style[property]]))];
+   }));
+  });
+  const wideUser = await typography(user);
+  const wideAgent = await typography(agent);
+  const wideSurfaces = await surfaces();
+  const alignedBounds = () => p.locator('.team-work-views').evaluate(panel => {
+   const bounds = node => { const {left, right, width} = node.getBoundingClientRect(); return {left, right, width}; };
+   const panelBounds = bounds(panel);
+   return {
+    panel: panelBounds,
+    surfaces: Object.fromEntries([
+     '.conversation-heading', '.conversation-tabs-row', '.conversation-message',
+     '.conversation-composer', '.conversation-error',
+    ].flatMap(selector => {
+     const element = panel.querySelector(selector);
+     return element ? [[selector, bounds(element)]] : [];
+    })),
+   };
+  });
+  const aligned = async width => {
+   const {panel, surfaces} = await alignedBounds();
+   for (const [selector, rect] of Object.entries(surfaces)) {
+    assert.ok(Math.abs(rect.width - 880) <= 2, `${selector} at ${width}px is ${rect.width}px wide`);
+    assert.ok(Math.abs((rect.left + rect.right) - (panel.left + panel.right)) <= 2, `${selector} is centered at ${width}px`);
+   }
+  };
+  const replyBody = p.locator('[data-message-id="a1"] .conversation-message-body');
+  const wideHeight = await replyBody.evaluate(node => node.offsetHeight);
+  for (const width of [320, 440, 500, 620, 680, 760, 899, 900, 941, 999, 1000, 1400, 1800]) {
+   await layout.evaluate((node, width) => node.style.width = `${width}px`, width);
+   assert.deepEqual(await typography(user), wideUser, `user typography at ${width}px`);
+   assert.deepEqual(await typography(agent), wideAgent, `agent typography at ${width}px`);
+   const measured = await surfaces();
+   for (const [selector, expected] of Object.entries(wideSurfaces))
+    assert.deepEqual(measured[selector], expected, `${selector} at ${width}px`);
+   if (width >= 1000) await aligned(width);
+  }
+  await p.screenshot({path:`${out}/chat-centered-${theme}.png`});
+  const tabsBefore = (await alignedBounds()).surfaces['.conversation-tabs-row'];
+  await tab(p,'任务执行').click();
+  assert.deepEqual((await alignedBounds()).surfaces['.conversation-tabs-row'], tabsBefore, 'shared tabs stay in place');
+  assert.ok((await p.locator('.team-task-list').boundingBox()).width > 1500, 'wide task list keeps the workspace width');
+  await tab(p,'团队聊天').click();
+  assert.deepEqual(wideUser, {sender:'14px', body:'14px'});
+  assert.deepEqual(wideAgent, wideUser);
+  await layout.evaluate(node => node.style.width = '320px');
+  assert.ok(await replyBody.evaluate(node => node.offsetHeight) > wideHeight, 'narrow panel wraps text');
+  assert.ok(await layout.locator('.conversation-composer-actions').evaluate(node => node.scrollWidth <= node.clientWidth), 'narrow composer controls fit');
+  const narrow = await alignedBounds();
+  assert.equal(narrow.surfaces['.conversation-heading'].left - narrow.panel.left, 16);
+  assert.equal(narrow.surfaces['.conversation-composer'].left - narrow.panel.left, 12);
+  await layout.evaluate(node => node.style.width = '1800px');
+  await p.evaluate(() => {
+   const mock = window.conversationMock;
+   mock.chats.A.rounds[0].status = 'completed';
+   mock.failNew = true;
+  });
+  await editor(p).waitFor();
+  await p.getByRole('button',{name:'讨论记录操作',exact:true}).click();
+  await p.getByRole('menuitem',{name:'新建会话',exact:true}).click();
+  await p.getByRole('alert').filter({hasText:'新建会话失败'}).waitFor();
+  await aligned(1800);
+ }
  const plan=await fresh('plan=pending');
  await plan.getByRole('button',{name:'确认并开始执行',exact:true}).waitFor();
  assert.equal((await calls(plan,'ma_conversation_execute_plan')).length,0);
