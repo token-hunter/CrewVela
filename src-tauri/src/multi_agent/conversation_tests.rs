@@ -31,10 +31,14 @@ fn conversation_attachments_are_snapshotted_scoped_and_delivered() {
     std::fs::write(&document, "ORIGINAL_ATTACHMENT_TEXT").unwrap();
     let png = b"\x89PNG\r\n\x1a\n";
     std::fs::write(&image, png).unwrap();
+    let draft = |path: &std::path::Path| ConversationImageSource::Draft { path: path.to_path_buf() };
+    assert_eq!(fixture.store.conversation_image_bytes(draft(&image)).unwrap(), png);
+    assert!(fixture.store.conversation_image_bytes(draft(&document)).is_err());
+    assert!(fixture.store.conversation_image_bytes(draft(std::path::Path::new("截图.png"))).is_err());
     let files = fixture.store.stage_conversation_attachments(&fixture.project, &conversation,
         &[document.display().to_string(), image.display().to_string()]).unwrap();
     std::fs::write(&document, "CHANGED_SOURCE").unwrap();
-    std::fs::remove_file(image).unwrap();
+    std::fs::remove_file(&image).unwrap();
     let mut input = fixture.input();
     input.body.clear();
     input.expected_conversation_id = Some(conversation.clone());
@@ -58,6 +62,13 @@ fn conversation_attachments_are_snapshotted_scoped_and_delivered() {
     let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
     let snapshot = reopened.conversation_snapshot(&fixture.project).unwrap();
     assert_eq!(snapshot.messages[0].attachments, files);
+    let sent = |conversation_id: String, attachment_id: String| ConversationImageSource::Message {
+        project_id: fixture.project.clone(), conversation_id, message_id: round.user_message_id.clone(), attachment_id,
+    };
+    assert_eq!(reopened.conversation_image_bytes(sent(conversation.clone(), files[1].id.clone())).unwrap(), png);
+    assert!(reopened.conversation_image_bytes(sent(id(), files[1].id.clone())).is_err());
+    assert!(reopened.conversation_image_bytes(sent(conversation.clone(), files[0].id.clone())).is_err());
+    assert!(reopened.conversation_image_bytes(draft(&image)).is_err());
     assert!(reopened.conversation_attachment_path(&fixture.project, &id(), &round.user_message_id, &files[0].id).is_err());
     let copied = reopened.conversation_attachment_path(&fixture.project, &conversation, &round.user_message_id, &files[0].id).unwrap();
     assert_eq!(std::fs::read_to_string(copied).unwrap(), "ORIGINAL_ATTACHMENT_TEXT");
@@ -69,6 +80,7 @@ fn invalid_conversation_attachment_never_queues_a_turn() {
     let conversation = fixture.store.conversation_snapshot(&fixture.project).unwrap().conversation.id;
     let wrong_type = fixture.root.join("假图片.png");
     std::fs::write(&wrong_type, "not an image").unwrap();
+    assert!(fixture.store.conversation_image_bytes(ConversationImageSource::Draft { path: wrong_type.clone() }).is_err());
     assert!(fixture.store.stage_conversation_attachments(&fixture.project, &conversation, &[wrong_type.display().to_string()]).is_err());
     let mut input = fixture.input();
     input.attachment_ids = vec![id()];

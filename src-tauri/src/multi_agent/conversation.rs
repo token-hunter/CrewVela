@@ -22,6 +22,13 @@ use super::{
 pub(super) mod attachments;
 pub use attachments::ConversationAttachment;
 
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub(crate) enum ConversationImageSource {
+    Draft { path: std::path::PathBuf },
+    Message { project_id: String, conversation_id: String, message_id: String, attachment_id: String },
+}
+
 #[path = "conversation_policy.rs"]
 mod policy;
 pub use policy::{ConversationTaskRules, ConversationHardBoundary, ConversationPolicyEntry,
@@ -745,6 +752,15 @@ impl MultiAgentStore {
             && message.attachments.iter().any(|file| file.id == id), "附件不属于此消息");
         let directory = attachments::scope(&self.conversation_attachment_root, project, conversation)?;
         Ok(attachments::resolve(&directory, id)?.1)
+    }
+
+    pub(crate) fn conversation_image_bytes(&self, source: ConversationImageSource) -> Result<Vec<u8>> {
+        let path = match source {
+            ConversationImageSource::Draft { path } => path,
+            ConversationImageSource::Message { project_id, conversation_id, message_id, attachment_id } =>
+                self.conversation_attachment_path(&project_id, &conversation_id, &message_id, &attachment_id)?,
+        };
+        attachments::read_image(&path)
     }
 
     pub(super) fn conversation_task_images(&self, task: &str) -> Result<Vec<(std::path::PathBuf, String)>> {

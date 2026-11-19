@@ -47,7 +47,9 @@ export function ResizableConversationComposer({ children, onSubmit }: { children
     const height = Math.max(1, panel.clientHeight - extra - Math.min(80, panel.clientHeight * .2));
     const padding = [formStyle.paddingTop, formStyle.paddingBottom, formStyle.borderTopWidth, formStyle.borderBottomWidth].reduce((sum, value) => sum + (parseFloat(value) || 0), 0);
     const actions = node.querySelector<HTMLElement>(".conversation-composer-actions")?.getBoundingClientRect().height ?? 34;
-    return { width: host.clientWidth, height, minWidth: Math.min(280, host.clientWidth), minHeight: Math.min(height, padding + actions + 48) };
+    const attachments = node.querySelector<HTMLElement>(".conversation-draft-attachments");
+    const attachmentHeight = attachments ? attachments.offsetHeight + parseFloat(getComputedStyle(attachments).marginBlockStart) + parseFloat(getComputedStyle(attachments).marginBlockEnd) : 0;
+    return { width: host.clientWidth, height, minWidth: Math.min(280, host.clientWidth), minHeight: Math.min(height, padding + actions + attachmentHeight + 48) };
   }, []);
   const currentSize = (): Size => {
     const rect = form.current!.getBoundingClientRect();
@@ -90,7 +92,7 @@ export function ResizableConversationComposer({ children, onSubmit }: { children
       });
     };
     const observer = new ResizeObserver(update);
-    [host, host.closest(".team-chat-panel"), host.closest(".conversation-footer"), node.querySelector(".conversation-composer-actions")].forEach(target => { if (target) observer.observe(target); });
+    [host, host.closest(".team-chat-panel"), host.closest(".conversation-footer"), node.querySelector(".conversation-composer-actions"), node.querySelector(".conversation-editor")].forEach(target => { if (target) observer.observe(target); });
     update(); return () => observer.disconnect();
   }, [measure]);
   const start = (event: PointerEvent<HTMLButtonElement>, edge: Edge) => {

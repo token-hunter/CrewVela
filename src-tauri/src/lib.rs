@@ -1243,6 +1243,13 @@ async fn ma_conversation_stage_attachments(project_id: String, conversation_id: 
 }
 
 #[tauri::command]
+async fn ma_conversation_preview_image(source: multi_agent::conversation::ConversationImageSource,
+    state: State<'_, MultiAgentStore>) -> Result<tauri::ipc::Response, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.conversation_image_bytes(source).map(tauri::ipc::Response::new).map_err(to_err)).await
+}
+
+#[tauri::command]
 fn ma_conversation_open_attachment(project_id: String, conversation_id: String, message_id: String, attachment_id: String,
     state: State<'_, MultiAgentStore>) -> Result<(), String> {
     let path = state.conversation_attachment_path(&project_id, &conversation_id, &message_id, &attachment_id).map_err(to_err)?;
@@ -6500,6 +6507,7 @@ pub fn run() {
             ma_conversation_send,
             ma_conversation_plan_preflight,
             ma_conversation_stage_attachments,
+            ma_conversation_preview_image,
             ma_conversation_open_attachment,
             ma_conversation_plan_retry_input,
             ma_conversation_interrupt,

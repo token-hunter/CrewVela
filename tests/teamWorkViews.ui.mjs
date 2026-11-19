@@ -20,21 +20,53 @@ try {
  const attachmentPage=await fresh('natural=1&attachments=1', 420);
  await attachmentPage.getByRole('button',{name:'添加附件',exact:true}).click();
  const staged=attachmentPage.getByLabel('待发送附件',{exact:true});
- await staged.getByRole('button',{name:'移除附件 设计截图.png',exact:true}).waitFor();
+ const draftImage=staged.getByRole('button',{name:'预览图片 设计截图.png',exact:true});
+ const checkImage = locator => locator.evaluate(img => img.complete && img.naturalWidth === 360);
+ await draftImage.locator('img').waitFor();
+ await attachmentPage.waitForFunction(()=>document.querySelector('.conversation-draft-attachments img')?.naturalWidth === 360);
+ await attachmentPage.locator('.conversation-composer').screenshot({path:`${out}/draft-image-attachment.png`});
+ await draftImage.click();
+ const imagePreview=attachmentPage.getByRole('dialog',{name:'图片预览 设计截图.png',exact:true});
+ await imagePreview.getByRole('img',{name:'设计截图.png'}).waitFor();
+ await attachmentPage.waitForFunction(()=>document.querySelector('.conversation-image-dialog img')?.naturalWidth === 360);
+ assert.ok(await checkImage(draftImage.locator('img')));
+ assert.ok((await imagePreview.locator('img').boundingBox()).width > (await draftImage.boundingBox()).width);
+ await imagePreview.screenshot({path:`${out}/image-preview-dialog.png`});
+ await attachmentPage.keyboard.press('Escape');
+ await imagePreview.waitFor({state:'hidden'});
+ assert.equal(await draftImage.evaluate(button => button === document.activeElement),true);
+ await staged.getByRole('button',{name:'移除附件 设计截图.png',exact:true}).click();
+ assert.equal(await staged.getByRole('button',{name:'预览图片 设计截图.png',exact:true}).count(),0);
+ await attachmentPage.getByRole('button',{name:'添加附件',exact:true}).click();
  await staged.getByRole('button',{name:'移除附件 需求说明.md',exact:true}).click();
- assert.equal(await staged.getByRole('button').count(),1);
+ assert.equal(await staged.getByRole('button').count(),2);
  assert.equal(await editor(attachmentPage).inputValue(),'');
  const attachmentSend=attachmentPage.getByRole('button',{name:'发送消息',exact:true});
  await attachmentSend.click();
- const sentAttachment=attachmentPage.getByLabel('消息附件',{exact:true}).getByRole('button',{name:'设计截图.png',exact:true});
+ const sentAttachment=attachmentPage.getByLabel('消息附件',{exact:true}).getByRole('button',{name:'预览图片 设计截图.png',exact:true});
  await sentAttachment.waitFor();
  await sentAttachment.click();
  const attachmentCalls=await calls(attachmentPage,'ma_conversation_send');
  assert.equal(attachmentCalls.length,1);
  assert.equal(attachmentCalls[0].args.input.attachmentIds.length,1);
  assert.equal(attachmentCalls[0].args.input.body,'');
- assert.equal((await calls(attachmentPage,'ma_conversation_open_attachment'))[0].args.attachmentId,attachmentCalls[0].args.input.attachmentIds[0]);
+ await imagePreview.getByRole('img',{name:'设计截图.png'}).waitFor();
+ await imagePreview.getByRole('button',{name:'关闭图片预览',exact:true}).click();
+ const sentPreview=(await calls(attachmentPage,'ma_conversation_preview_image')).find(item=>item.args.source.kind==='message');
+ assert.equal(sentPreview.args.source.attachmentId,attachmentCalls[0].args.input.attachmentIds[0]);
+ assert.equal((await calls(attachmentPage,'ma_conversation_open_attachment')).length,0);
  assert.equal(await staged.count(),0);
+
+ await attachmentPage.getByRole('button',{name:'添加附件',exact:true}).click();
+ await staged.getByRole('button',{name:'移除附件 设计截图.png',exact:true}).click();
+ await attachmentSend.click();
+ await attachmentPage.getByLabel('消息附件',{exact:true}).getByRole('button',{name:'需求说明.md',exact:true}).click();
+ assert.equal((await calls(attachmentPage,'ma_conversation_open_attachment')).length,1);
+
+ const brokenPage=await fresh('natural=1&attachments=1&broken-image=1', 360);
+ await brokenPage.getByRole('button',{name:'添加附件',exact:true}).click();
+ await brokenPage.getByRole('button',{name:'无法预览 设计截图.png',exact:true}).waitFor();
+ await brokenPage.getByRole('button',{name:'移除附件 设计截图.png',exact:true}).click();
 
  for (const theme of ['dark', 'light']) {
   const p = await fresh(`markdown=1&activity=1&theme=${theme}`, 1800);

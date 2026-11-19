@@ -2,12 +2,13 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Image, Paperclip, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Paperclip, PaperPlaneTilt, Pause, Plus, Robot, Stop, User, WarningCircle, X } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConversationMentionHighlight } from "./ConversationMentionHighlight";
 import { ResizableConversationComposer } from "./ResizableConversationComposer";
 import { ConversationMarkdown } from "./ConversationMarkdown";
 import { ConversationMessageCopy } from "./ConversationMessageCopy";
+import { ConversationImageAttachment } from "./ConversationImageAttachment";
 import { ConversationApprovalRequests } from "./ConversationApprovalRequests";
 import { ConversationMemberActivity } from "./ConversationMemberActivity";
 import { conversationMemberActivity } from "../conversationActivity";
@@ -783,9 +784,12 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           {agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar">{message.senderType === "user" ? <User size={21} /> : <Robot size={21} />}</span>}
           <div className="conversation-message-content"><header><strong>{message.senderType === "user" ? "我" : agent?.name ?? "历史成员"}</strong></header>
             {!plan && (message.senderType === "agent" ? <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={conversationMemberActivity(message,snapshot?.runs.find(run=>run.id===message.runId),activityEvents,snapshot?.approvals ?? [],activityNow)} now={activityNow} onOpen={message.runId ? openOriginal : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"} completedLabel={planReplyRound ? "规划成员已回复" : undefined}>{message.body && !generatingPlan && !rawPlanReply ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity> : message.body ? <ConversationMarkdown body={message.body}/> : null)}
-             {!!message.attachments?.length && <div className="conversation-attachments" aria-label="消息附件">{message.attachments.map(file =>
+             {!!message.attachments?.length && <div className="conversation-attachments" aria-label="消息附件">{message.attachments.map(file => file.mediaType.startsWith("image/")
+               ? <ConversationImageAttachment key={file.id} name={file.name} source={{ kind: "message", projectId: message.projectId,
+                   conversationId: message.conversationId, messageId: message.id, attachmentId: file.id }} onOpenFile={() => void openAttachment(message, file)} />
+               :
                <button key={file.id} type="button" title={file.name} onClick={() => void openAttachment(message, file)}>
-                 {file.mediaType.startsWith("image/") ? <Image size={15} /> : <Paperclip size={15} />}<span>{file.name}</span>
+                 <Paperclip size={15} /><span>{file.name}</span>
                </button>
              )}</div>}
             {message.queuedInput && <div className="conversation-progress"><span>{message.status === "queued" ? "等待前一轮确认停止后发送" : message.status === "cancelled" ? "这条消息尚未发送，已取消" : "这条消息尚未发送，等待你确认继续"}</span>{message.status === "needs_decision" && <button type="button" className="conversation-text-button" disabled={busy || !!pending || !healthy || !active || discussing} onClick={() => void mutationCall("ma_conversation_send", { input: message.queuedInput }).then(() => refresh()).catch(() => {})}>继续发送</button>}</div>}
@@ -838,12 +842,16 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       {round && !planFailureInTranscript && ((!["running", "queued", "completed"].includes(round.status)) || round.stopReason) && <div className="conversation-progress" role="status"><span className={`conversation-status-dot ${round.status}`} /><span>{activeAgent ? `${activeAgent.name} · ` : ""}{round.status === "completed" ? "已回复" : CONVERSATION_STATUS[round.status]}{round.stopReason ? ` · ${round.stopReason}` : ""}</span>{discussing && <button className="conversation-text-button" type="button" disabled={busy || round.status === "stopping"} onClick={() => void control("pause")}><Pause size={13} />{round.status === "unconfirmed" ? "重新核对停止" : "暂停讨论"}</button>}{discussing && <button type="button" className="conversation-text-button" aria-label="结束本轮讨论" disabled={busy || round.status === "stopping"} onClick={() => void control("cancel")}><Stop size={13} />结束本轮</button>}{["paused", "cancelled"].includes(round.status) && <button className="conversation-text-button" type="button" disabled={busy || !!pending || !healthy} onClick={() => editor.current?.focus()}>继续输入</button>}</div>}
       {pending && <div className="conversation-send-pending" role="status"><span>{busy ? "正在发送…" : "本次发送结果未确认，重新核对会使用同一消息编号。"}</span>{!busy && <button type="button" onClick={() => void deliver(pending)}>核对并重试</button>}</div>}
       <ResizableConversationComposer onSubmit={event => void submit(event)}>
-         {!!draftFiles.length && <div className="conversation-attachments" aria-label="待发送附件">{draftFiles.map(path =>
-           <button key={path} type="button" title={fileName(path)} aria-label={`移除附件 ${fileName(path)}`} disabled={busy || !!pending || pickingFiles}
-             onClick={() => { if (projectId && currentConversation.current) changeDraftFiles(draftFiles.filter(file => file !== path), projectId, currentConversation.current); }}>
-             {isImagePath(path) ? <Image size={15} /> : <Paperclip size={15} />}<span>{fileName(path)}</span><X size={12} />
-           </button>
-         )}</div>}
+         {!!draftFiles.length && <div className="conversation-attachments conversation-draft-attachments" aria-label="待发送附件">{draftFiles.map(path => {
+           const name = fileName(path);
+           const removeDisabled = busy || !!pending || pickingFiles;
+           const remove = () => { if (projectId && currentConversation.current) changeDraftFiles(draftFiles.filter(file => file !== path), projectId, currentConversation.current); };
+           return isImagePath(path)
+             ? <ConversationImageAttachment key={`${conversation?.conversation.id}:${path}`} name={name} source={{ kind: "draft", path }} onRemove={remove} removeDisabled={removeDisabled} />
+             : <button key={path} type="button" title={name} aria-label={`移除附件 ${name}`} disabled={removeDisabled} onClick={remove}>
+                 <Paperclip size={15} /><span>{name}</span><X size={12} />
+               </button>;
+         })}</div>}
         <div className="conversation-editor multi-agent-composer-editor" data-highlighted={highlightMentions}>
           {highlightMentions && <ConversationMentionHighlight textareaRef={editor} segments={mentionSegments}/> }
           <textarea ref={editor} onCompositionStart={() => setComposingMention(true)} onCompositionEnd={() => setComposingMention(false)} aria-label={discussing ? "给团队插话" : "给团队发消息"} role="combobox" aria-expanded={mentionOpen && !!mentionMatch && (mentionOptions.length > 0 || mentionMultiple)} aria-controls="conversation-mentions" aria-activedescendant={mentionOpen && mentionOptions.length ? `conversation-mentions-option-${Math.min(mentionIndex, mentionOptions.length - 1)}` : undefined} value={draft} placeholder="给团队发消息，@ 指定成员" disabled={!projectId} onChange={event => { changeDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionOpen(true); }} onSelect={event => { if (event.currentTarget.selectionStart !== mentionCursor) { setMentionCursor(event.currentTarget.selectionStart); setMentionOpen(true); } }} onKeyDown={event => {

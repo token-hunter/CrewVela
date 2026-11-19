@@ -265,6 +265,19 @@ const mock = {
         return file;
       });
     }
+    if (command === "ma_conversation_preview_image") {
+      if (params.has("broken-image")) throw Error("图片已丢失");
+      const canvas = document.createElement("canvas");
+      canvas.width = 360;
+      canvas.height = 220;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#cc6746";
+      ctx.fillRect(0, 0, 360, 220);
+      ctx.fillStyle = "#ffe6c9";
+      ctx.fillRect(50, 50, 260, 120);
+      const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/png"));
+      return blob.arrayBuffer();
+    }
     if (command === "ma_conversation_open_attachment") return null;
     if (["ma_conversation_send", "ma_conversation_interrupt"].includes(command)) {
       const input = args.input, chat = chats[input.projectId];

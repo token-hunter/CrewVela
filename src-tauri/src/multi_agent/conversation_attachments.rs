@@ -34,6 +34,36 @@ fn mime_type(path: &Path) -> Result<&'static str> {
         .with_context(|| format!("不支持此附件格式：{}", path.file_name().unwrap_or_default().to_string_lossy()))
 }
 
+fn matches_format(media_type: &str, data: &[u8]) -> bool {
+    match media_type {
+        "image/png" => data.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg" => data.starts_with(b"\xff\xd8\xff"),
+        "image/gif" => data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a"),
+        "image/webp" => data.starts_with(b"RIFF") && data.get(8..12) == Some(b"WEBP"),
+        "application/pdf" => data.starts_with(b"%PDF-"),
+        value if value.starts_with("text/") => !data.contains(&0),
+        _ => data.starts_with(b"PK\x03\x04"),
+    }
+}
+
+fn read_attachment(path: &Path, name: &str, media_type: &str) -> Result<Vec<u8>> {
+    ensure!(fs::metadata(path).with_context(|| format!("无法读取附件：{name}"))?.is_file(), "附件必须是文件：{name}");
+    let mut data = Vec::new();
+    File::open(path).with_context(|| format!("无法打开附件：{name}"))?
+        .take(MAX_FILE_BYTES + 1).read_to_end(&mut data)?;
+    ensure!(!data.is_empty() && data.len() as u64 <= MAX_FILE_BYTES, "附件为空或超过 20 MB：{name}");
+    ensure!(matches_format(media_type, &data), "附件内容与文件格式不符：{name}");
+    Ok(data)
+}
+
+pub(super) fn read_image(path: &Path) -> Result<Vec<u8>> {
+    ensure!(path.is_absolute(), "附件必须是本地文件");
+    let media_type = mime_type(path)?;
+    ensure!(media_type.starts_with("image/"), "仅支持预览图片附件");
+    let name = path.file_name().and_then(|name| name.to_str()).context("附件名称无效")?;
+    read_attachment(path, name, media_type)
+}
+
 fn key(value: &str) -> Result<String> {
     let id = Uuid::parse_str(value).context("附件或会话编号无效")?;
     ensure!(id.to_string() == value, "附件或会话编号无效");
@@ -55,21 +85,7 @@ pub(super) fn stage(directory: &Path, paths: &[String]) -> Result<Vec<Conversati
             let name = source.file_name().and_then(|name| name.to_str()).context("附件名称无效")?;
             ensure!(!name.chars().any(|ch| ch.is_control() || matches!(ch, ':' | '\\')), "附件名称包含不支持的字符");
             let media_type = mime_type(source)?;
-            ensure!(fs::metadata(source).with_context(|| format!("无法读取附件：{name}"))?.is_file(), "附件必须是文件：{name}");
-            let mut data = Vec::new();
-            File::open(source).with_context(|| format!("无法打开附件：{name}"))?
-                .take(MAX_FILE_BYTES + 1).read_to_end(&mut data)?;
-            ensure!(!data.is_empty() && data.len() as u64 <= MAX_FILE_BYTES, "附件为空或超过 20 MB：{name}");
-            let supported = match media_type {
-                "image/png" => data.starts_with(b"\x89PNG\r\n\x1a\n"),
-                "image/jpeg" => data.starts_with(b"\xff\xd8\xff"),
-                "image/gif" => data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a"),
-                "image/webp" => data.starts_with(b"RIFF") && data.get(8..12) == Some(b"WEBP"),
-                "application/pdf" => data.starts_with(b"%PDF-"),
-                value if value.starts_with("text/") => !data.contains(&0),
-                _ => data.starts_with(b"PK\x03\x04"),
-            };
-            ensure!(supported, "附件内容与文件格式不符：{name}");
+            let data = read_attachment(source, name, media_type)?;
             let id = Uuid::new_v4().to_string();
             let target = directory.join(&id);
             fs::create_dir_all(&target).context("无法保存会话附件")?;

@@ -167,6 +167,24 @@
 .collaboration-conversation .conversation-attachments > button { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 27px; padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-hover); color: var(--text); font-size: 12px; }
 .conversation-attachments > button > svg { flex: none; }
 .conversation-attachments > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-draft-attachments:has(.conversation-image-attachment) { flex: none; flex-wrap: nowrap; align-items: center; overflow-x: auto; padding: 2px 2px 4px; }
+.conversation-draft-attachments:has(.conversation-image-attachment) > button { flex: none; }
+.conversation-image-attachment { position: relative; flex: none; width: min(156px, 100%); height: 116px; }
+.conversation-image-attachment[data-draft="true"] { width: 72px; height: 72px; }
+.conversation-image-thumbnail { position: relative; display: grid; width: 100%; height: 100%; place-items: center; overflow: hidden; padding: 0; border: 1px solid var(--border); border-radius: 8px; color: var(--text-dim); background: var(--bg-hover); cursor: zoom-in; }
+.conversation-image-thumbnail:disabled { cursor: default; }
+.conversation-image-thumbnail > img { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.conversation-image-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; padding: 4px; font-size: 11px; }
+.conversation-image-placeholder > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-image-remove, .conversation-image-close { display: grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--bg-elev); }
+.conversation-image-remove { position: absolute; top: 4px; right: 4px; width: 21px; height: 21px; }
+.conversation-image-close { flex: none; width: 32px; height: 32px; }
+.conversation-image-remove:hover, .conversation-image-close:hover { background: var(--bg-hover); }
+.conversation-image-thumbnail:focus-visible, .conversation-image-remove:focus-visible, .conversation-image-close:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.conversation-image-dialog { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 100%; max-height: 100%; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); color: var(--text); }
+.conversation-image-dialog > header { display: flex; align-items: center; justify-content: space-between; align-self: stretch; gap: 12px; }
+.conversation-image-dialog > header strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.conversation-image-dialog > img { display: block; min-height: 0; max-width: 100%; max-height: 75dvh; object-fit: contain; }
 .conversation-target { display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; max-width: calc(100% - 100px); min-height: 31px; padding: 4px 7px; border: 0; border-radius: 6px; color: var(--text); background: var(--bg-hover); font-size: 12px !important; }
 .conversation-target span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-target svg { flex: none; }
