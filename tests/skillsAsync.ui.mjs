@@ -114,8 +114,14 @@ try {
     const close = await manager.getByRole("button", { name: "关闭仓库管理" }).boundingBox();
     const bounds = await manager.boundingBox();
     const enabled = manager.getByRole("checkbox", { name: "启用" });
+    const [ownerBox, nameBox, branchBox, addBox] = await Promise.all([owner, repositoryName, branch, addRepository].map(control => control.boundingBox()));
     assert.ok(close.x > bounds.x + bounds.width / 2 && close.y < title.y + title.height, `${width}: close aligns to the top right`);
-    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width, `${width}: dialog fits the viewport`);
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width && bounds.width <= 552, `${width}: dialog stays compact`);
+    assert.equal(ownerBox.y, nameBox.y, `${width}: owner and name share the first row`);
+    assert.ok(branchBox.y > ownerBox.y + ownerBox.height, `${width}: branch is below the owner field`);
+    assert.equal(ownerBox.x, branchBox.x, `${width}: branch starts the second row`);
+    assert.equal(nameBox.x, addBox.x, `${width}: add button sits below the repository name`);
+    assert.equal(branchBox.y + branchBox.height, addBox.y + addBox.height, `${width}: branch and add button share a baseline`);
     assert.ok(await enabled.locator("..").evaluate(label => getComputedStyle(label).whiteSpace === "nowrap"));
     await owner.fill("unsaved-owner"); await repositoryName.fill("unsaved-repo"); await branch.fill("draft-branch");
     await manager.getByRole("button", { name: "取消", exact: true }).click();

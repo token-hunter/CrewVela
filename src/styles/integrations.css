@@ -305,7 +305,7 @@
 }
 
 .skill-market-manager {
-  width: min(780px, 100%);
+  width: min(552px, 100%);
   box-sizing: border-box;
   overflow: auto;
   color: var(--text);
@@ -431,7 +431,7 @@
 
 .skill-market-repository-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 120px auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-8);
   align-items: end;
 }
@@ -477,12 +477,6 @@
 
   .skill-market-grid {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 640px) {
-  .skill-market-repository-form {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
