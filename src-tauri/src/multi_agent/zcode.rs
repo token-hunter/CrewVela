@@ -1,5 +1,5 @@
 //! ZCode native v4 stdio client. The upstream Agent owns execution and persistence.
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use base64::Engine;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
@@ -78,10 +78,18 @@ fn public_workflow_policy(command: &Command) -> Result<Value> {
 }
 
 #[derive(Debug)]
-pub(crate) struct CommandRejected(String);
+pub(crate) struct CommandRejected {
+    message: String,
+    admission_denied: bool,
+}
+impl CommandRejected {
+    fn local(message: &str) -> Self {
+        Self { message: message.to_owned(), admission_denied: false }
+    }
+}
 impl std::fmt::Display for CommandRejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.message)
     }
 }
 impl std::error::Error for CommandRejected {}
@@ -709,6 +717,131 @@ pub(super) struct ZCodeResult {
     pub text: String,
     pub session_id: String,
 }
+
+const MANAGED_REVIEW_TOOLS: &[&str] = &["Read", "Glob", "Grep"];
+
+pub(super) struct ManagedTurn {
+    pub text: String,
+    pub session_id: String,
+    pub command_id: String,
+    pub turn_id: String,
+}
+
+type ManagedCheckpoint<'a> = dyn FnMut(&str, &str, &str, Option<&str>) -> Result<()> + 'a;
+
+pub(super) fn execute_managed_turn(
+    cwd: &Path,
+    prompt: &str,
+    resume: Option<&str>,
+    model: Option<&str>,
+    text_only: bool,
+    stopped: &AtomicBool,
+    checkpoint: &mut ManagedCheckpoint<'_>,
+) -> Result<ManagedTurn> {
+    let command = launch(&runtime_executable(super::AgentRuntimeKind::ZCodeCli)?)?;
+    managed_turn_command(command, cwd, prompt, resume, model, text_only, stopped, checkpoint)
+}
+
+#[cfg(test)]
+fn execute_managed_review_command(command: Command, cwd: &Path, prompt: &str, stopped: &AtomicBool) -> Result<ZCodeResult> {
+    let turn = managed_turn_command(command, cwd, prompt, None, None, false, stopped, &mut |_, _, _, _| Ok(()))?;
+    Ok(ZCodeResult { text: turn.text, session_id: turn.session_id })
+}
+
+fn managed_turn_command(
+    command: Command,
+    cwd: &Path,
+    prompt: &str,
+    resume: Option<&str>,
+    model: Option<&str>,
+    text_only: bool,
+    stopped: &AtomicBool,
+    checkpoint: &mut ManagedCheckpoint<'_>,
+) -> Result<ManagedTurn> {
+    let mut deny = |_: &Value, _: &AtomicBool| Ok(false);
+    let mut progress = || Ok(());
+    let tools = if text_only { &[][..] } else { MANAGED_REVIEW_TOOLS };
+    let mut connection = DesktopConnection::open_with_policy(
+        command, cwd, resume, false, Vec::new(), stopped, &mut deny, &mut progress, None, Some(tools),
+    )?;
+    let result = (|| {
+        if let Some(selection) = model_selection(model)? {
+            let choice = connection.models.iter().find(|item| item.selection == selection)
+                .context("ZCode CLI 本地目录中没有任务指定的模型")?.id.clone();
+            if connection.selected_model_id.as_ref() != Some(&choice) {
+                connection.set_model(&choice, stopped, &mut deny)?;
+            }
+        } else if connection.selected_model_id.is_none() {
+            let model = connection.models.first().with_context(|| {
+                connection.client.account_host.as_ref().and_then(|host| host.unavailable_notice())
+                    .unwrap_or_else(|| "ZCode CLI 没有可用的本地审查模型".into())
+            })?.id.clone();
+            connection.set_model(&model, stopped, &mut deny)?;
+        }
+        // Plan is a per-turn flag in the v4 protocol. Do not wait for a
+        // settings revision when the session was already created in Plan.
+        let session_id = connection.session_id.clone();
+        let command_id = uuid::Uuid::new_v4().to_string();
+        checkpoint("dispatched", &session_id, &command_id, None)?;
+        let submission = connection.client.command_id(
+            "sendText", Some(&session_id),
+            json!({"text":prompt,"attachments":[],"requestedDelivery":"startNow","mode":"build","planEnabled":true}),
+            &command_id, None, stopped, &mut deny,
+        );
+        let (_, ack) = match submission {
+            Ok(result) => result,
+            Err(error) => {
+                if error.downcast_ref::<CommandRejected>().is_some_and(|reason| reason.admission_denied) {
+                    checkpoint("rejected", &session_id, &command_id, None)?;
+                }
+                return Err(error);
+            }
+        };
+        ensure!(ack["status"] == "accepted", "ZCode CLI 未确认接收本轮新输入，请核对原生历史");
+        checkpoint("accepted", &session_id, &command_id, None)?;
+        let deadline = Instant::now() + Duration::from_secs(300);
+        let mut auth_error = None;
+        loop {
+            if Instant::now() >= deadline {
+                if let Some(reason) = auth_error { bail!("ZCode CLI 托管认证失败，未收到原生轮次终态：{reason}"); }
+                bail!("ZCode CLI 托管轮次超时");
+            }
+            if let Err(error) = connection.poll(stopped, &mut deny) {
+                if let Some(reason) = auth_error { return Err(error).context(format!("ZCode CLI 托管认证失败：{reason}")); }
+                return Err(error);
+            }
+            if let Some(reason) = connection.take_auth_error() {
+                auth_error = Some(reason);
+            }
+            let Some(header) = connection.projection.turn_header(&command_id) else { continue; };
+            let phase = match header["state"].as_str() {
+                Some("running") => continue,
+                Some("completedSuccess") => "completed",
+                Some("failed") => "failed",
+                Some("completedInterrupted") => "interrupted",
+                _ => bail!("ZCode CLI 当前轮次返回未知状态"),
+            };
+            let turn_id = header["turnId"].as_str().filter(|id| !id.is_empty())
+                .context("ZCode CLI 轮次缺少原生 turnId")?.to_owned();
+            checkpoint(phase, &session_id, &command_id, Some(&turn_id))?;
+            if let Some(reason) = auth_error {
+                bail!("ZCode CLI 托管轮次认证失败：{reason}");
+            }
+            ensure!(phase == "completed", "ZCode CLI 原生轮次 {turn_id} 已结束（{phase}）");
+            // Tool use can create intermediate assistant messages. A structured delivery
+            // belongs to the final assistant message in this turn, not its earlier commentary.
+            let final_row = connection.projection.rows.values().rev()
+                .find(|row| row["kind"] == "assistantText" && row["turnId"] == turn_id)
+                .context("ZCode CLI 成功轮次缺少最终正文")?;
+            ensure!(final_row["state"] == "complete", "ZCode CLI 轮次已结束，但最终回复仍未完成");
+            let text = final_row["text"].as_str().filter(|text| !text.trim().is_empty())
+                .context("ZCode CLI 成功轮次缺少最终正文")?.to_owned();
+            return Ok(ManagedTurn { text, session_id, command_id, turn_id });
+        }
+    })();
+    connection.shutdown()?;
+    result
+}
 pub(super) type PermissionHandler<'a> = dyn FnMut(&Value, &AtomicBool) -> Result<bool> + 'a;
 
 struct Client<'a> {
@@ -1055,7 +1188,10 @@ impl<'a> Client<'a> {
                 result.get("status").and_then(Value::as_str),
                 Some("failed" | "rejected" | "stale")
             ) {
-                return Err(CommandRejected(text).into());
+                return Err(CommandRejected {
+                    message: text,
+                    admission_denied: matches!(result["status"].as_str(), Some("rejected" | "stale")),
+                }.into());
             }
             bail!("ZCode Desktop 命令 ACK 状态未知");
         }
@@ -1473,21 +1609,22 @@ impl Projection {
         self.rows.insert(id, row);
         Ok(())
     }
-    fn completion(&self, command: &str) -> Result<Option<String>> {
-        let Some(header) = self
-            .rows
-            .values()
+    fn turn_header(&self, command: &str) -> Option<&Value> {
+        self.rows.values()
             .find(|row| row["kind"] == "turnHeader" && row["sourceCommandId"] == command)
-        else {
+    }
+    fn completion(&self, command: &str) -> Result<Option<String>> {
+        let Some(header) = self.turn_header(command) else {
             return Ok(None);
         };
         match header["state"].as_str() {
             Some("completedSuccess") => {
-                let turn = &header["turnId"];
+                let turn = header["turnId"].as_str().filter(|id| !id.is_empty())
+                    .context("ZCode Desktop 轮次结束但缺少原生标识")?;
                 let text = self
                     .rows
                     .values()
-                    .filter(|row| row["kind"] == "assistantText" && &row["turnId"] == turn)
+                    .filter(|row| row["kind"] == "assistantText" && row["turnId"].as_str() == Some(turn))
                     .filter_map(|row| row["text"].as_str())
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -1737,11 +1874,52 @@ impl<'a> DesktopConnection<'a> {
         progress: &'a mut dyn FnMut() -> Result<()>,
         process_id: Option<&'a std::sync::atomic::AtomicU32>,
     ) -> Result<Self> {
+        Self::open_with_policy(command, cwd, resume, allow_empty_recreate, mcp_servers, stopped, permission, progress, process_id, None)
+    }
+
+    fn open_with_policy(
+        mut command: Command,
+        cwd: &Path,
+        resume: Option<&str>,
+        allow_empty_recreate: bool,
+        mcp_servers: Vec<Value>,
+        stopped: &AtomicBool,
+        permission: &mut PermissionHandler<'_>,
+        progress: &'a mut dyn FnMut() -> Result<()>,
+        process_id: Option<&'a std::sync::atomic::AtomicU32>,
+        managed_tools: Option<&[&str]>,
+    ) -> Result<Self> {
+        ensure!(managed_tools.is_none() || (!allow_empty_recreate && mcp_servers.is_empty()), "ZCode CLI 托管会话必须使用固定身份和受限工具");
         if let Some(pid) = process_id {
             crate::acp::terminate_acp_process_checked(pid)?;
         }
-        let policy = public_workflow_policy(&command)?;
-        let mut client_slot = Some(Client::spawn(command, cwd, progress)?);
+        let policy = if managed_tools.is_some() { json!({"enabled":false}) } else { public_workflow_policy(&command)? };
+        let mut client_slot = Some(if managed_tools.is_some() {
+            let host = match account_host::AccountHost::prepare(&command) {
+                Ok(host) => host,
+                Err(cli_error) => {
+                    // A standalone Node CLI cannot load the Electron keyring from its source tree.
+                    // Use the installed ZCode helper for the same local credential store.
+                    let host_command = executable().and_then(|path| launch(&path))
+                        .context("无法定位 ZCode 的安全账号辅助程序")?;
+                    match account_host::AccountHost::prepare(&host_command) {
+                        Ok(Some(host)) => {
+                            // The provider overlay includes the builtin file path in its revision.
+                            for (key, value) in host_command.get_envs() {
+                                if matches!(key.to_str(), Some("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE" | "ZCODE_PERSONAL_PROVIDER_CONFIG_FILE")) {
+                                    if let Some(value) = value { command.env(key, value); }
+                                }
+                            }
+                            Some(host)
+                        }
+                        _ => return Err(cli_error).context("ZCode CLI 无法使用本机账号的安全登录存储"),
+                    }
+                }
+            };
+            Client::spawn_with_account_host(command, cwd, progress, host)?
+        } else {
+            Client::spawn(command, cwd, progress)?
+        });
         let mut connection_slot: Option<Self> = None;
         let outcome = (|| -> Result<()> {
         let client = client_slot.as_mut().unwrap();
@@ -1764,13 +1942,13 @@ impl<'a> DesktopConnection<'a> {
             json!({"workspaceKey":cwd.to_string_lossy(),"workspacePath":cwd.to_string_lossy()});
         let mut workflow_enabled = policy["enabled"] == true;
         let mut workflow_notice = policy["notice"].as_str().map(str::to_owned);
-        let confirmed = sync_workflow_policy(
+        let confirmed = if managed_tools.is_some() { false } else { sync_workflow_policy(
             client,
             &workspace,
             workflow_enabled,
             stopped,
             permission,
-        )?;
+        )? };
         if confirmed != workflow_enabled {
             workflow_notice = Some("ZCode Desktop 安装版无法确认工作流开放，创建入口暂不可用".into());
         }
@@ -1780,7 +1958,12 @@ impl<'a> DesktopConnection<'a> {
         if resume.is_some() {
             // The native read/resume API only returns the current model. A
             // deferred, message-free draft supplies the process-owned catalog.
-            let draft = client.request("session/create", json!({"workspace":workspace,"mode":"build","persistence":"deferred","titleGenerationEnabled":false,"mcpServers":mcp_servers.clone(),"dynamicWorkflowEnabled":workflow_enabled}), stopped, permission)?;
+            let mut params = json!({"workspace":workspace,"mode":"build","persistence":"deferred","titleGenerationEnabled":false,"mcpServers":mcp_servers.clone(),"dynamicWorkflowEnabled":workflow_enabled});
+            if let Some(tools) = managed_tools {
+                params["toolAllowlist"] = json!(tools);
+                params["mode"] = json!("plan");
+            }
+            let draft = client.request("session/create", params, stopped, permission)?;
             let draft_id = draft
                 .pointer("/session/sessionId")
                 .and_then(Value::as_str)
@@ -1795,9 +1978,12 @@ impl<'a> DesktopConnection<'a> {
         }
         let resumed = if let Some(sid) = resume {
             client.session = Some(sid.into());
+            let mut params = json!({"sessionId":sid,"workspace":workspace,"mcpServers":mcp_servers.clone(),"dynamicWorkflowEnabled":workflow_enabled});
+            // A cold resume reconstructs the tool registry. The create-time list is not inherited.
+            if let Some(tools) = managed_tools { params["toolAllowlist"] = json!(tools); }
             match client.request(
                 "session/resume",
-                json!({"sessionId":sid,"workspace":workspace,"mcpServers":mcp_servers.clone(),"dynamicWorkflowEnabled":workflow_enabled}),
+                params,
                 stopped,
                 permission,
             ) {
@@ -1843,7 +2029,15 @@ impl<'a> DesktopConnection<'a> {
         } else {
             // Upstream discards empty drafts even with immediate persistence.
             // Only confirmed empty drafts may be recreated after not-found.
-            let result = client.request("session/create", json!({"workspace":workspace,"mode":"build","persistence":"deferred","titleGenerationEnabled":true,"mcpServers":mcp_servers.clone(),"dynamicWorkflowEnabled":workflow_enabled}), stopped, permission)?;
+            let mut create = json!({"workspace":workspace,"mode":"build","persistence":"deferred","titleGenerationEnabled":true,"mcpServers":mcp_servers.clone(),"dynamicWorkflowEnabled":workflow_enabled});
+            if let Some(tools) = managed_tools {
+                // The strict protocol schema rejects this field on runtimes that cannot enforce it.
+                create["toolAllowlist"] = json!(tools);
+                create["mode"] = json!("plan");
+                create["dynamicWorkflowEnabled"] = json!(false);
+                create["titleGenerationEnabled"] = json!(false);
+            }
+            let result = client.request("session/create", create, stopped, permission)?;
             settings = result.get("settings").cloned().unwrap_or(Value::Null);
             result
                 .pointer("/session/sessionId")
@@ -2359,11 +2553,11 @@ impl<'a> DesktopConnection<'a> {
     /// 编辑命中稳定实体，使用当前权威版本做 CAS；历史和文件处置由原生 runtime 决定。
     pub fn edit_user_query(&mut self, row_id: u64, entity_id: &str, text: &str, stopped: &AtomicBool, permission: &mut PermissionHandler<'_>) -> Result<String> {
         while !self.client.queued.is_empty() { self.poll(stopped, permission)?; }
-        let row = self.projection.rows.get(&row_id).ok_or_else(|| CommandRejected("待编辑消息已不在当前历史中".into()))?;
+        let row = self.projection.rows.get(&row_id).ok_or_else(|| CommandRejected::local("待编辑消息已不在当前历史中"))?;
         if row["kind"] != "userInput" || row["entityId"].as_str() != Some(entity_id) {
-            return Err(CommandRejected("待编辑消息的实体标识不匹配，请刷新后重试".into()).into());
+            return Err(CommandRejected::local("待编辑消息的实体标识不匹配，请刷新后重试").into());
         }
-        let revision = self.projection.revision.ok_or_else(|| CommandRejected("ZCode Desktop 缺少权威版本，请刷新后重试".into()))?;
+        let revision = self.projection.revision.ok_or_else(|| CommandRejected::local("ZCode Desktop 缺少权威版本，请刷新后重试"))?;
         let id = uuid::Uuid::new_v4().to_string();
         self.client.command_id_at_epoch("editUserQuery", Some(&self.session_id), json!({"target":{"rowId":row_id,"entityId":entity_id},"newText":text,"workspaceMode":"preserve"}), &id, Some(revision), Some(&self.projection.epoch), stopped, permission)?;
         Ok(id)
@@ -2512,6 +2706,110 @@ impl<'a> DesktopConnection<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn managed_zcode_correlates_ack_terminal_and_reapplies_explicit_tools_on_resume() {
+        // A minimal independent v4 peer checks both create and cold-resume payloads.
+        let peer = r#"
+const assert = require('node:assert/strict');
+const { createInterface } = require('node:readline');
+const sid = 'fixture-session', topic = 'conversation/' + sid, subscriptionId = 'sub';
+const ref = {providerId:'personal-fixture',modelId:'model'};
+const settings = {mode:{current:'build'},model:{current:ref,available:[{ref,label:'Fixture'}]}};
+const scenario = process.env.SCENARIO, tools = JSON.parse(process.env.FIXTURE_TOOLS);
+const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
+let seq = 0, command;
+function frame(payload) {
+  const before = seq++;
+  emit({method:'v4/conversation/frame',params:{wireVersion:3,deliveryKind:before?'online':'initial',
+    logicalFrameId:String(seq),logicalFrameOrdinal:seq,kind:'complete',topic,subscriptionId,
+    frame:{topic,subscriptionId,fromSeq:before,toSeq:seq,payload}}});
+}
+function rows(items) { frame({kind:'deltas',deltas:items.map(row=>({op:'row.upserted',row}))}); }
+createInterface({input:process.stdin}).on('line', input=>{
+  const {id,method,params:p,result} = JSON.parse(input);
+  const reply = result => emit({id,result});
+  if (!method) {
+    assert.equal(id,'perm'); assert.equal(result.decision,'deny');
+    rows([{kind:'turnHeader',rowId:2,turnId:'this-turn',sourceCommandId:command,state:scenario==='failed'?'failed':scenario==='interrupted'?'completedInterrupted':'completedSuccess'},
+      {kind:'assistantText',rowId:3,turnId:'this-turn',text:'reading',state:'complete'},
+      {kind:'assistantText',rowId:4,turnId:'this-turn',text:'current final',state:scenario==='incomplete-body'?'streaming':'complete'}]); return;
+  }
+  if (method==='session/create'||method==='session/resume') {
+    assert.deepEqual(p.toolAllowlist,tools); assert.deepEqual(p.mcpServers,[]);
+    assert.equal(p.dynamicWorkflowEnabled,false);
+    if(method==='session/resume'){assert.equal(p.sessionId,sid);reply({sessionId:scenario==='wrong-resume'?'other':sid,settings});}
+    else {assert.equal(p.mode,'plan');assert.equal(p.titleGenerationEnabled,false);reply({session:{sessionId:sid},settings});}
+  } else if(method==='session/close') reply({closed:true});
+  else if(method==='v4/commands/query') reply({results:[]});
+  else if(method==='v4/conversation/subscribe') {
+    assert.equal(p.topic,topic); reply({ack:{mode:'snapshot',logEpoch:'epoch',subscriptionId}});
+    frame({kind:'snapshot',snapshot:{sessionId:sid,logEpoch:'epoch',seq:1,rows:{window:[
+      {kind:'assistantText',rowId:1,turnId:'old-turn',text:'old final',state:'complete'}]}}});
+  } else if(method==='v4/command'){
+    if(p.type==='stop'){reply({commandId:p.commandId,status:'accepted'});return;}
+    assert.equal(p.type,'sendText'); assert.equal(p.payload.planEnabled,true); assert.equal(p.payload.mode,'build');
+    command = p.commandId;
+    reply({commandId:scenario==='wrong-ack'?'foreign':command,status:['noop','rejected'].includes(scenario)?scenario:'accepted'});
+    if(!['noop','wrong-ack','rejected'].includes(scenario))
+      emit({id:'perm',method:'interaction/requestPermission',params:{sessionId:sid,requestId:'fixture-request',toolName:'Bash',input:{}}});
+  } else assert.fail(method);
+});"#;
+        for (scenario, text_only, resume, expected) in [
+            ("ok", true, None, vec!["dispatched","accepted","completed"]),
+            ("ok", false, Some("fixture-session"), vec!["dispatched","accepted","completed"]),
+            ("noop", false, None, vec!["dispatched"]),
+            ("wrong-ack", true, None, vec!["dispatched"]),
+            ("rejected", false, None, vec!["dispatched","rejected"]),
+            ("failed", false, None, vec!["dispatched","accepted","failed"]),
+            ("interrupted", false, None, vec!["dispatched","accepted","interrupted"]),
+            ("incomplete-body", false, None, vec!["dispatched","accepted","completed"]),
+            ("wrong-resume", false, Some("fixture-session"), vec![]),
+        ] {
+            let mut fixture = Command::new("node");
+            fixture.args(["-e", peer]).env("SCENARIO", scenario)
+                .env("FIXTURE_TOOLS", if text_only { "[]" } else { r#"["Read","Glob","Grep"]"# });
+            let mut events = Vec::new();
+            let result = managed_turn_command(fixture, Path::new(env!("CARGO_MANIFEST_DIR")), "input", resume,
+                Some("personal-fixture/model"), text_only, &AtomicBool::new(false), &mut |phase, session, command, turn| {
+                    events.push((phase.to_owned(), session.to_owned(), command.to_owned(), turn.map(str::to_owned))); Ok(())
+                });
+            assert_eq!(events.iter().map(|e| e.0.as_str()).collect::<Vec<_>>(), expected, "{scenario}: {:?}",result.as_ref().err());
+            if scenario == "ok" {
+                let result = result.unwrap();
+                assert_eq!(result.text,"current final");
+                assert_eq!(result.turn_id,"this-turn");
+                assert!(events.iter().all(|e| e.1 == result.session_id && e.2 == result.command_id));
+                assert_eq!(events.last().unwrap().3.as_deref(),Some("this-turn"));
+            } else {
+                assert!(result.is_err(), "{scenario}");
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires an installed and authenticated ZCode CLI and one live model call"]
+    fn installed_zcode_cli_managed_review_reads_an_isolated_fixture() -> Result<()> {
+        let cwd = std::env::temp_dir().join(format!("cv-zcode-review-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&cwd)?;
+        let result = (|| {
+            let value = uuid::Uuid::new_v4().simple().to_string();
+            let source = format!("export const reviewEvidence = '{value}';\n");
+            std::fs::write(cwd.join("race.mjs"), &source)?;
+            let mut command = launch(&runtime_executable(super::super::AgentRuntimeKind::ZCodeCli)?)?;
+            command.env("ZCODE_STORAGE_DIR", cwd.join("storage"));
+            let result = execute_managed_review_command(
+                command, &cwd,
+                "请只用 Read 读取当前目录 race.mjs。最终只返回 reviewEvidence 的值。禁止写入或修改任何文件。",
+                &AtomicBool::new(false),
+            )?;
+            ensure!(result.text.contains(&value), "真实审查未能读取隔离文件");
+            ensure!(std::fs::read_to_string(cwd.join("race.mjs"))? == source, "审查修改了只读输入");
+            Ok(())
+        })();
+        std::fs::remove_dir_all(&cwd)?;
+        result
+    }
     #[test]
     fn zcode_session_title_meta_merges_and_rejects_empty_default_values() {
         let mut projection = Projection::default();

@@ -6335,7 +6335,7 @@ pub fn run() {
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             multi_agent_store.recover_conversations_at_startup()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-            multi_agent_store.recover_managed_deliveries_at_startup()
+            let resumable_projects = multi_agent_store.recover_managed_deliveries_at_startup()
                 .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
             if !test_profile::active() {
             let collaboration_bridge = CollaborationBridge::start(multi_agent_store.clone())
@@ -6350,6 +6350,18 @@ pub fn run() {
             // 通用设置：代理 env 写进本进程（后续 spawn 的 ACP/PTY/MCP 子进程自动继承）、
             // keep-awake 轮询线程、系统托盘（关闭到托盘）。
             general_settings::apply_process_env(&general_settings::load_cached());
+            if !test_profile::active() && !resumable_projects.is_empty() {
+                let supervisor = app.state::<MultiAgentSupervisor>();
+                let store = app.state::<MultiAgentStore>();
+                let host = multi_agent::AgentTerminalHost::new(app.state::<PtyManager>().inner().clone(),
+                    app.state::<SessionManager>().inner().clone());
+                let bridge = app.state::<CollaborationBridge>();
+                for project in resumable_projects {
+                    if let Err(error) = supervisor.wake_active(store.inner().clone(),project.clone(),host.clone(),bridge.inner().clone()) {
+                        store.fail_recovered_managed_project(&project,&error)?;
+                    }
+                }
+            }
             if !test_profile::active() { communication_skill::sync_installed()?; }
             keep_awake::start(app.handle().clone());
             setup_tray(app).map_err(|error| -> Box<dyn std::error::Error> {

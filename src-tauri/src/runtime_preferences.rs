@@ -231,11 +231,21 @@ thread_local! { static TEST_POLICY: std::cell::RefCell<Option<Arc<RuntimePolicy>
 
 #[cfg(test)]
 pub(crate) fn with_disabled_for_test<T>(kind: AgentRuntimeKind, run: impl FnOnce() -> T) -> T {
+    with_test_policy(|policy| { policy.set_enabled(kind, false, || Ok(false)).unwrap(); }, run)
+}
+
+#[cfg(test)]
+pub(crate) fn with_launch_default_for_test<T>(kind: &str, mode: &str, run: impl FnOnce() -> T) -> T {
+    with_test_policy(|policy| { policy.set_launch_default(kind, mode).unwrap(); }, run)
+}
+
+#[cfg(test)]
+fn with_test_policy<T>(configure: impl FnOnce(&RuntimePolicy), run: impl FnOnce() -> T) -> T {
     let path = std::env::temp_dir()
         .join(format!("cc-disabled-runtime-{}", uuid::Uuid::new_v4()))
         .join("preferences.json");
     let policy = Arc::new(RuntimePolicy::open_at(path.clone()).unwrap());
-    policy.set_enabled(kind, false, || Ok(false)).unwrap();
+    configure(&policy);
     struct Reset {
         previous: Option<Arc<RuntimePolicy>>,
         path: PathBuf,

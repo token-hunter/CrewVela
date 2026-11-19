@@ -1096,8 +1096,21 @@ impl SessionManager {
         Ok(archived_count)
     }
 
+    fn hook_executable() -> Result<PathBuf> {
+        #[cfg(test)]
+        if std::env::var("CREWVELA_RUN_REAL_UNIFIED_MANAGED").as_deref() == Ok("1") {
+            if let Some(path) = std::env::var_os("CREWVELA_UNIFIED_LIVE_HOOK_EXE") {
+                // The libtest executable cannot handle the desktop's hook subcommands.
+                let path = PathBuf::from(path);
+                anyhow::ensure!(path.is_absolute() && path.is_file(), "验收钩子程序必须是存在的绝对文件路径");
+                return Ok(path);
+            }
+        }
+        std::env::current_exe().context("无法确定 CrewVela 可执行文件")
+    }
+
     pub fn hook_command(&self, app_session_id: &str) -> Result<String> {
-        let executable = std::env::current_exe().context("无法确定 CrewVela 可执行文件")?;
+        let executable = Self::hook_executable()?;
         Ok(format!(
             "\"{}\" --session-hook \"{}\" \"{}\"",
             executable.display(),
@@ -1107,7 +1120,7 @@ impl SessionManager {
     }
 
     pub fn status_line_command(&self, app_session_id: &str) -> Result<String> {
-        let executable = std::env::current_exe().context("无法确定 CrewVela 可执行文件")?;
+        let executable = Self::hook_executable()?;
         Ok(format!(
             "\"{}\" --session-statusline \"{}\" \"{}\"",
             executable.display(),
@@ -1117,7 +1130,7 @@ impl SessionManager {
     }
 
     pub fn agent_turn_hook_command(&self, app_session_id: &str) -> Result<Vec<String>> {
-        let executable = std::env::current_exe().context("无法确定 CrewVela 可执行文件")?;
+        let executable = Self::hook_executable()?;
         Ok(vec![
             executable.display().to_string(),
             "--agent-turn-hook".to_string(),

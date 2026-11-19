@@ -154,10 +154,12 @@ export default function crewvelaReadiness(pi) {
       if (input >= 0) {
         const prompt = messageText(entries[input].message).replace(/^\[CrewVela message [^\]\r\n]+\]\n/, '');
         const assistant = entries.slice(input + 1).filter(entry => entry.type === 'message' && entry.message?.role === 'assistant');
-        const summary = assistant.map(entry => messageText(entry.message)).filter(Boolean).join('\n');
         if (assistant.length) {
           const last = assistant.at(-1).message;
-          const error = ['error', 'aborted'].includes(last.stopReason) ? (last.errorMessage || `Pi turn ${last.stopReason}`) : undefined;
+          const managed = process.env.CREWVELA_PI_MANAGED === '1';
+          const summary = managed ? messageText(last) : assistant.map(entry => messageText(entry.message)).filter(Boolean).join('\n');
+          const failed = managed ? last.stopReason !== 'stop' : ['error', 'aborted'].includes(last.stopReason);
+          const error = failed ? (last.errorMessage || `Pi turn ${last.stopReason}`) : undefined;
           completion = { prompt, summary: error ? '' : summary, error, model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined };
         }
       }

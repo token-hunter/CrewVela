@@ -15,6 +15,7 @@ use crate::acp::{execute_managed_acp, ManagedAcpKind, ManagedAcpMode, ManagedAcp
 use crate::pty::PtyManager;
 use crate::sessions::{NewAgentSession, SessionManager, SessionRecord, SessionStatus};
 use super::store::delegation::{is_design_task, DesignCheckpoint};
+use super::managed_delivery::ManagedUse;
 
 use super::{
     contract_requires_session_cli, AgentPersona, AgentProfile, AgentRole, AgentRuntimeKind,
@@ -41,6 +42,17 @@ const NATIVE_PROMPT_POST_RENDER_DELAY: Duration = Duration::from_millis(80);
 
 mod codex_paste;
 mod managed_startup;
+mod managed_events;
+use managed_events::managed_command_reply;
+mod managed_cli;
+mod managed_zcode;
+mod managed_edits;
+pub(super) mod managed_pi;
+
+pub(super) fn supports_managed_provider(kind: AgentRuntimeKind, usage: ManagedUse) -> bool {
+    if kind == AgentRuntimeKind::ZCodeCli { managed_zcode::supports(kind, usage) }
+    else { managed_cli::supports(kind, usage) }
+}
 
 pub(crate) fn external_command_path(path: &std::path::Path) -> PathBuf {
     let raw = path.to_string_lossy();
@@ -76,6 +88,7 @@ pub struct RuntimeRequest {
     pub task: MultiAgentTask,
     pub agent: AgentProfile,
     pub dependency_artifacts: Vec<ArtifactRecord>,
+    managed_acceptance: Vec<super::managed_delivery::ManagedAcceptance>,
     pub resume_locator: Option<serde_json::Value>,
     pub user_instructions: Vec<String>,
     pub shared_memories: Vec<MemoryEntry>,
@@ -144,8 +157,18 @@ impl CollaborationLaunchMode {
 }
 
 impl RuntimeRequest {
+    fn managed_planner(&self) -> bool {
+        self.managed && super::conversation::is_conversation_task(&self.task.id)
+    }
+
+    fn checkpoint_managed_turn(&self, phase: &str, patch: serde_json::Value) -> Result<()> {
+        anyhow::ensure!(self.managed, "当前任务没有托管授权");
+        self.store.checkpoint_managed_turn(&self.run_id, phase, patch)
+    }
+
     fn managed_native(&self) -> bool {
-        self.managed && self.task.workspace_mode == WorkspaceMode::Worktree
+        self.managed && (self.task.workspace_mode == WorkspaceMode::Worktree
+            || (self.agent.runtime_kind == AgentRuntimeKind::Pi && !self.managed_planner()))
     }
 
     fn managed_codex_review(&self) -> bool {
@@ -287,6 +310,16 @@ impl AgentTerminalHost {
             agent_name: request.agent.name.clone(),
             cwd: request.cwd.display().to_string(),
         })?;
+        let lifecycle = request.managed.then(|| self.sessions.lifecycle_lock(&session.id));
+        let _guard = lifecycle.as_ref().map(|lock| lock.lock().unwrap());
+        if request.managed {
+            self.sessions.ingest_events()?;
+            session = self.sessions.get(&session.id).context("原成员终端已不存在")?;
+            if !session.runtime_command_host && session.pty_id.is_some_and(|id| self.pty.is_running(id))
+                && !self.sessions.is_ready_for_prompt(&session.id) {
+                return Err(PermanentRunError("原生终端正在工作，已保留当前会话并停止托管派发".into()).into());
+            }
+        }
         self.sessions.set_runtime_command_host(&session.id, true)?;
         let environment = command.get_envs().map(|(key, value)| (key.to_os_string(), value.map(|value| value.to_os_string()))).collect();
         let pty_id = self.ensure_environment_terminal(&session, &request.cwd, environment)?;
@@ -517,6 +550,11 @@ impl AgentTerminalHost {
             message_id: format!("task-{}", uuid::Uuid::new_v4()),
         });
         let send_result = if let Some(delivery) = pi_delivery.as_ref() {
+            if request.managed_native() {
+                let mut identity = managed_pi::confirmed(request, &self.sessions, &session, command, expected_id)?;
+                identity["messageId"] = delivery.message_id.clone().into();
+                request.checkpoint_managed_turn("dispatched", identity)?;
+            }
             self.sessions
                 .queue_runtime_delivery(&session.id, &delivery.message_id, prompt)
                 .and_then(|queued| {
@@ -547,7 +585,8 @@ impl AgentTerminalHost {
                         let identity = if kind == AgentRuntimeKind::ClaudeCode {
                             Some(confirmed_native_identity(request, &self.sessions, &session.id, pty_id, expected_id)?)
                         } else { None };
-                        request.store.checkpoint_native_dispatch(&request.run_id, pty_id, identity.as_deref().map(|id| ("sessionId", id)))
+                        request.store.checkpoint_native_dispatch(&request.run_id, pty_id, identity.as_deref().map(|id| ("sessionId", id)))?;
+                        request.checkpoint_managed_turn("dispatched", serde_json::json!({}))
                     } else {
                         Ok(())
                     }
@@ -570,6 +609,7 @@ impl AgentTerminalHost {
         let mut late_restricted_open = managed_startup::Confirmation::default();
         let mut late_restricted_choice = None;
         let mut restricted_opened_at = None;
+        let mut pi_accepted = false;
         loop {
             if cancelled.load(Ordering::Acquire) {
                 self.stop_native_runtime(
@@ -581,6 +621,10 @@ impl AgentTerminalHost {
             }
             self.sessions.ingest_events()?;
             if let Some(delivery) = pi_delivery.as_ref() {
+                if request.managed_native() && !pi_accepted && self.sessions.runtime_message_accepted(&session.id, &delivery.message_id) {
+                    request.checkpoint_managed_turn("accepted", serde_json::json!({"messageId":delivery.message_id}))?;
+                    pi_accepted = true;
+                }
                 if let Some(error) = self
                     .sessions
                     .runtime_delivery_error(&session.id, &delivery.message_id)
@@ -623,14 +667,23 @@ impl AgentTerminalHost {
             if let Some(hook_summary) =
                 self.sessions
                     .agent_turn_summary_after(&session.id, baseline_revision, prompt)
+                    .filter(|_| !(request.managed_native() && kind == AgentRuntimeKind::Pi) || pi_accepted)
             {
                 if request.managed_native() {
-                    let id = confirmed_native_identity(request, &self.sessions, &session.id, pty_id, expected_id)?;
-                    let key = if kind == AgentRuntimeKind::Codex { "threadId" } else { "sessionId" };
-                    request.store.checkpoint_native_dispatch(&request.run_id, pty_id, Some((key, &id)))?;
+                    let identity = if kind == AgentRuntimeKind::Pi {
+                        managed_pi::confirmed(request, &self.sessions, &session, command, expected_id)?
+                    } else {
+                        let id = confirmed_native_identity(request, &self.sessions, &session.id, pty_id, expected_id)?;
+                        let key = if kind == AgentRuntimeKind::Codex { "threadId" } else { "sessionId" };
+                        request.store.checkpoint_native_dispatch(&request.run_id, pty_id, Some((key, &id)))?;
+                        let mut identity = serde_json::json!({});
+                        identity[key] = id.into();
+                        request.checkpoint_managed_turn("accepted", identity.clone())?;
+                        identity
+                    };
                     anyhow::ensure!(!hook_summary.trim().is_empty(), "原生 CLI 已结束本轮，但未返回任务结果");
-                    let mut locator = request.resume_locator.clone().context("缺少托管工作树定位")?;
-                    locator[key] = id.into();
+                    request.checkpoint_managed_turn("completed", identity)?;
+                    let mut locator = request.store.latest_session_locator(&request.task.id)?.context("缺少托管工作树定位")?;
                     locator["ptyId"] = pty_id.into();
                     let summary = hook_summary.replace(&request.collaboration.token, "[REDACTED]");
                     return Ok(RuntimeResult { summary, session_locator: locator });
@@ -964,6 +1017,7 @@ impl AgentTerminalHost {
             "powershell.exe -NoProfile -ExecutionPolicy Bypass -File {}\r",
             powershell_quote(&runtime_files.script_path.display().to_string())
         ) } else { format!("set +m; /bin/bash {}\r", posix_quote(&runtime_files.script_path.display().to_string())) };
+        if request.managed { request.checkpoint_managed_turn("dispatched", serde_json::json!({}))?; }
         self.pty.write(pty_id, launch.as_bytes())?;
 
         let started = Instant::now();
@@ -1019,7 +1073,7 @@ impl AgentTerminalHost {
                     });
                 }
             }
-            if kind == AgentRuntimeKind::Codex {
+            if kind == AgentRuntimeKind::Codex && !request.managed {
                 if let Ok(output) = std::fs::read_to_string(&runtime_files.output_path) {
                     if codex_protocol_turn_completed(&output) {
                         break Ok(VisibleRuntimeOutput {
@@ -2051,6 +2105,8 @@ pub(super) fn execute_run(
     let mut task = task;
     let discussion = super::conversation::is_conversation_task(&task.id);
     let managed_target = store.managed_task_target(&task.id)?;
+    let planner_target = if discussion { store.managed_planner_target(&task.id, &agent.id)? } else { None };
+    let managed_planner = planner_target.is_some();
     if let Some(target) = &managed_target {
         let preflight = (|| {
             anyhow::ensure!(store.managed_plan_running(&project.id)?.is_some_and(|plan| plan.task_ids.contains(&task.id)), "该托管任务已结束，请启动新一轮托管");
@@ -2078,8 +2134,15 @@ pub(super) fn execute_run(
     task.workspace_mode = if native_discussion { WorkspaceMode::SharedWrite } else { execution_workspace_mode(&task, agent.runtime_kind) };
     let launch = match crate::runtime_preferences::get().and_then(|preferences| {
         let saved = preferences.default_launch_modes.get(agent.runtime_kind.as_str()).cloned();
-        if managed_target.is_some() {
-            super::managed_delivery::check_launch_mode(agent.runtime_kind, task.workspace_mode, saved.as_deref())?;
+        let usage = if managed_planner { Some(ManagedUse::Plan) } else if managed_target.is_some() {
+            Some(ManagedUse::engineering(agent.role, task.workspace_mode)?)
+        } else { None };
+        if let Some(usage) = usage {
+            planner_target.as_ref().or(managed_target.as_ref()).context("缺少本轮托管授权")?
+                .check_member(&agent, usage, saved.as_deref())?;
+            if !matches!(agent.runtime_kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex) {
+                return Ok(CollaborationLaunchMode { saved, use_saved: false, reason: "本次托管角色使用已验证的受限工具" });
+            }
         }
         CollaborationLaunchMode::resolve(agent.runtime_kind, task.workspace_mode, &task.id, saved)
     }) {
@@ -2090,7 +2153,8 @@ pub(super) fn execute_run(
             return Err(error);
         }
     };
-    if let Err(error) = if discussion && agent.runtime_kind == AgentRuntimeKind::Pi { Ok(()) } else { validate_readonly_runtime(task.workspace_mode, agent.runtime_kind) } {
+    let managed = managed_target.is_some() || managed_planner;
+    if let Err(error) = if managed || (discussion && agent.runtime_kind == AgentRuntimeKind::Pi) { Ok(()) } else { validate_readonly_runtime(task.workspace_mode, agent.runtime_kind) } {
         store.fail_run_permanently(&run_id, &error.to_string(), None)?;
         return Err(error);
     }
@@ -2102,13 +2166,16 @@ pub(super) fn execute_run(
     });
     let _ = store.append_run_log(&run_id, "system", &format!("准备执行任务：{}", task.title));
     let message_turn = task.id.starts_with("cli-message-");
-    let resume_locator = if message_turn {
-        // 消息是独立对话，不能把业务会话恢复到新的隔离目录。
+    let resume_locator = if message_turn || (managed && task.workspace_mode == WorkspaceMode::ReadOnly) {
+        // Planning and review always start from the current request and delivered snapshot.
         None
     } else {
         store.latest_session_locator(&task.id)?
     };
     let dependency_artifacts = store.dependency_artifacts(&task.id)?;
+    let managed_acceptance = if managed_target.is_some() && agent.role == AgentRole::Reviewer {
+        store.managed_acceptance_receipts(&dependency_artifacts)?
+    } else { Vec::new() };
     let managed_native = managed_target.is_some() && task.workspace_mode == WorkspaceMode::Worktree;
     let had_workspace = resume_locator.is_some();
     let (resumable_cwd, resume_locator) = if message_turn {
@@ -2198,8 +2265,10 @@ pub(super) fn execute_run(
     if message_turn && task.workspace_mode == WorkspaceMode::SharedWrite {
         let _ = store.append_run_log(&run_id, "system", "使用独立可写消息工作区并保留成员原权限；此 Runtime 不提供强制只读边界，禁止修改业务文件");
     }
-    let bridge_lease =
-        collaboration_bridge.register_run(&project.id, &task.id, &run_id, &agent.id, &cwd);
+    let bridge_lease = if managed {
+        collaboration_bridge.register_managed_run(&project.id, &task.id, &run_id, &agent.id, &cwd,
+            !managed_planner && agent.runtime_kind == AgentRuntimeKind::Pi)
+    } else { collaboration_bridge.register_run(&project.id, &task.id, &run_id, &agent.id, &cwd) };
     let collaboration = bridge_lease.access();
     let _ = store.append_runtime_event(super::AppendRuntimeEventInput {
         run_id: run_id.clone(),
@@ -2256,6 +2325,7 @@ pub(super) fn execute_run(
         task,
         agent: agent.clone(),
         dependency_artifacts,
+        managed_acceptance,
         resume_locator,
         user_instructions,
         shared_memories,
@@ -2265,7 +2335,7 @@ pub(super) fn execute_run(
         terminal_host,
         design_context,
         launch,
-        managed: managed_target.is_some(),
+        managed,
     };
     let adapter = adapter_for(agent.runtime_kind);
     debug_assert_eq!(adapter.kind(), agent.runtime_kind);
@@ -2422,13 +2492,14 @@ pub(super) fn execute_run(
             } else {
                 RunStatus::Failed
             };
-            let message = if managed_native { format!("{error:#}") } else { error.to_string() };
+            let message = if managed { format!("{error:#}") } else { error.to_string() };
             if status == RunStatus::Failed {
-                let locator = if managed_native { None } else { Some(serde_json::json!({"cwd": cwd})) };
-                if managed_native && store.latest_session_locator(&request.task.id)?.is_some_and(|saved| {
-                    saved["managedPromptDispatched"] == true && locator_string(Some(&saved), &["threadId", "sessionId"]).is_none()
+                let locator = if managed { None } else { Some(serde_json::json!({"cwd": cwd})) };
+                if managed && store.latest_session_locator(&request.task.id)?.is_some_and(|saved| {
+                    saved["managedPromptDispatched"] == true && (locator_string(Some(&saved), &["threadId", "sessionId"]).is_none()
+                        || matches!(saved["managedTurn"].as_str(), Some("dispatched" | "accepted")))
                 }) {
-                    let reason = format!("{message}；任务已派发，尚未获得可恢复的原生会话 ID，已保留原工作树并停止重复派发");
+                    let reason = format!("{message}；任务已派发，原生终态未确认，已保留现场并停止重复派发");
                     store.fail_run_permanently(&run_id, &reason, None)?;
                     return Err(anyhow!(reason));
                 }
@@ -2443,7 +2514,7 @@ pub(super) fn execute_run(
                     status,
                     output_summary: None,
                     error: Some(message.clone()),
-                    session_locator: if managed_native { None } else { Some(serde_json::json!({"cwd": cwd})) },
+                    session_locator: if managed { None } else { Some(serde_json::json!({"cwd": cwd})) },
                 });
             }
             let _ = store.append_run_log(&run_id, "stderr", &format!("执行失败：{message}"));
@@ -2509,9 +2580,16 @@ fn managed_native_locator(
     kind: AgentRuntimeKind, cwd: &std::path::Path, saved_mode: Option<&str>, baseline: &str,
     previous: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value> {
-    let mode = saved_mode.unwrap_or("workspace-write/never");
+    let mode = match kind {
+        AgentRuntimeKind::Pi => "pi-scoped-files-v1",
+        AgentRuntimeKind::ZCodeCli => "zcode-plan-scoped-text-v1",
+        AgentRuntimeKind::OpenCode | AgentRuntimeKind::KimiCode => "scoped-text-v1",
+        _ => saved_mode.unwrap_or("workspace-write/never"),
+    };
     let mut locator = serde_json::json!({"adapter":kind, "cwd":cwd, "managedLaunchMode":mode, "managedBaseline":baseline});
     if let Some(old) = previous {
+        anyhow::ensure!(!matches!(old["managedTurn"].as_str(), Some("dispatched" | "accepted")),
+            "原托管轮次未获可核实的终态，拒绝重复派发");
         anyhow::ensure!(old["adapter"].as_str().is_none_or(|adapter| adapter == kind.as_str()),
             "原托管任务的 Runtime 已变更，无法用其他 Runtime 恢复会话");
         anyhow::ensure!(old["managedLaunchMode"].as_str().is_none_or(|previous| previous == mode),
@@ -2519,12 +2597,23 @@ fn managed_native_locator(
         let keys: &[&str] = match kind {
             AgentRuntimeKind::ClaudeCode => &["sessionId", "session_id"],
             AgentRuntimeKind::Codex => &["threadId", "thread_id"],
+            AgentRuntimeKind::Pi | AgentRuntimeKind::KimiCode | AgentRuntimeKind::OpenCode
+                | AgentRuntimeKind::ZCodeCli => &["sessionId"],
             _ => bail!("不支持恢复此托管 Runtime"),
         };
         if let Some(id) = locator_string(Some(old), keys) {
-            anyhow::ensure!(old["adapter"] == kind.as_str() && uuid::Uuid::parse_str(id).is_ok(),
+            let valid = match kind {
+                AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex | AgentRuntimeKind::Pi => uuid::Uuid::parse_str(id).is_ok(),
+                // These protocol identifiers travel as JSON. The adapter must load
+                // this exact ID under its original engine, working directory and policy.
+                _ => !id.trim().is_empty() && id.len() <= 1024 && !id.chars().any(char::is_control),
+            };
+            anyhow::ensure!(old["adapter"] == kind.as_str() && valid,
                 "托管运行记录缺少可核验的原生会话身份");
             locator[keys[0]] = id.into();
+            for key in ["sessionPath", "engine", "permissionMode", "toolPolicy"] {
+                if let Some(value) = old.get(key) { locator[key] = value.clone(); }
+            }
         } else {
             anyhow::ensure!(old["managedPromptDispatched"] != true,
                 "任务已向原生会话提交，但未收到可恢复的会话 ID；已保留原工作树并停止重复派发");
@@ -2664,7 +2753,7 @@ pub(super) fn validate_planned_delivery(
     Ok(())
 }
 
-fn verify_delivery_worktree(project: &MultiAgentProject, cwd: &std::path::Path) -> Result<(PathBuf, PathBuf)> {
+pub(super) fn verify_delivery_worktree(project: &MultiAgentProject, cwd: &std::path::Path) -> Result<(PathBuf, PathBuf)> {
     let project_dir = std::path::Path::new(&project.root_path);
     let (repo, relative) = git_repository_layout(cwd)?;
     let (project_repo, project_relative) = git_repository_layout(project_dir)?;
@@ -3488,7 +3577,12 @@ fn execute_preferred_acp(
         request.store.append_runtime_event(super::AppendRuntimeEventInput { run_id: request.run_id.clone(), event_type: "conversation_policy".into(), payload: serde_json::to_value(policy)? })?;
         crate::acp::execute_managed_research_acp(kind, &session.id, &request.cwd.display().to_string(),
             &render_task_prompt(request), &mcp_url, &request.collaboration.token,
-            policy.allows_tools(), cancelled, update_handler, &images)
+            policy.allows_tools(), cancelled, update_handler, &images, if request.managed_planner() {
+                let store = request.store.clone();
+                let run = request.run_id.clone();
+                Some(Box::new(move |id| store.checkpoint_managed_turn(&run, "dispatched",
+                    serde_json::json!({"sessionId":id,"engine":"claude_code"}))))
+            } else { None })
     } else { execute_managed_acp(
         kind,
         &session.id,
@@ -3529,6 +3623,11 @@ fn execute_preferred_acp(
     };
     match outcome {
         ManagedAcpOutcome::Completed(result) => {
+            if request.managed_planner() {
+                let identity = serde_json::json!({"sessionId":result.session_id,"agentVersion":result.agent_version});
+                request.checkpoint_managed_turn("accepted", identity.clone())?;
+                request.checkpoint_managed_turn("completed", identity)?;
+            }
             request.terminal_host.sessions.mark_agent_activity(
                 &session.id,
                 SessionStatus::Completed,
@@ -3544,7 +3643,8 @@ fn execute_preferred_acp(
             );
             Ok(Some(RuntimeResult {
                 summary: result.text,
-                session_locator: serde_json::json!({
+                session_locator: if request.managed_planner() { request.store.latest_session_locator(&request.task.id)?.context("缺少托管规划回执")? }
+                    else { serde_json::json!({
                     "adapter": "acp",
                     "protocol": "acp-v1",
                     "runtimeKind": request.agent.runtime_kind,
@@ -3554,7 +3654,7 @@ fn execute_preferred_acp(
                     "agentVersion": result.agent_version,
                     "permissionMode": if kind == ManagedAcpKind::DeepSeekHarness { Some(deepseek_policy) } else { None },
                     "permissionProfile": request.agent.permission_profile,
-                }),
+                }) },
             }))
         }
         ManagedAcpOutcome::Unavailable(reason) => {
@@ -3598,11 +3698,66 @@ impl AgentRuntimeAdapter for DeepSeekHarnessAdapter {
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManagedReviewVerdict {
+    verdict: super::ReviewVerdict,
+    summary: String,
+}
+
+fn parse_managed_review_verdict(text: &str) -> Result<ManagedReviewVerdict> {
+    let json = managed_edits::structured_reply(text)?;
+    let mut result: ManagedReviewVerdict = serde_json::from_str(json)
+        .context("成员未返回结构化审查结论")?;
+    result.summary = result.summary.trim().to_owned();
+    anyhow::ensure!(!result.summary.is_empty() && result.summary.chars().count() <= 4000, "审查结论为空或超过长度上限");
+    Ok(result)
+}
+
+fn managed_static_review(request: &RuntimeRequest, cancelled: &AtomicBool,
+    execute: impl FnOnce(&str) -> Result<RuntimeResult>) -> Result<RuntimeResult> {
+    let snapshot = request.store.snapshot(&request.project.id)?;
+    let targets = snapshot.dependencies.iter().filter(|edge| edge.task_id == request.task.id)
+        .map(|edge| edge.depends_on_task_id.as_str()).collect::<Vec<_>>();
+    let [target_id] = targets.as_slice() else { bail!("只读审查需要唯一前置开发任务") };
+    let target = snapshot.tasks.iter().find(|task| task.id == *target_id).context("找不到前置开发任务")?;
+    let delivered = request.dependency_artifacts.iter().filter(|artifact| artifact.task_id == *target_id && artifact.artifact_type == "git_commit")
+        .filter_map(|artifact| artifact.content_hash.as_deref()).collect::<Vec<_>>();
+    anyhow::ensure!(!delivered.is_empty(), "前置开发任务缺少可审核的 Git 交付提交");
+    let prompt = format!(
+        "你负责 CrewVela 的独立只读代码审查。当前目录已检出本轮交付，只读取该目录的代码和测试。\n\
+         任务：{}\n审核目标：{}\n要求：{}\n验收标准：{}\n交付提交：{}\n开发测试：{}\n{}\n\
+         检查实现、边界行为及测试覆盖。你没有运行命令或写入权限，结论中如实注明仅静态审查。\n\
+         回复直接供 JSON 解析器读取。第一字符是 {{，最后字符是 }}。全部证据和解释只写在 summary 里。\n\
+         直接输出 {{\"verdict\":\"approved\",\"summary\":\"审查证据与结论\"}}，对象外不加前言、清单、Markdown 或重复结论。\n\
+         如果有必须修复的问题，用 changes_requested，并在 summary 写出具体文件、问题与修复建议。",
+        request.task.title, target.title, request.task.description, request.task.acceptance_criteria,
+        delivered.join(", "), target.verification_command.as_deref().unwrap_or("无"),
+        super::managed_delivery::ManagedAcceptance::prompt(&request.managed_acceptance)
+    );
+    let baseline = git_head(&request.cwd)?;
+    let mut output = execute(&prompt)?;
+    anyhow::ensure!(!cancelled.load(Ordering::Acquire), "只读审查已停止");
+    ensure_read_only_workspace_clean(&request.task, &request.cwd, Some(&baseline))?;
+    let result = parse_managed_review_verdict(&output.summary)?;
+    request.store.submit_review_decision(super::SubmitReviewDecisionInput {
+        review_run_id: request.run_id.clone(),
+        target_task_id: (*target_id).to_owned(),
+        verdict: result.verdict,
+        summary: result.summary.clone(),
+    })?;
+    output.summary = result.summary;
+    Ok(output)
+}
+
 impl AgentRuntimeAdapter for ZCodeAdapter {
     fn kind(&self) -> AgentRuntimeKind {
         self.0
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if self.0 == AgentRuntimeKind::ZCodeCli && request.managed {
+            return managed_zcode::execute(request, cancelled);
+        }
         if self.0 == AgentRuntimeKind::ZCodeCli && native_conversation(request)? {
             // Use the real CLI's own account/config/tool stack, rather than a
             // Desktop Account Host that cannot decrypt the CLI's credentials.
@@ -4156,6 +4311,10 @@ impl AgentRuntimeAdapter for ClaudeAdapter {
         AgentRuntimeKind::ClaudeCode
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if request.managed_planner() {
+            return execute_preferred_acp(ManagedAcpKind::ClaudeCode, &["sessionId"], request, cancelled)?
+                .context("Claude Code 托管只读规划未获 ACP 回执");
+        }
         // Each managed run gets fresh bridge credentials, confined to its own
         // configuration file. Both the native TUI and the read-only host use it.
         let managed_mcp = if request.managed {
@@ -4298,6 +4457,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
         AgentRuntimeKind::Codex
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if request.managed_planner() { return managed_events::codex_planner(request, cancelled); }
         if request.managed && !request.managed_native() {
             let mut command = runtime_command(self.kind())?;
             configure_codex_base(&mut command, request, "Codex 托管")?;
@@ -4402,6 +4562,7 @@ impl AgentRuntimeAdapter for KimiCodeAdapter {
     }
 
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if request.managed { return managed_cli::execute(request, cancelled); }
         if native_conversation(request)? {
             return execute_preferred_acp(ManagedAcpKind::Kimi, &["sessionId", "session_id"], request, cancelled)?
                 .context("Kimi 群聊原生 ACP 未就绪");
@@ -4530,6 +4691,7 @@ impl AgentRuntimeAdapter for PiAdapter {
         AgentRuntimeKind::Pi
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if request.managed && !request.managed_planner() { return managed_pi::execute(request, cancelled); }
         let session = locator_string(request.resume_locator.as_ref(), &["sessionPath"])
             .map(PathBuf::from)
             .unwrap_or(
@@ -4617,6 +4779,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         AgentRuntimeKind::OpenCode
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if request.managed { return managed_cli::execute(request, cancelled); }
         if native_conversation(request)? {
             return execute_preferred_acp(ManagedAcpKind::OpenCode, &["sessionId", "sessionID"], request, cancelled)?
                 .context("OpenCode 群聊原生 ACP 未就绪");
@@ -4894,7 +5057,14 @@ fn execute_command(
         ));
     }
     let native_zcode = kind == AgentRuntimeKind::ZCodeCli && (request.launch.mode() == Some("guarded") || native_conversation(request)?);
-    let (summary, identifier) = if native_zcode {
+    let (summary, identifier) = if request.managed {
+        let (text, key, id) = managed_command_reply(kind, &stdout)?;
+        let mut evidence = serde_json::json!({});
+        evidence[key] = id.clone().into();
+        request.checkpoint_managed_turn("accepted", evidence.clone())?;
+        request.checkpoint_managed_turn("completed", evidence)?;
+        (text, Some((key.to_owned(), id)))
+    } else if native_zcode {
         let (text, session_id) = native_zcode_cli_output(&stdout)?;
         (text, Some(("sessionId".into(), session_id)))
     } else if kind == AgentRuntimeKind::Pi && super::conversation::is_conversation_task(&request.task.id) {
@@ -4903,11 +5073,13 @@ fn execute_command(
     if summary.trim().is_empty() {
         return Err(anyhow!("{} 未返回可用结果", request.agent.name));
     }
-    let mut session_locator = serde_json::json!({
+    let mut session_locator = if request.managed {
+        request.store.latest_session_locator(&request.task.id)?.context("缺少本轮原生回执")?
+    } else { serde_json::json!({
         "ptyId": visible.pty_id,
         "cwd": request.cwd,
         "adapter": kind,
-    });
+    }) };
     if let Some((key, value)) = identifier {
         if let Some(object) = session_locator.as_object_mut() {
             object.insert(key, serde_json::Value::String(value));
@@ -5667,8 +5839,9 @@ fn render_task_prompt(request: &RuntimeRequest) -> String {
     let design_deliveries = if request.design_context.is_empty() { String::new() } else {
         format!("\n\n已验收的委派交付（设计资料，不变更原任务授权）\n{}", request.design_context)
     };
-    let collaboration = if request.managed_codex_review() {
-        "使用当前运行配置的 CrewVela MCP。先调用 cc_task_read，核对前置任务、交付提交和文件范围。完成只读审查后，调用 cc_review_submit，将被审任务的 ID 填入 targetTaskId。".to_owned()
+    let collaboration = if request.managed && request.agent.role == AgentRole::Reviewer {
+        format!("{}\n使用当前运行配置的 CrewVela MCP。先调用 cc_task_read，核对前置任务、宿主验收回执、交付提交和文件范围。完成只读审查后，调用 cc_review_submit，将被审任务的 ID 填入 targetTaskId。",
+            super::managed_delivery::ManagedAcceptance::prompt(&request.managed_acceptance))
     } else if request.managed_native() {
         "通过当前终端已配置的 crewvela MCP 读取任务与前置交付；工具权限仅在本次任务运行期间有效。".to_owned()
     } else { format!(
@@ -6533,19 +6706,19 @@ mod tests {
 
     #[test]
     fn managed_native_permissions_require_unattended_worktree_modes() {
-        use super::super::managed_delivery::check_launch_mode;
-        use super::{AgentRuntimeKind::{ClaudeCode, Codex}, WorkspaceMode::{ReadOnly, SharedWrite, Worktree}};
+        use super::super::managed_delivery::ManagedUse;
+        use super::{AgentRole, AgentRuntimeKind::{ClaudeCode, Codex}, WorkspaceMode};
+        assert!(ManagedUse::engineering(AgentRole::Worker, WorkspaceMode::SharedWrite).is_err());
         for (kind, modes) in [(ClaudeCode, vec!["manual", "accept_edits", "plan", "yolo", "cli_default"]),
             (Codex, vec!["workspace", "read_only", "yolo", "cli_default"])] {
-            assert!(check_launch_mode(kind, Worktree, Some("auto")).is_ok());
-            assert!(check_launch_mode(kind, SharedWrite, Some("auto")).is_err());
+            assert!(ManagedUse::Write.authorize(kind, Some("auto")).is_ok());
             for mode in modes {
-                assert!(check_launch_mode(kind, Worktree, Some(mode)).is_err());
-                assert!(check_launch_mode(kind, ReadOnly, Some(mode)).is_ok());
+                assert!(ManagedUse::Write.authorize(kind, Some(mode)).is_err());
+                assert!(ManagedUse::Review.authorize(kind, Some(mode)).is_ok());
             }
         }
-        assert!(check_launch_mode(Codex, Worktree, None).is_ok());
-        assert!(check_launch_mode(ClaudeCode, Worktree, None).is_err());
+        assert!(ManagedUse::Write.authorize(Codex, None).is_ok());
+        assert!(ManagedUse::Write.authorize(ClaudeCode, None).is_err());
     }
 
     #[test]
@@ -6588,6 +6761,17 @@ mod tests {
             assert_eq!(launch.mode(), Some(mode));
             assert_eq!(command.get_args().map(|arg| arg.to_string_lossy()).collect::<Vec<_>>(), expected);
         }
+    }
+
+    #[test]
+    fn managed_zcode_verdict_requires_a_bounded_structured_conclusion() {
+        use super::super::ReviewVerdict;
+        let accepted = parse_managed_review_verdict("```json\n{\"verdict\":\"approved\",\"summary\":\" checked \"}\n```").unwrap();
+        assert_eq!(accepted.verdict, ReviewVerdict::Approved);
+        assert_eq!(accepted.summary, "checked");
+        assert!(parse_managed_review_verdict("looks good").is_err());
+        assert!(parse_managed_review_verdict(r#"{"verdict":"approved","summary":"checked","targetTaskId":"other"}"#).is_err());
+        assert!(parse_managed_review_verdict(r#"{"verdict":"changes_requested","summary":" "}"#).is_err());
     }
 
     #[test]

@@ -50,6 +50,7 @@ struct RunScope {
     run_id: String,
     agent_id: String,
     cwd: PathBuf,
+    managed_files: bool,
 }
 
 pub struct RunBridgeLease {
@@ -130,8 +131,18 @@ impl CollaborationBridge {
         agent_id: &str,
         cwd: &Path,
     ) -> RunBridgeLease {
+        self.register(project_id, task_id, run_id, agent_id, cwd, false, false)
+    }
+
+    pub(super) fn register_managed_run(&self, project: &str, task: &str, run: &str,
+        agent: &str, cwd: &Path, managed_files: bool) -> RunBridgeLease {
+        self.register(project, task, run, agent, cwd, true, managed_files)
+    }
+
+    fn register(&self, project_id: &str, task_id: &str, run_id: &str, agent_id: &str,
+        cwd: &Path, fresh: bool, managed_files: bool) -> RunBridgeLease {
         let agent_key = format!("{project_id}:{agent_id}");
-        let token = if super::conversation::is_conversation_task(task_id) || is_design_task(task_id) {
+        let token = if fresh || super::conversation::is_conversation_task(task_id) || is_design_task(task_id) {
             // Research capabilities must never be inherited by an older or later run.
             uuid::Uuid::new_v4().to_string()
         } else { self
@@ -149,6 +160,7 @@ impl CollaborationBridge {
                 run_id: run_id.to_string(),
                 agent_id: agent_id.to_string(),
                 cwd: cwd.to_path_buf(),
+                managed_files,
             },
         );
         RunBridgeLease {
@@ -265,6 +277,10 @@ fn handle_connection(
         write_json_response(&mut stream, 403, response_error("任务访问令牌无效或已过期"))?;
         return Ok(());
     };
+    if scope.managed_files && request.path != "/mcp" {
+        write_json_response(&mut stream, 403, response_error("当前托管工具令牌仅允许工作树只读查询"))?;
+        return Ok(());
+    }
     if request.path == "/mcp" {
         let is_notification = serde_json::from_slice::<serde_json::Value>(&request.body)
             .ok()
@@ -350,6 +366,9 @@ fn dispatch(
                 "dependencies": dependencies,
                 "dependencyArtifacts": artifacts,
             });
+            if profile.role == super::AgentRole::Reviewer && store.managed_task_target(&scope.task_id)?.is_some() {
+                result["managedAcceptance"] = serde_json::to_value(store.managed_acceptance_receipts(&artifacts)?)?;
+            }
             if store.delegation_tools_for_run(&scope.task_id)? == Some("request") {
                 result["designRecipients"] = serde_json::to_value(store.design_recipients(&scope.task_id, &scope.agent_id)?)?;
             }
@@ -535,7 +554,15 @@ fn handle_mcp_request(
         }),
         "notifications/initialized" | "ping" => serde_json::json!({}),
         "tools/list" => {
-            if super::conversation::is_conversation_task(&scope.task_id) {
+            if scope.managed_files {
+                let mut tools = super::conversation::research::tools(&super::conversation::research::workspace_policy());
+                if !store.managed_write_paths(&scope.task_id)?.is_empty() {
+                    tools.push(mcp_tool("cc_pi_edit_read", "读取 Pi 精确编辑的工作树原像", serde_json::json!({"path":{"type":"string"}})));
+                    tools.push(mcp_tool("cc_pi_write_file", "将 Pi 原生工具的结果保存到当前已确认的文件范围",
+                        serde_json::json!({"path":{"type":"string"},"text":{"type":"string"},"revision":{"type":"string"}})));
+                }
+                serde_json::json!({"tools":tools})
+            } else if super::conversation::is_conversation_task(&scope.task_id) {
                 let policy = store.conversation_task_policy(&scope.task_id, &scope.agent_id)?;
                 serde_json::json!({"tools": if policy.uses_native_capabilities() { collaboration_tools() } else { super::conversation::research::tools(&policy) }})
             } else {
@@ -573,7 +600,11 @@ fn handle_mcp_request(
                 .unwrap_or_else(|| serde_json::json!({}));
             let legacy_conversation = super::conversation::is_conversation_task(&scope.task_id)
                 && !store.conversation_task_policy(&scope.task_id, &scope.agent_id)?.uses_native_capabilities();
-            let outcome = if legacy_conversation {
+            let outcome = if scope.managed_files && matches!(name, "cc_pi_edit_read" | "cc_pi_write_file") {
+                super::executor::managed_pi::file_operation(store, &scope.run_id, &scope.agent_id, &scope.cwd, name, &arguments)
+            } else if scope.managed_files {
+                super::conversation::research::workspace_call(store, &scope.run_id, &scope.agent_id, &scope.cwd, name, &arguments)
+            } else if legacy_conversation {
                 super::conversation::research::call(store, &scope.project_id, &scope.task_id, &scope.run_id, &scope.agent_id, name, &arguments)
             } else {
                 collaboration_command_from_tool(name, &arguments).and_then(|command| dispatch(store, scope, command))
@@ -1074,6 +1105,7 @@ mod tests {
             run_id: run.id.clone(),
             agent_id: agent.id.clone(),
             cwd: root.clone(),
+            managed_files: false,
         };
 
         let tools = handle_mcp_request(
@@ -1206,7 +1238,7 @@ mod tests {
             }).unwrap();
             scopes.insert(format!("token-{name}"), RunScope {
                 project_id: project.id.clone(), task_id: task.id, run_id: run.id,
-                agent_id: agent.id.clone(), cwd: root.clone(),
+                agent_id: agent.id.clone(), cwd: root.clone(), managed_files: false,
             });
             agents.push(agent);
         }

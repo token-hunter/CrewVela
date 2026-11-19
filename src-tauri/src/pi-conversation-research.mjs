@@ -4,7 +4,7 @@
 const ALLOWED = new Set(['cc_research_read', 'cc_research_list', 'cc_research_search',
   'cc_research_web_search', 'cc_research_web_fetch']);
 
-export default async function crewvelaConversationResearch(pi) {
+export default async function crewvelaConversationResearch(pi, registerFileTools) {
   const endpoint = process.env.CREWVELA_RESEARCH_URL;
   const token = process.env.CREWVELA_RESEARCH_TOKEN;
   const url = new URL(endpoint);
@@ -23,11 +23,17 @@ export default async function crewvelaConversationResearch(pi) {
     return result.result;
   }
   const listed = await rpc('tools/list');
-  if (!Array.isArray(listed?.tools) || listed.tools.some(tool => !ALLOWED.has(tool.name))) {
+  const fileOperations = new Set(registerFileTools ? ['cc_pi_edit_read', 'cc_pi_write_file'] : []);
+  if (!Array.isArray(listed?.tools) || listed.tools.some(tool => !ALLOWED.has(tool.name) && !fileOperations.has(tool.name))) {
     throw new Error('Unexpected research tool contract; refusing tool registration');
   }
-  const names = new Set(listed.tools.map(tool => tool.name));
-  for (const tool of listed.tools) {
+  const research = listed.tools.filter(tool => ALLOWED.has(tool.name));
+  const names = new Set(research.map(tool => tool.name));
+  if (registerFileTools) {
+    if (![...fileOperations].every(name => listed.tools.some(tool => tool.name === name))) throw new Error('Pi file operations unavailable');
+    for (const name of registerFileTools(rpc)) names.add(name);
+  }
+  for (const tool of research) {
     pi.registerTool({ name: tool.name, label: tool.name, description: tool.description,
       parameters: tool.inputSchema,
       async execute(_callId, args) {

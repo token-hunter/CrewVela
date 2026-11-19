@@ -5,6 +5,78 @@ use crate::sessions::{NewAgentSession, SessionManager};
 use std::path::Path;
 use std::process::Command;
 
+pub(super) fn isolated_cli_contract(test: &str) -> Result<bool> {
+    const CHILD: &str = "CREWVELA_ISOLATED_CLI_CONTRACT";
+    if std::env::var(CHILD).ok().as_deref() == Some(test) { return Ok(true); }
+    let output = Command::new(std::env::current_exe()?).args([test,"--ignored","--nocapture","--test-threads=1"])
+        .env(CHILD,test).output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    ensure!(output.status.success() && stdout.contains("1 passed"), "{stdout}\n{stderr}");
+    eprint!("{stderr}");
+    Ok(false)
+}
+
+#[test]
+#[ignore = "requires installed Codex CLI and Node; local loopback provider"]
+fn installed_codex_planner_retains_provider_and_offers_no_tools() -> Result<()> {
+    if !isolated_cli_contract("installed_codex_planner_retains_provider_and_offers_no_tools")? { return Ok(()); }
+    let root = std::env::temp_dir().join(format!("cvc-{}", &id()[..8]));
+    let home = root.join("codex");
+    std::fs::create_dir_all(&home)?;
+    crate::test_profile::initialize(&root.join("profile"))?;
+    let server_file = root.join("fixture.cjs");
+    std::fs::write(&server_file,r#"
+const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
+http.createServer(async(req,res)=>{
+  if (req.method !== 'POST') { res.writeHead(404);res.end();return; }
+  const chunks=[];for await(const c of req) chunks.push(c);
+  const payload=JSON.parse(Buffer.concat(chunks)), tools=(payload.tools||[]).map(t=>t.name||t.type);
+  fs.writeFileSync(path.join(process.argv[2],'request.json'),JSON.stringify({tools,model:payload.model}));
+  if(tools.length || payload.model!=='gpt-5.4') {res.writeHead(400);res.end('unexpected tool or model');return;}
+  const item={id:'msg_contract',type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:'Native planning receipt',annotations:[]}]};
+  res.writeHead(200,{'Content-Type':'text/event-stream'});
+  const write=(type, fields)=>res.write('event: '+type+'\ndata: '+JSON.stringify({type,...fields})+'\n\n');
+  write('response.created',{response:{id:'resp_contract',created_at:1,status:'in_progress',output:[]}});
+  write('response.output_item.added',{output_index:0,item:{...item,content:[],status:'in_progress'}});
+  write('response.output_item.done',{output_index:0,item});
+  write('response.completed',{response:{id:'resp_contract',status:'completed',created_at:1,output:[item],usage:{input_tokens:1,output_tokens:1,total_tokens:2}}});
+  res.end();
+}).listen(0,'127.0.0.1',function(){console.log('http://127.0.0.1:'+this.address().port+'/v1')});
+"#)?;
+    struct Provider(std::process::Child);
+    impl Drop for Provider { fn drop(&mut self) { let _ = self.0.kill(); let _ = self.0.wait(); } }
+    let mut provider = Provider(Command::new("node").arg(server_file).arg(&root)
+        .stdout(std::process::Stdio::piped()).spawn()?);
+    use std::io::{BufRead, BufReader};
+    let mut url = String::new();
+    BufReader::new(provider.0.stdout.take().unwrap()).read_line(&mut url)?;
+    let url = url.trim();
+    ensure!(url.starts_with("http://127.0.0.1:"));
+    std::fs::write(home.join("config.toml"),format!("model = 'gpt-5.4'\nmodel_provider = 'localcontract'\n[model_providers.localcontract]\nname = 'Local contract'\nbase_url = '{url}'\nwire_api = 'responses'\nenv_key='CREWVELA_ROUTE_AUTH'\n"))?;
+    std::env::set_var("CODEX_HOME",&home);
+    std::env::set_var("OPENAI_BASE_URL",url);
+    std::env::set_var("CREWVELA_ROUTE_AUTH","dummy-local-only");
+    let (fixture,mut input,_) = managed_plan_fixture();
+    let member = fixture.store.create_agent(serde_json::from_value(json!({"projectId":fixture.project,
+        "name":"规划","runtimeKind":"codex","role":"orchestrator"}))?)?;
+    input.participant_agent_ids.push(member.id.clone());
+    let store = &fixture.store;
+    let (round,_) = store.begin_conversation(input)?;
+    let turn = prepare_turn(store,&round.id,0,"plan",1,&member.id)?;
+    let task = store.snapshot(&fixture.project)?.tasks.into_iter().find(|t| t.id == turn.task_id).unwrap();
+    let run = store.claim_task(ClaimTaskInput {task_id:task.id.clone(),agent_id:member.id.clone(),lease_seconds:120})?;
+    let host=AgentTerminalHost::new(crate::pty::PtyManager::new(),SessionManager::open_at(root.join("sessions.json"),root.join("events"))?);
+    let result=execute_run(store,store.project(&fixture.project)?,task,member,run.id,&AtomicBool::new(false),host,CollaborationBridge::start(store.clone())?);
+    let request=std::fs::read_to_string(root.join("request.json")).unwrap_or_default();
+    result.with_context(||format!("isolated Codex sample {}, local dispatch {request}",root.display()))?;
+    let observed: Value=serde_json::from_str(&request)?;
+    ensure!(observed["tools"]==json!([]) && observed["model"]=="gpt-5.4");
+    let locator=store.latest_session_locator(&turn.task_id)?.unwrap();
+    ensure!(locator["managedTurn"]=="completed" && locator["threadId"].is_string());
+    Ok(())
+}
+
 // Exercise production adapters and OS PTYs without using a model, credentials
 // or a live application. A subprocess owns the test profile and fake PATH.
 #[test]

@@ -146,6 +146,8 @@ pub struct AcpPromptResult {
     pub text: String,
     pub commands: Vec<AcpCommand>,
     pub cancelled: bool,
+    #[serde(skip)]
+    pub(crate) stop_reason: Option<String>,
 }
 
 /// ACP usage_update reports the latest context occupancy, not cumulative billing.
@@ -907,6 +909,7 @@ impl AcpConnection {
             text: collector.text.trim().to_string(),
             commands: self.commands.clone(),
             cancelled,
+            stop_reason: response.get("stopReason").and_then(Value::as_str).map(str::to_owned),
         })
     }
 
@@ -1912,6 +1915,7 @@ pub(crate) fn execute_managed_research_acp(
     mcp_url: &str, token: &str, tools_enabled: bool, cancelled: &AtomicBool,
     update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
     images: &[(PathBuf, String)],
+    before_prompt: Option<Box<dyn FnOnce(&str) -> Result<()> + Send>>,
 ) -> Result<ManagedAcpOutcome> {
     let permissions: ManagedPermissionHandler = Box::new(move |request, _| {
         let call = &request["params"]["toolCall"];
@@ -1922,7 +1926,7 @@ pub(crate) fn execute_managed_research_acp(
     });
     execute_managed_acp_inner(kind, app_session_id, cwd, None, prompt, mcp_url, token,
         ManagedAcpMode::ReadOnly, cancelled, None, Some(permissions), update_handler,
-        Some(ManagedResearchPolicy { tools_enabled }), None, images)
+        Some(ManagedResearchPolicy { tools_enabled }), None, images, before_prompt)
 }
 
 pub(crate) fn execute_managed_acp(
@@ -1942,7 +1946,7 @@ pub(crate) fn execute_managed_acp(
     images: &[(PathBuf, String)],
 ) -> Result<ManagedAcpOutcome> {
     execute_managed_acp_inner(kind, app_session_id, cwd, resume_session_id, prompt, mcp_url, token,
-        mode, cancelled, model, permission_handler, update_handler, None, scoped_design_tool, images)
+        mode, cancelled, model, permission_handler, update_handler, None, scoped_design_tool, images, None)
 }
 
 fn execute_managed_acp_inner(
@@ -1961,6 +1965,7 @@ fn execute_managed_acp_inner(
     research: Option<ManagedResearchPolicy>,
     scoped_design_tool: Option<&'static str>,
     images: &[(PathBuf, String)],
+    before_prompt: Option<Box<dyn FnOnce(&str) -> Result<()> + Send>>,
 ) -> Result<ManagedAcpOutcome> {
     let process_id = Arc::new(AtomicU32::new(0));
     // 保留配置中启用的 http 类型用户 server 一并交给 Agent；
@@ -2019,14 +2024,24 @@ fn execute_managed_acp_inner(
     if cancelled.load(Ordering::Acquire) {
         return Err(anyhow!("ACP Agent 任务已取消"));
     }
-    let result = if connection.prompt_images_supported && !images.is_empty() {
-        let content = managed_image_prompt(prompt, images)?;
+    let content = if connection.prompt_images_supported && !images.is_empty() {
+        Some(managed_image_prompt(prompt, images)?)
+    } else { None };
+    let managed_checkpoint = before_prompt.is_some();
+    if let Some(checkpoint) = before_prompt {
+        if cancelled.load(Ordering::Acquire) { return Err(anyhow!("ACP Agent 任务已取消")); }
+        checkpoint(&connection.session_id)?;
+    }
+    let result = if let Some(content) = content {
         connection.prompt_content_cancellable(content, Some(cancelled))?
     } else {
         connection.prompt_cancellable(prompt, Some(cancelled))?
     };
     if result.cancelled || cancelled.load(Ordering::Acquire) {
         return Err(anyhow!("ACP Agent 任务已取消"));
+    }
+    if managed_checkpoint && result.stop_reason.as_deref() != Some("end_turn") {
+        return Err(anyhow!("托管 ACP 轮次未确认正常结束（{}）", result.stop_reason.as_deref().unwrap_or("无结束回执")));
     }
     if result.text.trim().is_empty() {
         return Err(anyhow!("{} ACP Agent 未返回可用结果", kind.label()));

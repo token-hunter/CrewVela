@@ -9,6 +9,23 @@ const MAX_BYTES: usize = 64 * 1024;
 const MAX_ENTRIES: usize = 200;
 const MAX_SEARCH_FILES: usize = 600;
 
+pub(crate) fn workspace_policy() -> EffectiveConversationPolicy {
+    let mut policy = EffectiveConversationPolicy::legacy();
+    policy.boundary.tools = "research".into();
+    policy
+}
+
+pub(crate) fn workspace_call(store: &MultiAgentStore, run: &str, agent: &str, cwd: &Path, name: &str, args: &Value) -> Result<Value> {
+    let policy = workspace_policy();
+    ensure!(tools(&policy).iter().any(|tool| tool["name"] == name), "托管工作树仅授权本地文件只读查询");
+    let active: bool = store.connection.lock().unwrap().query_row(
+        "SELECT EXISTS(SELECT 1 FROM ma_runs WHERE id=?1 AND agent_id=?2 AND status='running')",
+        params![run, agent], |row| row.get(0),
+    )?;
+    ensure!(active, "托管工作树授权已结束");
+    dispatch(cwd, &policy, name, args)
+}
+
 pub(crate) fn tools(policy: &EffectiveConversationPolicy) -> Vec<Value> {
     if !policy.allows_tools() { return Vec::new(); }
     let tool = |name, description, properties, required| json!({"name":name,"description":description,
@@ -138,7 +155,7 @@ fn dispatch(root: &Path, policy: &EffectiveConversationPolicy, name: &str, args:
     }
 }
 
-fn secret_component(name: &str) -> bool {
+pub(crate) fn secret_component(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     matches!(name.as_str(), ".git" | ".ssh" | ".aws" | ".azure" | ".codex" | ".claude" | "auth.json" | "credentials" | "credentials.json" | "id_rsa" | "id_ed25519" | ".npmrc" | ".netrc")
         || name == ".env" || (name.starts_with(".env.") && !matches!(name.as_str(), ".env.example" | ".env.sample"))

@@ -16,6 +16,10 @@ mod research_policy;
 mod activity;
 #[path = "managed_native_tests.rs"]
 mod managed_native;
+#[path = "managed_pi_native_tests.rs"]
+mod managed_pi_native;
+#[path = "managed_unified_live_tests.rs"]
+mod managed_unified_live;
 
 struct Fixture {
     store: MultiAgentStore,
@@ -1942,6 +1946,98 @@ fn managed_plan_fixture() -> (Fixture, ConversationSendInput, String) {
 }
 
 #[test]
+fn managed_plan_requires_all_roles_and_accepts_zcode_cli_static_review() {
+    let (fixture, mut input, plan_json) = managed_plan_fixture();
+    let plan: serde_json::Value = serde_json::from_str(&plan_json).unwrap();
+    let reviewer = plan["tasks"][1]["assigneeAgentId"].as_str().unwrap();
+    fixture.store.connection.lock().unwrap().execute(
+        "UPDATE ma_agents SET runtime_kind='claude_code' WHERE id=?1", [&fixture.agents[0]],
+    ).unwrap();
+    input.body = "交付网页并安排只读审查".into();
+    let set_role = |role| {
+        fixture.store.connection.lock().unwrap().execute(
+            "UPDATE ma_agents SET runtime_kind='zcode_cli', role=?2 WHERE id=?1", [reviewer, role],
+        ).unwrap();
+    };
+    crate::runtime_preferences::with_launch_default_for_test("claude_code", "auto", || {
+        set_role("worker");
+        assert!(fixture.store.conversation_plan_preflight(&input).unwrap().iter().any(|issue| issue.message.contains("开发、审查和集成成员")));
+        set_role("reviewer");
+        let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
+        assert!(issues.is_empty(), "{:?}", issues.iter().map(|issue| &issue.message).collect::<Vec<_>>());
+        let chat = fixture.run_input(input, &ScriptedReplies::new(vec![plan_json]));
+        let accepted = &chat.execution_plans[0];
+        assert!(accepted.managed.is_some());
+        assert_eq!(accepted.tasks[1].workspace_mode, WorkspaceMode::ReadOnly);
+        assert_eq!(accepted.tasks[1].assignee_agent_id, reviewer);
+    });
+}
+
+#[test]
+fn managed_planner_uses_selected_capabilities_without_requiring_claude() {
+    let (fixture, mut input, _) = managed_plan_fixture();
+    let coordinator = fixture.store.create_agent(serde_json::from_value(json!({"projectId":fixture.project,
+        "name":"协调员","runtimeKind":"codex","role":"orchestrator"})).unwrap()).unwrap().id;
+    fixture.store.connection.lock().unwrap().execute("UPDATE ma_agents SET runtime_kind='pi' WHERE project_id=?1 AND role='reviewer'", [&fixture.project]).unwrap();
+    input.participant_agent_ids.push(coordinator.clone());
+    let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
+    assert!(issues.is_empty(), "{issues:?}");
+    let (round, _) = fixture.store.begin_conversation(input).unwrap();
+    assert_eq!(round.managed_target.as_ref().unwrap().planner, coordinator);
+    let turn = prepare_turn(&fixture.store, &round.id, 0, "plan", 1, &coordinator).unwrap();
+    assert!(fixture.store.managed_planner_target(&turn.task_id, &coordinator).unwrap().is_some());
+    assert!(fixture.store.managed_planner_target(&turn.task_id, &fixture.agents[0]).is_err());
+    use super::super::managed_delivery::ManagedUse;
+    for role in [ManagedUse::Plan, ManagedUse::Review, ManagedUse::Write] {
+        assert!(!role.supported(AgentRuntimeKind::DeepSeekHarness));
+        assert!(!role.supported(AgentRuntimeKind::ZCode));
+    }
+    assert!(ManagedUse::Write.authorize(AgentRuntimeKind::Pi, Some("read_tools")).is_err());
+}
+
+#[test]
+fn managed_restart_resumes_authorized_unclaimed_tasks_and_holds_uncertain_or_changed_grants() {
+    use crate::multi_agent::ClaimTaskInput;
+    for situation in ["unclaimed","interrupted","new-role","branch-moved"] {
+        let (fixture,input,raw) = managed_plan_fixture();
+        let chat = fixture.run_input(input,&ScriptedReplies::new(vec![raw]));
+        let plan = &chat.execution_plans[0];
+        let store = &fixture.store;
+        let tasks = store.apply_conversation_plan_in(&ConversationExecutePlanInput { project_id:fixture.project.clone(),
+            plan_id:plan.id.clone(),client_request_id:format!("managed-{}",plan.id) },true).unwrap();
+        store.set_project_status(&fixture.project,ProjectStatus::Active).unwrap();
+        match situation {
+            "interrupted" => {
+                let run = store.claim_task(ClaimTaskInput { task_id:tasks[0].clone(),agent_id:fixture.agents[0].clone(),
+                    lease_seconds:120 }).unwrap();
+                store.update_run(UpdateRunInput {run_id:run.id,status:RunStatus::Running,error:None,output_summary:None,
+                    session_locator:Some(json!({"adapter":"codex","managedTurn":"dispatched","managedPromptDispatched":true}))}).unwrap();
+                store.recover_interrupted_runs_at_startup().unwrap();
+            }
+            "new-role" => {
+                store.connection.lock().unwrap().execute("UPDATE ma_agents SET runtime_kind='pi' WHERE id=?1",[&fixture.agents[0]]).unwrap();
+            }
+            "branch-moved" => {
+                let output = std::process::Command::new("git").current_dir(fixture.root.join("project"))
+                    .args(["-c","user.name=Fixture","-c","user.email=fixture@example.invalid","commit","--allow-empty","-m","changed"]).output().unwrap();
+                assert!(output.status.success());
+            }
+            _ => {}
+        }
+        let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+        let resume = reopened.recover_managed_deliveries_at_startup().unwrap();
+        let current = reopened.conversation_snapshot(&fixture.project).unwrap().execution_plans.remove(0);
+        if situation == "unclaimed" {
+            assert_eq!(resume,[fixture.project.clone()]);
+            assert_eq!(current.managed.unwrap().status,"running");
+        } else {
+            assert!(resume.is_empty(),"{situation}");
+            assert_eq!(current.managed.unwrap().status,"failed","{situation}");
+        }
+    }
+}
+
+#[test]
 fn managed_plan_retries_validation_and_delivers_only_after_review_and_tests() {
     use crate::multi_agent::executor::{commit_task_worktree, git_head, prepare_workspace_in, verify_task_acceptance};
     use crate::multi_agent::project_preview::{DeliveryDemo, PreviewStart, ProjectPreviews, MANIFEST};
@@ -1998,6 +2094,15 @@ fn managed_plan_retries_validation_and_delivers_only_after_review_and_tests() {
         assert!(verify_task_acceptance(&task,&path,&stop,Some((store,&run.id))).unwrap());
         let hash = commit_task_worktree(&path,&task.title).unwrap();
         finish(&run,&path,true,Some(&hash));
+        let mut artifacts = store.dependency_artifacts(&ids[1]).unwrap();
+        let receipt = serde_json::to_value(store.managed_acceptance_receipts(&artifacts).unwrap()).unwrap();
+        assert_eq!(receipt[0]["commit"], hash);
+        assert_eq!(receipt[0]["runId"], run.id);
+        assert_eq!(receipt[0]["acceptanceVerified"], true);
+        assert_eq!(receipt[0]["verificationCommand"], task.verification_command.as_deref().unwrap());
+        assert!(receipt[0]["outputTail"].as_str().unwrap().contains("it runs"));
+        artifacts[0].content_hash = Some("0000000000000000000000000000000000000000".into());
+        assert!(store.managed_acceptance_receipts(&artifacts).unwrap().is_empty());
         let (_,review,checked) = claim(1);
         assert_eq!(std::fs::read_to_string(checked.join(source)).unwrap().replace("\r\n", "\n"), contents);
         store.submit_review_decision(SubmitReviewDecisionInput {

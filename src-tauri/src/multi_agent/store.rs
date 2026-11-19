@@ -2906,12 +2906,17 @@ impl MultiAgentStore {
                 run.id,
                 run.task_id,
                 run.agent_id,
-                serde_json::json!({
+                {
+                    let mut receipt = serde_json::json!({
                     "summary": summary,
                     "acceptanceVerified": acceptance_verified,
                     "artifactId": artifact_id,
-                })
-                .to_string(),
+                    });
+                    if managed && acceptance_verified {
+                        receipt["verificationCommand"] = serde_json::json!(task.verification_command);
+                    }
+                    receipt.to_string()
+                },
                 now,
             ],
         )?;
@@ -3536,6 +3541,43 @@ impl MultiAgentStore {
             params![run_id, pty_id, patch.to_string()],
         )?;
         anyhow::ensure!(changed == 1, "当前托管任务的终端归属已变更");
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub(super) fn checkpoint_managed_turn(
+        &self, run_id: &str, phase: &str, patch: serde_json::Value,
+    ) -> Result<()> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let run = get_run_with(&tx, run_id)?;
+        ensure_no_handoff(&tx, &run.project_id)?;
+        let previous = run.session_locator.as_ref().and_then(|locator| locator["managedTurn"].as_str());
+        anyhow::ensure!(matches!((previous, phase), (None, "dispatched") | (Some("dispatched"), "accepted" | "rejected")
+            | (Some("accepted"), "completed" | "failed" | "interrupted")), "托管任务的原生轮次状态不连续：{previous:?} → {phase}");
+        let mut patch = patch.as_object().context("缺少托管轮次记录")?.clone();
+        let prior = run.session_locator.as_ref().context("当前执行没有持久化的授权位置")?;
+        for key in ["sessionId","threadId","sessionPath","engine","toolPolicy","commandId","turnId","messageId"] {
+            if let (Some(saved),Some(reported)) = (prior.get(key),patch.get(key)) {
+                anyhow::ensure!(saved == reported, "原生回执的 {key} 与本轮登记的身份不符");
+            }
+        }
+        if matches!(phase, "accepted" | "completed") {
+            anyhow::ensure!(["sessionId","threadId"].iter().any(|key| patch.get(*key).or_else(|| prior.get(*key))
+                .and_then(serde_json::Value::as_str).is_some_and(|id| !id.is_empty())), "受理回执缺少原生会话身份");
+        }
+        anyhow::ensure!(!["cwd", "adapter", "managedBaseline", "managedLaunchMode", "managedTurn", "stopUnverified"]
+            .iter().any(|key| patch.contains_key(*key)), "原生回执不能更改任务授权或工作树");
+        patch.insert("managedTurn".into(), phase.into());
+        patch.insert("managedPromptDispatched".into(), true.into());
+        let changed = tx.execute(
+            "UPDATE ma_runs SET session_locator_json=json_patch(session_locator_json,?2) WHERE id=?1 AND status='running'",
+            params![run_id, serde_json::Value::Object(patch).to_string()],
+        )?;
+        anyhow::ensure!(changed == 1, "当前托管任务已停止，拒绝登记原生回执");
+        tx.execute("INSERT INTO ma_runtime_events(project_id,run_id,task_id,agent_id,event_type,payload_json,created_at)
+            VALUES(?1,?2,?3,?4,'managed_turn',?5,?6)", params![run.project_id,run.id,run.task_id,run.agent_id,
+                serde_json::json!({"phase":phase}).to_string(),now_millis()])?;
         tx.commit()?;
         Ok(())
     }

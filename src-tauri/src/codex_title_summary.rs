@@ -139,7 +139,7 @@ pub(crate) fn read_effective_config(
         .context("Codex 有效权限配置缺失；未变更原权限")
 }
 
-fn no_tools_config(effective: &Value) -> Value {
+pub(crate) fn no_tools_config(effective: &Value) -> Value {
     let mut config = serde_json::Map::new();
     for name in [
         "apps",
