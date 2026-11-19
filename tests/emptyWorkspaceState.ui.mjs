@@ -82,13 +82,23 @@ try {
       await page.getByRole("button", { name: "切换右侧栏", exact: true }).click();
     }
     for (const [open, menu] of [[openRightMenu, rightMenu], [moreTools, toolsMenu]]) {
+      const initialLaunchTop = (await newSession.boundingBox()).y;
       await open.click();
       await menu.waitFor();
+      if (open === moreTools) {
+        const anchor = await moreTools.boundingBox();
+        const popup = await toolsMenu.boundingBox();
+        const launch = await newSession.boundingBox();
+        assert.ok(Math.abs(popup.x - anchor.x) <= 1, `${size}: tools menu aligns to its trigger`);
+        assert.ok(Math.abs(popup.y - (anchor.y + anchor.height) - 5) <= 1, `${size}: tools menu opens close to its trigger`);
+        assert.ok(popup.y + popup.height <= launch.y, `${size}: tools menu leaves the new-session button exposed`);
+      }
       await clickNewSession();
       await runtimeMenu.waitFor({ timeout: 2000 });
       assert.equal(await menu.isVisible(), false, `${size}: a single click switches menus`);
       await page.keyboard.press("Escape");
       await runtimeMenu.waitFor({ state: "detached" });
+      assert.equal((await newSession.boundingBox()).y, initialLaunchTop, `${size}: sidebar returns to its original layout`);
       assert.equal(await newSession.evaluate((element) => element === document.activeElement), true);
     }
     await clickNewSession();

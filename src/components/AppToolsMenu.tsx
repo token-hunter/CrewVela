@@ -8,7 +8,7 @@ import "../styles/app-help.css";
 
 interface Props {
   trigger: RefObject<HTMLButtonElement>;
-  keepClearOf?: RefObject<HTMLButtonElement>;
+  reserveSidebarSpace?: boolean;
   onHelp: (section: AppHelpSection) => void;
   onClose: () => void;
   view?: AppViewMenuProps;
@@ -18,10 +18,11 @@ const menuItems = (root: HTMLElement | null) => root ? [...root.querySelectorAll
 
 export function AppToolsMenu(props: Props) {
   const root = useRef<HTMLDivElement>(null), sectionMenu = useRef<HTMLDivElement>(null);
+  const sidebarSpacer = useRef<HTMLDivElement>(null);
   const helpButton = useRef<HTMLButtonElement>(null), viewButton = useRef<HTMLButtonElement>(null);
   const callbacks = useRef(props); callbacks.current = props;
   const [section, setSection] = useState<Section | null>(null);
-  const [position, setPosition] = useState({left:8, top:42, sectionLeft:196, sectionTop:42});
+  const [position, setPosition] = useState({left:8, top:42, sectionLeft:196, sectionTop:42, reservedHeight:0});
   const focusSection = useRef(false);
   useEffect(() => {
     props.view?.onMenuChange(true);
@@ -35,8 +36,9 @@ export function AppToolsMenu(props: Props) {
       if (!anchor) return;
       const width = root.current?.offsetWidth ?? 184, height = root.current?.offsetHeight ?? 120;
       const left = Math.max(8, Math.min(anchor.left, innerWidth-width-8));
-      const keepClearBottom = callbacks.current.keepClearOf?.current?.getBoundingClientRect().bottom ?? 0;
-      const top = Math.max(keepClearBottom + 5, 8, Math.min(anchor.bottom+5, innerHeight-height-8));
+      const top = Math.max(8, Math.min(anchor.bottom+5, innerHeight-height-8));
+      const spacerTop = sidebarSpacer.current?.getBoundingClientRect().top;
+      const reservedHeight = spacerTop === undefined ? 0 : Math.max(0, top + height - spacerTop);
       const beside = (parentLeft: number, parentWidth: number, target: HTMLElement | null, anchorTop: number) => {
         const childWidth = target?.offsetWidth ?? 224, childHeight = target?.offsetHeight ?? 128;
         const right = parentLeft+parentWidth+4;
@@ -46,7 +48,7 @@ export function AppToolsMenu(props: Props) {
       // 根菜单的新位置先按 offset 计算，避免滚动/缩放时沿用旧的 bounding rect。
       const sectionOffset = sectionTrigger()?.offsetTop ?? 0;
       const second = beside(left,width,sectionMenu.current,top+sectionOffset);
-      setPosition({left,top,sectionLeft:second.left,sectionTop:second.top});
+      setPosition({left,top,sectionLeft:second.left,sectionTop:second.top,reservedHeight});
     };
     place(); window.addEventListener("resize",place); window.addEventListener("scroll",place,true);
     return () => { window.removeEventListener("resize",place);window.removeEventListener("scroll",place,true); };
@@ -88,7 +90,7 @@ export function AppToolsMenu(props: Props) {
   const choose = (section: AppHelpSection) => { close(); props.onHelp(section); };
   const act = (action: () => void) => { close(); action(); };
   const view = props.view;
-  return createPortal(<>
+  const menu = createPortal(<>
     <div className="menu-backdrop app-tools-backdrop" onClick={() => close()} />
     <div className="unified-tools-menu app-tools-menu" role="menu" aria-label="更多工具" ref={root} style={{left:position.left,top:position.top}} onKeyDown={event=>navigate(event)}>
       {view && <button ref={viewButton} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={section === "view"} aria-controls={section === "view"?"app-view-submenu":undefined} className="app-help-root" onMouseEnter={()=>openSection("view",false)} onClick={()=>openSection("view",true)}><Eye size={17} /><span>视图</span><CaretRight size={13} /></button>}
@@ -103,6 +105,10 @@ export function AppToolsMenu(props: Props) {
       <button type="button" role="menuitem" disabled={!view.fullscreenAvailable || view.fullscreenPending} onClick={()=>act(view.onFullscreen)}>{view.fullscreen ? <CornersIn size={17} /> : <CornersOut size={17} />}<span>{view.fullscreen ? "退出全屏" : "全屏"}</span></button>
     </div>}
   </>,document.body);
+  return <>
+    {props.reserveSidebarSpace && <div ref={sidebarSpacer} aria-hidden="true" style={{ height: position.reservedHeight, flexShrink: 0 }} />}
+    {menu}
+  </>;
 }
 
 /** 左侧栏隐藏后仍保留相同工具菜单，不依赖隐藏栏内的触发按钮。 */

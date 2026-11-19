@@ -260,9 +260,8 @@ export function AppSidebar(props: Props) {
             </button>
           </span>
         </div>
-
-        {toolsMenuOpen && <AppToolsMenu trigger={toolsButtonRef} keepClearOf={newSessionButtonRef} onClose={closeToolsMenus} onHelp={setHelpSection} view={props.viewMenu} />}
       </header>
+      {toolsMenuOpen && <AppToolsMenu trigger={toolsButtonRef} reserveSidebarSpace onClose={closeToolsMenus} onHelp={setHelpSection} view={props.viewMenu} />}
       <div className="sidebar-new-session-row">
         <button
           ref={newSessionButtonRef}
