@@ -21,13 +21,16 @@ try {
   const partial = await commandRows();
   writeFileSync(`${out}/cold-before.json`, JSON.stringify({ partial }, null, 2));
   await page.screenshot({ path: `${out}/cold.png` });
-  assert.equal(partial.length, 0, "首次检测未完成时不能先显示仅三条的假完整列表，随后再插入 Agent 指令");
+  assert.match(partial.join("\n"), /向会话发送消息/, "首次进入应立即显示已可用的内置指令");
+  assert.match(partial.join("\n"), /批量停止会话/);
+  assert.doesNotMatch(partial.join("\n"), /启动 Codex CLI/, "检测完成前不显示未经验证的运行环境");
+  await page.getByRole("status", { name: "正在检测本机 Agent 与已配置服务", exact: true }).waitFor();
   await page.getByRole("button", { name: "选择此范围全部", exact: true }).click();
   await page.getByRole("textbox", { name: "消息内容", exact: true }).fill("检测过程中继续编辑");
   await page.getByRole("button", { name: "确认发送", exact: true }).click();
   await page.getByRole("region", { name: "执行结果" }).getByText("内容已写入", { exact: true }).first().waitFor();
   assert.equal(await page.evaluate(() => window.__quickCalls.filter(c => c.method === "send_session_message").length), 2);
-  checks.push("冷启动只显示加载占位，检测不阻塞编辑、目标选择和已有会话发送");
+  checks.push("首次进入即可查看和使用内置指令，后台检测不阻塞编辑、目标选择和已有会话发送");
   await page.evaluate(() => window.__quickReleaseProbe());
   await page.getByRole("button", { name: "启动 Codex CLI 本地配置", exact: true }).waitFor();
   const full = await commandRows();
@@ -76,15 +79,16 @@ try {
   assert.ok(Math.max(...openSamples) < 500, `重复进入延迟：${openSamples}`);
   checks.push(`10 次进入完整列表均低于 500ms（${Math.min(...openSamples)}–${Math.max(...openSamples)}ms）`);
 
-  // Cold failures end the placeholder and remain actionable/retryable.
+  // Cold failures retain known commands without claiming an unverified CLI is usable.
   await page.goto(`${base}/tests/fixtures/quick-commands-ui.html?ui-preview=1&holdProbe=1`);
   await page.getByRole("status", { name: "正在检测本机 Agent 与已配置服务", exact: true }).waitFor();
   await page.evaluate(() => { window.__quickFailProbe = true; window.__quickReleaseProbe(); });
   await page.getByRole("alert").filter({ hasText: "读取本机能力失败" }).waitFor();
-  assert.equal(await page.locator(".quick-center-placeholder").count(), 0);
+  assert.equal(await page.getByRole("status", { name: "正在检测本机 Agent 与已配置服务", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "向会话发送消息 发送消息", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "启动 Codex CLI 本地配置", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "重新检测", exact: true }).isEnabled(), true);
-  checks.push("首次检测失败结束占位，显示错误与重试入口，不虚构可用 Agent");
+  checks.push("首次检测失败保留内置指令，显示错误和重试入口，不虚构可用 Agent");
   assert.deepEqual(errors, []);
   writeFileSync(`${out}/ui-result.json`, JSON.stringify({ checks, errors, openSamples }, null, 2));
   console.log(JSON.stringify({ passed: checks.length, checks, openSamples }, null, 2));

@@ -199,12 +199,12 @@ export function QuickCommandCenter({ sessions, providers, context = {}, manage =
       <aside className="quick-center-library" aria-label="快捷指令库">
       <div className="quick-center-tabs" role="tablist" aria-label="快捷指令分类">{([["favorites", "收藏"], ["recent", "最近"], ["all", "全部"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>)}</div>
       <nav className="quick-center-list" aria-label="指令列表" aria-busy={loading}>
-        {catalogPending && <div className="quick-center-loading" role="status" aria-label="正在检测本机 Agent 与已配置服务"><span>正在检测本机 Agent 与已配置服务…</span>{Array.from({ length: 6 }, (_, i) => <div className="quick-center-placeholder" key={i} aria-hidden="true"><i /><span><i /><i /></span></div>)}</div>}
         {!catalogPending && !filtered.length && <p className="quick-center-empty">{query ? "没有匹配的指令" : tab === "favorites" ? "暂无收藏，可在全部指令中点击星标。" : "暂无记录"}</p>}
-        {!catalogPending && filtered.map(c => <div className={`quick-center-list-row${draft.id === c.id ? " selected" : ""}`} key={c.id}>
+        {filtered.map(c => <div className={`quick-center-list-row${draft.id === c.id ? " selected" : ""}`} key={c.id}>
           <button type="button" disabled={busy} aria-pressed={draft.id === c.id} onClick={() => choose(c)}>{c.action === "launch" ? <TerminalWindowIcon size={19} /> : <ChatCircleIcon size={19} />}<span>{c.title}<small>{c.id.startsWith("custom:") ? "自定义" : c.action === "launch" ? c.providerId ? "已配置 Provider" : "本地配置" : ACTION_LABELS[c.action]}</small></span></button>
           <button type="button" className="quick-center-favorite" aria-label={`${settings.favorites.includes(c.id) ? "取消收藏" : "收藏"} ${c.title}`} aria-pressed={settings.favorites.includes(c.id)} disabled={busy || !!storageError} onClick={() => mutateSettings(s => ({ ...s, favorites: s.favorites.includes(c.id) ? s.favorites.filter(i => i !== c.id) : [...s.favorites, c.id] }))}><StarIcon size={17} weight={settings.favorites.includes(c.id) ? "fill" : "regular"} /></button>
         </div>)}
+        {catalogPending && <p className="quick-center-loading" role="status" aria-label="正在检测本机 Agent 与已配置服务">正在检测本机 Agent 与已配置服务…</p>}
       </nav>
       <div className="quick-center-library-footer">
         <button type="button" className="quick-center-create" disabled={busy || !!storageError} onClick={() => { setDraft({ id: `custom:${crypto.randomUUID()}`, title: "", action: "send", scope: settings.defaultScope, body: "" }); setSelectedIds([]); setEditing(true); setConfirmation(null); }}><PlusIcon size={18} />新建自定义指令</button>

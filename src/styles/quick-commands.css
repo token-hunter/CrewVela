@@ -27,14 +27,7 @@
 .quick-center-list { flex: 1; min-height: 0; padding: 16px 16px 16px 0; overflow: auto; scrollbar-width: thin; }
 .quick-center-library-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; flex-shrink: 0; min-height: 78px; margin-right: 16px; padding: 16px 0; border-top: 1px solid var(--border); }
 .quick-center-workspace { display: flex; flex-direction: column; container-type: inline-size; min-width: 0; min-height: 0; padding-left: 24px; }
-.quick-center-loading { position: relative; padding-top: 22px; }
-.quick-center-loading > span { position: absolute; top: 0; color: var(--text-dim); font-size: 12px; }
-.quick-center-placeholder { display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 10px; }
-.quick-center-placeholder i { display: block; background: var(--bg-hover); border-radius: 4px; }
-.quick-center-placeholder > i { width: 19px; height: 19px; }
-.quick-center-placeholder > span { flex: 1; }
-.quick-center-placeholder span i:first-child { width: 68%; height: 12px; }
-.quick-center-placeholder span i:last-child { width: 40%; height: 9px; margin-top: 9px; }
+.quick-center-loading { margin: 10px 0 0; color: var(--text-dim); font-size: 12px; }
 .quick-center-list-row { display: flex; align-items: center; border-radius: 8px; margin-bottom: 4px; }
 .quick-center-list-row.selected { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
 .quick-center-list-row > button:first-child { flex: 1; min-width: 0; text-align: left; justify-content: flex-start; padding: 12px 10px; border: none; }
