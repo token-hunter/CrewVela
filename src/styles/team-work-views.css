@@ -131,8 +131,6 @@
   .team-work-views button.team-task-row { grid-template-columns:minmax(100px,1fr) minmax(70px,.8fr); padding:12px; gap:8px; }
   .team-task-row > .team-task-status { grid-column:2; text-align:left; }
   .team-task-meter { grid-column:1; grid-row:2; }
-  .team-work-views button.team-task-row { font-size:14px; }
-  .team-task-facts { font-size:14px; }
   .team-task-detail { padding:16px; }
   .team-task-actions { gap:16px; }
   .team-related-chat { margin-left:0; }

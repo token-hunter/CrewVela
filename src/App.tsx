@@ -148,12 +148,13 @@ const BROWSER_SIDEBAR_WIDTH_STORAGE_KEY = "crewvela-browser-sidebar-width";
 const LEFT_SIDEBAR_WIDTH_STORAGE_KEY = "crewvela-left-sidebar-width";
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 292;
 const DEFAULT_RIGHT_SIDEBAR_WIDTH = 380;
+const MIN_MAIN_WORKSPACE_WIDTH = 200;
 
-function parseRightSidebarWidth(raw: string | null, maxWidth: number): number | null {
+function parseRightSidebarWidth(raw: string | null): number | null {
   if (raw === null || raw.trim() === "") return null;
   const width = Number(raw);
   if (!Number.isFinite(width)) return null;
-  return Math.max(0, Math.min(width, maxWidth));
+  return Math.max(0, width);
 }
 
 function loadRightSidebarWidth(): number {
@@ -161,7 +162,6 @@ function loadRightSidebarWidth(): number {
   try {
     const sharedWidth = parseRightSidebarWidth(
       window.localStorage.getItem(RIGHT_SIDEBAR_WIDTH_STORAGE_KEY),
-      window.innerWidth,
     );
     if (sharedWidth !== null) return sharedWidth;
 
@@ -177,7 +177,6 @@ function loadRightSidebarWidth(): number {
     fallbackWidth =
       parseRightSidebarWidth(
         window.localStorage.getItem(legacyStorageKey),
-        window.innerWidth,
       ) ?? DEFAULT_RIGHT_SIDEBAR_WIDTH;
   } catch {
     // 持久化不可用时仍使用统一默认宽度，并继续尝试保存该回退值。
@@ -186,8 +185,12 @@ function loadRightSidebarWidth(): number {
   return fallbackWidth;
 }
 
-function clampSidebarWidth(width: number, maxWidth: number): number {
-  return Math.max(0, Math.min(maxWidth, width));
+function maxRightSidebarWidth(workspaceWidth: number): number {
+  return workspaceWidth - Math.min(MIN_MAIN_WORKSPACE_WIDTH, Math.ceil(workspaceWidth / 3));
+}
+
+function clampSidebarWidth(width: number, workspaceWidth: number): number {
+  return Math.max(0, Math.min(maxRightSidebarWidth(workspaceWidth), width));
 }
 
 function saveRightSidebarWidth(width: number): void {
@@ -466,7 +469,7 @@ export default function App() {
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(loadLeftSidebarWidth);
   const [rightSidebarDesiredWidth, setRightSidebarDesiredWidth] = useState(loadRightSidebarWidth);
   const leftSidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const rightSidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const rightSidebarResizeRef = useRef<{ startX: number; startWidth: number; preferredWidth: number } | null>(null);
   const [lastRightSidebarTab, setLastRightSidebarTab] =
     useState<RightSidebarTab>(loadRightSidebarTab);
   const [mountedRightSidebarTabs, setMountedRightSidebarTabs] = useState(
@@ -495,7 +498,8 @@ export default function App() {
   openRightSidebarTabsRef.current = openRightSidebarTabs;
   const rightSidebarOpen = activeRightSidebarTab !== null;
   const [workspaceAvailableWidth, setWorkspaceAvailableWidth] = useState(window.innerWidth);
-  const rightSidebarWidth = Math.min(rightSidebarDesiredWidth, workspaceAvailableWidth);
+  // A smaller window limits the displayed split without replacing the saved preference.
+  const rightSidebarWidth = clampSidebarWidth(rightSidebarDesiredWidth, workspaceAvailableWidth);
   const rightSidebarStyle = {
     "--right-sidebar-width": `${rightSidebarWidth}px`,
   } as CSSProperties;
@@ -1924,15 +1928,16 @@ export default function App() {
   }, []);
 
   const persistRightSidebarWidth = useCallback((width: number) => {
-    const next = clampRightSidebarWidth(width);
-    setRightSidebarDesiredWidth(next);
-    saveRightSidebarWidth(next);
-  }, [clampRightSidebarWidth]);
+    setRightSidebarDesiredWidth(width);
+    saveRightSidebarWidth(width);
+  }, []);
 
   const startRightSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!activeRightSidebarTab || sidebarMaximized) return;
+    if (event.button !== 0 || !activeRightSidebarTab || sidebarMaximized) return;
+    event.preventDefault();
+    event.currentTarget.focus({ preventScroll: true });
     const displayedWidth = document.querySelector<HTMLElement>(".unified-right-sidebar:not(.is-closed)")?.getBoundingClientRect().width ?? rightSidebarWidth;
-    rightSidebarResizeRef.current = { startX: event.clientX, startWidth: displayedWidth };
+    rightSidebarResizeRef.current = { startX: event.clientX, startWidth: displayedWidth, preferredWidth: rightSidebarDesiredWidth };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -1945,13 +1950,17 @@ export default function App() {
 
   const stopRightSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = rightSidebarResizeRef.current;
-    if (!drag || !activeRightSidebarTab) return;
-    const width = drag.startWidth + drag.startX - event.clientX;
+    if (!drag) return;
     rightSidebarResizeRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    persistRightSidebarWidth(width);
+    if (event.type === "pointercancel" || event.clientX === drag.startX) {
+      setRightSidebarDesiredWidth(drag.preferredWidth);
+      return;
+    }
+    const width = drag.startWidth + drag.startX - event.clientX;
+    persistRightSidebarWidth(clampRightSidebarWidth(width));
   };
 
   const resizeRightSidebarWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1959,7 +1968,8 @@ export default function App() {
     if (!activeRightSidebarTab) return;
     event.preventDefault();
     const displayedWidth = document.querySelector<HTMLElement>(".unified-right-sidebar:not(.is-closed)")?.getBoundingClientRect().width ?? rightSidebarWidth;
-    persistRightSidebarWidth(displayedWidth + (event.key === "ArrowLeft" ? 24 : -24));
+    const next = clampRightSidebarWidth(displayedWidth + (event.key === "ArrowLeft" ? 24 : -24));
+    if (Math.abs(next - displayedWidth) >= 1) persistRightSidebarWidth(next);
   };
 
   const selectRightSidebarTab = useCallback(
@@ -2529,8 +2539,8 @@ export default function App() {
                     }
                     aria-orientation="vertical"
                     aria-valuemin={0}
-                    aria-valuemax={workspaceAvailableWidth}
-                    aria-valuenow={Math.round(clampRightSidebarWidth(rightSidebarWidth))}
+                    aria-valuemax={maxRightSidebarWidth(workspaceAvailableWidth)}
+                    aria-valuenow={Math.round(rightSidebarWidth)}
                     tabIndex={0}
                     onPointerDown={startRightSidebarResize}
                     onPointerMove={moveRightSidebarResize}

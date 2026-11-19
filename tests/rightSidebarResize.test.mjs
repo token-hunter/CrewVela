@@ -50,6 +50,7 @@ function sidebarWidthHelpers(storage, innerWidth = 1600, localStorageGetter = nu
   const helperNames = [
     "parseRightSidebarWidth",
     "loadRightSidebarWidth",
+    "maxRightSidebarWidth",
     "clampSidebarWidth",
     "saveRightSidebarWidth",
     "loadRightSidebarTab",
@@ -62,6 +63,7 @@ function sidebarWidthHelpers(storage, innerWidth = 1600, localStorageGetter = nu
     "GIT_SIDEBAR_WIDTH_STORAGE_KEY",
     "BROWSER_SIDEBAR_WIDTH_STORAGE_KEY",
     "DEFAULT_RIGHT_SIDEBAR_WIDTH",
+    "MIN_MAIN_WORKSPACE_WIDTH",
   ];
   const declarations = [
     ...constantNames.map(sourceConstant),
@@ -88,7 +90,7 @@ test("所有右侧功能页共用一个 380px 默认宽度和共享 state", () =
   assert.match(app, /crewvela-right-sidebar-width/);
   assert.match(app, /DEFAULT_RIGHT_SIDEBAR_WIDTH = 380/);
   assert.match(app, /const \[rightSidebarDesiredWidth, setRightSidebarDesiredWidth\] = useState\(loadRightSidebarWidth\)/);
-  assert.match(app, /const rightSidebarWidth = Math\.min\(rightSidebarDesiredWidth, workspaceAvailableWidth\)/);
+  assert.match(app, /const rightSidebarWidth = clampSidebarWidth\(rightSidebarDesiredWidth, workspaceAvailableWidth\)/);
   assert.doesNotMatch(app, /set(?:File|Control|Git|Browser)SidebarWidth/);
   assert.doesNotMatch(app, /DEFAULT_(?:FILE|CONTROL|GIT|BROWSER)_SIDEBAR_WIDTH/);
 });
@@ -154,19 +156,20 @@ test("没有旧宽度时首次默认值也写入共享 key，写入失败仍采�
   assert.deepEqual(failedWrite.writes, [["crewvela-right-sidebar-width", "760"]]);
 });
 
-test("读取宽度会拒绝非法值并限制在窗口或工作区容器内", () => {
+test("窄窗口中重启仍保留保存值，仅限制实际分栏宽度", () => {
   const storage = new MemoryStorage();
   storage.values.set("crewvela-right-sidebar-width", "1800");
   const helpers = sidebarWidthHelpers(storage, 1200);
 
-  assert.equal(helpers.loadRightSidebarWidth(), 1200);
-  assert.equal(helpers.parseRightSidebarWidth("", 1000), null);
-  assert.equal(helpers.parseRightSidebarWidth("NaN", 1000), null);
-  assert.equal(helpers.parseRightSidebarWidth("-12", 1000), 0);
-  assert.equal(helpers.clampSidebarWidth(600, 480), 480);
+  assert.equal(helpers.loadRightSidebarWidth(), 1800);
+  assert.deepEqual(storage.writes, []);
+  assert.equal(helpers.parseRightSidebarWidth(""), null);
+  assert.equal(helpers.parseRightSidebarWidth("NaN"), null);
+  assert.equal(helpers.parseRightSidebarWidth("-12"), 0);
+  assert.equal(helpers.clampSidebarWidth(1800, 1200), 1000);
+  assert.equal(helpers.clampSidebarWidth(600, 480), 320);
   assert.equal(helpers.clampSidebarWidth(-12, 480), 0);
   assert.match(app, /\.main-workspace"\)\?\.clientWidth/);
-  assert.match(app, /Math\.min\(rightSidebarDesiredWidth, workspaceAvailableWidth\)/);
 });
 
 test("localStorage 读取异常回到默认宽度，保存异常不会阻止当前宽度更新", () => {
@@ -191,8 +194,8 @@ test("localStorage 读取异常回到默认宽度，保存异常不会阻止当�
   });
   assert.doesNotThrow(() => getterFailure.saveRightSidebarWidth(512));
 
-  const persistBody = app.split("const persistRightSidebarWidth = useCallback((width: number) => {")[1].split("}, [clampRightSidebarWidth]);")[0];
-  assert.match(persistBody, /setRightSidebarDesiredWidth\(next\);[\s\S]*saveRightSidebarWidth\(next\)/);
+  const persistBody = app.split("const persistRightSidebarWidth = useCallback((width: number) => {")[1].split("}, []);")[0];
+  assert.match(persistBody, /setRightSidebarDesiredWidth\(width\);[\s\S]*saveRightSidebarWidth\(width\)/);
   assert.match(sourceFunction("saveRightSidebarWidth"), /window\.localStorage\.setItem\(RIGHT_SIDEBAR_WIDTH_STORAGE_KEY/);
   assert.doesNotMatch(sourceFunction("saveRightSidebarWidth"), /(?:FILE|CONTROL|GIT|BROWSER)_SIDEBAR_WIDTH_STORAGE_KEY/);
 });
@@ -202,8 +205,9 @@ test("拖拽、键盘和双击复位都更新同一份宽度 state", () => {
   const stopBody = app.split("const stopRightSidebarResize = (")[1].split("const resizeRightSidebarWithKeyboard =")[0];
   const keyboardBody = app.split("const resizeRightSidebarWithKeyboard = (")[1].split("const selectRightSidebarTab =")[0];
   assert.match(moveBody, /setRightSidebarDesiredWidth\(next\)/);
-  assert.match(stopBody, /persistRightSidebarWidth\(width\)/);
-  assert.match(keyboardBody, /persistRightSidebarWidth\(displayedWidth \+ \(event\.key === "ArrowLeft" \? 24 : -24\)\)/);
+  assert.match(stopBody, /persistRightSidebarWidth\(clampRightSidebarWidth\(width\)\)/);
+  assert.match(keyboardBody, /clampRightSidebarWidth\(displayedWidth \+ \(event\.key === "ArrowLeft" \? 24 : -24\)\)/);
+  assert.match(keyboardBody, /persistRightSidebarWidth\(next\)/);
   assert.match(app, /setPointerCapture\(event\.pointerId\)/);
   assert.match(app, /onDoubleClick=\{\(\) => persistRightSidebarWidth\(DEFAULT_RIGHT_SIDEBAR_WIDTH\)\}/);
   assert.match(app, /role="separator"/);

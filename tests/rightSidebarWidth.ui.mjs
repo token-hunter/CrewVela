@@ -12,6 +12,8 @@ try {
   await page.getByRole("button", { name: "切换右侧栏", exact: true }).click();
   const sidebar = page.getByRole("complementary", { name: "右侧栏" });
   const width = () => sidebar.evaluate(element => element.getBoundingClientRect().width);
+  const workspaceWidth = () => page.locator(".main-workspace").evaluate(element => element.clientWidth);
+  const splitLimit = available => available - Math.min(200, Math.ceil(available / 3));
   const equalWidth = async (expected, label) => {
     await page.waitForTimeout(180);
     const actual = await width();
@@ -49,10 +51,10 @@ try {
   await equalWidth(resized + 24, "previous browser instance");
   await page.setViewportSize({ width: 700, height: 720 });
   await page.waitForTimeout(250);
-  const available = await page.locator(".main-workspace").evaluate(element => element.clientWidth);
-  await equalWidth(Math.min(resized + 24, available), "narrow window clamp");
+  const available = await workspaceWidth();
+  await equalWidth(Math.min(resized + 24, splitLimit(available)), "narrow window leaves usable space for the workspace");
   await sidebar.getByRole("tab", { name: "Git", exact: true }).click();
-  await equalWidth(Math.min(resized + 24, available), "narrow window switch");
+  await equalWidth(Math.min(resized + 24, splitLimit(available)), "narrow window switch");
   await page.setViewportSize({ width: 1600, height: 1000 });
   await equalWidth(resized + 24, "window restore retains desired width");
   await sidebar.getByRole("button", { name: "最大化工作面板", exact: true }).click();
@@ -69,6 +71,42 @@ try {
   await equalWidth(initial, "double-click resets the shared default");
   await sidebar.getByRole("tab", { name: "开始", exact: true }).click();
   await equalWidth(initial, "start after reset");
+
+  const workspace = page.locator(".main-workspace");
+  const workspaceBox = await workspace.boundingBox();
+  const cancelledGrip = await separator.boundingBox();
+  const dragX = cancelledGrip.x + cancelledGrip.width / 2;
+  const dragY = cancelledGrip.y + cancelledGrip.height / 2;
+  await page.mouse.move(dragX, dragY);
+  await page.mouse.down();
+  await page.mouse.move(dragX - 90, dragY, { steps: 6 });
+  await equalWidth(initial + 90, "the current drag is visible");
+  await separator.dispatchEvent("pointercancel", { pointerId: 1, clientX: 0 });
+  await page.mouse.up();
+  await equalWidth(initial, "cancelling a drag restores the previous split");
+  const grip = await separator.boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(workspaceBox.x - 10, grip.y + grip.height / 2, { steps: 8 });
+  await page.mouse.up();
+  const desiredSplit = splitLimit(await workspaceWidth());
+  await equalWidth(desiredSplit, "dragging the divider left cannot fill the workspace");
+  await separator.press("ArrowLeft");
+  await equalWidth(desiredSplit, "keyboard resize uses the same split limit");
+  await sidebar.getByRole("button", { name: "最大化工作面板", exact: true }).click();
+  await equalWidth(await workspaceWidth(), "maximize can fill the workspace");
+  await sidebar.getByRole("button", { name: "恢复工作面板", exact: true }).click();
+  await equalWidth(desiredSplit, "restore from the widest split");
+
+  await sidebar.getByRole("button", { name: "最大化工作面板", exact: true }).click();
+  await page.setViewportSize({ width: 1060, height: 800 });
+  await sidebar.getByRole("button", { name: "恢复工作面板", exact: true }).click();
+  await equalWidth(splitLimit(await workspaceWidth()), "restore after narrowing a maximized window");
+  await page.reload();
+  await page.getByRole("button", { name: "切换右侧栏", exact: true }).click();
+  await equalWidth(splitLimit(await workspaceWidth()), "narrow restart keeps the split");
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await equalWidth(desiredSplit, "widening after a restart restores the saved split");
   await page.screenshot({ path: "output/playwright/right-sidebar-shared-width.png" });
   const legacyPage = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   await legacyPage.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "Win32" })); // 该用例断言 Windows 形态（PowerShell/CMD、Windows 路径、重启 Codex），macOS 形态由 macosCore.ui.mjs 覆盖
