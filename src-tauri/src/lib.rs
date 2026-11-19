@@ -237,10 +237,9 @@ fn flush_title_summaries(app: &AppHandle, session_state: &SessionManager) {
     let now = automation::now_millis();
     let last = LAST_NATIVE_TITLE_READ.load(Ordering::Relaxed);
     if now.saturating_sub(last) >= 3000 && LAST_NATIVE_TITLE_READ.compare_exchange(last, now, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
-        let candidates = session_state.native_title_candidates();
         let state = session_state.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            for request in candidates {
+            for request in state.native_title_candidates() {
                 if let Ok(Some(title)) = native_session_titles::read(&request) {
                     if let Err(error) = state.apply_title_request(&request, &title) { eprintln!("[crewvela] 保存原生 CLI 标题失败: {error:#}"); }
                 }
@@ -4383,9 +4382,12 @@ async fn list_archived_sessions(
 }
 
 #[tauri::command]
-fn session_snapshot(app: AppHandle, state: State<'_, SessionManager>) -> Vec<SessionRecord> {
-    flush_title_summaries(&app, &state);
-    state.list()
+async fn session_snapshot(app: AppHandle, state: State<'_, SessionManager>) -> Result<Vec<SessionRecord>, String> {
+    let state = state.inner().clone();
+    blocking_command(move || {
+        flush_title_summaries(&app, &state);
+        Ok(state.list())
+    }).await
 }
 
 /// 全部会话的累计 token 用量（增量解析 transcript；前端低频轮询）。
