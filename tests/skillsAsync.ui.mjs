@@ -98,6 +98,67 @@ try {
   await page.screenshot({ path: "output/playwright/skill-market-final.png", fullPage: true });
   console.log("PASS: submitted-query pagination, duplicate search/install guards and newest search wins");
 
+  const manage = page.getByRole("button", { name: "仓库管理", exact: true });
+  const manager = page.getByRole("dialog", { name: "Skill 仓库管理", exact: true });
+  const owner = manager.getByLabel("GitHub 所有者");
+  const repositoryName = manager.getByLabel("仓库名称");
+  const branch = manager.getByLabel("分支");
+  const addRepository = manager.getByRole("button", { name: "添加仓库" });
+  const saveCommand = "skill_center_market_repository_save";
+  const deleteCommand = "skill_center_market_repository_delete";
+  for (const [width, height] of [[1280, 800], [500, 500]]) {
+    await page.setViewportSize({ width, height });
+    await manage.click();
+    await manager.waitFor();
+    const title = await manager.getByRole("heading").boundingBox();
+    const close = await manager.getByRole("button", { name: "关闭仓库管理" }).boundingBox();
+    const bounds = await manager.boundingBox();
+    const enabled = manager.getByRole("checkbox", { name: "启用" });
+    assert.ok(close.x > bounds.x + bounds.width / 2 && close.y < title.y + title.height, `${width}: close aligns to the top right`);
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width, `${width}: dialog fits the viewport`);
+    assert.ok(await enabled.locator("..").evaluate(label => getComputedStyle(label).whiteSpace === "nowrap"));
+    await owner.fill("unsaved-owner"); await repositoryName.fill("unsaved-repo"); await branch.fill("draft-branch");
+    await manager.getByRole("button", { name: "取消", exact: true }).click();
+    await manager.waitFor({ state: "detached" });
+    assert.equal(await count(saveCommand), 0);
+    assert.equal(await manage.evaluate(button => document.activeElement === button), true);
+    await manage.click();
+    assert.equal(await owner.inputValue(), ""); assert.equal(await repositoryName.inputValue(), ""); assert.equal(await branch.inputValue(), "main");
+    await owner.fill("discard-me");
+    if (width === 1280) await page.keyboard.press("Escape");
+    else await manager.getByRole("button", { name: "关闭仓库管理" }).click();
+    await manager.waitFor({ state: "detached" });
+    assert.equal(await count(saveCommand), 0);
+  }
+
+  await manage.click();
+  assert.equal(await owner.inputValue(), "");
+  await addRepository.click();
+  await manager.getByRole("alert").filter({ hasText: "请填写" }).waitFor();
+  await owner.fill("fixture-owner"); await repositoryName.fill("fixture-repo");
+  await addRepository.click(); await pending(saveCommand);
+  await release(saveCommand, undefined, "fixture save rejected");
+  await manager.getByRole("alert").filter({ hasText: "fixture save rejected" }).waitFor();
+  assert.equal(await repositoryName.inputValue(), "fixture-repo");
+  await addRepository.click(); await pending(saveCommand); await release(saveCommand, {});
+  const custom = manager.locator("article").filter({ hasText: "fixture-owner/fixture-repo" });
+  const builtin = manager.locator("article").filter({ hasText: "anthropics/skills" });
+  await custom.waitFor();
+  assert.equal(await builtin.getByRole("button", { name: /删除仓库/ }).isDisabled(), true);
+  const customEnabled = custom.getByRole("checkbox", { name: "启用" });
+  await customEnabled.click(); await pending(saveCommand); await release(saveCommand, {});
+  await manager.getByText("1 个来源已启用", { exact: true }).waitFor();
+  await manager.getByRole("button", { name: "取消", exact: true }).click();
+  await manage.click(); assert.equal(await customEnabled.isChecked(), false);
+  page.once("dialog", prompt => prompt.accept());
+  await custom.getByRole("button", { name: /删除仓库/ }).click();
+  await pending(deleteCommand); await release(deleteCommand, {});
+  await custom.waitFor({ state: "detached" });
+  await manager.getByRole("button", { name: "完成", exact: true }).click();
+  await manager.waitFor({ state: "detached" });
+  console.log("PASS: repository layout, draft cancellation, close and Escape, and immediate repository operations");
+
+  await page.setViewportSize({ width: 1280, height: 1000 });
   await page.goto(new URL("?mode=updates", url).href);
   const archive = page.getByRole("button", { name: "选择新版压缩包并比较", exact: true });
   await archive.evaluate(button => { button.click(); button.click(); });

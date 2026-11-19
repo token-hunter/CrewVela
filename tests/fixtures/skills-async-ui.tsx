@@ -10,14 +10,16 @@ const snapshot = () => ({ assets, deployments: [], skillSets: [], runtimes: [{ r
 const pending: Array<{ command: string; args: any; resolve: (value: any) => void; reject: (error: Error) => void }> = [];
 const calls: Array<{ command: string; args: any }> = [];
 let checked = false;
+let repositories = [{ id: "builtin", owner: "anthropics", name: "skills", branch: "main", enabled: true, builtin: true, updatedAt: 0 }];
 const checks = () => checked ? [{ id: "check-A", skillId: "A", status: "available", message: "fixture candidate", checkedAt: 1, baseHash: "hash-old", candidate: { ...assets[0], contentHash: "hash-new" }, omittedFiles: 0, changes: [] }] : [];
 const mock = { calls, pending, deferSnapshots: true, snapshot,
   invoke(command: string, args: any) {
     calls.push({ command, args });
-    if ((command === "skill_center_snapshot" && mock.deferSnapshots) || ["plugin:dialog|open", "skill_center_import", "skill_center_preview", "skill_center_skills_sh_search", "skill_center_market_install", "skill_center_check_updates", "skill_center_apply_update"].includes(command)) return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
+    if ((command === "skill_center_snapshot" && mock.deferSnapshots) || ["plugin:dialog|open", "skill_center_import", "skill_center_preview", "skill_center_skills_sh_search", "skill_center_market_install", "skill_center_market_repository_save", "skill_center_market_repository_delete", "skill_center_check_updates", "skill_center_apply_update"].includes(command)) return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
     if (command === "skill_center_snapshot") return Promise.resolve(snapshot());
     if (command === "skill_center_update_checks") return Promise.resolve(checks());
     if (command === "skill_center_market_browse") return Promise.resolve({ skills: [], errors: [] });
+    if (command === "skill_center_market_repositories") return Promise.resolve(repositories);
     return Promise.resolve([]);
   },
   release(command: string, value: any, error?: string, query?: string) {
@@ -27,6 +29,11 @@ const mock = { calls, pending, deferSnapshots: true, snapshot,
     if (command === "skill_center_snapshot") mock.deferSnapshots = false;
     if (error) { item.reject(Error(error)); return; }
     if (command === "skill_center_import" && item.args.input.source === "one") assets = [...assets, asset("new")];
+    if (command === "skill_center_market_repository_save") {
+      const input = item.args.input;
+      repositories = input.id ? repositories.map(repo => repo.id === input.id ? input : repo) : [...repositories, { ...input, id: "custom", builtin: false, updatedAt: 1 }];
+    }
+    if (command === "skill_center_market_repository_delete") repositories = repositories.filter(repo => repo.id !== item.args.id);
     if (command === "skill_center_check_updates") checked = true;
     item.resolve(value);
   },

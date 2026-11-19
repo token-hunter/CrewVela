@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { EmptyState } from "./ui/EmptyState";
+import { Modal } from "./ui/Modal";
 import {
   ArrowClockwise,
   ArrowSquareOut,
@@ -12,6 +14,7 @@ import {
   Plus,
   Trash,
   Warning,
+  X,
 } from "@phosphor-icons/react";
 
 interface SkillMarketRepository {
@@ -219,6 +222,18 @@ export function SkillMarketPanel({ onInstalled }: Props) {
     }
   };
 
+  const resetRepositoryDraft = () => {
+    setDraftOwner("");
+    setDraftName("");
+    setDraftBranch("main");
+  };
+
+  const closeManager = () => {
+    resetRepositoryDraft();
+    setManagerOpen(false);
+    setMessage(null);
+  };
+
   const saveRepository = async () => {
     if (operationInFlight.current) return;
     if (!draftOwner.trim() || !draftName.trim()) {
@@ -237,9 +252,7 @@ export function SkillMarketPanel({ onInstalled }: Props) {
           },
         });
       }
-      setDraftOwner("");
-      setDraftName("");
-      setDraftBranch("main");
+      resetRepositoryDraft();
       await loadRepositories();
       const refreshed = await browse();
       if (refreshed) setMessage({ tone: "success", text: "Skill 仓库已保存" });
@@ -296,6 +309,11 @@ export function SkillMarketPanel({ onInstalled }: Props) {
   };
 
   const visibleSkills = source === "repos" ? filteredRepositorySkills : skillsShItems;
+  const feedback = message && (
+    <div className={`skill-market-message ${message.tone}`} role={message.tone === "error" ? "alert" : "status"}>
+      {message.tone === "error" ? <Warning /> : <Check />}{message.text}
+    </div>
+  );
 
   return (
     <section className="skill-market" aria-label="Skill 市场">
@@ -325,11 +343,11 @@ export function SkillMarketPanel({ onInstalled }: Props) {
         )}
         <div className="skill-market-toolbar-actions">
           <button className="icon-btn" title="刷新" aria-label="刷新 Skill 市场" onClick={() => void (source === "repos" ? browse() : runSearch(0))} disabled={busy || loading}><ArrowClockwise className={loading ? "spin" : ""} /></button>
-          <button className="btn" onClick={() => setManagerOpen(true)}><GearSix />仓库管理</button>
+          <button className="btn" onClick={() => { setMessage(null); setManagerOpen(true); }}><GearSix />仓库管理</button>
         </div>
       </header>
 
-      {message && <div className={`skill-market-message ${message.tone}`}>{message.tone === "error" ? <Warning /> : <Check />}{message.text}</div>}
+      {!managerOpen && feedback}
       {!!browseResult.errors.length && source === "repos" && <div className="skill-market-partial"><Warning />部分仓库读取失败：{browseResult.errors.join("；")}</div>}
 
       <div className="skill-market-grid">
@@ -372,28 +390,34 @@ export function SkillMarketPanel({ onInstalled }: Props) {
         </footer>
       )}
 
-      {managerOpen && (
-        <div className="skill-center-popover">
-          <div className="skill-center-modal skill-market-manager"><fieldset disabled={busy} style={{ display: "contents" }}>
-            <header><div><h3>Skill 仓库管理</h3><p>添加、停用或删除 GitHub Skill 仓库来源。</p></div><button className="icon-btn" onClick={() => setManagerOpen(false)}>×</button></header>
-            <div className="skill-market-repository-list">
-              {repositories.map((repository) => (
-                <article key={repository.id}>
-                  <div><strong>{repository.owner}/{repository.name}</strong><small>{repository.branch}{repository.builtin ? " · 内置" : " · 自定义"}</small></div>
-                  <label><input type="checkbox" checked={repository.enabled} onChange={() => void toggleRepository(repository)} />启用</label>
-                  <button className="icon-btn danger" disabled={repository.builtin} title={repository.builtin ? "内置仓库可停用但不能删除" : "删除仓库"} onClick={() => void deleteRepository(repository)}><Trash /></button>
-                </article>
-              ))}
-            </div>
-            <div className="skill-market-repository-form">
-              <label>GitHub Owner<input value={draftOwner} onChange={(event) => setDraftOwner(event.target.value)} placeholder="anthropics" /></label>
-              <label>仓库名称<input value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="skills" /></label>
-              <label>分支<input value={draftBranch} onChange={(event) => setDraftBranch(event.target.value)} placeholder="main" /></label>
-              <button className="btn primary" onClick={() => void saveRepository()} disabled={busy}><Plus />添加仓库</button>
-            </div>
-            <footer><span>{repositories.filter((item) => item.enabled).length} 个来源已启用</span><button className="btn primary" onClick={() => setManagerOpen(false)}>完成</button></footer>
-          </fieldset></div>
-        </div>
+      {managerOpen && createPortal(
+        <Modal className="skill-center-modal skill-market-manager" overlayClassName="skill-center-popover" ariaLabel="Skill 仓库管理" onClose={closeManager}>
+          <header>
+            <div><h3>Skill 仓库管理</h3><p>添加、启用、停用或删除仓库后会立即保存。</p></div>
+            <button type="button" className="icon-btn" aria-label="关闭仓库管理" onClick={closeManager}><X size={16} /></button>
+          </header>
+          <div className="skill-market-repository-list">
+            {repositories.map((repository) => (
+              <article key={repository.id}>
+                <div><strong title={`${repository.owner}/${repository.name}`}>{repository.owner}/{repository.name}</strong><small>{repository.branch}{repository.builtin ? " · 内置" : " · 自定义"}</small></div>
+                <label><input type="checkbox" checked={repository.enabled} disabled={busy} onChange={() => void toggleRepository(repository)} />启用</label>
+                <button type="button" className="icon-btn danger" disabled={busy || repository.builtin} title={repository.builtin ? "内置仓库可停用但不能删除" : "删除仓库"} aria-label={`删除仓库 ${repository.owner}/${repository.name}`} onClick={() => void deleteRepository(repository)}><Trash size={15} /></button>
+              </article>
+            ))}
+          </div>
+          <form className="skill-market-repository-form" onSubmit={(event) => { event.preventDefault(); void saveRepository(); }}>
+            <label>GitHub 所有者<input value={draftOwner} disabled={busy} onChange={(event) => setDraftOwner(event.target.value)} placeholder="anthropics" /></label>
+            <label>仓库名称<input value={draftName} disabled={busy} onChange={(event) => setDraftName(event.target.value)} placeholder="skills" /></label>
+            <label>分支<input value={draftBranch} disabled={busy} onChange={(event) => setDraftBranch(event.target.value)} placeholder="main" /></label>
+            <button type="submit" className="btn" disabled={busy}><Plus size={15} />添加仓库</button>
+          </form>
+          {feedback}
+          <footer>
+            <span>{repositories.filter((item) => item.enabled).length} 个来源已启用</span>
+            <button type="button" className="btn" onClick={closeManager}>取消</button>
+            <button type="button" className="btn primary" onClick={closeManager}>完成</button>
+          </footer>
+        </Modal>, document.body,
       )}
     </section>
   );
