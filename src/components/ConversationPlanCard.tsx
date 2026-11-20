@@ -17,9 +17,17 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
 }) {
   const managed = plan.managed;
   if (managed) {
+    const smallTeam = managed.target.mode === "solo" || managed.target.mode === "pair";
+    const receipt = managed.finalAcceptance;
+    const commands = [...new Set(plan.tasks.map(task => task.verificationCommand).filter(Boolean))];
     if (managed.status === "completed") return <section className="conversation-plan team-plan-card team-delivery-card" aria-label="全自动托管结果">
       <ProjectPreviewActions key={plan.id} projectId={plan.projectId} planId={plan.id} config={managed.preview} demo={managed.demo} root={managed.target.root}
         onTasks={plan.status === "applied" ? onTasks : undefined} />
+      {smallTeam && receipt && receipt.commit === managed.commit && <p className="team-plan-acceptance">
+        宿主测试通过 · {receipt.reviewRunId ? "独立只读审查通过" : "本轮未安排独立审查"}<br />
+        <code>{receipt.verificationCommand}</code><br />
+        已合入 {managed.target.branch} · <code title={receipt.commit}>{receipt.commit.slice(0, 12)}</code>
+      </p>}
     </section>;
     const summary = managed.status === "failed" && managed.summary?.includes("MCP config file not found:")
       && managed.summary.includes("{mcpServers:")
@@ -28,6 +36,7 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
     return <section className="conversation-plan team-plan-card" aria-label="全自动托管结果">
       <header className="team-plan-heading"><Stack size={23} /><h3>{managed.status === "waiting_login" ? "全自动托管等待 Codex 登录" : managed.status === "failed" ? "全自动托管未交付" : paused && managed.status === "running" ? "全自动托管已暂停" : "全自动托管中"}</h3></header>
       <ManagedDeliveryMembers plan={plan} snapshot={snapshot} onRecords={onTaskRecords} />
+      {commands.length > 0 && <div className="team-plan-acceptance">计划验收命令{commands.map(command => <div key={command}><code>{command}</code></div>)}</div>}
       {summary && <p className="team-plan-summary">{summary}</p>}
       {onCodexLogin && <button type="button" className="conversation-text-button" disabled={blocked} onClick={onCodexLogin}>登录 Codex</button>}
       {plan.status === "applied" && <div className="team-plan-actions"><button type="button" className="conversation-text-button" onClick={onTasks}>查看任务执行</button></div>}

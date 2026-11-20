@@ -1950,7 +1950,7 @@ fn schedule_until_idle(
                 continue;
             }
             if let Some(plan) = &managed_plan {
-                store.settle_idle_managed_plan(&snapshot, plan, previews)?;
+                store.settle_idle_managed_plan(&snapshot, plan, previews, &cancelled)?;
                 return Ok(());
             }
             match CollaborationGovernance::new(store.clone()).evaluate_quiescence(project_id)? {
@@ -2207,6 +2207,8 @@ pub(super) fn execute_run(
     let managed_acceptance = if managed_target.is_some() && agent.role == AgentRole::Reviewer {
         store.managed_acceptance_receipts(&dependency_artifacts)?
     } else { Vec::new() };
+    let pair_review = managed_target.as_ref().is_some_and(|target| target.mode == super::managed_delivery::ManagedTeamMode::Pair)
+        && task.workspace_mode == WorkspaceMode::ReadOnly;
     let managed_native = managed_target.is_some() && task.workspace_mode == WorkspaceMode::Worktree;
     let had_workspace = resume_locator.is_some();
     let (resumable_cwd, resume_locator) = if message_turn {
@@ -2236,6 +2238,11 @@ pub(super) fn execute_run(
     } else {
         match resumable_cwd {
             Some(path) => Ok(path),
+            None if pair_review => (|| {
+                let [receipt] = managed_acceptance.as_slice() else { bail!("最终审查缺少唯一的开发验收提交"); };
+                let root = crate::providers::config_dir()?.join("worktrees");
+                prepare_workspace_at(&root, &project, &task, &run_id, &[], Some(&receipt.commit))
+            })(),
             None => prepare_workspace(&project, &task, &run_id, &dependency_artifacts),
         }
     };
@@ -2490,6 +2497,7 @@ pub(super) fn execute_run(
                 }
                 match checkpoint_task_workspace(&request, &cwd, read_only_baseline_head.as_deref())
                 {
+                    Ok(_) if pair_review => read_only_baseline_head.clone(),
                     Ok(hash) => hash,
                     Err(error) => {
                         let _ = store.fail_run_with_retry(
@@ -2848,6 +2856,24 @@ pub(super) fn verify_delivery_worktree(project: &MultiAgentProject, cwd: &std::p
     };
     anyhow::ensure!(common_git_dir(&repo)? == common_git_dir(&project_repo)?, "原任务工作树与项目不属于同一个 Git 仓库");
     Ok((repo, relative))
+}
+
+pub(super) fn check_final_candidate(
+    project: &MultiAgentProject, cwd: &std::path::Path, base: &str, commit: &str, scopes: &[String],
+) -> Result<()> {
+    let (repo, relative) = verify_delivery_worktree(project, cwd)?;
+    anyhow::ensure!(valid_commit_hash(commit) && commit != base && git_head(&repo)? == commit
+        && delivery_git(&repo, &["status", "--porcelain", "--untracked-files=all"])?.is_empty(),
+        "最终交付工作树已偏离候选提交或存在未登记改动");
+    delivery_git(&repo, &["merge-base", "--is-ancestor", base, commit]).context("候选提交没有沿用授权基线")?;
+    let diff = delivery_git(&repo, &["diff", "--no-renames", "--name-only", "-z", base, commit, "--"])?;
+    let paths = delivery_path_list(&diff)?;
+    anyhow::ensure!(!paths.is_empty(), "本轮没有实际交付改动");
+    let scoped = paths.iter().map(|path| {
+        let path = std::path::Path::new(path).strip_prefix(&relative).context("候选提交改动了项目目录之外的文件")?;
+        Ok(path.to_string_lossy().replace('\\', "/"))
+    }).collect::<Result<Vec<_>>>()?;
+    MultiAgentStore::verify_write_paths(scopes, &scoped)
 }
 
 pub(super) fn checkpoint_resumed_delivery(
@@ -6463,6 +6489,17 @@ pub(super) fn prepare_workspace_in(
     run_id: &str,
     dependency_artifacts: &[ArtifactRecord],
 ) -> Result<PathBuf> {
+    prepare_workspace_at(worktrees_root, project, task, run_id, dependency_artifacts, None)
+}
+
+pub(super) fn prepare_workspace_at(
+    worktrees_root: &std::path::Path, project: &MultiAgentProject, task: &MultiAgentTask,
+    run_id: &str, dependency_artifacts: &[ArtifactRecord], review_commit: Option<&str>,
+) -> Result<PathBuf> {
+    if let Some(commit) = review_commit {
+        anyhow::ensure!(task.workspace_mode == WorkspaceMode::ReadOnly && dependency_artifacts.is_empty()
+            && valid_commit_hash(commit), "最终审查必须直接检出唯一候选提交");
+    }
     let root = PathBuf::from(&project.root_path);
     if task.workspace_mode == WorkspaceMode::SharedWrite {
         return Ok(root);
@@ -6496,7 +6533,7 @@ pub(super) fn prepare_workspace_in(
     }
     let output = command
         .arg(&path)
-        .arg("HEAD")
+        .arg(review_commit.unwrap_or("HEAD"))
         .output()
         .context("创建任务 Worktree 失败")?;
     if !output.status.success() {

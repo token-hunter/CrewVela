@@ -1406,8 +1406,11 @@ impl MultiAgentStore {
         if run.project_id != input.project_id || run.task_id != input.task_id {
             return Err(anyhow!("产物必须属于当前 Run 的项目和任务"));
         }
-        if matches!(artifact_type, "git_commit" | "workspace") && super::managed_delivery::task_target(&tx, &input.task_id)?.is_some() {
-            return Err(anyhow!("托管任务的 Git 交付由 CrewVela 在测试通过后登记"));
+        if matches!(artifact_type, "git_commit" | "workspace" | "review") {
+            if let Some(target) = super::managed_delivery::task_target(&tx, &input.task_id)? {
+                anyhow::ensure!(artifact_type == "review", "托管任务的 Git 交付由 CrewVela 在测试通过后登记");
+                anyhow::ensure!(target.mode != super::managed_delivery::ManagedTeamMode::Pair, "最终候选提交的审查回执由 CrewVela 登记");
+            }
         }
         let artifact = ArtifactRecord {
             id: uuid::Uuid::new_v4().to_string(),
@@ -2608,9 +2611,13 @@ impl MultiAgentStore {
 
     pub fn set_project_status(&self, project_id: &str, status: ProjectStatus) -> Result<()> {
         let connection = self.connection.lock().unwrap();
-        ensure_project_exists(&connection, project_id)?;
+        Self::set_project_status_in(&connection, project_id, status)
+    }
+
+    pub(super) fn set_project_status_in(connection: &Connection, project_id: &str, status: ProjectStatus) -> Result<()> {
+        ensure_project_exists(connection, project_id)?;
         if status == ProjectStatus::Active {
-            ensure_no_handoff(&connection, project_id)?;
+            ensure_no_handoff(connection, project_id)?;
         }
         let status_value = match status {
             ProjectStatus::Draft => "draft",
@@ -2625,7 +2632,7 @@ impl MultiAgentStore {
             params![project_id, status_value, now],
         )?;
         append_event(
-            &connection,
+            connection,
             project_id,
             "project",
             project_id,
@@ -2799,6 +2806,18 @@ impl MultiAgentStore {
         } else {
             None
         };
+        let pair_review = managed_target.as_ref().is_some_and(|target| target.mode == super::managed_delivery::ManagedTeamMode::Pair)
+            && task.workspace_mode == WorkspaceMode::ReadOnly;
+        if pair_review {
+            let decision = review_decision.as_ref().context("最终只读审查缺少结论")?;
+            let delivered: String = tx.query_row(
+                "SELECT a.content_hash FROM ma_artifacts a JOIN ma_runs r ON r.id=a.run_id
+                 WHERE a.task_id=?1 AND a.artifact_type='git_commit' AND r.status='succeeded'
+                 ORDER BY r.attempt DESC LIMIT 1", [&decision.target_task_id], |r| r.get(0))?;
+            anyhow::ensure!(content_hash == Some(delivered.as_str())
+                && super::executor::git_head(Path::new(workspace_uri))? == delivered,
+                "最终审查工作树未检出当前开发任务的候选提交");
+        }
         let now = now_millis();
         tx.execute(
             "UPDATE ma_runs
@@ -2948,10 +2967,10 @@ impl MultiAgentStore {
                             params![run.task_id, now],
                         )?;
                         // Reviewer 必须创建新只读工作区，旧工作区不含实现者的修复提交。
-                        tx.execute(
-                            "UPDATE ma_runs SET session_locator_json = NULL WHERE task_id = ?1",
-                            params![run.task_id],
-                        )?;
+                        if !pair_review {
+                            tx.execute("UPDATE ma_runs SET session_locator_json = NULL WHERE task_id = ?1",
+                                params![run.task_id])?;
+                        }
                         append_event(
                             &tx,
                             &run.project_id,

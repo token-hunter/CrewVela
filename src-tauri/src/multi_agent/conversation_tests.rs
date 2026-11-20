@@ -18,6 +18,8 @@ mod activity;
 mod codex_login;
 #[path = "managed_native_tests.rs"]
 mod managed_native;
+#[path = "managed_small_team_tests.rs"]
+mod managed_small_team;
 #[path = "managed_pi_native_tests.rs"]
 mod managed_pi_native;
 #[path = "managed_acp_native_tests.rs"]
@@ -2192,7 +2194,7 @@ server.listen(Number(process.env.PORT), '127.0.0.1', () => console.log(`http://1
     let previews = ProjectPreviews::default();
     let preview_status = || serde_json::to_value(previews.status(&fixture.project, &plan.id, true)).unwrap();
     assert_eq!(preview_status()["state"], "idle", "preview waits for verified delivery");
-    store.settle_idle_managed_plan(&snapshot, &plan, &previews).unwrap();
+    store.settle_idle_managed_plan(&snapshot, &plan, &previews, &stop).unwrap();
     let ready_url = || {
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {

@@ -511,7 +511,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     if (draft !== body && !draft.startsWith(`${body}\n\n`)) changeDraft(draft.trim() ? `${body}\n\n${draft}` : body);
     requestAnimationFrame(() => editor.current?.focus());
   };
-  const submit = async (event?: FormEvent, bodyOverride?: string, requestPlan = false, managed = false, alreadyAuthorized = false) => {
+  const submit = async (event?: FormEvent, bodyOverride?: string, requestPlan = false, managed = false) => {
     event?.preventDefault();
     if (mentionOpen && mentionMultiple) return;
     if (mutation.current || pickingFiles || !projectId || !conversation || !healthy || !active || !runtimeReady || runtimeError || pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")) return;
@@ -533,7 +533,6 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const target = snapshot?.project;
         if (discussing || !target || target.id !== projectId) throw Error("请等待当前讨论结束后再开始全自动托管。");
         if (rule) throw Error("全自动托管需要独立工程任务，请取消本次聊天附加规则。");
-        if (!alreadyAuthorized && !window.confirm("允许所选成员启动本次托管的独立工作树，并自动开发、审查和验收？Claude Code 会确认这些工作树的信任提示。验收通过后合入 " + target.defaultBranch + " 分支。\n" + target.rootPath)) return;
       }
       const routing = mode === "discussion"
         ? conversationChatDispatch(body, agents.filter(agent => ids.includes(agent.id)), rule?.agentId ?? undefined)
@@ -548,9 +547,10 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         try {
           const issues = await invoke<PlanIssue[]>("ma_conversation_plan_preflight", { input: sendPayload(item) });
           if (!stillOpen()) return;
+          if (managed && planForm.current !== checkedForm) return;
           if (issues.length) {
             planAfterLogin.current = async () => {
-              if (planForm.current === checkedForm) await submit(undefined, bodyOverride, requestPlan, managed, managed);
+              if (planForm.current === checkedForm) await submit(undefined, bodyOverride, requestPlan, managed);
               else setPlanIssues([]);
             };
             setPlanIssues(issues);
@@ -560,6 +560,18 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           mutation.current = false;
           if (mounted.current) setBusy(false);
         }
+      }
+      if (managed && snapshot) {
+        const members = ids.map(id => agents.find(agent => agent.id === id)!);
+        const developer = members.find(member => member.role === "worker");
+        const reviewer = members.find(member => member.role === "reviewer");
+        const division = members.length === 1
+          ? `单人托管\n${members[0].name} 负责规划、开发、测试和联调。本轮未安排独立审查。`
+          : members.length === 2
+            ? `双人托管\n${developer?.name ?? "开发成员"} 负责规划、开发、测试和联调。\n${reviewer?.name ?? "审查成员"} 独立只读审查最终候选提交，退回修复后重新审查。`
+            : `团队托管\n${members.map(member => `${member.name} · ${ROLE[member.role]}`).join("\n")}\n每项开发由独立成员只读审查，集成成员负责最终联调。`;
+        const trust = members.some(member => member.runtimeKind === "claude_code") ? "\nClaude Code 会确认本轮工作树的信任提示。" : "";
+        if (!window.confirm(`${division}\n\n允许本轮成员在独立工作树的分工范围内执行。分工生成后可查看验收命令。CrewVela 验收通过后自动合入 ${snapshot.project.defaultBranch} 分支。\n${snapshot.project.rootPath}${trust}`)) return;
       }
       if (draftFiles.length) {
         mutation.current = true;
@@ -1021,7 +1033,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
             </button>
             <div className="conversation-composer-plan-buttons">
               <button type="button" className="conversation-text-button team-generate-plan" title={canGeneratePlan ? undefined : "请填写要完成的目标，再生成分工"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button>
-              <button type="button" className="conversation-text-button team-generate-plan" title="一次授权，自动分工、开发、审查和验收"
+              <button type="button" className="conversation-text-button team-generate-plan" title="选择至少一位开发成员，按本轮分工自动执行并验收"
                 disabled={busy || discussing || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || archivedRuleId !== "" || ["stopping", "unconfirmed"].includes(round?.status ?? "")}
                 onClick={() => void submit(undefined, undefined, true, true)}>全自动托管</button>
             </div>

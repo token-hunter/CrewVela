@@ -17,6 +17,7 @@ use super::{
     AgentRuntimeKind, AgentTerminalHost, ClaimTaskInput, CollaborationBridge, MultiAgentStore,
     WorkspaceMode,
 };
+use super::managed_delivery::ManagedTeamMode;
 
 #[path = "conversation_attachments.rs"]
 pub(super) mod attachments;
@@ -337,7 +338,9 @@ impl MultiAgentStore {
                     ) });
                 }
             }
-        } else if ["交叉审查", "只读审查", "安排审查", "审查成员", "审查通过", "code review"].iter().any(|term| goal.contains(*term))
+        } else if (if input.managed { super::managed_delivery::requires_review(&goal) } else {
+            ["交叉审查", "只读审查", "安排审查", "审查成员", "审查通过", "code review"].iter().any(|term| goal.contains(*term))
+        })
             && !roster.iter().any(|(role, runtime)| role == "reviewer" && supports_read_only_plan(runtime, input.managed)) {
             let runtimes = if input.managed { managed_reviewers(None) } else { "Claude Code 或 Codex".into() };
             issues.push(ConversationPlanIssue { kind: "member", message: format!("本轮缺少能执行只读审查的成员。请选择 Runtime 为 {runtimes}、角色为「审查」的成员。") });
@@ -2409,15 +2412,18 @@ fn discussion_prompt(
     } else {
         ""
     };
-    let review_contract = if round.managed_target.is_some() {
-        format!("{review_contract}\n本轮已由用户明确启动全自动托管。计划通过检查后系统会执行。\
-          每个任务的 reviewerAgentId 一律填 null。将每项开发对应的审查单独列为一项任务，\
-          assigneeAgentId 填实际 reviewer 成员 ID，workspaceMode=read_only、writePaths=[]、verificationCommand=null，\
-          dependsOn 只填对应开发任务的 key。最后只安排一个 integrator 工作树任务。\
-          审查成员核对已提交的实现与测试证据。用受限工具开发的成员由宿主在交付工作树运行指定的验收命令。\
-          集成任务须依赖全部审查，负责真正的端到端验收以及项目根目录 README.md 的启动和使用说明。\
-          如果成品是网页应用，集成任务的 writePaths 必须包含 crewvela.launch.json。其验收标准须包含启动本地 Demo、打开页面并验证核心操作。\
-          开发与集成各指定一条可执行的测试命令（node --test <项目内测试文件>、npm test、python -m unittest、cargo test、go test ./... 或 dotnet test）。\
+    let review_contract = if let Some(target) = &round.managed_target {
+        let division = match target.mode {
+            ManagedTeamMode::Solo => "本轮为单人托管。只生成一项 worktree 任务，由当前开发成员负责实现、测试、联调和最终交付，dependsOn=[]。未安排独立审查。若实际需求或项目规则明确要求独立审查，请说明需要增加审查成员并等待用户。",
+            ManagedTeamMode::Pair => "本轮为双人托管。只生成一项由开发成员负责实现、测试、联调和最终交付的 worktree 任务（dependsOn=[]），以及一项由另一位 reviewer 执行的独立只读审查。审查最终候选提交，直接且只依赖该开发任务，workspaceMode=read_only、writePaths=[]、verificationCommand=null。",
+            ManagedTeamMode::Team => "将每项开发对应的审查单独列为一项任务，assigneeAgentId 填实际 reviewer 成员 ID，workspaceMode=read_only、writePaths=[]、verificationCommand=null，dependsOn 只填对应开发任务的 key。最后只安排一个 integrator 工作树任务，必须等待全部审查。",
+        };
+        let cross_runtime = if target.mode == ManagedTeamMode::Team { review_contract } else { "" };
+        format!("{cross_runtime}\n本轮已由用户明确启动全自动托管。计划通过检查后系统会执行。\
+          {division} 每个任务的 reviewerAgentId 一律填 null。宿主执行写任务的验收命令。\
+          最终交付任务负责端到端验收以及项目根目录 README.md 的启动和使用说明。\
+          如果成品是网页应用，最终交付任务的 writePaths 必须包含 crewvela.launch.json。其验收标准须包含启动本地 Demo、打开页面并验证核心操作。\
+          每项写任务指定一条可执行的测试命令（node --test <项目内测试文件>、npm test、python -m unittest、cargo test、go test ./... 或 dotnet test）。\
           把编写相应测试纳入任务及写入范围。集成测试须覆盖需求中的主要流程，不能只检查文件存在。\
           如果能按工程惯例做合理选择，直接做决定。上一轮校验信息：{}",
           round.stop_reason.as_deref().unwrap_or("无"))
@@ -2648,15 +2654,16 @@ fn validate_plan(
             .collect::<Vec<_>>(),
     )
     .map_err(anyhow::Error::msg)?;
-    if round.managed_target.is_some() {
+    if let Some(target) = &round.managed_target {
         let mut workers = Vec::new();
         let mut reviews = Vec::new();
         let mut integrators = Vec::new();
         for task in &plan.tasks {
             let (_, runtime, role) = profiles.iter().find(|(id, _, _)| *id == task.assignee_agent_id)
                 .context("托管任务负责人不存在")?;
+            target.check_assignment(&task.assignee_agent_id, *role, *runtime)?;
             super::managed_delivery::ManagedUse::engineering(*role, task.workspace_mode)?.check(*runtime)?;
-            ensure!(task.reviewer_agent_id.is_none(), "全自动托管必须为开发任务创建独立审查");
+            ensure!(task.reviewer_agent_id.is_none(), "全自动托管的 reviewerAgentId 必须为空，独立审查使用只读任务");
             match (role, task.workspace_mode) {
                 (super::AgentRole::Worker, WorkspaceMode::Worktree) => workers.push(task),
                 (super::AgentRole::Reviewer, WorkspaceMode::ReadOnly) => reviews.push(task),
@@ -2670,19 +2677,29 @@ fn validate_plan(
                 ensure!(task.verification_command.is_none(), "只读审查的验收命令由开发与集成任务执行");
             }
         }
-        ensure!(!workers.is_empty() && integrators.len() == 1 && reviews.len() == workers.len(),
-            "全自动托管需要唯一集成任务，并为每项开发任务配置一项独立审查");
-        for worker in &workers {
-            ensure!(reviews.iter().filter(|review| review.depends_on == [worker.key.clone()]).count() == 1,
+        let delivery = match target.mode {
+            ManagedTeamMode::Solo | ManagedTeamMode::Pair => {
+                ensure!(workers.len() == 1 && workers[0].depends_on.is_empty() && integrators.is_empty()
+                    && reviews.len() == usize::from(target.mode == ManagedTeamMode::Pair),
+                    "单人和双人托管只允许一个负责开发和联调的写任务，双人另需一项独立只读审查");
+                workers[0]
+            }
+            ManagedTeamMode::Team => {
+                ensure!(!workers.is_empty() && integrators.len() == 1 && reviews.len() == workers.len(),
+                    "全自动托管需要唯一集成任务，并为每项开发任务配置一项独立审查");
+                for review in &reviews {
+                    ensure!(reaches(&tasks, &integrators[0].key, &review.key, &mut HashSet::new()),
+                        "集成任务必须等待全部审查通过");
+                }
+                integrators[0]
+            }
+        };
+        for worker in workers.iter().filter(|_| target.mode != ManagedTeamMode::Solo) {
+            ensure!(reviews.iter().filter(|review| review.depends_on.as_slice() == [worker.key.as_str()]).count() == 1,
                 "每项审查必须且只直接依赖一个对应的开发任务");
         }
-        let integrator = integrators[0];
-        for review in reviews {
-            ensure!(reaches(&tasks, &integrator.key, &review.key, &mut HashSet::new()),
-                "集成任务必须等待全部审查通过");
-        }
-        ensure!(integrator.write_paths.iter().any(|path| normalized_scope(path).is_ok_and(|scope| scope == "readme.md")),
-            "集成任务须有 README.md 写入范围，为成品提供启动说明");
+        ensure!(delivery.write_paths.iter().any(|path| normalized_scope(path).is_ok_and(|scope| scope == "readme.md")),
+            "最终交付任务须有 README.md 写入范围，为成品提供启动说明");
     }
     Ok(())
 }
@@ -2889,6 +2906,9 @@ impl MultiAgentStore {
             .collect();
         plan.status = "applied".into();
         if let Some(managed) = plan.managed.as_mut() {
+            managed.final_task_id = plan.tasks.iter()
+                .find(|task| managed.target.is_final_assignee(&task.assignee_agent_id))
+                .map(|task| ids[&task.key].clone());
             if managed.status == "waiting_login" { managed.summary = None; }
             managed.status = "running".into();
         }

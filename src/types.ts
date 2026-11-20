@@ -1023,7 +1023,7 @@ export interface ConversationRound {
   currentRound: number;
   deadlineAt: number;
   stopReason: string | null;
-  managedTarget?: { root: string; branch: string };
+  managedTarget?: { root: string; branch: string; mode?: "solo" | "pair" | "team" };
   createdAt: number;
   updatedAt: number;
 }
@@ -1058,11 +1058,13 @@ export interface ConversationExecutionPlan {
   status: "pending" | "applied" | "superseded";
   taskIds: string[];
   managed?: {
-    target: { root: string; branch: string; members?: Record<string, { runtime: AgentRuntimeKind; role: AgentRole }> };
+    target: { root: string; branch: string; mode?: "solo" | "pair" | "team"; members?: Record<string, { runtime: AgentRuntimeKind; role: AgentRole }> };
     status: "planning" | "waiting_login" | "running" | "completed" | "failed";
     summary: string | null;
     commit: string | null;
     verificationCommand: string | null;
+    finalTaskId?: string;
+    finalAcceptance?: { taskId: string; runId: string; artifactId: string; commit: string; verificationCommand: string; reviewRunId: string | null };
     preview?: ProjectPreviewConfig;
     demo?: DeliveryDemo;
   };

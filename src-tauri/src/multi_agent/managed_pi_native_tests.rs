@@ -192,6 +192,7 @@ pub(super) fn verify_delivery(root: &Path, kind: AgentRuntimeKind) -> Result<()>
         &snapshot,
         &persisted,
         &crate::multi_agent::project_preview::ProjectPreviews::default(),
+        &AtomicBool::new(false),
     )?;
     let completed = reopened
         .conversation_snapshot(&fixture.project)?

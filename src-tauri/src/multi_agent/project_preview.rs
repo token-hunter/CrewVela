@@ -289,6 +289,7 @@ mod tests {
             branch: "main".into(),
             base: hash.clone(),
             planner: "test".into(),
+            mode: Default::default(),
             members: Default::default(),
         };
         let mut delivery = ManagedDelivery::new(target);
