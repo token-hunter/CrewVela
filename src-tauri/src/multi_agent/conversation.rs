@@ -37,6 +37,9 @@ pub use policy::{ConversationTaskRules, ConversationHardBoundary, ConversationPo
 pub(crate) use policy::EffectiveConversationPolicy;
 #[path = "conversation_research.rs"]
 pub(crate) mod research;
+#[path = "conversation_auth.rs"]
+mod auth;
+pub(crate) use auth::CodexRetryInput;
 
 const ACTIVE: &[&str] = &[
     "queued",
@@ -1391,6 +1394,11 @@ fn sync_project_messages(connection: &Connection, project: &str) -> Result<()> {
         };
         let mut message = message_with(connection, &turn.id)?;
         let mapped = run_status(&status, locator.as_deref());
+        if mapped == "failed" && auth::unopened_login_failure(error.as_deref(), locator.as_deref()) {
+            message.kind = auth::LOGIN_REPLY.into();
+        } else if message.kind == auth::LOGIN_REPLY {
+            message.kind = "reply".into();
+        }
         message.run_id = Some(run_id);
         message.status = mapped.into();
         message.updated_at = now();
@@ -1505,18 +1513,22 @@ impl ConversationSupervisor {
         }
         let flag = Arc::new(AtomicBool::new(false));
         active.insert(round.project_id.clone(), flag.clone());
-        self.spawn_round(store, round, flag, host, bridge, Some(engineering));
+        self.spawn_round(store, round, flag, host, bridge, Some(engineering), None);
         Ok(())
     }
 
     fn spawn_round(&self, store: MultiAgentStore, mut round: ConversationRound,
-        flag: Arc<AtomicBool>, host: AgentTerminalHost, bridge: CollaborationBridge, engineering: Option<super::MultiAgentSupervisor>) {
+        flag: Arc<AtomicBool>, host: AgentTerminalHost, bridge: CollaborationBridge, engineering: Option<super::MultiAgentSupervisor>,
+        mut retry_turns: Option<Vec<Turn>>) {
         let owner = self.clone();
         std::thread::spawn(move || {
             let runner = ExistingRunExecutor { host, bridge };
             loop {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_discussion(&store, &round.id, &flag, &runner)
+                match retry_turns.take() {
+                    Some(turns) => auth::run_retries(&store, &round, &turns, &flag, &runner),
+                    None => run_discussion(&store, &round.id, &flag, &runner),
+                }
             }));
             if let Err(error) = match result {
                 Ok(result) => result,
@@ -1577,7 +1589,7 @@ impl ConversationSupervisor {
         } else if let Some(round) = store.start_queued_conversation(&project)? {
             let flag = Arc::new(AtomicBool::new(false));
             active.insert(project, flag.clone());
-            self.spawn_round(store.clone(), round, flag, host, bridge, None);
+            self.spawn_round(store.clone(), round, flag, host, bridge, None, None);
         } else {
             store.settle_queued_conversation_inputs(&project, "needs_decision")?;
         }
@@ -1620,6 +1632,7 @@ impl ConversationSupervisor {
 }
 
 trait DiscussionExecutor: Sync {
+    fn codex_ready(&self, _store: &MultiAgentStore, _round: &ConversationRound, _agent: &str) -> Result<bool> { Ok(true) }
     fn execute(
         &self,
         store: &MultiAgentStore,
@@ -1634,6 +1647,15 @@ struct ExistingRunExecutor {
     bridge: CollaborationBridge,
 }
 impl DiscussionExecutor for ExistingRunExecutor {
+    fn codex_ready(&self, store: &MultiAgentStore, round: &ConversationRound, agent: &str) -> Result<bool> {
+        // Older constrained Codex discussions are rejected by the executor's
+        // tool policy. Logging in cannot make that execution contract supported.
+        if round.managed_target.is_none() && !round.member_policies.get(agent).is_some_and(EffectiveConversationPolicy::uses_native_capabilities) {
+            return Ok(true);
+        }
+        let cwd = store.project(&round.project_id)?.root_path;
+        crate::codex_storage::collaboration_ready(std::path::Path::new(&cwd), round.managed_target.is_none())
+    }
     fn execute(
         &self,
         store: &MultiAgentStore,
@@ -1686,6 +1708,7 @@ fn run_discussion(
 enum DiscussionTurnResult {
     Stopped,
     Blocked(String),
+    LoginRequired,
     Executed { run_id: String, outcome: Result<()>, reply: ConversationMessage },
 }
 
@@ -1693,6 +1716,27 @@ fn execute_discussion_turn(
     store: &MultiAgentStore, round: &ConversationRound, turn: &Turn,
     executor: &impl DiscussionExecutor, cancelled: &AtomicBool, stop_dispatch: impl Fn() -> Result<bool>,
 ) -> Result<DiscussionTurnResult> {
+    if store.agent_profile(&turn.agent_id)?.runtime_kind == AgentRuntimeKind::Codex {
+        if stop_dispatch()? {
+            cancel_unclaimed_turn(store, turn)?;
+            return Ok(DiscussionTurnResult::Stopped);
+        }
+        match executor.codex_ready(store, round, &turn.agent_id) {
+            Ok(true) => {}
+            result => {
+                if stop_dispatch()? {
+                    cancel_unclaimed_turn(store, turn)?;
+                    return Ok(DiscussionTurnResult::Stopped);
+                }
+                let failure = result.err().map(|error| format!("检查 Codex 登录状态失败：{error:#}"));
+                auth::block_before_dispatch(store, turn, failure.as_deref())?;
+                return Ok(match failure {
+                    Some(message) => DiscussionTurnResult::Blocked(message),
+                    None => DiscussionTurnResult::LoginRequired,
+                });
+            }
+        }
+    }
     let run = loop {
         if stop_dispatch()? {
             cancel_unclaimed_turn(store, turn)?;
@@ -1824,6 +1868,7 @@ fn parallel_reply_outcome(
     let (run_id, outcome, reply) = match result {
         DiscussionTurnResult::Stopped => return Ok(None),
         DiscussionTurnResult::Blocked(reason) => return Ok(Some(("needs_decision", reason))),
+        DiscussionTurnResult::LoginRequired => return Ok(Some(("failed", crate::codex_storage::LOGIN_REQUIRED.into()))),
         DiscussionTurnResult::Executed { run_id, outcome, reply } => (run_id, outcome, reply),
     };
     if reply.status == "unconfirmed" { return Ok(Some(("unconfirmed", String::new()))); }
@@ -1897,6 +1942,7 @@ fn run_discussion_attempt(
     let mut previous = HashSet::<String>::new();
     let mut initial_pending = initial.participant_agent_ids.iter().cloned().collect::<HashSet<_>>();
     let mut chat_waiting_for_human = false;
+    let mut login_blocked = HashSet::new();
     let mut recovered_control = false;
     let mut ordinal = attempt;
     while let Some((agent, reply_to)) = schedule.pop_front() {
@@ -1922,6 +1968,14 @@ fn run_discussion_attempt(
         let (run_id, outcome, reply) = match execute_discussion_turn(store, &initial, &turn, executor, cancelled, stop_dispatch)? {
             DiscussionTurnResult::Stopped => { stop_if_requested(store, round_id, cancelled)?; return Ok(()); }
             DiscussionTurnResult::Blocked(reason) => { finish("needs_decision", Some(reason))?; return Ok(()); }
+            DiscussionTurnResult::LoginRequired => {
+                if planning {
+                    return store.finish_conversation(round_id, "failed", Some(crate::codex_storage::LOGIN_REQUIRED.into()));
+                }
+                login_blocked.insert(agent.clone());
+                ordinal += 1;
+                continue;
+            }
             DiscussionTurnResult::Executed { run_id, outcome, reply } => (run_id, outcome, reply),
         };
         if reply.status == "unconfirmed" {
@@ -1932,6 +1986,14 @@ fn run_discussion_attempt(
         }
         if stop_if_requested(store, round_id, cancelled)? {
             return Ok(());
+        }
+        if reply.kind == auth::LOGIN_REPLY {
+            if planning {
+                return store.finish_conversation(round_id, "failed", Some(crate::codex_storage::LOGIN_REQUIRED.into()));
+            }
+            login_blocked.insert(agent.clone());
+            ordinal += 1;
+            continue;
         }
         if let Err(error) = outcome {
             finish("failed",
@@ -2002,7 +2064,7 @@ fn run_discussion_attempt(
                 Some(_) => None,
                 None => mentioned_reply_target(store, &initial, &agent, &public_body)?,
             };
-            if let Some(next) = next {
+            if let Some(next) = next.filter(|agent| !login_blocked.contains(agent)) {
                 // A directed response consumes the recipient's initial slot instead
                 // of also asking that person the same user question a second time.
                 schedule.retain(|(scheduled, _)| scheduled != &next);
@@ -2012,7 +2074,9 @@ fn run_discussion_attempt(
         }
         ordinal += 1;
     }
-    if chat_waiting_for_human {
+    if !login_blocked.is_empty() {
+        finish("failed", Some(crate::codex_storage::LOGIN_REQUIRED.into()))?;
+    } else if chat_waiting_for_human {
         finish("needs_decision", Some("已选成员均已回应，仍有成员需要你补充必要信息".into()))?;
     } else {
         finish("completed", recovered_control.then(||"已保留收到的回复；接话信息异常，本轮已停止追加接话".into()))?;
@@ -2715,7 +2779,7 @@ impl MultiAgentStore {
             bail!("计划已被新消息替代，请使用当前分工计划");
         }
         if let Some(managed) = &plan.managed {
-            ensure!(managed.status == "planning", "本轮托管分工已经结束");
+            ensure!(matches!(managed.status.as_str(), "planning" | "waiting_login"), "本轮托管分工已经结束");
         }
         if round.status != "completed" {
             bail!("讨论尚未完整结束，不能执行计划");
@@ -2807,7 +2871,10 @@ impl MultiAgentStore {
             .map(|task| ids[&task.key].clone())
             .collect();
         plan.status = "applied".into();
-        if let Some(managed) = plan.managed.as_mut() { managed.status = "running".into(); }
+        if let Some(managed) = plan.managed.as_mut() {
+            if managed.status == "waiting_login" { managed.summary = None; }
+            managed.status = "running".into();
+        }
         tx.execute(
             "UPDATE ma_conversation_plans SET data_json=?2,applied_request_id=?3 WHERE id=?1",
             params![
@@ -2855,6 +2922,12 @@ impl MultiAgentStore {
             project_id: round.project_id, plan_id: plan_id.clone(), client_request_id: format!("managed-{plan_id}"),
         };
         let result = (|| {
+            if !self.plan_accounts_ready(&request)? {
+                self.connection.lock().unwrap().execute("UPDATE ma_conversation_plans SET data_json=json_set(data_json,
+                    '$.managed.status','waiting_login','$.managed.summary',?2) WHERE id=?1 AND json_extract(data_json,'$.status')='pending'",
+                    params![plan_id, crate::codex_storage::LOGIN_REQUIRED])?;
+                return Ok(());
+            }
             self.apply_conversation_plan_in(&request, true)?;
             for attempt in 0..3 {
                 if !self.claim_conversation_plan_start(&request)? { return Ok(()); }

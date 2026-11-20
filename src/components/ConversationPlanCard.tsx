@@ -4,12 +4,13 @@ import { ManagedDeliveryMembers } from "./ManagedDeliveryMembers";
 import { ProjectPreviewActions } from "./ProjectPreviewActions";
 import type { ConversationExecutionPlan, MultiAgentSnapshot } from "../types";
 
-export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfirm, onAdjust, onTasks, onTaskRecords }: {
+export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfirm, onCodexLogin, onAdjust, onTasks, onTaskRecords }: {
   plan: ConversationExecutionPlan;
   snapshot: MultiAgentSnapshot | null;
   blocked: boolean;
   paused: boolean;
   onConfirm: () => void;
+  onCodexLogin?: () => void;
   onAdjust: () => void;
   onTasks: () => void;
   onTaskRecords: (taskId: string) => void;
@@ -25,9 +26,10 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
       ? "Claude Code 启动失败。Windows 未能正确传递 MCP 配置，可在任务执行查看详情。"
       : managed.summary;
     return <section className="conversation-plan team-plan-card" aria-label="全自动托管结果">
-      <header className="team-plan-heading"><Stack size={23} /><h3>{ready ? "成品已交付" : managed.status === "failed" ? "全自动托管未交付" : paused && managed.status === "running" ? "全自动托管已暂停" : "全自动托管中"}</h3></header>
+      <header className="team-plan-heading"><Stack size={23} /><h3>{managed.status === "waiting_login" ? "全自动托管等待 Codex 登录" : managed.status === "failed" ? "全自动托管未交付" : paused && managed.status === "running" ? "全自动托管已暂停" : "全自动托管中"}</h3></header>
       <ManagedDeliveryMembers plan={plan} snapshot={snapshot} onRecords={onTaskRecords} />
       {summary && <p className="team-plan-summary">{summary}</p>}
+      {onCodexLogin && <button type="button" className="conversation-text-button" disabled={blocked} onClick={onCodexLogin}>登录 Codex</button>}
       {plan.status === "applied" && <div className="team-plan-actions"><button type="button" className="conversation-text-button" onClick={onTasks}>查看任务执行</button></div>}
     </section>;
   }
@@ -53,7 +55,7 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
       {task.reviewerAgentId && <p>审查：{agents.find(agent => agent.id === task.reviewerAgentId)?.name ?? "历史成员"}</p>}
     </div>)}</details>
     <div className="team-plan-actions">{pending ? <>
-      <button type="button" className="conversation-primary" disabled={blocked} onClick={onConfirm}><Play size={18} />确认并开始执行</button>
+      <button type="button" className="conversation-primary" disabled={blocked} onClick={onCodexLogin ?? onConfirm}><Play size={18} />{onCodexLogin ? "登录 Codex" : "确认并开始执行"}</button>
       <button type="button" className="conversation-text-button team-plan-adjust" disabled={blocked} onClick={onAdjust}>调整分工</button>
     </> : plan.status === "applied" ? <button type="button" className="conversation-text-button" onClick={onTasks}>查看任务执行</button> : <span>请使用最新的分工计划。</span>}</div>
   </section>;

@@ -959,7 +959,7 @@ export interface ConversationMessage {
   runId: string | null;
   agentId: string | null;
   senderType: "user" | "agent" | "system";
-  kind: "message" | "reply" | "status" | "plan";
+  kind: "message" | "reply" | "status" | "plan" | "codex_login_required";
   phase: ConversationPhase | null;
   body: string;
   attachments?: ConversationAttachment[];
@@ -1057,7 +1057,7 @@ export interface ConversationExecutionPlan {
   taskIds: string[];
   managed?: {
     target: { root: string; branch: string; members?: Record<string, { runtime: AgentRuntimeKind; role: AgentRole }> };
-    status: "planning" | "running" | "completed" | "failed";
+    status: "planning" | "waiting_login" | "running" | "completed" | "failed";
     summary: string | null;
     commit: string | null;
     verificationCommand: string | null;

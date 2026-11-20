@@ -126,6 +126,41 @@ impl Peer {
     }
 }
 
+/// The same account predicate as the pinned Codex ACP adapter. Never expose
+/// account details, login URLs or tokens to the application UI.
+pub(crate) fn collaboration_account(
+    command: std::process::Command, cwd: &std::path::Path,
+    open_login: Option<&dyn Fn(&str) -> Result<()>>,
+) -> Result<bool> {
+    let mut peer = Peer::spawn(command, cwd, Duration::from_secs(10))?;
+    peer.request(1, "initialize", json!({"clientInfo":{"name":"crewvela-account","version":"1"},"capabilities":{}}))?;
+    peer.send(json!({"method":"initialized"}))?;
+    fn ready(account: &Value) -> Result<bool> {
+        let required = account["requiresOpenaiAuth"].as_bool().context("Codex 未返回供应商认证要求")?;
+        let identity = account.get("account").context("Codex 未返回账号状态")?;
+        anyhow::ensure!(identity.is_null() || identity.is_object(), "无法识别 Codex 账号状态");
+        Ok(!required || identity.is_object())
+    }
+    if ready(&peer.request(2, "account/read", json!({"refreshToken":false}))?)? { return Ok(true); }
+    let Some(open) = open_login else { return Ok(false); };
+    let login = peer.request(3, "account/login/start", json!({"type":"chatgpt"}))
+        .context("Codex 无法启动浏览器登录，请检查专用配置的登录方式")?;
+    anyhow::ensure!(login["type"] == "chatgpt", "Codex 返回了不同的登录方式");
+    let id = login["loginId"].as_str().context("Codex 登录请求缺少标识")?;
+    let url = reqwest::Url::parse(login["authUrl"].as_str().context("Codex 未返回登录地址")?)?;
+    anyhow::ensure!(url.scheme() == "https" && url.host_str() == Some("auth.openai.com") && url.port().is_none()
+        && url.username().is_empty() && url.password().is_none(), "Codex 未返回受信任的 ChatGPT 官方登录地址");
+    open(url.as_str())?;
+    peer.deadline = Instant::now() + Duration::from_secs(5 * 60);
+    loop {
+        let event = peer.next().context("Codex 登录超时或已关闭，请重新登录")?;
+        if event["method"] != "account/login/completed" || event["params"]["loginId"] != id { continue; }
+        anyhow::ensure!(event["params"]["success"] == true, "Codex 登录未完成");
+        anyhow::ensure!(ready(&peer.request(4, "account/read", json!({"refreshToken":false}))?)?, "Codex 专用目录仍未登录");
+        return Ok(true);
+    }
+}
+
 /// Read merged configuration only: never opens a thread, reads an account, or starts a model turn.
 pub(crate) fn read_effective_config(
     command: std::process::Command,
@@ -349,6 +384,26 @@ mod tests {
             } else {
                 assert!(result.is_err(), "{scenario} must not produce a title");
             }
+        }
+    }
+
+    #[test]
+    fn codex_login_keeps_provider_and_api_key_accounts_and_requires_a_confirmed_login() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for (scenario, login, expected) in [("empty", false, Some(false)), ("gateway", true, Some(true)),
+            ("key", true, Some(true)), ("login", true, Some(true)), ("cancelled", true, None),
+            ("not-persisted", true, None), ("foreign-url", true, None), ("unknown", false, None)] {
+            let opened = std::cell::Cell::new(false);
+            let open = |url: &str| -> Result<()> {
+                assert_eq!(url, "https://auth.openai.com/oauth/authorize");
+                assert!(!opened.replace(true));
+                Ok(())
+            };
+            let mut command = std::process::Command::new("node");
+            command.arg(path.join("../tests/fixtures/codex-account-agent.mjs")).arg(scenario);
+            assert_eq!(collaboration_account(command, path, login.then_some(&open as &dyn Fn(&str) -> Result<()>)).ok(),
+                expected, "{scenario}");
+            assert_eq!(opened.get(), matches!(scenario, "login" | "cancelled" | "not-persisted"));
         }
     }
 

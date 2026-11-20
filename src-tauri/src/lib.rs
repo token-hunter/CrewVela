@@ -1222,7 +1222,49 @@ async fn ma_conversation_plan_preflight(
     input: multi_agent::ConversationSendInput, state: State<'_, MultiAgentStore>,
 ) -> Result<Vec<multi_agent::conversation::ConversationPlanIssue>, String> {
     let store = state.inner().clone();
-    blocking_command(move || store.conversation_plan_preflight(&input).map_err(to_err)).await
+    blocking_command(move || {
+        let mut issues = store.conversation_plan_preflight(&input).map_err(to_err)?;
+        if issues.is_empty() { issues.extend(store.plan_auth_preflight(&input).map_err(to_err)?); }
+        Ok(issues)
+    }).await
+}
+
+#[tauri::command]
+async fn ma_conversation_codex_login(project_id: String, expected_conversation_id: String, state: State<'_, MultiAgentStore>) -> Result<(), String> {
+    let store = state.inner().clone();
+    blocking_command(move || {
+        if store.conversation_snapshot(&project_id).map_err(to_err)?.conversation.id != expected_conversation_id {
+            return Err("当前对话已切换，请重新选择登录操作".into());
+        }
+        let root = store.project(&project_id).map_err(to_err)?.root_path;
+        codex_storage::login_collaboration(std::path::Path::new(&root)).map_err(to_err)
+    }).await
+}
+
+#[tauri::command]
+async fn ma_conversation_retry_codex_members(input: multi_agent::conversation::CodexRetryInput, app: AppHandle) -> Result<multi_agent::ConversationSnapshot, String> {
+    blocking_command(move || {
+        let _admission = app.state::<runtime_admission::RuntimeAdmission>().admit().map_err(to_err)?;
+        let store = app.state::<MultiAgentStore>();
+        let project = input.project_id.clone();
+        let host = multi_agent::AgentTerminalHost::new(app.state::<PtyManager>().inner().clone(), app.state::<SessionManager>().inner().clone());
+        app.state::<multi_agent::ConversationSupervisor>().retry_codex_members(store.inner().clone(), input, host,
+            app.state::<CollaborationBridge>().inner().clone(), app.state::<MultiAgentSupervisor>().inner().clone()).map_err(to_err)?;
+        store.conversation_snapshot(&project).map_err(to_err)
+    }).await
+}
+
+#[tauri::command]
+async fn ma_conversation_resume_managed_after_login(project_id: String, expected_conversation_id: String, plan_id: String,
+    app: AppHandle) -> Result<multi_agent::ConversationSnapshot, String> {
+    blocking_command(move || {
+        let _admission = app.state::<runtime_admission::RuntimeAdmission>().admit().map_err(to_err)?;
+        let store = app.state::<MultiAgentStore>();
+        let host = multi_agent::AgentTerminalHost::new(app.state::<PtyManager>().inner().clone(), app.state::<SessionManager>().inner().clone());
+        store.resume_managed_after_login(&project_id, &expected_conversation_id, &plan_id, &app.state::<MultiAgentSupervisor>(), &host,
+            &app.state::<CollaborationBridge>()).map_err(to_err)?;
+        store.conversation_snapshot(&project_id).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -1317,20 +1359,21 @@ fn ma_conversation_control(project_id: String, action: String, expected_conversa
 }
 
 #[tauri::command]
-fn ma_conversation_execute_plan(input: multi_agent::ConversationExecutePlanInput,
-    state: State<'_, MultiAgentStore>, supervisor: State<'_, MultiAgentSupervisor>,
-    pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
-    admission: State<'_, runtime_admission::RuntimeAdmission>,
+async fn ma_conversation_execute_plan(input: multi_agent::ConversationExecutePlanInput, app: AppHandle,
 ) -> Result<multi_agent::ConversationSnapshot, String> {
-    let _admission = admission.admit().map_err(to_err)?;
+    blocking_command(move || {
+    let _admission = app.state::<runtime_admission::RuntimeAdmission>().admit().map_err(to_err)?;
+    let state = app.state::<MultiAgentStore>();
+    if !state.plan_accounts_ready(&input).map_err(to_err)? { return Err(codex_storage::LOGIN_REQUIRED.into()); }
     state.apply_conversation_plan(&input).map_err(to_err)?;
     if state.claim_conversation_plan_start(&input).map_err(to_err)? {
-        let result = supervisor.start(state.inner().clone(), input.project_id.clone(),
-            multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone());
+        let result = app.state::<MultiAgentSupervisor>().start(state.inner().clone(), input.project_id.clone(),
+            multi_agent::AgentTerminalHost::new(app.state::<PtyManager>().inner().clone(), app.state::<SessionManager>().inner().clone()), app.state::<CollaborationBridge>().inner().clone());
         state.finish_conversation_plan_start(&input, result.as_ref().err().map(ToString::to_string).as_deref()).map_err(to_err)?;
         result.map_err(to_err)?;
     }
     state.conversation_snapshot(&input.project_id).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -6553,6 +6596,9 @@ pub fn run() {
             ma_conversation_switch,
             ma_conversation_send,
             ma_conversation_plan_preflight,
+            ma_conversation_codex_login,
+            ma_conversation_retry_codex_members,
+            ma_conversation_resume_managed_after_login,
             ma_conversation_stage_attachments,
             ma_conversation_preview_image,
             ma_conversation_open_attachment,

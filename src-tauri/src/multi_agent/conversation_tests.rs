@@ -14,6 +14,8 @@ mod work_views;
 mod research_policy;
 #[path = "conversation_activity_tests.rs"]
 mod activity;
+#[path = "conversation_auth_tests.rs"]
+mod codex_login;
 #[path = "managed_native_tests.rs"]
 mod managed_native;
 #[path = "managed_pi_native_tests.rs"]

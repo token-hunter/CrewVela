@@ -94,6 +94,14 @@ if(params.get("copy")==="1") {
 }
 const activityEvents: any[] = [];
 const activityApprovals: any[] = [];
+if (params.has("codex-login") && !params.has("login-plan")) {
+  chats.A.executionPlans = [];
+  chats.A.rounds = [{ ...chats.A.rounds[0], mode: "discussion", status: params.has("login-running") ? "running" : "failed",
+    chatDispatch: { kind: "parallel" }, participantAgentIds: ["claude", "codex"], phase: "chat" }];
+  chats.A.messages = [message("m1", "user", "请各自回复", null, "completed", "message"),
+    message("m2", "agent", "Claude 已回复", "claude"), message("m3", "agent", "", "codex", "failed", "codex_login_required")];
+}
+let codexReady = false;
 if (params.has("delegation")) {
   const sourceAt = new Date(2026, 10, 16, 10, 42).getTime();
   projects[0].name = "登录功能改版";
@@ -218,6 +226,23 @@ const mock = {
       return structuredClone(runLogs.filter(log => log.projectId === args.projectId && log.runId === args.runId).slice(-args.limit));
     }
     if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
+    if (command === "ma_conversation_codex_login") {
+      if (params.has("hold-login")) await new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
+      codexReady = true;
+      return;
+    }
+    if (command === "ma_conversation_retry_codex_members") {
+      const chat = chats[args.input.projectId];
+      if (!codexReady || args.input.expectedConversationId !== chat.conversation.id || args.input.roundId !== "round-1"
+        || JSON.stringify(args.input.turns) !== JSON.stringify([{ messageId: "m3", runId: "run-codex" }])) throw Error("错误的成员重试");
+      Object.assign(chat.messages.find((m: any) => m.id === "m3"), { kind: "reply", status: "completed", runId: "run-codex-retry", body: "Codex 补发成功" });
+      chat.rounds[0].status = "completed";
+      return structuredClone(chat);
+    }
+    if (command === "ma_conversation_plan_preflight" && params.has("login-plan") && !codexReady)
+      return [{ kind: "codex_login", message: "CrewVela 的 Codex 专用目录尚未登录" }];
+    if (command === "ma_conversation_execute_plan" && params.get("login-plan") === "apply" && !codexReady)
+      throw Error("CrewVela 的 Codex 专用目录尚未登录");
     if (command === "ma_conversation_plan_retry_input") {
       const input = planRetryRequests.get(args.roundId);
       if (!input || input.projectId !== args.projectId) throw Error("无法重试其他项目的分工");

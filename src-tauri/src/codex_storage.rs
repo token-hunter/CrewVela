@@ -19,6 +19,55 @@ pub enum CodexStorage {
     CrewVela,
 }
 
+pub(crate) const LOGIN_REQUIRED: &str = "CrewVela 的 Codex 专用目录尚未登录";
+
+fn account_command() -> Result<Command> {
+    let storage = CodexStorage::CrewVela;
+    let home = storage.home()?;
+    let personal = CodexStorage::Personal.home()?;
+    ensure!(personal != home && !matches!((personal.canonicalize(), home.canonicalize()), (Ok(a),Ok(b)) if a == b),
+        "个人 Codex 与 CrewVela 专用目录指向同一位置，无法独立登录");
+    storage.prepare()?;
+    let executable = crate::multi_agent::resolve_runtime_executable_checked(crate::multi_agent::AgentRuntimeKind::Codex)
+        .map_err(anyhow::Error::msg)?;
+    let mut command = crate::multi_agent::command_for_path(&executable);
+    storage.configure(&mut command, false)?;
+    command.arg("app-server");
+    Ok(command)
+}
+
+pub(crate) fn collaboration_ready(cwd: &Path, acp: bool) -> Result<bool> {
+    let ready = crate::codex_title_summary::collaboration_account(account_command()?, cwd, None)?;
+    if ready || !acp { return Ok(ready); }
+    // The ACP adapter may authenticate its explicitly configured API key or
+    // gateway itself. A bare OPENAI_API_KEY is not an ACP authentication request.
+    let request = std::env::var("DEFAULT_AUTH_REQUEST").ok().and_then(|raw| serde_json::from_str::<Value>(&raw).ok());
+    match request.as_ref().and_then(|request| request["methodId"].as_str()) {
+        Some("api-key") => {
+            ensure!(request.as_ref().and_then(|r| r.pointer("/_meta/api-key/apiKey")).and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty()) || ["CODEX_API_KEY", "OPENAI_API_KEY"].iter()
+                .any(|key| std::env::var(key).is_ok_and(|value| !value.trim().is_empty())),
+                "Codex ACP 已选择 API Key 登录，请配置该方式需要的密钥");
+            Ok(true)
+        }
+        Some("gateway") => {
+            ensure!(request.as_ref().and_then(|r| r.pointer("/_meta/gateway/baseUrl")).and_then(Value::as_str)
+                .is_some_and(|value| !value.trim().is_empty()), "Codex ACP 的自定义供应商缺少网关地址");
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+pub(crate) fn login_collaboration(cwd: &Path) -> Result<()> {
+    static LOGIN: Mutex<()> = Mutex::new(());
+    let _guard = LOGIN.try_lock().map_err(|_| anyhow!("已有 CrewVela Codex 登录正在进行"))?;
+    crate::codex_title_summary::collaboration_account(account_command()?, cwd, Some(&|url| {
+        tauri_plugin_opener::open_url(url, None::<&str>).context("无法打开 Codex 登录网页")
+    }))?;
+    Ok(())
+}
+
 impl CodexStorage {
     pub(crate) fn is_personal(&self) -> bool {
         *self == Self::Personal

@@ -48,7 +48,8 @@ const pendingKey = (project: string, chat?: string) => `crewvela-conversation-pe
 function stored(key: string): string { try { return localStorage.getItem(key) ?? ""; } catch { return ""; } }
 function save(key: string, value: string) { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch { /* The current draft remains available in the editor. */ } }
 interface PendingSend extends ConversationSendInput { interrupt: boolean; preserveDraft?: boolean }
-interface PlanIssue { kind: "git" | "member"; message: string }
+interface PlanIssue { kind: "git" | "member" | "codex_login"; message: string }
+const CODEX_LOGIN_REQUIRED = "CrewVela 的 Codex 专用目录尚未登录";
 const PLAN_VALIDATION_FAILURE = "真实成员已回复，但分工计划未通过校验：";
 const MAX_ATTACHMENTS = 8;
 const DOCUMENT_EXTENSIONS = ["pdf", "docx", "txt", "md", "csv"];
@@ -124,6 +125,15 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [planIssues, setPlanIssues] = useState<PlanIssue[]>([]);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [loginRetryRound, setLoginRetryRound] = useState<string | null>(null);
+  const loginInFlight = useRef(false);
+  const loginContext = useRef(0);
+  const planAfterLogin = useRef<(() => Promise<void>) | null>(null);
+  const planForm = useRef("");
+  planForm.current = JSON.stringify([draft, draftFiles, selected, archivedRuleId, snapshot?.project.rootPath,
+    snapshot?.project.defaultBranch, conversation?.rounds.length]);
+  const [blockedPlanId, setBlockedPlanId] = useState<string | null>(null);
   const [exportNotice, setExportNotice] = useState<{ conversationId: string; filename: string } | null>(null);
   const exporting = useRef(false);
   const [openDelegation, setOpenDelegation] = useState<{ conversationId: string; itemId: string } | null>(null);
@@ -152,6 +162,10 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const adoptConversation = useCallback((value: ConversationSnapshot) => {
     const { projectId, id } = value.conversation;
     if (currentConversation.current !== id) {
+      loginContext.current++;
+      planAfterLogin.current = null;
+      setBlockedPlanId(null);
+      setLoginRetryRound(null);
       if (!currentConversation.current) {
         for (const storageKey of [draftKey, pendingKey]) {
           const legacy = stored(storageKey(projectId));
@@ -172,6 +186,10 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
 
   const chooseProject = useCallback((id: string | null) => {
     if (currentProject.current === id) return;
+    loginContext.current++;
+    planAfterLogin.current = null;
+    setBlockedPlanId(null);
+    setLoginRetryRound(null);
     setComposingMention(false);
     request.current++; generation.current++; initializedMembers.current = null;
     currentProject.current = id; currentConversation.current = undefined; setProjectId(id); setSnapshot(null); setConversation(null); setHealthy(false); setLoading(false);
@@ -301,7 +319,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     if (initializedMembers.current !== projectId) { initializedMembers.current = projectId; setSelected(eligible.filter(id => !manualMembers.has(id))); }
     else setSelected(ids => ids.filter(id => eligible.includes(id)));
   }, [agents, conversation, snapshot, projectId, runtimeReady, runtimeError, runtimePrefs, isRuntimeEnabled, manualMembers]);
-  const round = latestConversationRound(conversation?.rounds ?? []);
+  const round = conversation?.rounds.find(conversationIsActive) ?? latestConversationRound(conversation?.rounds ?? []);
   const latestDiscussion = latestConversationRound(conversation?.rounds.filter(item => item.mode === "discussion") ?? []);
   const planningRounds = conversation?.rounds.filter(item => item.mode === "execution_plan") ?? [];
   const roundByRequest = new Map(conversation?.rounds.map(item => [item.userMessageId, item]));
@@ -425,6 +443,33 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     } catch { /* Retain the same identity and payload for a safe status check/retry. */ }
   };
   const planRetryBlocked = busy || !!pending || discussing || !active || !healthy || !runtimeReady || !!runtimeError || hasPendingPlan;
+  const loginCodex = async (resume?: () => Promise<unknown>) => {
+    if (!conversation || !projectId || loginInFlight.current || mutation.current) return;
+    const expectedConversationId = conversation.conversation.id, epoch = loginContext.current;
+    const stillOpen = () => mounted.current && loginContext.current === epoch && currentConversation.current === expectedConversationId;
+    loginInFlight.current = true;
+    setLoggingIn(true);
+    setOperationError("");
+    try {
+      await invoke("ma_conversation_codex_login", { projectId, expectedConversationId });
+      if (stillOpen()) await resume?.();
+    } catch (reason) {
+      if (stillOpen()) setOperationError(String(reason));
+    } finally {
+      loginInFlight.current = false;
+      if (mounted.current) setLoggingIn(false);
+    }
+  };
+  useEffect(() => {
+    if (!loginRetryRound || !conversation || !projectId || discussing || busy || mutation.current || pending || !healthy || !active) return;
+    const turns = conversation.messages.filter(other => other.roundId === loginRetryRound &&
+      other.senderType === "agent" && other.kind === "codex_login_required" && other.status === "failed")
+      .map(other => ({ messageId: other.id, runId: other.runId }));
+    setLoginRetryRound(null);
+    if (turns.length) void mutationCall("ma_conversation_retry_codex_members", { input: {
+      projectId, expectedConversationId: conversation.conversation.id, roundId: loginRetryRound, turns,
+    } }).then(() => refresh()).catch(() => { /* The original failure remains available. */ });
+  }, [loginRetryRound, conversation, projectId, discussing, busy, pending, healthy, active]);
   const retryPlan = async (failedRound: ConversationRound) => {
     if (planRetryBlocked || mutation.current || !projectId || !conversation) return;
     const conversationId = conversation.conversation.id;
@@ -442,6 +487,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const issues = await invoke<PlanIssue[]>("ma_conversation_plan_preflight", { input });
       if (!stillOpen()) return;
       if (issues.length) {
+        setPlanIssues(issues);
+        planAfterLogin.current = () => retryPlan(failedRound);
         setOperationError(`暂无法重试分工。${issues.map(issue => issue.message).join(" ")}`);
         return;
       }
@@ -461,7 +508,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     if (draft !== body && !draft.startsWith(`${body}\n\n`)) changeDraft(draft.trim() ? `${body}\n\n${draft}` : body);
     requestAnimationFrame(() => editor.current?.focus());
   };
-  const submit = async (event?: FormEvent, bodyOverride?: string, requestPlan = false, managed = false) => {
+  const submit = async (event?: FormEvent, bodyOverride?: string, requestPlan = false, managed = false, alreadyAuthorized = false) => {
     event?.preventDefault();
     if (mentionOpen && mentionMultiple) return;
     if (mutation.current || pickingFiles || !projectId || !conversation || !healthy || !active || !runtimeReady || runtimeError || pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")) return;
@@ -483,7 +530,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const target = snapshot?.project;
         if (discussing || !target || target.id !== projectId) throw Error("请等待当前讨论结束后再开始全自动托管。");
         if (rule) throw Error("全自动托管需要独立工程任务，请取消本次聊天附加规则。");
-        if (!window.confirm("允许所选成员启动本次托管的独立工作树，并自动开发、审查和验收？Claude Code 会确认这些工作树的信任提示。验收通过后合入 " + target.defaultBranch + " 分支。\n" + target.rootPath)) return;
+        if (!alreadyAuthorized && !window.confirm("允许所选成员启动本次托管的独立工作树，并自动开发、审查和验收？Claude Code 会确认这些工作树的信任提示。验收通过后合入 " + target.defaultBranch + " 分支。\n" + target.rootPath)) return;
       }
       const routing = mode === "discussion"
         ? conversationChatDispatch(body, agents.filter(agent => ids.includes(agent.id)), rule?.agentId ?? undefined)
@@ -491,13 +538,21 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const item: PendingSend = { projectId, expectedConversationId: conversation.conversation.id, clientMessageId: crypto.randomUUID(), body, participantAgentIds: ids, mode, ...routing, managed, nativeCapabilities: !managed, taskRules: rule ? { tools: "research", archivedRuleId: rule.id } : undefined, interrupt: discussing };
       setPlanIssues([]);
       if (mode === "execution_plan") {
+        const checkedForm = planForm.current;
         mutation.current = true;
         setBusy(true);
         setOperationError("");
         try {
           const issues = await invoke<PlanIssue[]>("ma_conversation_plan_preflight", { input: sendPayload(item) });
           if (!stillOpen()) return;
-          if (issues.length) { setPlanIssues(issues); return; }
+          if (issues.length) {
+            planAfterLogin.current = async () => {
+              if (planForm.current === checkedForm) await submit(undefined, bodyOverride, requestPlan, managed, managed);
+              else setPlanIssues([]);
+            };
+            setPlanIssues(issues);
+            return;
+          }
         } finally {
           mutation.current = false;
           if (mounted.current) setBusy(false);
@@ -587,6 +642,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   };
   const applyPlan = async (plan: ConversationExecutionPlan) => {
     if (!projectId) return;
+    setBlockedPlanId(null);
     const id = projectId, epoch = generation.current;
     // Persist a stable operation identity before the request; uncertainty must not duplicate engineering tasks.
     const key = `crewvela-conversation-plan:${projectId}:${plan.id}`;
@@ -594,7 +650,10 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     try {
       const result = await mutationCall("ma_conversation_execute_plan", { input: { projectId, planId: plan.id, clientRequestId } });
       if (result?.executionPlans.some(item => item.id === plan.id && item.status === "applied") && currentProject.current === id && generation.current === epoch) { setSelectedTaskId(result.executionPlans.find(item => item.id === plan.id)?.taskIds[0] ?? null); setSelectedDeliveryId(null); setWorkView("tasks"); void refresh(); }
-    } catch { /* Backend deduplicates the retained identity. */ }
+    } catch (reason) {
+      if (String(reason).includes(CODEX_LOGIN_REQUIRED) && currentProject.current === id && generation.current === epoch)
+        setBlockedPlanId(plan.id);
+    }
   };
   const editPlan = (plan: ConversationExecutionPlan) => {
     const prefix = `请调整分工：${plan.summary}\n`;
@@ -700,7 +759,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     : mentionCount ? `已 @ ${mentionCount} 位` : `发给全体 · ${availableRecipients.length} 位`;
   const sendLabel = discussing ? "发送插话" : "发送消息";
   const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} snapshot={snapshot}
-    blocked={busy || !healthy || discussing || !active} paused={snapshot?.project.status === "paused"}
+    blocked={busy || loggingIn || !healthy || discussing || !active} paused={snapshot?.project.status === "paused"}
+    onCodexLogin={blockedPlanId === plan.id || plan.managed?.status === "waiting_login" ? () => void loginCodex(async () => {
+      if (plan.managed) {
+        await mutationCall("ma_conversation_resume_managed_after_login", { projectId, expectedConversationId: conversation?.conversation.id, planId: plan.id });
+        void refresh();
+      } else await applyPlan(plan);
+    }) : undefined}
     onConfirm={() => void applyPlan(plan)} onAdjust={() => editPlan(plan)} onTasks={() => {
       setSelectedDeliveryId(plan.managed?.status === "completed" ? plan.id : null);
       setWorkView("tasks");
@@ -847,6 +912,14 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
               {!plan && <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={conversationMemberActivity(message,snapshot?.runs.find(run=>run.id===message.runId),activityEvents,snapshot?.approvals ?? [],activityNow)} now={activityNow} onOpen={message.runId ? openOriginal : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"} completedLabel={planReplyRound ? "规划成员已回复" : undefined}>{message.body && !generatingPlan && !rawPlanReply ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity>}
               {attachments}
             </>}
+            {message.kind === "codex_login_required" && message.status === "failed" && <div className="conversation-progress">
+              <span>{loginRetryRound === message.roundId ? "已登录，等待本轮结束后重试失败成员" : loggingIn ? "正在等待 Codex 登录…" : CODEX_LOGIN_REQUIRED}</span>
+              <button type="button" className="conversation-text-button" disabled={loggingIn || !!loginRetryRound || busy || !!pending || !healthy || !active || (discussing && (round?.id !== message.roundId || !!planReplyRound))}
+                onClick={() => void loginCodex(async () => {
+                  if (planReplyRound) await retryPlan(planReplyRound);
+                  else setLoginRetryRound(message.roundId);
+                })}>登录 Codex</button>
+            </div>}
             {message.queuedInput && <div className="conversation-progress"><span>{message.status === "queued" ? "等待前一轮确认停止后发送" : message.status === "cancelled" ? "这条消息尚未发送，已取消" : "这条消息尚未发送，等待你确认继续"}</span>{message.status === "needs_decision" && <button type="button" className="conversation-text-button" disabled={busy || !!pending || !healthy || !active || discussing} onClick={() => void mutationCall("ma_conversation_send", { input: message.queuedInput }).then(() => refresh()).catch(() => {})}>继续发送</button>}</div>}
             {plan && renderPlan(plan)}
             {rawPlanReply && !generatingPlan && <details className="conversation-raw-plan">
@@ -890,6 +963,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       {planIssues.length > 0 && <div className="conversation-plan-issues" role="alert">
         <strong>暂无法生成分工，开发尚未开始</strong>
         <ul>{planIssues.map(issue => <li key={issue.message}>{issue.message}</li>)}</ul>
+        {planIssues.some(issue => issue.kind === "codex_login") && <button type="button" className="conversation-text-button"
+          disabled={busy || loggingIn || !healthy || !active} onClick={() => void loginCodex(planAfterLogin.current ?? undefined)}>{loggingIn ? "等待登录…" : "登录 Codex"}</button>}
         {planIssues.some(issue => issue.kind === "member") && <>
           {planHasMentions && <p>正文里指定了 @成员，请把缺少的成员也加入 @ 列表。</p>}
           <button type="button" className="conversation-text-button" onClick={() => {
