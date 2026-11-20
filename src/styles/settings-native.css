@@ -439,6 +439,229 @@
 }
 .settings-native .appearance-opacity-controls { display: grid; gap: 10px; min-width: 0; }
 
+/* Workspace Start Page DIY Style Picker inside Appearance Settings */
+.settings-native .appearance-start-style-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.settings-native .appearance-start-style-option {
+  padding: 8px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--settings-canvas);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.settings-native .appearance-start-style-option:hover {
+  border-color: var(--border-strong);
+}
+.settings-native .appearance-start-style-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--settings-canvas));
+}
+.settings-native .appearance-start-style-stage {
+  position: relative;
+  height: 76px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-native .appearance-start-style-meta {
+  display: grid;
+  gap: 2px;
+  padding: 0 2px;
+  min-width: 0;
+}
+.settings-native .appearance-start-style-meta strong {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-native .appearance-start-style-meta em {
+  flex: none;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+}
+.settings-native .appearance-start-style-meta small {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.settings-native .appearance-start-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-native .asp-minimal-list {
+  width: 68%;
+  display: grid;
+  gap: 5px;
+}
+.settings-native .asp-minimal-list i {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-dim) 45%, transparent);
+}
+.settings-native .appearance-start-preview.lamp {
+  flex-direction: column;
+  justify-content: flex-start;
+}
+.settings-native .asp-lamp-wire {
+  display: block;
+  width: 1.5px;
+  height: 10px;
+  background: var(--border-strong);
+}
+.settings-native .asp-lamp-shade {
+  display: block;
+  width: 28px;
+  height: 11px;
+  border-radius: 14px 14px 3px 3px;
+  background: var(--border-strong);
+}
+.settings-native .asp-lamp-beam {
+  position: absolute;
+  top: 21px;
+  left: 50%;
+  width: 78px;
+  height: 54px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 76%);
+  clip-path: polygon(34% 0%, 66% 0%, 96% 100%, 4% 100%);
+}
+.settings-native .asp-lamp-cord {
+  position: absolute;
+  top: 21px;
+  left: calc(50% + 12px);
+  width: 1px;
+  height: 20px;
+  background: var(--accent);
+}
+.settings-native .asp-lamp-cord::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  bottom: -4px;
+  width: 5px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.settings-native .asp-lamp-lines {
+  position: relative;
+  z-index: 1;
+  width: 54%;
+  margin-top: 12px;
+  display: grid;
+  gap: 4px;
+}
+.settings-native .asp-lamp-lines i {
+  display: block;
+  height: 4.5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-dim) 48%, transparent);
+}
+.settings-native .appearance-start-preview.clothesline {
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px;
+}
+.settings-native .asp-line-row {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+}
+.settings-native .asp-wire {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: var(--border-strong);
+}
+.settings-native .asp-tags {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.settings-native .asp-tags i {
+  display: block;
+  width: 20px;
+  height: 19px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+}
+.settings-native .asp-tags i:first-child { transform: rotate(-4deg); }
+.settings-native .asp-tags i:last-child { transform: rotate(3deg); }
+.settings-native .asp-tags i.accent { border-color: var(--accent); transform: rotate(2deg); }
+.settings-native .appearance-start-preview.cassette {
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 14px;
+}
+.settings-native .asp-tapes {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+}
+.settings-native .asp-tapes i {
+  display: block;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.settings-native .asp-tapes i.t1 { border-left: 3px solid #d97757; }
+.settings-native .asp-tapes i.t2 { border-left: 3px solid #5fbf77; border-color: var(--accent); transform: translateX(6px); }
+.settings-native .asp-tapes i.t3 { border-left: 3px solid #5ca0d3; }
+.settings-native .asp-deck {
+  width: 100%;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  padding: 0 7px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.settings-native .asp-deck i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.2px solid var(--accent);
+}
+.settings-native .asp-deck b {
+  margin-left: auto;
+  width: 22px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
 /* Companionship (Desktop Pet) Unified Showcase & 4×2 Portrait Gallery */
 .settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner[data-settings-section="companionship"] {
   display: flex;
@@ -602,6 +825,7 @@
   .settings-native .collab-agent-card-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
   .settings-native :is(.general-dual-cards-row, .appearance-dual-sections, .appearance-terminal-opacity, .pet-showcase-banner, .git-settings-guarantees) { grid-template-columns: minmax(0, 1fr); }
   .settings-native .pet-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-native .appearance-start-style-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
   .settings-native-overlay { padding: 8px; }
@@ -613,6 +837,7 @@
   .settings-native .settings-nav-group + .settings-nav-group { margin-top: 12px; }
   .settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner { padding: 20px 16px; }
   .settings-native .settings-workspace .runtime-field, .settings-native .git-settings-row, .settings-native .general-runtime-details dl { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .settings-native .appearance-start-style-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-native .archived-settings-toolbar, .settings-native .notification-controls { grid-template-columns: minmax(0, 1fr); }
   .settings-native .settings-window-header { padding-left: 16px; }
 }

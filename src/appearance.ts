@@ -4,10 +4,22 @@ import type {
   AppearanceBackground,
   AppearanceTheme,
   AppTheme,
+  RightSidebarStartStyle,
 } from "./types";
 
 export const APPEARANCE_STORAGE_KEY = "crewvela-appearance";
 export const LEGACY_THEME_STORAGE_KEY = "crewvela-theme";
+export const RIGHT_SIDEBAR_LAMP_STORAGE_KEY = "crewvela-right-sidebar-lamp-on";
+export const RIGHT_SIDEBAR_BREEZE_STORAGE_KEY = "crewvela-right-sidebar-breeze-on";
+
+export const DEFAULT_RIGHT_SIDEBAR_START_STYLE: RightSidebarStartStyle = "minimal";
+
+export const RIGHT_SIDEBAR_START_STYLES: RightSidebarStartStyle[] = [
+  "minimal",
+  "lamp",
+  "clothesline",
+  "cassette",
+];
 
 export const DEFAULT_APPEARANCE: AppAppearance = {
   theme: "dark",
@@ -73,6 +85,9 @@ export function loadAppearance(): AppAppearance {
           Number.isFinite(stored.terminalOpacity)
             ? Math.min(0.9, Math.max(0, stored.terminalOpacity))
             : DEFAULT_APPEARANCE.terminalOpacity,
+        ...(includesValue(RIGHT_SIDEBAR_START_STYLES, stored.rightSidebarStartStyle)
+          ? { rightSidebarStartStyle: stored.rightSidebarStartStyle }
+          : {}),
       };
     }
     const legacyTheme = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
@@ -110,5 +125,46 @@ export function saveAppearance(
     window.localStorage.setItem(LEGACY_THEME_STORAGE_KEY, baseTheme);
   } catch {
     // 持久化不可用时，当前窗口仍可正常切换外观。
+  }
+}
+
+export function resolveRightSidebarStartStyle(
+  appearance: AppAppearance,
+): RightSidebarStartStyle {
+  return includesValue(RIGHT_SIDEBAR_START_STYLES, appearance.rightSidebarStartStyle)
+    ? appearance.rightSidebarStartStyle
+    : DEFAULT_RIGHT_SIDEBAR_START_STYLE;
+}
+
+export function loadRightSidebarLampOn(): boolean {
+  try {
+    return window.localStorage.getItem(RIGHT_SIDEBAR_LAMP_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveRightSidebarLampOn(on: boolean): void {
+  try {
+    window.localStorage.setItem(RIGHT_SIDEBAR_LAMP_STORAGE_KEY, on ? "1" : "0");
+  } catch {
+    // 持久化不可用时保留当前会话内状态。
+  }
+}
+
+export function loadRightSidebarBreezeOn(): boolean {
+  try {
+    const raw = window.localStorage.getItem(RIGHT_SIDEBAR_BREEZE_STORAGE_KEY);
+    return raw === null ? true : raw === "1";
+  } catch {
+    return true;
+  }
+}
+
+export function saveRightSidebarBreezeOn(on: boolean): void {
+  try {
+    window.localStorage.setItem(RIGHT_SIDEBAR_BREEZE_STORAGE_KEY, on ? "1" : "0");
+  } catch {
+    // 持久化不可用时保留当前会话内状态。
   }
 }

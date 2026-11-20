@@ -3,7 +3,7 @@ import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
 import { isTerminalShell, terminalShells, shellLabel } from "../platform";
-import type { TerminalShell } from "../types";
+import type { RightSidebarStartStyle, TerminalShell } from "../types";
 import { useEffect, useRef } from "react";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { RobotIcon } from "@phosphor-icons/react/dist/csr/Robot";
@@ -13,6 +13,10 @@ import { HouseIcon } from "@phosphor-icons/react/dist/csr/House";
 import { CornersOutIcon } from "@phosphor-icons/react/dist/csr/CornersOut";
 import { CornersInIcon } from "@phosphor-icons/react/dist/csr/CornersIn";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
+import {
+  RightSidebarStartCreative,
+  RightSidebarStartStyleCorner,
+} from "./RightSidebarStartCreative";
 
 export type RightSidebarTab = "multi_agent" | "files" | "git" | "browser" | "start" | `terminal:${string}` | `${"files" | "git" | "browser" | "multi_agent"}:${string}`;
 export type SidebarTool = "files" | "browser" | "multi_agent" | "git" | TerminalShell;
@@ -91,14 +95,46 @@ export function RightSidebarActivityBar(props: Props) {
     </header>
   );
 }
-export function RightSidebarStart({ root, onOpenTool }: { root: string | null; onOpenTool: (tool: SidebarTool) => void }) {
-  return <nav className="right-sidebar-start" aria-label="工作区工具" data-workspace-root={root ?? undefined}>
-    <div className="right-sidebar-start-tools">
-      <button type="button" disabled={!root} title="浏览工作区文件" onClick={() => onOpenTool("files")}><i className="right-sidebar-start-icon" aria-hidden="true"><FolderSimpleIcon size={17} /></i><span>文件</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-      <button type="button" disabled={!root} title={`在当前工作区运行 ${shellLabel(terminalShells()[0])}`} onClick={() => onOpenTool(terminalShells()[0])}><i className="right-sidebar-start-icon" aria-hidden="true"><TerminalWindowIcon size={17} /></i><span>终端</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-      <button type="button" title="打开网页或搜索内容" onClick={() => onOpenTool("browser")}><i className="right-sidebar-start-icon" aria-hidden="true"><GlobeIcon size={17} /></i><span>浏览器</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-      <button type="button" title="查看 Git 更改与提交记录" onClick={() => onOpenTool("git")}><i className="right-sidebar-start-icon" aria-hidden="true"><GitBranchIcon size={17} weight="regular" /></i><span>Git</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-      <button type="button" title="协调智能体任务与协作进度" onClick={() => onOpenTool("multi_agent")}><i className="right-sidebar-start-icon" aria-hidden="true"><RobotIcon size={17} /></i><span>多智能体</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-    </div>
-  </nav>;
+export function RightSidebarStart({
+  root,
+  onOpenTool,
+  startStyle = "minimal",
+  onStartStyleChange,
+  onOpenAppearanceSettings,
+}: {
+  root: string | null;
+  onOpenTool: (tool: SidebarTool) => void;
+  startStyle?: RightSidebarStartStyle;
+  onStartStyleChange?: (style: RightSidebarStartStyle) => void;
+  onOpenAppearanceSettings?: () => void;
+}) {
+  if (startStyle !== "minimal") {
+    return (
+      <RightSidebarStartCreative
+        root={root}
+        onOpenTool={onOpenTool}
+        startStyle={startStyle}
+        onStartStyleChange={onStartStyleChange}
+        onOpenAppearanceSettings={onOpenAppearanceSettings}
+      />
+    );
+  }
+  return (
+    <nav className="right-sidebar-start right-sidebar-start--minimal" aria-label="工作区工具" data-workspace-root={root ?? undefined} data-start-style="minimal">
+      <div className="right-sidebar-start-tools">
+        <button type="button" disabled={!root} title="浏览工作区文件" onClick={() => onOpenTool("files")}><i className="right-sidebar-start-icon" aria-hidden="true"><FolderSimpleIcon size={17} /></i><span>文件</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" disabled={!root} title={`在当前工作区运行 ${shellLabel(terminalShells()[0])}`} onClick={() => onOpenTool(terminalShells()[0])}><i className="right-sidebar-start-icon" aria-hidden="true"><TerminalWindowIcon size={17} /></i><span>终端</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" title="打开网页或搜索内容" onClick={() => onOpenTool("browser")}><i className="right-sidebar-start-icon" aria-hidden="true"><GlobeIcon size={17} /></i><span>浏览器</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" title="查看 Git 更改与提交记录" onClick={() => onOpenTool("git")}><i className="right-sidebar-start-icon" aria-hidden="true"><GitBranchIcon size={17} weight="regular" /></i><span>Git</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" title="协调智能体任务与协作进度" onClick={() => onOpenTool("multi_agent")}><i className="right-sidebar-start-icon" aria-hidden="true"><RobotIcon size={17} /></i><span>多智能体</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+      </div>
+      {onStartStyleChange && (
+        <RightSidebarStartStyleCorner
+          startStyle={startStyle}
+          onStartStyleChange={onStartStyleChange}
+          onOpenAppearanceSettings={onOpenAppearanceSettings}
+        />
+      )}
+    </nav>
+  );
 }

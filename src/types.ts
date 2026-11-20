@@ -125,6 +125,11 @@ export type AppearanceAccent =
   | "pink"
   | "coral"
   | "gray";
+export type RightSidebarStartStyle =
+  | "minimal"
+  | "lamp"
+  | "clothesline"
+  | "cassette";
 
 export interface AppAppearance {
   theme: AppearanceTheme;
@@ -133,6 +138,7 @@ export interface AppAppearance {
   followSystem: boolean;
   terminalTransparent?: boolean;
   terminalOpacity?: number;
+  rightSidebarStartStyle?: RightSidebarStartStyle;
 }
 
 export type SessionStatus =

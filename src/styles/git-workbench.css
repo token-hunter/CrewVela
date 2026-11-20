@@ -2127,11 +2127,25 @@
 .right-sidebar-new-menu { position: absolute; top: 43px; right: 8px; z-index: 2; width: 220px; display: flex; flex-direction: column; padding: 5px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-elev); box-shadow: 0 6px 24px rgba(0,0,0,.1); }
 .right-sidebar-new-menu > button { width: 100%; min-width: 0; height: 34px; display: flex; justify-content: flex-start; gap: 10px; padding: 0 10px; border-radius: 5px; color: var(--text); font-size: 12px; }
 .right-sidebar-new-menu > button:disabled { opacity: .4; cursor: default; }
-.right-sidebar-start { height: 100%; display: flex; flex-direction: column; align-items: center; padding: 24px clamp(20px, 9.6%, 52px); overflow: auto; color: var(--text); }
+.right-sidebar-start { position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; padding: 24px clamp(20px, 9.6%, 52px); overflow: auto; color: var(--text); }
 .right-sidebar-start::before, .right-sidebar-start::after { content: ""; min-height: 0; width: 100%; }
 .right-sidebar-start::before { flex: 9 0 0; }
 .right-sidebar-start::after { flex: 11 0 0; }
 .right-sidebar-start > * { flex-shrink: 0; }
+.right-sidebar-start.right-sidebar-start--lamp,
+.right-sidebar-start.right-sidebar-start--clothesline,
+.right-sidebar-start.right-sidebar-start--cassette {
+  padding: 0;
+  align-items: stretch;
+}
+.right-sidebar-start.right-sidebar-start--lamp::before,
+.right-sidebar-start.right-sidebar-start--lamp::after,
+.right-sidebar-start.right-sidebar-start--clothesline::before,
+.right-sidebar-start.right-sidebar-start--clothesline::after,
+.right-sidebar-start.right-sidebar-start--cassette::before,
+.right-sidebar-start.right-sidebar-start--cassette::after {
+  content: none;
+}
 .right-sidebar-start-tools {
   box-sizing: border-box;
   width: min(212px, 100%);
@@ -2192,6 +2206,637 @@
 }
 .right-sidebar-start-tools > button .right-sidebar-start-arrow { width: 14px; height: 14px; }
 .right-sidebar-start-tools > button:disabled { opacity: .4; cursor: default; }
+
+/* ---- 右侧栏开始页 DIY：底角低调换肤入口 + 3 套创意模式 ---- */
+.rs-start-diy-corner {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: var(--z-float);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.rs-start-diy-trigger {
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-elev) 86%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  opacity: 0.46;
+  transition: opacity 160ms ease, border-color 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+.right-sidebar-start:hover .rs-start-diy-trigger,
+.rs-start-diy-trigger:hover,
+.rs-start-diy-trigger:focus-visible,
+.rs-start-diy-trigger[aria-expanded="true"] {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.rs-start-diy-trigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  color: var(--accent);
+}
+.rs-start-diy-popover {
+  margin-bottom: 6px;
+  width: 204px;
+  padding: 5px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  color: var(--text);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rs-start-diy-popover-title {
+  padding: 4px 8px 5px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.rs-start-diy-option {
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.rs-start-diy-option:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.rs-start-diy-option.active {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+.rs-start-diy-option.active svg {
+  color: var(--accent);
+  flex: none;
+}
+.rs-start-diy-divider {
+  margin: 4px 0;
+  border-top: 1px solid var(--border);
+}
+.rs-start-diy-settings-link {
+  font-size: 11.5px;
+  color: var(--accent);
+}
+.rs-start-diy-settings-link:hover {
+  color: var(--accent);
+}
+
+/* 模式 2：深夜拉绳台灯（默认关灯静谧可读 + 拖拽拉绳开关 + 强调色微光探照） */
+.rs-lamp-stage {
+  position: relative;
+  flex: 1 0 auto;
+  min-height: 100%;
+  width: 100%;
+  padding: 0 20px 56px;
+  background: var(--bg);
+  overflow: hidden;
+  transition: background-color 360ms ease;
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-stage {
+  background: var(--bg-sunken);
+}
+:root[data-theme="light"] .right-sidebar-start--lamp.is-lights-on .rs-lamp-stage {
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg));
+}
+.rs-lamp-beam {
+  position: absolute;
+  top: 82px;
+  left: 50%;
+  width: 500px;
+  height: 540px;
+  transform: translateX(calc(-50% + (var(--rs-beam-shift, 0) * 3px))) rotate(calc(var(--rs-beam-shift, 0) * 0.4deg));
+  background: radial-gradient(
+    ellipse 54% 74% at 50% 0%,
+    color-mix(in srgb, var(--accent) 26%, rgba(255, 214, 158, 0.2)) 0%,
+    color-mix(in srgb, var(--accent) 10%, transparent) 48%,
+    transparent 76%
+  );
+  clip-path: polygon(41% 0%, 59% 0%, 96% 100%, 4% 100%);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 340ms ease, transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 1;
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-beam {
+  opacity: 0;
+}
+.rs-lamp-flashlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    circle 126px at var(--rs-flash-x, 50%) var(--rs-flash-y, 50%),
+    color-mix(in srgb, var(--accent) 18%, transparent),
+    transparent 72%
+  );
+  transition: opacity 220ms ease;
+  z-index: 2;
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-stage[data-flash-active="true"] .rs-lamp-flashlight {
+  opacity: 1;
+}
+.rs-lamp-fixture {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+}
+.rs-lamp-cap {
+  fill: var(--bg-hover);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.rs-lamp-shade {
+  fill: var(--bg-elev);
+  stroke: var(--border-strong);
+  stroke-width: 1.1;
+}
+.rs-lamp-inner {
+  fill: color-mix(in srgb, var(--accent) 28%, #ffe1b5);
+  opacity: 0.9;
+  transition: opacity 280ms ease, fill 280ms ease;
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-inner {
+  fill: var(--bg-hover);
+  opacity: 0.72;
+}
+.rs-lamp-bulb {
+  fill: #fff3de;
+  transition: fill 280ms ease;
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-bulb {
+  fill: var(--border-strong);
+}
+.rs-lamp-halo {
+  fill: var(--accent);
+  opacity: 0.28;
+}
+.rs-lamp-cord-hit {
+  position: absolute;
+  top: 80px;
+  left: calc(50% + 22px);
+  width: 44px;
+  height: 128px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: grab;
+  z-index: 12;
+  touch-action: none;
+}
+.rs-lamp-cord-hit:active { cursor: grabbing; }
+.rs-lamp-cord-string {
+  width: 1.5px;
+  background: linear-gradient(180deg, var(--text-faint), var(--accent));
+  transition: height 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.rs-lamp-cord-hit.is-dragging .rs-lamp-cord-string {
+  transition: none;
+}
+.rs-lamp-cord-bead {
+  width: 11px;
+  height: 17px;
+  border-radius: 6px 6px 8px 8px;
+  background: var(--accent);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-cord-bead {
+  box-shadow: 0 0 11px var(--accent), 0 0 20px var(--accent-soft);
+  animation: rsLampBeadBreath 2.4s ease-in-out infinite;
+}
+@keyframes rsLampBeadBreath {
+  0%, 100% { filter: brightness(0.9); transform: scale(0.97); }
+  50% { filter: brightness(1.25); transform: scale(1.06); }
+}
+.rs-lamp-status {
+  position: relative;
+  z-index: 5;
+  text-align: center;
+  margin-top: 18px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-status {
+  color: var(--text-faint);
+}
+.rs-lamp-dust {
+  position: absolute;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 55%, #ffe6be);
+  pointer-events: none;
+  z-index: 3;
+  animation: rsLampDustFloat 5.2s ease-in-out infinite;
+}
+.rs-lamp-dust-1 { top: 185px; left: 38%; animation-delay: 0s; }
+.rs-lamp-dust-2 { top: 250px; left: 61%; animation-delay: 1.6s; }
+.rs-lamp-dust-3 { top: 320px; left: 34%; animation-delay: 3.1s; }
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-dust { display: none; }
+@keyframes rsLampDustFloat {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  25% { opacity: 0.55; }
+  75% { opacity: 0.3; }
+  100% { transform: translateY(-26px) translateX(8px); opacity: 0; }
+}
+.rs-lamp-tools {
+  position: relative;
+  z-index: 5;
+  width: min(244px, 100%);
+  margin: 76px auto 0;
+  gap: 6px;
+}
+.rs-lamp-tools > button {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-elev) 78%, transparent);
+  padding: 9px 13px;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+.rs-lamp-tools > button .right-sidebar-start-icon {
+  color: var(--accent);
+}
+.rs-lamp-tools > button:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  transform: translateX(3px);
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-tools > button {
+  background: color-mix(in srgb, var(--bg-elev) 36%, transparent);
+  border-color: color-mix(in srgb, var(--border) 62%, transparent);
+  color: color-mix(in srgb, var(--text) 64%, var(--bg));
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-tools > button .right-sidebar-start-icon {
+  color: var(--text-dim);
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-tools > button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+}
+.right-sidebar-start--lamp.is-lights-off .rs-lamp-tools > button:hover:not(:disabled) .right-sidebar-start-icon {
+  color: var(--accent);
+}
+
+/* 模式 3：阳台微风晾衣架 */
+.rs-clothesline-stage {
+  flex: 1 0 auto;
+  min-height: 100%;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 20px 14px 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+}
+.rs-clothesline-caption {
+  text-align: center;
+  font: 500 11px/1.4 var(--mono-font);
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.rs-clothesline-rows {
+  width: 100%;
+  margin: auto 0;
+  gap: 34px;
+}
+.rs-clothes-row {
+  position: relative;
+  padding-top: 24px;
+}
+.rs-clothes-wire {
+  position: absolute;
+  top: 0;
+  left: -14px;
+  right: -14px;
+  width: calc(100% + 28px);
+  height: 34px;
+  pointer-events: none;
+  overflow: visible;
+}
+.rs-hanger-grid {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+.rs-hanger-grid-bottom {
+  gap: 20px;
+}
+.rs-hanger-wrap {
+  transform-origin: 50% 0%;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.right-sidebar-start--clothesline.is-breeze-on .rs-hanger-wrap {
+  animation: rsGentleSway var(--rs-sway-dur, 4.3s) ease-in-out infinite;
+  animation-delay: var(--rs-sway-delay, 0s);
+}
+@keyframes rsGentleSway {
+  0%, 100% { transform: rotate(-1.6deg); }
+  50% { transform: rotate(1.8deg); }
+}
+@keyframes rsWindGust {
+  0% { transform: rotate(0deg); }
+  24% { transform: rotate(11deg); }
+  50% { transform: rotate(-6.5deg); }
+  75% { transform: rotate(3.5deg); }
+  100% { transform: rotate(0deg); }
+}
+.rs-hanger-wrap.is-gusting {
+  animation: rsWindGust 1.3s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+.rs-hanger-wrap:hover {
+  animation: none !important;
+  transform: rotate(3deg);
+  z-index: 6;
+}
+.rs-hanger-btn {
+  width: clamp(86px, 26vw, 102px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.rs-hanger-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.rs-hanger-svg {
+  overflow: visible;
+}
+.rs-clothespin {
+  fill: #9c734c;
+  stroke: #c89f74;
+  stroke-width: 0.8;
+}
+.rs-hanger-tag {
+  width: 100%;
+  margin-top: -4px;
+  padding: 11px 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--bg-elev), var(--bg));
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: border-color 160ms ease, transform 180ms ease;
+}
+.rs-hanger-btn:hover:not(:disabled) .rs-hanger-tag {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
+  transform: translateY(-3px);
+}
+.rs-hanger-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+}
+.rs-hanger-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+.rs-hanger-code {
+  font: 500 9.5px/1 var(--mono-font);
+  font-style: normal;
+  color: var(--text-faint);
+}
+.rs-clothesline-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 76px;
+}
+.rs-mini-toy-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.rs-mini-toy-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+.rs-mini-toy-btn.ghost {
+  background: transparent;
+  color: var(--text-dim);
+}
+
+/* 模式 4：复古磁带架 & Walkman 播放仓 */
+.rs-cassette-stage {
+  flex: 1 0 auto;
+  min-height: 100%;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 18px 16px 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rs-cassette-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.rs-cassette-header > span {
+  font-family: var(--mono-font);
+  font-size: 10.5px;
+}
+.rs-tape-rack {
+  width: 100%;
+  padding: 11px 10px 11px 13px;
+  gap: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border-strong);
+  background: var(--bg-sunken);
+}
+.rs-tape-rack > button.rs-tape-item {
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 11px 8px 0;
+  display: grid;
+  grid-template-columns: 5px 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elev);
+  overflow: hidden;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms ease, background-color 160ms ease;
+}
+.rs-tape-rack > button.rs-tape-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--rs-tape-accent, var(--accent));
+  transform: translateX(10px);
+}
+.rs-tape-rack > button.rs-tape-item.is-playing {
+  border-color: var(--rs-tape-accent, var(--accent));
+}
+.rs-tape-spine {
+  width: 5px;
+  align-self: stretch;
+  margin: -8px 0;
+  background: var(--rs-tape-accent, var(--accent));
+}
+.rs-tape-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+}
+.rs-tape-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.rs-tape-copy strong {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.rs-tape-copy em {
+  font: 500 9.5px/1 var(--mono-font);
+  font-style: normal;
+  color: var(--text-faint);
+}
+.rs-tape-copy small {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rs-tape-spools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.4;
+}
+.rs-tape-spools i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.4px solid var(--text-dim);
+  display: block;
+}
+.rs-walkman-deck {
+  padding: 10px 13px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.rs-walkman-reels {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--rs-tape-accent, var(--accent));
+}
+.rs-walkman-reel {
+  animation: spin 2.2s linear infinite;
+}
+.rs-walkman-reel-slow {
+  animation-duration: 2.7s;
+}
+.rs-walkman-window {
+  width: 26px;
+  height: 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  display: flex;
+  align-items: center;
+  padding: 0 2px;
+}
+.rs-walkman-window i {
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--rs-tape-accent, var(--accent)), transparent);
+}
+.rs-walkman-readout {
+  text-align: right;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.rs-walkman-readout em {
+  font: 600 9.5px/1.2 var(--mono-font);
+  font-style: normal;
+  color: var(--rs-tape-accent, var(--accent));
+}
+.rs-walkman-readout strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .right-sidebar-start--lamp.is-lights-off .rs-lamp-cord-bead,
+  .rs-lamp-dust,
+  .right-sidebar-start--clothesline.is-breeze-on .rs-hanger-wrap,
+  .rs-hanger-wrap.is-gusting,
+  .rs-walkman-reel {
+    animation: none !important;
+  }
+}
 
 /* 终端面板的高度与标题栏独立于开始页菜单样式。 */
 .right-sidebar-terminal > .pane { height: 100%; }

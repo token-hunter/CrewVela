@@ -45,6 +45,7 @@ import {
   loadAppearance,
   resolveAppearanceTheme,
   resolveBaseTheme,
+  resolveRightSidebarStartStyle,
   saveAppearance,
 } from "./appearance";
 import { AppSidebar } from "./components/AppSidebar";
@@ -2585,7 +2586,17 @@ export default function App() {
                     hasWorkspace={!!activeWorkspaceRoot}
                   />
                   <div className="unified-right-sidebar-content">
-                    {activeRightSidebarTab === "start" && <RightSidebarStart root={activeWorkspaceRoot} onOpenTool={tool => void openSidebarTool(tool)} />}
+                    {activeRightSidebarTab === "start" && (
+                      <RightSidebarStart
+                        root={activeWorkspaceRoot}
+                        onOpenTool={tool => void openSidebarTool(tool)}
+                        startStyle={resolveRightSidebarStartStyle(appearance)}
+                        onStartStyleChange={(rightSidebarStartStyle) =>
+                          setAppearance((current) => ({ ...current, rightSidebarStartStyle }))
+                        }
+                        onOpenAppearanceSettings={() => openSettingsSection("appearance")}
+                      />
+                    )}
                     {sidebarTerminalIds.map(id => {
                       const tab: RightSidebarTab = `terminal:${id}`;
                       const session = sessions.find(item => item.id === id);
