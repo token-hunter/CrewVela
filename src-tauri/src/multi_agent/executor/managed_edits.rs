@@ -471,18 +471,18 @@ pub(super) fn apply(
         &request.agent.id,
         request.agent.runtime_kind,
         &request.cwd,
-        |scopes| apply_reply(&repo, &prefix, scopes, reply, cancelled),
+        |scopes, _| apply_reply(&repo, &prefix, scopes, reply, cancelled),
     )
 }
 
 /// The authorization and mutation share the store lock with handoff, pause, and settlement.
-pub(super) fn with_write_scope<T>(
+fn with_write_scope<T>(
     store: &MultiAgentStore,
     run_id: &str,
     agent: &str,
     kind: AgentRuntimeKind,
     cwd: &Path,
-    operation: impl FnOnce(&[String]) -> Result<T>,
+    operation: impl FnOnce(&[String], &rusqlite::Connection) -> Result<T>,
 ) -> Result<T> {
     let connection = store.connection.lock().unwrap();
     let (raw, saved_cwd): (String, String) = connection.query_row(
@@ -501,7 +501,46 @@ pub(super) fn with_write_scope<T>(
         "托管工作树授权发生变化"
     );
     let scopes: Vec<String> = serde_json::from_str(&raw)?;
-    operation(&scopes)
+    operation(&scopes, &connection)
+}
+
+pub(in crate::multi_agent) fn file_tool_names(kind: AgentRuntimeKind) -> Result<[&'static str; 2]> {
+    match kind {
+        AgentRuntimeKind::Pi => Ok(["cc_pi_edit_read", "cc_pi_write_file"]),
+        AgentRuntimeKind::KimiCode | AgentRuntimeKind::OpenCode => Ok(["cc_workspace_edit_read", "cc_workspace_write_file"]),
+        _ => bail!("该 Runtime 未获托管文件工具授权"),
+    }
+}
+
+pub(in crate::multi_agent) fn file_operation(
+    store: &MultiAgentStore, run_id: &str, agent: &str, kind: AgentRuntimeKind,
+    cwd: &Path, writing: bool, args: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    use super::super::conversation::research;
+    use sha2::{Digest, Sha256};
+    with_write_scope(store, run_id, agent, kind, cwd, |scopes, connection| {
+        let relative = args["path"].as_str().context("缺少文件相对路径")?;
+        MultiAgentStore::verify_write_paths(scopes, &[relative.to_owned()])?;
+        let read = || -> Result<String> {
+            let policy = research::workspace_policy_for_run(connection, run_id, agent, cwd)?;
+            let file = fs::File::open(research::readable_path(cwd, &policy.boundary, relative)?)?;
+            ensure!(file.metadata()?.is_file(), "仅支持普通文本文件");
+            let mut bytes = Vec::new();
+            file.take(1_048_577).read_to_end(&mut bytes)?;
+            ensure!(bytes.len() <= 1_048_576 && !bytes.contains(&0), "精确编辑只支持 1 MiB 内的 UTF-8 文本");
+            Ok(String::from_utf8(bytes)?)
+        };
+        if !writing {
+            let text = read()?;
+            return Ok(serde_json::json!({"revision":format!("{:x}", Sha256::digest(text.as_bytes())), "text":text}));
+        }
+        if let Some(expected) = args.get("revision") {
+            ensure!(expected.as_str() == Some(format!("{:x}", Sha256::digest(read()?.as_bytes())).as_str()),
+                "文件在读取后发生变化，未覆盖原文件");
+        }
+        write_text(cwd, scopes, relative, args["text"].as_str().context("缺少文件内容")?)?;
+        Ok(serde_json::json!({"path":relative}))
+    })
 }
 
 pub(super) fn write_text(cwd: &Path, scopes: &[String], relative: &str, text: &str) -> Result<()> {

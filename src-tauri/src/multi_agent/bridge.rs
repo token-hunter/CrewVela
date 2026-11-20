@@ -10,7 +10,7 @@ use serde::Deserialize;
 use super::store::delegation::{is_design_task, DesignDelivery, RequestDesign};
 
 use super::{
-    AppendRuntimeEventInput, HeartbeatRunInput, MultiAgentStore, PublishArtifactInput,
+    AgentRuntimeKind, AppendRuntimeEventInput, HeartbeatRunInput, MultiAgentStore, PublishArtifactInput,
     PutMemoryInput, RequestApprovalInput, ReviewVerdict, SearchKnowledgeInput, SearchMemoryInput,
     SendCollaborationMessageInput, SubmitReviewDecisionInput,
 };
@@ -50,7 +50,7 @@ struct RunScope {
     run_id: String,
     agent_id: String,
     cwd: PathBuf,
-    managed_files: bool,
+    managed_files: Option<AgentRuntimeKind>,
 }
 
 pub struct RunBridgeLease {
@@ -131,16 +131,16 @@ impl CollaborationBridge {
         agent_id: &str,
         cwd: &Path,
     ) -> RunBridgeLease {
-        self.register(project_id, task_id, run_id, agent_id, cwd, false, false)
+        self.register(project_id, task_id, run_id, agent_id, cwd, false, None)
     }
 
     pub(super) fn register_managed_run(&self, project: &str, task: &str, run: &str,
-        agent: &str, cwd: &Path, managed_files: bool) -> RunBridgeLease {
+        agent: &str, cwd: &Path, managed_files: Option<AgentRuntimeKind>) -> RunBridgeLease {
         self.register(project, task, run, agent, cwd, true, managed_files)
     }
 
     fn register(&self, project_id: &str, task_id: &str, run_id: &str, agent_id: &str,
-        cwd: &Path, fresh: bool, managed_files: bool) -> RunBridgeLease {
+        cwd: &Path, fresh: bool, managed_files: Option<AgentRuntimeKind>) -> RunBridgeLease {
         let agent_key = format!("{project_id}:{agent_id}");
         let token = if fresh || super::conversation::is_conversation_task(task_id) || is_design_task(task_id) {
             // Research capabilities must never be inherited by an older or later run.
@@ -277,8 +277,8 @@ fn handle_connection(
         write_json_response(&mut stream, 403, response_error("任务访问令牌无效或已过期"))?;
         return Ok(());
     };
-    if scope.managed_files && request.path != "/mcp" {
-        write_json_response(&mut stream, 403, response_error("当前托管工具令牌仅允许工作树只读查询"))?;
+    if scope.managed_files.is_some() && request.path != "/mcp" {
+        write_json_response(&mut stream, 403, response_error("当前托管工具令牌仅允许已授权的工作树文件操作"))?;
         return Ok(());
     }
     if request.path == "/mcp" {
@@ -520,13 +520,15 @@ fn dispatch(
         CollaborationCommand::RuntimeEvent {
             event_type,
             payload,
-        } => Ok(serde_json::to_value(store.append_runtime_event(
-            AppendRuntimeEventInput {
+        } => {
+            anyhow::ensure!(!matches!(event_type.trim(), "starting" | "policy" | "managed_turn"),
+                "原生运行身份与权限回执只能由 CrewVela 宿主登记");
+            Ok(serde_json::to_value(store.append_runtime_event(AppendRuntimeEventInput {
                 run_id: scope.run_id.clone(),
                 event_type,
                 payload: payload.unwrap_or_else(|| serde_json::json!({})),
-            },
-        )?)?),
+            })?)?)
+        }
     }
 }
 
@@ -554,11 +556,12 @@ fn handle_mcp_request(
         }),
         "notifications/initialized" | "ping" => serde_json::json!({}),
         "tools/list" => {
-            if scope.managed_files {
+            if let Some(kind) = scope.managed_files {
                 let mut tools = super::conversation::research::tools(&super::conversation::research::workspace_policy());
                 if !store.managed_write_paths(&scope.task_id)?.is_empty() {
-                    tools.push(mcp_tool("cc_pi_edit_read", "读取 Pi 精确编辑的工作树原像", serde_json::json!({"path":{"type":"string"}})));
-                    tools.push(mcp_tool("cc_pi_write_file", "将 Pi 原生工具的结果保存到当前已确认的文件范围",
+                    let [read, write] = super::executor::managed_edits::file_tool_names(kind)?;
+                    tools.push(mcp_tool(read, "读取获批文件的完整文本和 revision，供精确编辑", serde_json::json!({"path":{"type":"string"}})));
+                    tools.push(mcp_tool(write, "将 text 写入获批的相对路径。修改已有文件时可传入刚读取的 revision 校验原文",
                         serde_json::json!({"path":{"type":"string"},"text":{"type":"string"},"revision":{"type":"string"}})));
                 }
                 serde_json::json!({"tools":tools})
@@ -600,10 +603,13 @@ fn handle_mcp_request(
                 .unwrap_or_else(|| serde_json::json!({}));
             let legacy_conversation = super::conversation::is_conversation_task(&scope.task_id)
                 && !store.conversation_task_policy(&scope.task_id, &scope.agent_id)?.uses_native_capabilities();
-            let outcome = if scope.managed_files && matches!(name, "cc_pi_edit_read" | "cc_pi_write_file") {
-                super::executor::managed_pi::file_operation(store, &scope.run_id, &scope.agent_id, &scope.cwd, name, &arguments)
-            } else if scope.managed_files {
-                super::conversation::research::workspace_call(store, &scope.run_id, &scope.agent_id, &scope.cwd, name, &arguments)
+            let outcome = if let Some(kind) = scope.managed_files {
+                let [read, write] = super::executor::managed_edits::file_tool_names(kind)?;
+                if name == read || name == write {
+                    super::executor::managed_edits::file_operation(store, &scope.run_id, &scope.agent_id, kind, &scope.cwd, name == write, &arguments)
+                } else {
+                    super::conversation::research::workspace_call(store, &scope.run_id, &scope.agent_id, &scope.cwd, name, &arguments)
+                }
             } else if legacy_conversation {
                 super::conversation::research::call(store, &scope.project_id, &scope.task_id, &scope.run_id, &scope.agent_id, name, &arguments)
             } else {
@@ -771,6 +777,8 @@ fn mcp_tool(name: &str, description: &str, properties: serde_json::Value) -> ser
         "cc_memory_search" => vec!["query"],
         "cc_memory_put" => vec!["namespace", "key", "value"],
         "cc_runtime_event" => vec!["eventType"],
+        "cc_workspace_edit_read" | "cc_pi_edit_read" => vec!["path"],
+        "cc_workspace_write_file" | "cc_pi_write_file" => vec!["path", "text"],
         _ => Vec::new(),
     };
     serde_json::json!({
@@ -1105,7 +1113,7 @@ mod tests {
             run_id: run.id.clone(),
             agent_id: agent.id.clone(),
             cwd: root.clone(),
-            managed_files: false,
+            managed_files: None,
         };
 
         let tools = handle_mcp_request(
@@ -1137,6 +1145,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(message_result["result"]["isError"], false);
+        for (event, denied) in [("starting", true), (" policy ", true), ("managed_turn", true), ("agent_activity", false)] {
+            let request = serde_json::json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{
+                "name":"cc_runtime_event","arguments":{"eventType":event,"payload":{"content":"progress"}}}});
+            let reply = handle_mcp_request(&store, &scope, &serde_json::to_vec(&request).unwrap()).unwrap();
+            assert_eq!(reply["result"]["isError"], denied, "{event}");
+        }
 
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
@@ -1238,7 +1252,7 @@ mod tests {
             }).unwrap();
             scopes.insert(format!("token-{name}"), RunScope {
                 project_id: project.id.clone(), task_id: task.id, run_id: run.id,
-                agent_id: agent.id.clone(), cwd: root.clone(), managed_files: false,
+                agent_id: agent.id.clone(), cwd: root.clone(), managed_files: None,
             });
             agents.push(agent);
         }

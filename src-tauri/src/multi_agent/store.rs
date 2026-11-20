@@ -720,13 +720,122 @@ impl MultiAgentStore {
         get_run_with(&connection, &run_id)
     }
 
-    pub(crate) fn conversation_run_locator(&self, project_id: &str, run_id: &str) -> Result<serde_json::Value> {
+    pub(in crate::multi_agent) fn managed_runtime_directory(
+        &self, project: &str, task: &str, agent: &str, runtime: AgentRuntimeKind,
+    ) -> PathBuf {
+        let key = format!("{}\0{}\0{}\0{}", project, task, agent, runtime.as_str());
+        let hash = format!("{:x}", Sha256::digest(key.as_bytes()));
+        self.conversation_attachment_root.with_extension("managed-runtime").join(hash)
+    }
+
+    pub(crate) fn conversation_run_locator(&self, project_id: &str, run_id: &str) -> Result<crate::session_switch_history::ConversationRunHistory> {
+        use crate::session_switch_history::{ConversationRunHistory, ManagedRunHistory};
         let connection = self.connection.lock().unwrap();
         let run = get_run_with(&connection, run_id)?;
-        if run.project_id != project_id || !super::conversation::is_conversation_task(&run.task_id) {
-            return Err(anyhow!("未找到该项目的群聊运行"));
+        anyhow::ensure!(run.project_id == project_id, "运行不属于该项目");
+        let locator = run.session_locator.context("本次运行尚未记录原会话")?;
+        let planner = super::conversation::is_conversation_task(&run.task_id);
+        let target: serde_json::Value = if planner {
+            let grant: Option<String> = connection.query_row(
+                "SELECT json_extract(r.data_json,'$.managedTarget') FROM ma_conversation_turns t
+                 JOIN ma_conversation_rounds r ON r.id=t.round_id WHERE t.task_id=?1 AND r.project_id=?2
+                 AND json_extract(t.data_json,'$.agent_id')=?3",
+                params![run.task_id, project_id, run.agent_id], |row| row.get(0),
+            ).context("找不到该项目、成员和群聊轮次的原生运行")?;
+            let Some(grant) = grant else { return Ok(ConversationRunHistory::Chat(locator)); };
+            let target: serde_json::Value = serde_json::from_str(&grant)?;
+            anyhow::ensure!(target["planner"] == run.agent_id, "本轮规划成员与授权不符");
+            target
+        } else {
+            let grant: String = connection.query_row(
+                "SELECT json_extract(p.data_json,'$.managed.target') FROM ma_conversation_task_scopes s JOIN ma_conversation_plans p ON p.id=s.plan_id
+                 JOIN json_each(p.data_json,'$.taskIds') t ON t.value=s.task_id
+                 WHERE s.task_id=?1 AND p.project_id=?2 AND p.applied_request_id='managed-'||p.id
+                 AND json_extract(p.data_json,'$.status')='applied' AND json_type(p.data_json,'$.managed.target')='object'",
+                params![run.task_id, project_id], |row| row.get(0),
+            ).context("该任务没有本项目已执行的托管分工授权")?;
+            serde_json::from_str(&grant)?
+        };
+        // Runtime events can be submitted by agents. Only the host's own activity
+        // receipt is authoritative for reading from a user's Claude/Codex history.
+        let mut statement = connection.prepare(
+            "SELECT payload_json FROM ma_events WHERE project_id=?1 AND entity_type='run' AND entity_id=?2
+             AND actor_type='system' AND event_type='run.managed_history' ORDER BY seq")?;
+        let rows = statement.query_map(params![project_id, run_id], |row| row.get::<_,String>(0))?;
+        let mut identity = serde_json::Map::new();
+        let mut phases = Vec::new();
+        let mut receipt_cwd = None;
+        let mut runtime = target["members"][&run.agent_id]["runtime"].as_str().map(str::to_owned);
+        for row in rows {
+            let proof: serde_json::Value = serde_json::from_str(&row?)?;
+            anyhow::ensure!(proof["taskId"] == run.task_id && proof["agentId"] == run.agent_id, "托管宿主回执归属不匹配");
+            let reported = proof["runtime"].as_str().context("托管宿主回执缺少引擎")?;
+            anyhow::ensure!(runtime.as_deref().is_none_or(|prior| prior == reported), "原生引擎与托管授权不符");
+            runtime = Some(reported.to_owned());
+            let cwd = PathBuf::from(proof["cwd"].as_str().context("托管宿主回执缺少工作目录")?);
+            anyhow::ensure!(receipt_cwd.as_ref().is_none_or(|prior| prior == &cwd), "原生工作目录与托管授权不符");
+            receipt_cwd = Some(cwd);
+            phases.push(proof["phase"].as_str().unwrap_or_default().to_owned());
+            for (key,value) in proof["identity"].as_object().context("宿主回执没有原生身份")? {
+                anyhow::ensure!(locator.get(key) == Some(value), "原生会话身份与宿主回执不符");
+                identity.insert(key.to_owned(), value.clone());
+            }
         }
-        run.session_locator.context("本次运行尚未记录原会话")
+        let kind: AgentRuntimeKind = serde_json::from_value(runtime.context("历史分工缺少原生引擎授权")?.into())?;
+        anyhow::ensure!(locator["adapter"] == kind.as_str() && locator["managedTurn"] == "completed",
+            "托管记录的 Runtime 或原生终态与本轮不符");
+        let (cwd, identity) = if let Some(cwd) = receipt_cwd {
+            anyhow::ensure!(phases == ["dispatched", "accepted", "completed"], "缺少唯一、完整的宿主原生身份回执");
+            (cwd, Some(serde_json::Value::Object(identity)))
+        } else {
+            // Existing private Pi/Kimi/OpenCode sources must still prove the actual
+            // run in their own data. Never extend this fallback to a personal profile.
+            anyhow::ensure!(matches!(kind, AgentRuntimeKind::Pi | AgentRuntimeKind::KimiCode | AgentRuntimeKind::OpenCode),
+                "此历史托管运行缺少独立的原生会话身份回执");
+            let recorded = PathBuf::from(locator["cwd"].as_str().context("缺少托管工作目录")?);
+            let path = super::external_command_path(&recorded);
+            let configured = crate::providers::config_dir()?;
+            let config = configured.canonicalize()?;
+            let project = self.get_project_with(&connection, project_id)?;
+            if planner {
+                let location = Path::new("message-workspaces").join(&run.task_id);
+                let project_root = Path::new(&project.root_path);
+                let candidates = [configured.join(&location), config.join(&location), project_root.to_owned(), project_root.canonicalize()?];
+                anyhow::ensure!(candidates.iter().any(|p| path == super::external_command_path(p)),
+                    "原工作目录不属于该托管规划");
+                let cwd = recorded.canonicalize()?;
+                anyhow::ensure!(cwd == config.join(location) || cwd == project_root.canonicalize()?, "托管规划目录发生重定向");
+                (cwd, None)
+            } else {
+                let location = Path::new("worktrees").join(project_id).join(&run.task_id);
+                let owner = config.join(&location);
+                anyhow::ensure!(path.starts_with(super::external_command_path(&configured.join(&location))) || path.starts_with(super::external_command_path(&owner)),
+                    "原工作目录不在本项目的任务工作树中");
+                let cwd = recorded.canonicalize()?;
+                anyhow::ensure!(cwd.starts_with(&owner), "托管工作树发生重定向");
+                let (repo, _) = super::executor::verify_delivery_worktree(&project, &cwd)?;
+                anyhow::ensure!(repo.parent() == Some(owner.as_path()), "原工作树不属于本项目的该托管任务");
+                (cwd, None)
+            }
+        };
+        let mut pi_file = None;
+        if kind == AgentRuntimeKind::Pi {
+            // A retried turn can legitimately reopen an earlier run's Pi file in the same task.
+            let owner = match locator["sessionPath"].as_str() {
+                Some(path) => Path::new(path).file_stem().and_then(|s| s.to_str()).context("Pi 会话文件名无效")?,
+                None if planner => run_id,
+                None => return Err(anyhow!("本轮没有记录 Pi 原生会话文件")),
+            };
+            let owned: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM ma_runs WHERE id=?1 AND project_id=?2 AND task_id=?3 AND agent_id=?4)",
+                params![owner, project_id, run.task_id, run.agent_id], |row| row.get(0))?;
+            anyhow::ensure!(owned && (!planner || owner == run_id) && uuid::Uuid::parse_str(owner).is_ok(),
+                "Pi 原生文件不属于本项目的该任务和成员");
+            pi_file = Some(crate::providers::config_dir()?.join("multi-agent-sessions").join(format!("{owner}.jsonl")));
+        }
+        Ok(ConversationRunHistory::Managed(ManagedRunHistory {
+            locator, cwd, run_id: run.id, kind, planner,
+            profile: self.managed_runtime_directory(project_id, &run.task_id, &run.agent_id, kind), pi_file, identity,
+        }))
     }
 
     pub fn update_run(&self, input: UpdateRunInput) -> Result<AgentRun> {
@@ -3546,7 +3655,7 @@ impl MultiAgentStore {
     }
 
     pub(super) fn checkpoint_managed_turn(
-        &self, run_id: &str, phase: &str, patch: serde_json::Value,
+        &self, run_id: &str, phase: &str, patch: serde_json::Value, kind: AgentRuntimeKind, cwd: &Path,
     ) -> Result<()> {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -3568,6 +3677,9 @@ impl MultiAgentStore {
         }
         anyhow::ensure!(!["cwd", "adapter", "managedBaseline", "managedLaunchMode", "managedTurn", "stopUnverified"]
             .iter().any(|key| patch.contains_key(*key)), "原生回执不能更改任务授权或工作树");
+        // Keep the identifiers reported by the adapter separately from the editable run locator.
+        let identity: serde_json::Map<String, serde_json::Value> = ["sessionId", "threadId", "turnId", "commandId", "messageId", "engine", "toolPolicy"]
+            .iter().filter_map(|&key| patch.get(key).map(|value| (key.to_owned(), value.clone()))).collect();
         patch.insert("managedTurn".into(), phase.into());
         patch.insert("managedPromptDispatched".into(), true.into());
         let changed = tx.execute(
@@ -3578,6 +3690,8 @@ impl MultiAgentStore {
         tx.execute("INSERT INTO ma_runtime_events(project_id,run_id,task_id,agent_id,event_type,payload_json,created_at)
             VALUES(?1,?2,?3,?4,'managed_turn',?5,?6)", params![run.project_id,run.id,run.task_id,run.agent_id,
                 serde_json::json!({"phase":phase}).to_string(),now_millis()])?;
+        append_event(&tx, &run.project_id, "run", &run.id, "run.managed_history", "system", None,
+            serde_json::json!({"phase":phase,"taskId":run.task_id,"agentId":run.agent_id,"runtime":kind,"cwd":cwd,"identity":identity}),now_millis())?;
         tx.commit()?;
         Ok(())
     }
@@ -5477,6 +5591,75 @@ mod tests {
             self.store.take();
             let _ = std::fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn native_history_keeps_the_registered_ordinary_chat_and_rejects_an_orphan() -> Result<()> {
+        use crate::session_switch_history::ConversationRunHistory;
+        use serde_json::json;
+        let fixture = TestStore::new();
+        let project = fixture.project();
+        let member = fixture.agent(&project.id, "普通成员");
+        let task = fixture.task(&project.id, &member.id, "回复消息");
+        let store = fixture.store();
+        let task_id = "cli-message-conversation-existing";
+        {
+            let db = store.connection.lock().unwrap();
+            db.execute("UPDATE ma_tasks SET id=?1 WHERE id=?2", params![task_id,task.id])?;
+            db.execute("INSERT INTO ma_conversation_rounds VALUES('round',?1,'client','{}','completed','{}',1)", [&project.id])?;
+            db.execute("INSERT INTO ma_conversation_turns VALUES('turn','round',?1,?2,0)",
+                params![task_id,json!({"agent_id":member.id}).to_string()])?;
+        }
+        store.set_project_status(&project.id, ProjectStatus::Active)?;
+        let run = store.claim_task(ClaimTaskInput{task_id:task_id.into(),agent_id:member.id,lease_seconds:120})?;
+        let locator = json!({"adapter":"codex","cwd":fixture.root,"threadId":"ordinary-chat"});
+        store.update_run(UpdateRunInput{run_id:run.id.clone(),status:RunStatus::Running,session_locator:Some(locator.clone()),output_summary:None,error:None})?;
+        assert!(matches!(store.conversation_run_locator(&project.id,&run.id)?, ConversationRunHistory::Chat(value) if value == locator));
+        store.connection.lock().unwrap().execute("DELETE FROM ma_conversation_turns WHERE task_id=?1",[task_id])?;
+        assert!(store.conversation_run_locator(&project.id,&run.id).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn managed_history_requires_applied_project_grant_and_host_identity() -> Result<()> {
+        use crate::session_switch_history::ConversationRunHistory;
+        use serde_json::json;
+        let fixture = TestStore::new();
+        let project = fixture.project();
+        let member = fixture.agent(&project.id, "history");
+        let task = fixture.task(&project.id, &member.id, "原生记录");
+        let store = fixture.store();
+        store.set_project_status(&project.id, ProjectStatus::Active)?;
+        let run = store.claim_task(ClaimTaskInput { task_id: task.id.clone(), agent_id: member.id.clone(), lease_seconds: 120 })?;
+        let cwd = &fixture.root;
+        let locator = json!({"adapter":"codex", "cwd":cwd});
+        store.update_run(UpdateRunInput {run_id:run.id.clone(), status:RunStatus::Running,session_locator:Some(locator),output_summary:None,error:None})?;
+        let view = || store.conversation_run_locator(&project.id, &run.id);
+        assert!(view().is_err());
+        let target = json!({"planner":member.id,"members":{member.id.clone():{"runtime":"codex"}}});
+        let plan = json!({"status":"applied","taskIds":[task.id],"managed":{"target":target}});
+        {
+            let db = store.connection.lock().unwrap();
+            db.execute("INSERT INTO ma_conversation_plans(id,project_id,round_id,data_json,applied_request_id) VALUES('p',?1,'r',?2,'ordinary-plan')",
+                params![project.id,plan.to_string()])?;
+            db.execute("INSERT INTO ma_conversation_task_scopes VALUES(?1,'p','[]')",[&task.id])?;
+        }
+        assert!(view().is_err());
+        store.connection.lock().unwrap().execute("UPDATE ma_conversation_plans SET applied_request_id='managed-p' WHERE id='p'",[])?;
+        // Older public runtime events must never authorize a lookup in the user's home.
+        store.append_runtime_event(AppendRuntimeEventInput{run_id:run.id.clone(),event_type:"managed_turn".into(),
+            payload:json!({"phase":"completed","identity":{"threadId":"other-private-session"}})})?;
+        store.connection.lock().unwrap().execute("UPDATE ma_runs SET session_locator_json=json_set(session_locator_json,'$.managedTurn','completed','$.threadId','other-private-session') WHERE id=?1",[&run.id])?;
+        assert!(view().is_err());
+        store.connection.lock().unwrap().execute("UPDATE ma_runs SET session_locator_json=json_remove(session_locator_json,'$.managedTurn','$.threadId') WHERE id=?1",[&run.id])?;
+        for phase in ["dispatched","accepted","completed"] {
+            store.checkpoint_managed_turn(&run.id,phase,json!({"threadId":"owned-thread"}),AgentRuntimeKind::Codex,cwd)?;
+        }
+        assert!(matches!(view()?, ConversationRunHistory::Managed(_)));
+        assert!(store.conversation_run_locator("another-project",&run.id).is_err());
+        store.connection.lock().unwrap().execute("UPDATE ma_runs SET session_locator_json=json_set(session_locator_json,'$.threadId','other-private-session') WHERE id=?1",[&run.id])?;
+        assert!(view().is_err());
+        Ok(())
     }
 
     #[test]

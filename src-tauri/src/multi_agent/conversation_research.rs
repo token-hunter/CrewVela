@@ -15,14 +15,43 @@ pub(crate) fn workspace_policy() -> EffectiveConversationPolicy {
     policy
 }
 
+pub(crate) fn workspace_policy_for_run(connection: &Connection, run: &str, agent: &str, cwd: &Path) -> Result<EffectiveConversationPolicy> {
+    let (project, original_root, authorized): (String, String, String) = connection.query_row(
+        "SELECT p.id,p.root_path,json_extract(r.session_locator_json,'$.cwd') FROM ma_runs r JOIN ma_projects p ON p.id=r.project_id
+         WHERE r.id=?1 AND r.agent_id=?2 AND r.status='running' AND p.status='active'
+           AND NOT EXISTS(SELECT 1 FROM ma_handoff_locks h WHERE h.project_id=p.id)",
+        params![run, agent], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).context("托管工作树授权已结束")?;
+    ensure!(cwd.canonicalize()? == Path::new(&authorized).canonicalize()?, "托管工作树与当前运行授权不一致");
+    let root = Path::new(&original_root);
+    let canonical = root.canonicalize()?;
+    let mut policy = workspace_policy();
+    for member in [None, Some(agent)] {
+        for denied in super::policy::policy_entry(connection, &project, member)?.boundary.denied_read_paths {
+            let path = Path::new(&denied);
+            // An absolute exclusion in the original checkout also applies to its task worktree.
+            let mut mapped = path.to_owned();
+            if path.is_absolute() {
+                for original in [root, canonical.as_path()] {
+                    if within(original, path) {
+                        mapped = PathBuf::from(".");
+                        break;
+                    }
+                    if within(path, original) {
+                        mapped = path.components().skip(original.components().count()).collect();
+                        break;
+                    }
+                }
+            }
+            policy.boundary.denied_read_paths.push(mapped.to_string_lossy().into_owned());
+        }
+    }
+    Ok(policy)
+}
+
 pub(crate) fn workspace_call(store: &MultiAgentStore, run: &str, agent: &str, cwd: &Path, name: &str, args: &Value) -> Result<Value> {
-    let policy = workspace_policy();
+    let policy = workspace_policy_for_run(&store.connection.lock().unwrap(), run, agent, cwd)?;
     ensure!(tools(&policy).iter().any(|tool| tool["name"] == name), "托管工作树仅授权本地文件只读查询");
-    let active: bool = store.connection.lock().unwrap().query_row(
-        "SELECT EXISTS(SELECT 1 FROM ma_runs WHERE id=?1 AND agent_id=?2 AND status='running')",
-        params![run, agent], |row| row.get(0),
-    )?;
-    ensure!(active, "托管工作树授权已结束");
     dispatch(cwd, &policy, name, args)
 }
 

@@ -329,11 +329,43 @@ fn unsupported_codex_conversation_fails_before_starting_a_native_or_less_restric
 }
 
 fn active_turn(fixture: &Fixture) -> (Turn, String) {
+    active_turn_with_locator(fixture, None)
+}
+
+fn active_turn_with_locator(fixture: &Fixture, locator: Option<Value>) -> (Turn, String) {
     let (round, _) = fixture.store.begin_conversation(fixture.input()).unwrap();
     let turn = prepare_turn(&fixture.store, &round.id, 0, "chat", 0, &fixture.agents[0]).unwrap();
     let run = fixture.store.claim_task(ClaimTaskInput { task_id: turn.task_id.clone(), agent_id: fixture.agents[0].clone(), lease_seconds:120 }).unwrap();
-    fixture.store.update_run(UpdateRunInput { run_id:run.id.clone(), status:RunStatus::Running, output_summary:None,error:None,session_locator:None }).unwrap();
+    fixture.store.update_run(UpdateRunInput { run_id:run.id.clone(), status:RunStatus::Running, output_summary:None,error:None,session_locator:locator }).unwrap();
     (turn, run.id)
+}
+
+#[test]
+fn managed_file_reads_follow_the_running_worktree_and_current_project_and_member_exclusions() -> Result<()> {
+    let fixture = Fixture::new();
+    let project_dir = fixture.root.join("project");
+    let worktree = fixture.root.join("working");
+    std::fs::create_dir(&worktree)?;
+    let agent = &fixture.agents[0];
+    fixture.store.set_project_status(&fixture.project, ProjectStatus::Active)?;
+    let (_, run) = active_turn_with_locator(&fixture, Some(json!({"cwd":worktree})));
+    for file in ["allowed.txt", "project.txt", "member.txt"] { std::fs::write(worktree.join(file), file)?; }
+    let read = |root: &std::path::Path, name: &str| {
+        research::workspace_call(&fixture.store, &run, agent, root, "cc_research_read", &json!({"path":name}))
+    };
+    assert_eq!(read(&worktree, "project.txt")?["text"], "project.txt");
+    for (member, denied) in [(None, project_dir.join("project.txt").display().to_string()), (Some(agent.clone()), "member.txt".into())] {
+        fixture.store.conversation_policy_set(ConversationPolicySetInput {
+            project_id: fixture.project.clone(), agent_id: member,
+            boundary: ConversationHardBoundary { denied_read_paths: vec![denied], ..Default::default() },
+        })?;
+    }
+    assert_eq!(read(&worktree, "allowed.txt")?["text"], "allowed.txt");
+    for file in ["project.txt", "member.txt"] { assert!(read(&worktree, file).unwrap_err().to_string().contains("禁止读取")); }
+    assert!(read(&project_dir, "allowed.txt").unwrap_err().to_string().contains("工作树与当前运行授权不一致"));
+    fixture.store.set_project_status(&fixture.project, ProjectStatus::Paused)?;
+    assert!(read(&worktree, "allowed.txt").is_err());
+    Ok(())
 }
 
 #[test]

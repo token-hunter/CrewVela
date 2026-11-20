@@ -475,7 +475,29 @@ impl AcpConnection {
     ) -> Result<Self> {
         Self::spawn_for_with_cli_identity_policy(adapter, cwd, resume_session_id, mcp_servers,
             mode_candidates, auto_approve_permissions, strict_mode, process_id, app_session_id,
-            command_override, lease_kind_override, None)
+            command_override, lease_kind_override, None, false)
+    }
+
+    pub(crate) fn spawn_isolated_managed(
+        adapter: ManagedAcpKind, cwd: &str, original: Option<&str>, servers: Vec<Value>, command: Command,
+        permitted_tools: Vec<String>,
+    ) -> Result<Self> {
+        let mut connection = Self::spawn_for_with_cli_identity_policy(adapter, cwd, original, servers, &[], false, false,
+            Arc::new(AtomicU32::new(0)), None, Some(command), None, None, true)?;
+        if adapter == ManagedAcpKind::Kimi && !permitted_tools.is_empty() {
+            // Kimi 2.6.3 identifies the requested tool with its registered native name
+            // in toolCall.title. Grant only this call; the MCP server checks the Run and path.
+            let session = connection.session_id.clone();
+            connection.single_use_permissions = true;
+            connection.permission_handler = Some(Box::new(move |request, stopped| {
+                let params = &request["params"];
+                Ok(!stopped.is_some_and(|flag| flag.load(Ordering::Acquire))
+                    && params["sessionId"] == session
+                    && params["toolCall"]["toolCallId"].as_str().is_some_and(|id| !id.is_empty())
+                    && permitted_tools.iter().any(|name| params["toolCall"]["title"] == *name))
+            }));
+        }
+        Ok(connection)
     }
 
     fn spawn_for_with_cli_identity_policy(
@@ -491,6 +513,7 @@ impl AcpConnection {
         command_override: Option<Command>,
         lease_kind_override: Option<crate::multi_agent::AgentRuntimeKind>,
         research: Option<ManagedResearchPolicy>,
+        exact_resume: bool,
     ) -> Result<Self> {
         if research.is_some() && (adapter != ManagedAcpKind::ClaudeCode || resume_session_id.is_some()) {
             return Err(anyhow!("此 Runtime 暂不能强制执行完整群聊工具白名单；受控研究需要独立的 Claude ACP 会话，不能降级为宽松权限"));
@@ -727,29 +750,23 @@ impl AcpConnection {
                 }
                 None => None,
             }
-        } else if can_load {
-            resume_session_id
-                .filter(|value| !value.trim().is_empty())
-                .and_then(|session_id| {
-                    connection
-                        .request(
-                            "session/load",
-                            { let mut params=managed_session_params(adapter,cwd,&mcp_servers,research,mode_candidates.is_empty());params["sessionId"]=json!(session_id);params },
-                            START_TIMEOUT,
-                            None,
-                        )
-                        .ok()
-                        .map(|mut session| {
-                            // 部分适配器（codex-acp）的 load 响应不带 sessionId：
-                            // load 已成功，按请求的恢复 ID 回填，与 dsh resume 路径同语义。
-                            if session.get("sessionId").and_then(Value::as_str).is_none() {
-                                if let Some(object) = session.as_object_mut() {
-                                    object.insert("sessionId".into(), Value::String(session_id.to_string()));
-                                }
-                            }
-                            session
-                        })
-                })
+        } else if let Some(session_id) = resume_session_id.filter(|value| !value.trim().is_empty()) {
+            if can_load {
+                let mut params = managed_session_params(adapter,cwd,&mcp_servers,research,mode_candidates.is_empty());
+                params["sessionId"] = json!(session_id);
+                match connection.request("session/load", params, START_TIMEOUT, None) {
+                    Ok(mut session) => {
+                        if session.get("sessionId").and_then(Value::as_str).is_none() {
+                            if let Some(object) = session.as_object_mut() { object.insert("sessionId".into(), session_id.into()); }
+                        }
+                        Some(session)
+                    }
+                    Err(error) if exact_resume => return Err(error.context("无法恢复原托管会话")),
+                    Err(_) => None,
+                }
+            } else if exact_resume {
+                return Err(anyhow!("原生 ACP 未提供 session/load，无法恢复原托管会话"));
+            } else { None }
         } else {
             None
         };
@@ -1999,6 +2016,7 @@ fn execute_managed_acp_inner(
         None,
         None,
         research,
+        false,
     ) {
         Ok(connection) => connection,
         Err(error) if error.downcast_ref::<UnverifiedStop>().is_some() => return Err(error),
@@ -2135,7 +2153,7 @@ fn configure_session_cli_identity(command: &mut Command, app_session_id: &str) -
     Ok(())
 }
 
-fn managed_mcp_server(url: &str, token: &str) -> Value {
+pub(crate) fn managed_mcp_server(url: &str, token: &str) -> Value {
     json!({
         "type": "http",
         "name": "crewvela",

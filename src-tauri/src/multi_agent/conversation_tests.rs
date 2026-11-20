@@ -18,6 +18,8 @@ mod activity;
 mod managed_native;
 #[path = "managed_pi_native_tests.rs"]
 mod managed_pi_native;
+#[path = "managed_acp_native_tests.rs"]
+mod managed_acp_native;
 #[path = "managed_unified_live_tests.rs"]
 mod managed_unified_live;
 

@@ -55,6 +55,15 @@ pub(super) fn execute(request: &RuntimeRequest, cancelled: &AtomicBool) -> Resul
                 && locator["managedTurn"] == "completed",
             "ZCode CLI 完成回执与本次任务不符"
         );
+        let profile = request.store.managed_runtime_directory(
+            &request.project.id, &request.task.id, &request.agent.id, AgentRuntimeKind::ZCodeCli,
+        );
+        if let Err(error) = crate::session_switch_history::archive_zcode_turn(
+            &profile, &request.run_id, &request.cwd, &locator, prompt, &output.text, &request.collaboration.token,
+        ) {
+            // A readback failure must not dispatch a completed native command a second time.
+            request.store.append_run_log(&request.run_id, "system", &format!("ZCode 原生轮次已结束，回看归档失败：{error:#}"))?;
+        }
         Ok(RuntimeResult {
             summary: output.text,
             session_locator: locator,

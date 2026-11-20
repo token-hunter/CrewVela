@@ -57,6 +57,10 @@ fn installed_pi_confines_native_edits_and_resumes_its_exact_session() -> Result<
     )?;
     std::env::set_var("PI_CODING_AGENT_DIR", &profile);
     std::env::set_var("PI_OFFLINE", "1");
+    verify_delivery(&root, AgentRuntimeKind::Pi)
+}
+
+pub(super) fn verify_delivery(root: &Path, kind: AgentRuntimeKind) -> Result<()> {
     crate::test_profile::initialize(&root.join("crewvela"))?;
     let (fixture, input, raw_plan) = managed_plan_fixture();
     let worker = &fixture.agents[0];
@@ -71,8 +75,8 @@ fn installed_pi_confines_native_edits_and_resumes_its_exact_session() -> Result<
         .to_owned();
     for member in [worker, &reviewer, &integrator] {
         fixture.store.connection.lock().unwrap().execute(
-            "UPDATE ma_agents SET runtime_kind='pi' WHERE id=?1",
-            [member],
+            "UPDATE ma_agents SET runtime_kind=?2 WHERE id=?1",
+            [member.as_str(), kind.as_str()],
         )?;
     }
     let chat = fixture.run_input(input, &ScriptedReplies::new(vec![raw_plan]));
@@ -131,7 +135,7 @@ fn installed_pi_confines_native_edits_and_resumes_its_exact_session() -> Result<
     );
     let old = store
         .latest_session_locator(&ids[0])?
-        .context("Pi did not persist its session")?;
+        .context("Missing native session")?;
     let dir = Path::new(old["cwd"].as_str().unwrap());
     ensure!(
         dir.join("src/owned/value.js").is_file() && !dir.join("outside.js").exists(),
@@ -153,7 +157,7 @@ fn installed_pi_confines_native_edits_and_resumes_its_exact_session() -> Result<
     );
     let reopened = MultiAgentStore::open_at(fixture.root.join("store.db"))?;
     ensure!(reopened.recover_managed_deliveries_at_startup()? == [fixture.project.clone()],
-        "settled Pi commit and original grant did not permit continuation after reopening the store");
+        "settled commit and original grant did not permit continuation after reopening the store");
     run(&ids[1], &reviewer)
         .with_context(|| format!("review: {} {}", root.display(), diagnostic()))?;
     let reviewed = store.latest_session_locator(&ids[1])?.unwrap();
@@ -171,6 +175,18 @@ fn installed_pi_confines_native_edits_and_resumes_its_exact_session() -> Result<
     );
     let persisted = reopened.managed_plan_running(&fixture.project)?.unwrap();
     let snapshot = reopened.snapshot(&fixture.project)?;
+    for task_id in &ids {
+        for run in snapshot.runs.iter().filter(|run| &run.task_id == task_id) {
+            let source = reopened.conversation_run_locator(&fixture.project, &run.id)?;
+            let messages = crate::session_switch_history::read_conversation_run(&source)?;
+            let users: Vec<_> = messages.iter().filter(|message| message.role == "user").collect();
+            ensure!(users.len() == 1 && messages.iter().any(|message| message.role == "assistant" && !message.text.trim().is_empty()),
+                "托管原生记录未精确读出本轮用户输入和答复");
+            if kind != AgentRuntimeKind::Pi {
+                ensure!(users[0].text.contains(&run.id), "原生记录展示了其他 ACP 轮次的输入");
+            }
+        }
+    }
     let sha = crate::multi_agent::executor::git_head(Path::new(&snapshot.project.root_path))?;
     reopened.settle_idle_managed_plan(
         &snapshot,
@@ -191,7 +207,7 @@ fn installed_pi_confines_native_edits_and_resumes_its_exact_session() -> Result<
             }
         }
     }
-    eprintln!("Pi 1.5.0 native scopes, receipts, independent review and same-session retry confirmed in {}",root.display());
+    eprintln!("{kind:?} native scopes, receipts, independent review and same-session retry confirmed in {}",root.display());
     Ok(())
 }
 

@@ -7,24 +7,22 @@ use super::{
 use crate::acp::{AcpConnection, ManagedAcpKind};
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-const POLICY: &str = "text-only-v1";
+const TEXT_POLICY: &str = "text-only-v1";
+const FILE_POLICY: &str = "scoped-files-v1";
 const TRANSPORT: &str = "managed-acp";
-const KIMI_AGENT: &str = "---\nname: agent\ndescription: CrewVela isolated text analysis\noverride: true\ntools: []\nsubagents: []\n---\nWork from the text supplied by CrewVela.\n";
 const DIFF_LIMIT: usize = 256 * 1024;
 
 pub(super) fn supports(kind: AgentRuntimeKind, usage: ManagedUse) -> bool {
     matches!(kind, AgentRuntimeKind::KimiCode | AgentRuntimeKind::OpenCode)
-        && matches!(usage, ManagedUse::Plan | ManagedUse::Review)
+        && matches!(usage, ManagedUse::Plan | ManagedUse::Review | ManagedUse::Write)
 }
 
 pub(super) fn execute(request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
@@ -37,10 +35,18 @@ pub(super) fn execute(request: &RuntimeRequest, cancelled: &AtomicBool) -> Resul
         request.log_launch("无工具执行", "原生 ACP 规划")?;
         return run(request, cancelled, &render_task_prompt(request));
     }
+    if request.task.workspace_mode == super::WorkspaceMode::Worktree {
+        ensure!(matches!(request.agent.role, super::AgentRole::Worker | super::AgentRole::Integrator),
+            "托管工作树写入仅供获批的开发或联调成员");
+        let scopes = request.store.managed_write_paths(&request.task.id)?;
+        ensure!(!scopes.is_empty(), "托管开发缺少已确认的写入范围");
+        request.log_launch("仅开放本轮已授权的工作树文件工具", "原生 ACP")?;
+        return run(request, cancelled, &format!("{}\n\n可写相对路径为 {}。通过 crewvela 的 cc_research_list、cc_research_read、cc_research_search 查阅工作树，用 cc_workspace_write_file 写入完整文本。修改已有文件可先用 cc_workspace_edit_read 取得 revision。宿主会在实际工作树执行验收命令。", render_task_prompt(request), scopes.join("、")));
+    }
     ensure!(
         request.task.workspace_mode == super::WorkspaceMode::ReadOnly
             && request.agent.role == super::AgentRole::Reviewer,
-        "Kimi Code 和 OpenCode 的托管运行仅支持规划和静态审查"
+        "该托管运行的角色或工作树模式无效"
     );
     request.log_launch("受限静态审查", "原生 ACP 读取 Git 交付差异")?;
     managed_static_review(request, cancelled, |instructions| {
@@ -186,19 +192,21 @@ struct IsolatedProfile {
     temporary_config: Option<PathBuf>,
     agent: String,
     expected_model: Option<String>,
+    file_access: Option<super::CollaborationAccess>,
 }
 
 impl IsolatedProfile {
     fn prepare(request: &RuntimeRequest) -> Result<Self> {
         let kind = request.agent.runtime_kind;
-        let key =
-            format!("{}\0{}\0{}\0{}", request.project.id, request.task.id, request.agent.id, kind.as_str());
-        let hash = format!("{:x}", Sha256::digest(key.as_bytes()));
-        let root = request.store.conversation_attachment_root.with_extension("managed-runtime").join(&hash);
-        Self::at(kind, root, format!("crewvela-managed-{}", &hash[..16]), request.agent.model.as_deref())
+        let root = request.store.managed_runtime_directory(&request.project.id, &request.task.id, &request.agent.id, kind);
+        let hash = root.file_name().and_then(OsStr::to_str).context("缺少托管 profile 身份")?;
+        let agent = format!("crewvela-managed-{}", hash.get(..16).context("无效托管身份")?);
+        let files = (request.task.workspace_mode == super::WorkspaceMode::Worktree && !request.managed_planner())
+            .then(|| request.collaboration.clone());
+        Self::at(kind, root, agent, request.agent.model.as_deref(), files)
     }
 
-    fn at(kind: AgentRuntimeKind, root: PathBuf, agent: String, model: Option<&str>) -> Result<Self> {
+    fn at(kind: AgentRuntimeKind, root: PathBuf, agent: String, model: Option<&str>, file_access: Option<super::CollaborationAccess>) -> Result<Self> {
         let work = root.join("input");
         private_dir(&work)?;
         let user = root.join("user");
@@ -211,6 +219,7 @@ impl IsolatedProfile {
             temporary_config: None,
             agent,
             expected_model: model.filter(|s| !s.trim().is_empty()).map(str::to_owned),
+            file_access,
         };
         for key in ["HOME", "USERPROFILE", "OPENCODE_TEST_HOME"] {
             profile.set(key, &user);
@@ -237,6 +246,14 @@ impl IsolatedProfile {
         self.env.push((OsString::from(key), value.as_ref().to_owned()));
     }
 
+    fn tools(&self) -> Result<Vec<String>> {
+        if self.file_access.is_none() { return Ok(Vec::new()); }
+        let prefix = if self.kind == AgentRuntimeKind::KimiCode { "mcp__crewvela__" } else { "crewvela_" };
+        let files = super::managed_edits::file_tool_names(self.kind)?;
+        Ok(["cc_research_read", "cc_research_list", "cc_research_search"].into_iter().chain(files)
+            .map(|name| format!("{prefix}{name}")).collect())
+    }
+
     fn kimi(&mut self) -> Result<()> {
         let original = home_path("KIMI_CODE_HOME", ".kimi-code")?;
         let native = self.root.join("kimi");
@@ -250,7 +267,16 @@ impl IsolatedProfile {
         };
         config.retain(|key, _| matches!(key, "default_model" | "models" | "providers" | "thinking"));
         config.insert("default_permission_mode".into(), "manual".into());
-        let rule: toml::Table = toml::from_str("[[rules]]\ndecision = 'deny'\npattern = '*'")?;
+        let tools = self.tools()?;
+        let mut rule: toml::Table = toml::from_str("[[rules]]\ndecision = 'deny'\npattern = '*'")?;
+        if !tools.is_empty() {
+            // Kimi gives deny rules priority. Deny the complement of the exact tool names;
+            // the agent profile separately controls which tools can be activated.
+            let denied = format!("!{{{}}}", tools.join(","));
+            rule.insert("deny".into(), vec![denied].into());
+            rule.remove("rules");
+            rule.insert("allow".into(), tools.clone().into());
+        }
         config.insert("permission".into(), toml::Value::Table(rule));
         let config_path = native.join("config.toml");
         let mut file_config = fs::OpenOptions::new();
@@ -283,7 +309,7 @@ impl IsolatedProfile {
         }
         let agents = native.join("agents");
         private_dir(&agents)?;
-        fs::write(agents.join("agent.md"), KIMI_AGENT)?;
+        fs::write(agents.join("agent.md"), format!("---\nname: agent\ndescription: CrewVela isolated task\noverride: true\ntools: {}\ndisallowedTools: [select_tools]\nsubagents: []\n---\nWork only with the text and tools supplied by CrewVela.\n", serde_json::to_string(&tools)?))?;
         self.set("KIMI_CODE_HOME", native);
         self.set("KIMI_DISABLE_TELEMETRY", "1");
         Ok(())
@@ -349,7 +375,9 @@ impl IsolatedProfile {
         }
         self.set("OPENCODE_AUTH_CONTENT", serde_json::to_string(&auth)?);
         let mut config = Value::Object(routes);
-        config["agent"] = json!({(&self.agent): {"mode":"primary", "permission":{"*":"deny"}}});
+        let mut permissions = json!({"*":"deny"});
+        for tool in self.tools()? { permissions[tool] = "allow".into(); }
+        config["agent"] = json!({(&self.agent): {"mode":"primary", "permission":permissions}});
         config["default_agent"] = json!(&self.agent);
         config["permission"] = json!({"*":"deny"});
         config["snapshot"] = false.into();
@@ -596,28 +624,34 @@ fn certify_opencode(profile: &IsolatedProfile, cancelled: &AtomicBool) -> Result
     ensure!(output.status.success(), "OpenCode 无法返回当前受限 Agent 的有效权限，未投递任务");
     let effective: Value = serde_json::from_str(&output.stdout).context("无法解析 OpenCode 有效 Agent")?;
     let tools = effective["tools"].as_object().context("OpenCode 未返回工具权限")?;
+    let allowed = profile.tools()?;
     ensure!(
         effective["name"] == profile.agent
             && effective["mode"] == "primary"
             && ["read", "write", "edit", "bash", "task"]
                 .iter()
                 .all(|key| tools.get(*key) == Some(&Value::Bool(false)))
-            && tools.values().all(|value| value.as_bool() == Some(false)),
-        "OpenCode 有效 Agent 仍可执行工具，未投递任务"
+            && tools.iter().all(|(name, value)| value.as_bool() == Some(allowed.contains(name))),
+        "OpenCode 有效 Agent 的工具与本轮授权不符，未投递任务"
     );
     let rules = effective["permission"].as_array().context("OpenCode 未返回原生权限规则")?;
     let global = rules
         .iter()
         .rposition(|r| r["permission"] == "*" && r["pattern"] == "*" && r["action"] == "deny")
         .context("OpenCode 未强制拒绝未知工具")?;
-    // v1 adds access to its own truncation-output directory. No tool remains
-    // enabled, and this narrow rule cannot authorize an MCP, shell or edit.
+    // The runtime adds access to its own truncation output. This single rule
+    // never authorizes a shell, local write or other MCP.
+    let effective = &rules[global + 1..];
     ensure!(
-        rules[global + 1..].iter().all(|r| r["action"] == "deny"
+        effective.iter().all(|r| r["action"] == "deny"
+            || (r["action"] == "allow" && r["pattern"] == "*"
+                && allowed.iter().any(|name| r["permission"] == *name))
             || (r["permission"] == "external_directory"
                 && r["pattern"]
                     .as_str()
-                    .is_some_and(|p| p.replace('\\', "/").ends_with("/opencode/tool-output/*")))),
+                    .is_some_and(|p| p.replace('\\', "/").ends_with("/opencode/tool-output/*"))))
+            && allowed.iter().all(|name| effective.iter().rev()
+                .find(|r| r["permission"] == *name && r["pattern"] == "*").is_some_and(|r| r["action"] == "allow")),
         "OpenCode 有效授权覆盖了全局工具拒绝规则"
     );
     Ok(())
@@ -766,11 +800,23 @@ fn protocol_turn(
     let work = external_command_path(&profile.work);
     let cwd = work.to_str().context("托管运行目录无法转为 UTF-8")?;
     let engine = if kind == ManagedAcpKind::Kimi { "kimi-code-acp" } else { "opencode-acp" };
+    let (policy, mode) = if profile.file_access.is_some() { (FILE_POLICY, "scoped-files") } else { (TEXT_POLICY, "text-only") };
+    let mut servers = Vec::new();
+    if let Some(access) = &profile.file_access {
+        let expected = if kind == ManagedAcpKind::Kimi { "2.6.3" } else { "1.19.3" };
+        let mut version = runtime_command(profile.kind)?;
+        profile.configure_command(&mut version);
+        version.arg("--version");
+        let native = crate::title_summary::run_cli_with_timeout(version, None, Duration::from_secs(10), 4096, "托管文件工具版本核对")?;
+        ensure!(native.status.success() && String::from_utf8_lossy(&native.stdout).trim() == expected,
+            "{} 的托管文件工具仅验证了 {expected}，未投递任务", profile.kind.as_str());
+        servers.push(crate::acp::managed_mcp_server(&format!("{}/mcp", access.endpoint), &access.token));
+    }
     if let (Some(previous), Some(locator)) = (previous, resume) {
         ensure!(
             !previous.is_empty()
                 && locator["engine"] == engine
-                && locator["toolPolicy"] == POLICY
+                && locator["toolPolicy"] == policy
                 && locator["sessionPath"] == cwd,
             "原会话缺少托管引擎、工作目录或工具边界，拒绝切换到普通会话"
         );
@@ -783,19 +829,7 @@ fn protocol_turn(
     if kind == ManagedAcpKind::OpenCode {
         certify_opencode(profile, cancelled)?;
     }
-    let mut connection = AcpConnection::spawn_for_with_cli_identity(
-        kind,
-        cwd,
-        previous,
-        vec![],
-        &[],
-        false,
-        false,
-        Arc::new(AtomicU32::new(0)),
-        None,
-        Some(profile.command(false)?),
-        None,
-    )?;
+    let mut connection = AcpConnection::spawn_isolated_managed(kind, cwd, previous, servers, profile.command(false)?, profile.tools()?)?;
     let result = (|| -> Result<(String, String)> {
         let id = connection.session_id().to_owned();
         ensure!(
@@ -826,7 +860,7 @@ fn protocol_turn(
         let key = format!("CrewVela 托管轮次 {run_id}。");
         let prompt = format!("{key}\n{}", instructions.trim_end());
         let mut evidence = json!({"sessionId":id,"transport":TRANSPORT,"engine":engine,"sessionPath":cwd,
-            "toolPolicy":POLICY,"permissionMode":"text-only","commandId":run_id});
+            "toolPolicy":policy,"permissionMode":mode,"commandId":run_id});
         ensure!(!cancelled.load(Ordering::Acquire), "原生会话就绪前托管任务已取消");
         checkpoint("dispatched", evidence.clone())?;
         let reply = prompt_with_native_cancel(&mut connection, &prompt, cancelled)?;
@@ -915,10 +949,10 @@ mod tests {
     use std::process::Stdio;
 
     #[test]
-    fn policies_drop_native_hooks_and_external_modules_and_never_authorize_writes() -> Result<()> {
+    fn policies_drop_native_hooks_and_external_modules() -> Result<()> {
         for kind in [AgentRuntimeKind::KimiCode, AgentRuntimeKind::OpenCode] {
             assert!(supports(kind, ManagedUse::Plan) && supports(kind, ManagedUse::Review));
-            assert!(!supports(kind, ManagedUse::Write));
+            assert!(supports(kind, ManagedUse::Write));
         }
         let original = parse_opencode_config(
             r#"{
@@ -1062,7 +1096,7 @@ const root=process.argv[1]; const server=http.createServer(async(req,res)=>{
                 for stage in ["first-crewvela-deny-read-write", "resumed-crewvela-deny-read-write"] {
                     let _ = fs::remove_file(root.join("denied"));
                     let profile =
-                        IsolatedProfile::at(kind, directory.clone(), "crewvela-managed-probe".into(), None)?;
+                        IsolatedProfile::at(kind, directory.clone(), "crewvela-managed-probe".into(), None, None)?;
                     let mut phases = Vec::new();
                     let mut saved = None;
                     let input = format!("{stage} {}", kind.as_str());
@@ -1096,7 +1130,7 @@ const root=process.argv[1]; const server=http.createServer(async(req,res)=>{
                     locator = saved;
                 }
                 assert_eq!(fs::read(root.join("canary.txt"))?, b"untouched");
-                let profile = IsolatedProfile::at(kind, directory, "crewvela-managed-probe".into(), None)?;
+                let profile = IsolatedProfile::at(kind, directory, "crewvela-managed-probe".into(), None, None)?;
                 let mut missing = locator.clone().unwrap();
                 missing["sessionId"] = format!("nosuch_{}", uuid::Uuid::new_v4().simple()).into();
                 let mut dispatched = false;

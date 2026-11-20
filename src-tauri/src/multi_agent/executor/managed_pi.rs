@@ -1,60 +1,6 @@
 use super::*;
 use std::path::Path;
 
-pub(in crate::multi_agent) fn file_operation(
-    store: &MultiAgentStore,
-    run_id: &str,
-    agent: &str,
-    cwd: &Path,
-    name: &str,
-    args: &serde_json::Value,
-) -> Result<serde_json::Value> {
-    use sha2::{Digest, Sha256};
-    managed_edits::with_write_scope(store, run_id, agent, AgentRuntimeKind::Pi, cwd, |scopes| {
-        let relative = args["path"].as_str().context("缺少文件相对路径")?;
-        MultiAgentStore::verify_write_paths(scopes, &[relative.to_owned()])?;
-        let read = || -> Result<String> {
-            let boundary = super::super::conversation::research::workspace_policy().boundary;
-            let path =
-                super::super::conversation::research::readable_path(cwd, &boundary, relative)?;
-            let file = std::fs::File::open(path)?;
-            anyhow::ensure!(file.metadata()?.is_file(), "仅支持普通文本文件");
-            let mut bytes = Vec::new();
-            file.take(1_048_577).read_to_end(&mut bytes)?;
-            anyhow::ensure!(
-                bytes.len() <= 1_048_576 && !bytes.contains(&0),
-                "Pi 精确编辑只支持 1 MiB 内的 UTF-8 文本"
-            );
-            Ok(String::from_utf8(bytes)?)
-        };
-        match name {
-            "cc_pi_edit_read" => {
-                let text = read()?;
-                Ok(
-                    serde_json::json!({"revision":format!("{:x}",Sha256::digest(text.as_bytes())),"text":text}),
-                )
-            }
-            "cc_pi_write_file" => {
-                if let Some(expected) = args.get("revision") {
-                    anyhow::ensure!(
-                        expected.as_str()
-                            == Some(format!("{:x}", Sha256::digest(read()?.as_bytes())).as_str()),
-                        "文件在 Pi 读取后发生变化，未覆盖原文件"
-                    );
-                }
-                managed_edits::write_text(
-                    cwd,
-                    scopes,
-                    relative,
-                    args["text"].as_str().context("缺少文件内容")?,
-                )?;
-                Ok(serde_json::json!({"path":relative}))
-            }
-            _ => bail!("该托管操作未授权"),
-        }
-    })
-}
-
 fn sessions_directory() -> Result<PathBuf> {
     Ok(crate::providers::config_dir()?.join("multi-agent-sessions"))
 }

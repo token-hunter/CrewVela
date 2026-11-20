@@ -46,7 +46,7 @@ mod managed_events;
 use managed_events::managed_command_reply;
 mod managed_cli;
 mod managed_zcode;
-mod managed_edits;
+pub(super) mod managed_edits;
 pub(super) mod managed_pi;
 
 pub(super) fn supports_managed_provider(kind: AgentRuntimeKind, usage: ManagedUse) -> bool {
@@ -163,7 +163,7 @@ impl RuntimeRequest {
 
     fn checkpoint_managed_turn(&self, phase: &str, patch: serde_json::Value) -> Result<()> {
         anyhow::ensure!(self.managed, "当前任务没有托管授权");
-        self.store.checkpoint_managed_turn(&self.run_id, phase, patch)
+        self.store.checkpoint_managed_turn(&self.run_id, phase, patch, self.agent.runtime_kind, &self.cwd)
     }
 
     fn managed_native(&self) -> bool {
@@ -2266,8 +2266,12 @@ pub(super) fn execute_run(
         let _ = store.append_run_log(&run_id, "system", "使用独立可写消息工作区并保留成员原权限；此 Runtime 不提供强制只读边界，禁止修改业务文件");
     }
     let bridge_lease = if managed {
-        collaboration_bridge.register_managed_run(&project.id, &task.id, &run_id, &agent.id, &cwd,
-            !managed_planner && agent.runtime_kind == AgentRuntimeKind::Pi)
+        let files = match agent.runtime_kind {
+            AgentRuntimeKind::Pi if !managed_planner => Some(agent.runtime_kind),
+            AgentRuntimeKind::KimiCode | AgentRuntimeKind::OpenCode if managed_native => Some(agent.runtime_kind),
+            _ => None,
+        };
+        collaboration_bridge.register_managed_run(&project.id, &task.id, &run_id, &agent.id, &cwd, files)
     } else { collaboration_bridge.register_run(&project.id, &task.id, &run_id, &agent.id, &cwd) };
     let collaboration = bridge_lease.access();
     let _ = store.append_runtime_event(super::AppendRuntimeEventInput {
@@ -2583,7 +2587,7 @@ fn managed_native_locator(
     let mode = match kind {
         AgentRuntimeKind::Pi => "pi-scoped-files-v1",
         AgentRuntimeKind::ZCodeCli => "zcode-plan-scoped-text-v1",
-        AgentRuntimeKind::OpenCode | AgentRuntimeKind::KimiCode => "scoped-text-v1",
+        AgentRuntimeKind::OpenCode | AgentRuntimeKind::KimiCode => "acp-scoped-files-v1",
         _ => saved_mode.unwrap_or("workspace-write/never"),
     };
     let mut locator = serde_json::json!({"adapter":kind, "cwd":cwd, "managedLaunchMode":mode, "managedBaseline":baseline});
@@ -3580,8 +3584,10 @@ fn execute_preferred_acp(
             policy.allows_tools(), cancelled, update_handler, &images, if request.managed_planner() {
                 let store = request.store.clone();
                 let run = request.run_id.clone();
+                let cwd = request.cwd.clone();
+                let runtime = request.agent.runtime_kind;
                 Some(Box::new(move |id| store.checkpoint_managed_turn(&run, "dispatched",
-                    serde_json::json!({"sessionId":id,"engine":"claude_code"}))))
+                    serde_json::json!({"sessionId":id,"engine":"claude_code"}), runtime, &cwd)))
             } else { None })
     } else { execute_managed_acp(
         kind,
