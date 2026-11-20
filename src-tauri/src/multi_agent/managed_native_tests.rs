@@ -117,11 +117,13 @@ fn managed_native_adapters_resume_the_exact_turn_after_acceptance_and_startup_fa
     let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap()))).unwrap();
     let outcome = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "multi_agent::conversation::tests::managed_native::managed_native_adapters_resume_the_exact_turn_after_acceptance_and_startup_failures", "--nocapture"])
-        .env(ENV, &root).env("PATH", path).env("CODEX_HOME", root.join("codex-home"))
+        .env(ENV, &root).env("PATH", path).env("CODEX_HOME", root.join("personal"))
+        .env("CODEX_SQLITE_HOME", root.join("personal-index"))
         .env("CODEX_WINDOWS_REGISTERED_CORE", "1")
         .env("CLAUDE_CONFIG_DIR", root.join("claude-home")).output().unwrap();
     assert!(outcome.status.success() && String::from_utf8_lossy(&outcome.stdout).contains("1 passed"),
         "{}\n{}", String::from_utf8_lossy(&outcome.stdout), String::from_utf8_lossy(&outcome.stderr));
+    assert!(!root.join("personal").exists() && !root.join("personal-index").exists());
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -211,6 +213,13 @@ const FIXTURE_CLI: &str = r#"
 const fs = require('node:fs'), path = require('node:path'), { randomUUID } = require('node:crypto');
 const [kind, ...args] = process.argv.slice(2), codex = kind === 'codex';
 if (args.includes('--version')) { console.log(kind + ' fixture 1.0'); process.exit(0); }
+if (codex && args.includes('app-server')) {
+  require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+    const req = JSON.parse(line);
+    if (req.id) console.log(JSON.stringify({id:req.id,result:req.method==='configRequirements/read'?{requirements:null}:{}}));
+  });
+  return;
+}
 const root = process.env.CREWVELA_MANAGED_NATIVE_TEST_DIR, stage = fs.readFileSync(path.join(root, 'stage'), 'utf8');
 const after = key => args.includes(key) ? args[args.indexOf(key) + 1] : undefined;
 if (!process.stdin.isTTY || args.includes('exec') || args.includes('--print')) throw Error('expected native TUI');
@@ -218,12 +227,14 @@ const resumed = after(codex ? 'resume' : '--resume'), id = resumed || after('--s
 let events;
 if (codex) {
   if (!args.includes('--approve-for-me') || args.includes('--dangerously-bypass-hook-trust')) throw Error('wrong Codex permissions');
+  if (!args.includes('check_for_update_on_startup=false')) throw Error('unattended Codex TUI did not disable its update menu');
   if (process.platform === 'win32' && process.env.CODEX_WINDOWS_REGISTERED_CORE === '1') throw Error('standalone Codex inherited registered Core');
   const notify = JSON.parse(args.find(v => v.startsWith('notify=')).slice(7));
   if (notify[3] !== process.env.CREWVELA_SESSION_ID) throw Error('incorrect app session');
   events = notify[2];
-  const sessions = path.join(root, 'codex-home', 'sessions');
+  const sessions = path.join(root, 'app profile', 'config', 'codex-home', 'sessions');
   if (path.resolve(process.env.CODEX_HOME) !== path.dirname(sessions)) throw Error('PTY changed the isolated CODEX_HOME');
+  if (path.resolve(process.env.CODEX_SQLITE_HOME) !== path.dirname(sessions) || !args.includes('sqlite_home=' + path.dirname(sessions))) throw Error('PTY did not pin isolated sqlite_home');
   fs.mkdirSync(sessions, {recursive:true});
   fs.writeFileSync(path.join(sessions, 'rollout-' + id + '.jsonl'),
     JSON.stringify({type:'session_meta', payload:{id, source:'cli', cwd:process.cwd()}}) + '\n');

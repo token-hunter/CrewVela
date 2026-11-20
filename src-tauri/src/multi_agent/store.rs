@@ -734,6 +734,21 @@ impl MultiAgentStore {
         let run = get_run_with(&connection, run_id)?;
         anyhow::ensure!(run.project_id == project_id, "运行不属于该项目");
         let locator = run.session_locator.context("本次运行尚未记录原会话")?;
+        // An agent may supply a run locator. Only a host receipt may select a
+        // new Codex storage owner or reuse the native ID from that owner.
+        let proof: Option<String> = connection.query_row(
+            "SELECT payload_json FROM ma_events WHERE project_id=?1 AND entity_type='run' AND entity_id=?2
+             AND actor_type='system' AND event_type='run.codex_thread' ORDER BY seq LIMIT 1",
+            params![project_id, run_id], |row| row.get(0),
+        ).optional()?;
+        if let Some(proof) = proof {
+            let proof: serde_json::Value = serde_json::from_str(&proof)?;
+            anyhow::ensure!(["codexStorage", "threadId", "cwd"].iter().all(|key| proof[*key] == locator[*key])
+                && (locator["adapter"] == "codex" || (locator["adapter"] == "acp" && locator["runtimeKind"] == "codex")),
+                "Codex 会话归属、目录或原生 ID 与宿主回执不符");
+        } else {
+            anyhow::ensure!(locator.get("codexStorage").is_none(), "Codex 会话缺少宿主归属回执");
+        }
         let planner = super::conversation::is_conversation_task(&run.task_id);
         let target: serde_json::Value = if planner {
             let grant: Option<String> = connection.query_row(
@@ -839,6 +854,10 @@ impl MultiAgentStore {
     }
 
     pub fn update_run(&self, input: UpdateRunInput) -> Result<AgentRun> {
+        self.start_run_with_storage(input, None)
+    }
+
+    pub(super) fn start_run_with_storage(&self, input: UpdateRunInput, codex: Option<crate::codex_storage::CodexStorage>) -> Result<AgentRun> {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = get_run_with(&tx, &input.run_id)?;
@@ -847,6 +866,14 @@ impl MultiAgentStore {
         }
         validate_run_transition(current.status, input.status)?;
         let now = now_millis();
+        if let Some(storage) = codex {
+            let locator = input.session_locator.as_ref().context("缺少 Codex 起始存储归属")?;
+            anyhow::ensure!(input.status == RunStatus::Running && locator["adapter"] == "codex"
+                && crate::codex_storage::CodexStorage::from_locator(locator)? == storage,
+                "Codex 起始存储归属无效");
+            append_event(&tx, &current.project_id, "run", &input.run_id, "run.codex_storage", "system", None,
+                serde_json::json!({"codexStorage":storage, "cwd":locator["cwd"], "threadId":locator["threadId"]}), now)?;
+        }
         let started_at = if input.status == RunStatus::Running {
             Some(now)
         } else {
@@ -2490,6 +2517,37 @@ impl MultiAgentStore {
             .transpose()
     }
 
+    pub(super) fn codex_locator_for_retry(&self, task_id: &str) -> Result<Option<serde_json::Value>> {
+        let db = self.connection.lock().unwrap();
+        let latest: Option<(String,String)> = db.query_row(
+            "SELECT id,session_locator_json FROM ma_runs WHERE task_id=?1 AND session_locator_json IS NOT NULL ORDER BY attempt DESC LIMIT 1",
+            [task_id], |row| Ok((row.get(0)?,row.get(1)?))).optional()?;
+        let Some((run, raw)) = latest else { return Ok(None); };
+        let locator: serde_json::Value = serde_json::from_str(&raw)?;
+        let mut native = None;
+        let mut owner = None;
+        let mut query = db.prepare("SELECT event_type,payload_json FROM ma_events WHERE entity_type='run' AND entity_id=?1
+            AND actor_type='system' AND event_type IN ('run.codex_storage','run.codex_thread','run.managed_history') ORDER BY seq")?;
+        for row in query.query_map([run], |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))? {
+            let (kind, raw) = row?;
+            let proof: serde_json::Value = serde_json::from_str(&raw)?;
+            if kind == "run.managed_history" {
+                if let Some(id) = proof["identity"]["threadId"].as_str() { native = Some(id.to_owned()); }
+            } else {
+                anyhow::ensure!(proof["codexStorage"] == locator["codexStorage"] && proof["cwd"] == locator["cwd"],
+                    "Codex 续跑归属或目录与宿主回执不符");
+                owner = Some(crate::codex_storage::CodexStorage::from_locator(&proof)?);
+                if let Some(id) = proof["threadId"].as_str() { native = Some(id.to_owned()); }
+            }
+        }
+        if owner.is_some() || locator.get("codexStorage").is_some() {
+            let recorded = ["threadId", "thread_id", "sessionId"].iter().filter_map(|key| locator[*key].as_str());
+            anyhow::ensure!(owner.is_some() && recorded.clone().all(|id| native.as_deref() == Some(id))
+                && native.as_ref().is_none_or(|_| recorded.count() != 0), "Codex 续跑缺少原生身份的宿主回执");
+        }
+        Ok(Some(locator))
+    }
+
     pub fn record_message(
         &self,
         project_id: &str,
@@ -3632,6 +3690,34 @@ impl MultiAgentStore {
         tx.execute("UPDATE ma_runs SET session_locator_json = json_remove(COALESCE(session_locator_json, '{}'), '$.transport', '$.ptyId') WHERE id = ?1", [run_id])?;
         tx.commit()?;
         Ok(())
+    }
+
+    pub(super) fn bind_codex_thread(
+        &self, run_id: &str, id: &str, storage: crate::codex_storage::CodexStorage, cwd: &Path,
+    ) -> Result<Option<String>> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let run = get_run_with(&tx, run_id)?;
+        let locator = run.session_locator.as_ref().context("Codex 运行缺少定位")?;
+        anyhow::ensure!(uuid::Uuid::parse_str(id).is_ok() && locator["adapter"] == "codex"
+            && locator["cwd"].as_str().map(Path::new) == Some(cwd)
+            && crate::codex_storage::CodexStorage::from_locator(locator)? == storage
+            && locator["threadId"].as_str().is_none_or(|old| old == id), "Codex 原生身份与本次运行不符");
+        let changed = tx.execute("UPDATE ma_runs SET session_locator_json=json_set(session_locator_json,'$.threadId',?2)
+            WHERE id=?1 AND status IN ('running','waiting_input','waiting_approval')", params![run_id,id])?;
+        anyhow::ensure!(changed == 1, "Codex 运行已停止，拒绝登记新会话");
+        let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_events WHERE project_id=?1 AND entity_type='run'
+            AND entity_id=?2 AND actor_type='system' AND event_type='run.codex_thread')",
+            params![run.project_id,run.id], |row| row.get(0))?;
+        if !exists {
+            let mut proof = serde_json::json!({"threadId":id, "cwd":cwd});
+            storage.mark(&mut proof);
+            append_event(&tx, &run.project_id, "run", run_id, "run.codex_thread", "system", None, proof, now_millis())?;
+        }
+        let member = tx.query_row("SELECT app_session_id FROM ma_agent_sessions WHERE project_id=?1 AND agent_id=?2",
+            params![run.project_id,run.agent_id], |row| row.get(0)).optional()?.flatten();
+        tx.commit()?;
+        Ok(member)
     }
 
     pub(super) fn checkpoint_native_dispatch(

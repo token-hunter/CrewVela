@@ -139,6 +139,29 @@ pub(crate) fn read_effective_config(
         .context("Codex 有效权限配置缺失；未变更原权限")
 }
 
+/// A managed device can override even Codex's CLI sqlite_home. Check the
+/// service's enforced policy before launching a thread in a collaboration profile.
+pub(crate) fn verify_sqlite_requirement(
+    command: std::process::Command, cwd: &std::path::Path, expected: &std::path::Path,
+) -> Result<()> {
+    let mut peer = Peer::spawn(command, cwd, Duration::from_secs(10))?;
+    peer.request(1, "initialize", json!({"clientInfo":{"name":"crewvela-storage","version":"1"},"capabilities":{}}))?;
+    peer.send(json!({"method":"initialized"}))?;
+    let policy = peer.request(2, "configRequirements/read", json!({}))?;
+    let requirements = policy.get("requirements").context("Codex 未返回托管配置要求")?;
+    if requirements.is_null() { return Ok(()); }
+    let requirements = requirements.as_object().context("无法核实 Codex 托管配置要求")?;
+    if let Some(path) = requirements.get("sqliteHome").filter(|value| !value.is_null()) {
+        let path = path.as_str().context("无法核实策略指定的 Codex SQLite 目录")?;
+        let directory = if path.starts_with("file:") {
+            reqwest::Url::parse(path)?.to_file_path().map_err(|_| anyhow!("Codex SQLite 策略目录格式无效"))?
+        } else { std::path::PathBuf::from(path) };
+        anyhow::ensure!(directory.is_absolute() && directory.canonicalize().ok().as_deref() == Some(&expected.canonicalize()?),
+            "管理员策略指定的 Codex SQLite 目录与 CrewVela 专用目录不符，未启动会话");
+    }
+    Ok(())
+}
+
 pub(crate) fn no_tools_config(effective: &Value) -> Value {
     let mut config = serde_json::Map::new();
     for name in [

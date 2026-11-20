@@ -13,6 +13,7 @@ use anyhow::{anyhow, bail, Context, Result};
 
 use crate::acp::{execute_managed_acp, ManagedAcpKind, ManagedAcpMode, ManagedAcpOutcome, UnverifiedStop};
 use crate::pty::PtyManager;
+use crate::codex_storage::CodexStorage;
 use crate::sessions::{NewAgentSession, SessionManager, SessionRecord, SessionStatus};
 use super::store::delegation::{is_design_task, DesignCheckpoint};
 use super::managed_delivery::ManagedUse;
@@ -90,6 +91,7 @@ pub struct RuntimeRequest {
     pub dependency_artifacts: Vec<ArtifactRecord>,
     managed_acceptance: Vec<super::managed_delivery::ManagedAcceptance>,
     pub resume_locator: Option<serde_json::Value>,
+    codex_storage: CodexStorage,
     pub user_instructions: Vec<String>,
     pub shared_memories: Vec<MemoryEntry>,
     pub collaboration_messages: Vec<CollaborationMessage>,
@@ -310,9 +312,10 @@ impl AgentTerminalHost {
             agent_name: request.agent.name.clone(),
             cwd: request.cwd.display().to_string(),
         })?;
-        let lifecycle = request.managed.then(|| self.sessions.lifecycle_lock(&session.id));
+        let protect_interactive = request.managed || request.agent.runtime_kind == AgentRuntimeKind::Codex;
+        let lifecycle = protect_interactive.then(|| self.sessions.lifecycle_lock(&session.id));
         let _guard = lifecycle.as_ref().map(|lock| lock.lock().unwrap());
-        if request.managed {
+        if protect_interactive {
             self.sessions.ingest_events()?;
             session = self.sessions.get(&session.id).context("原成员终端已不存在")?;
             if !session.runtime_command_host && session.pty_id.is_some_and(|id| self.pty.is_running(id))
@@ -361,9 +364,10 @@ impl AgentTerminalHost {
             cwd: request.cwd.display().to_string(),
         })?;
         let environment: TerminalEnvironment = command.get_envs().map(|(key, value)| (key.to_os_string(), value.map(|value| value.to_os_string()))).collect();
-        let lifecycle = request.managed_native().then(|| self.sessions.lifecycle_lock(&session.id));
+        let protect_interactive = request.managed_native() || kind == AgentRuntimeKind::Codex;
+        let lifecycle = protect_interactive.then(|| self.sessions.lifecycle_lock(&session.id));
         let _lifecycle_guard = lifecycle.as_ref().map(|lock| lock.lock().unwrap());
-        if request.managed_native() {
+        if protect_interactive {
             self.sessions.ingest_events()?;
             session = self.sessions.get(&session.id).context("原成员终端已不可用")?;
             if session.archived_at.is_some() || session.retired_agent_runtime {
@@ -409,6 +413,10 @@ impl AgentTerminalHost {
             let _starting = self.sessions.begin_runtime_start(&session.id)?;
             if let Some(id) = session.pty_id {
                 self.pty.kill(id).map_err(|error| anyhow!(UnverifiedStop(error.to_string())))?;
+            }
+            if kind == AgentRuntimeKind::Codex {
+                let native_id = locator_string(request.resume_locator.as_ref(), &["threadId", "thread_id", "sessionId"]);
+                self.sessions.bind_codex_thread(&session.id, request.codex_storage, native_id, &request.cwd)?;
             }
             self.environment_ready.lock().unwrap().remove(&session.id);
             self.native_runtimes.lock().unwrap().remove(&session.id);
@@ -798,6 +806,7 @@ impl AgentTerminalHost {
         let mut codex_update_skipped = false;
         let mut managed_codex_startup = codex_paste::Startup::default();
         let mut workspace_confirmation = managed_startup::Confirmation::default();
+        let mut hook_confirmation = managed_startup::Confirmation::default();
         let mut startup_choice = None;
         let mut claude_composer_visible = false;
         let managed_startup = request.managed_native() && freshly_started;
@@ -824,13 +833,20 @@ impl AgentTerminalHost {
                     } else if kind == AgentRuntimeKind::ClaudeCode {
                         claude_composer_visible = managed_startup::claude_composer(size, transcript.as_bytes(), None);
                     }
-                    startup_choice = managed_startup::choice(size, &transcript).filter(|choice| matches!(
-                        (kind, choice),
+                    startup_choice = managed_startup::choice(size, &transcript).filter(|choice| match (kind, *choice) {
                         (AgentRuntimeKind::ClaudeCode, managed_startup::Choice::ClaudeExit | managed_startup::Choice::ClaudeTrust)
-                            | (AgentRuntimeKind::Codex, managed_startup::Choice::CodexRestricted)
-                    ));
+                            | (AgentRuntimeKind::Codex, managed_startup::Choice::CodexRestricted) => true,
+                        (AgentRuntimeKind::Codex, managed_startup::Choice::CodexSkipUntrustedHooks) => !request.codex_storage.is_personal(),
+                        _ => false,
+                    });
                 }
-                if let Some(input) = workspace_confirmation.input(startup_choice, Instant::now()) {
+                let now = Instant::now();
+                let hook_choice = startup_choice.filter(|choice| *choice == managed_startup::Choice::CodexSkipUntrustedHooks);
+                if let Some(escape) = hook_confirmation.input(hook_choice, now) {
+                    self.pty.write(pty_id, escape)?;
+                    request.store.append_run_log(&request.run_id, "system", "Codex 跳过未信任的新增或变更 Hook，继续启动本次托管终端。")?;
+                }
+                if let Some(input) = workspace_confirmation.input(startup_choice.filter(|choice| *choice != managed_startup::Choice::CodexSkipUntrustedHooks), now) {
                     self.pty.write(pty_id, input)?;
                     if input == b"\r" {
                         let detail = if kind == AgentRuntimeKind::Codex {
@@ -845,6 +861,11 @@ impl AgentTerminalHost {
                 let (next_cursor, bytes) = self.pty.transcript_since(pty_id, cursor)?;
                 cursor = next_cursor;
                 startup_capture.append(&bytes);
+            }
+            if freshly_started && kind == AgentRuntimeKind::Codex && !request.codex_storage.is_personal()
+                && CodexStorage::needs_login(&strip_terminal_control_sequences(&startup_capture.output())) {
+                self.stop_native_runtime(session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?;
+                return Err(PermanentRunError(format!("Codex 专用目录尚未登录。{}", request.codex_storage.login_help()?)).into());
             }
             if kind == AgentRuntimeKind::Codex
                 && freshly_started
@@ -2169,6 +2190,11 @@ pub(super) fn execute_run(
     let resume_locator = if message_turn || (managed && task.workspace_mode == WorkspaceMode::ReadOnly) {
         // Planning and review always start from the current request and delivered snapshot.
         None
+    } else if agent.runtime_kind == AgentRuntimeKind::Codex {
+        match store.codex_locator_for_retry(&task.id) {
+            Ok(locator) => locator,
+            Err(error) => { store.fail_run_permanently(&run_id, &format!("{error:#}"), None)?; return Err(error); }
+        }
     } else {
         store.latest_session_locator(&task.id)?
     };
@@ -2183,6 +2209,12 @@ pub(super) fn execute_run(
     } else {
         validated_resume_locator(&project, &task, resume_locator)
     };
+    let codex_storage = if agent.runtime_kind == AgentRuntimeKind::Codex {
+        match resume_locator.as_ref().map(CodexStorage::from_locator).transpose() {
+            Ok(owner) => owner.unwrap_or(CodexStorage::CrewVela),
+            Err(error) => { store.fail_run_permanently(&run_id, &error.to_string(), None)?; return Err(error); }
+        }
+    } else { CodexStorage::Personal };
     let workspace = if managed_native && had_workspace && resumable_cwd.is_none() {
         Err(anyhow!("原托管任务工作树已不可用，无法在原目录恢复会话"))
     } else if let Some(checkpoint) = &design_checkpoint {
@@ -2293,7 +2325,7 @@ pub(super) fn execute_run(
         }),
     });
     let mut resume_locator = resume_locator;
-    let initial_locator = if managed_native {
+    let mut initial_locator = if managed_native {
         match managed_native_locator(agent.runtime_kind, &cwd, launch.mode(), conversation_scope_baseline.as_deref().context("缺少托管工作树基线")?, resume_locator.as_ref()) {
             Ok(locator) => { resume_locator = Some(locator.clone()); Some(locator) }
             Err(error) => {
@@ -2303,13 +2335,22 @@ pub(super) fn execute_run(
         }
     } else if design_checkpoint.is_some() { resume_locator.clone() }
     else { Some(serde_json::json!({"cwd": cwd, "adapter": agent.runtime_kind})) };
-    store.update_run(UpdateRunInput {
+    if agent.runtime_kind == AgentRuntimeKind::Codex {
+        if let Some(locator) = initial_locator.as_mut() {
+            locator["adapter"] = "codex".into();
+            codex_storage.mark(locator);
+            if let Some(id) = locator_string(resume_locator.as_ref(), &["threadId", "thread_id", "sessionId"]) {
+                locator["threadId"] = id.into();
+            }
+        }
+    }
+    store.start_run_with_storage(UpdateRunInput {
         run_id: run_id.clone(),
         status: RunStatus::Running,
         output_summary: None,
         error: None,
         session_locator: initial_locator,
-    })?;
+    }, (agent.runtime_kind == AgentRuntimeKind::Codex).then_some(codex_storage))?;
     if design_checkpoint.is_some() {
         store.mark_design_resumed(&run_id, &task.id)?;
     }
@@ -2331,6 +2372,7 @@ pub(super) fn execute_run(
         dependency_artifacts,
         managed_acceptance,
         resume_locator,
+        codex_storage,
         user_instructions,
         shared_memories,
         collaboration_messages,
@@ -2343,7 +2385,40 @@ pub(super) fn execute_run(
     };
     let adapter = adapter_for(agent.runtime_kind);
     debug_assert_eq!(adapter.kind(), agent.runtime_kind);
-    match adapter.execute(&request, cancelled) {
+    let outcome = adapter.execute(&request, cancelled).and_then(|mut result| {
+        if agent.runtime_kind == AgentRuntimeKind::Codex {
+            request.codex_storage.mark(&mut result.session_locator);
+            let id = locator_string(Some(&result.session_locator), &["threadId", "thread_id", "sessionId"])
+                .filter(|id| uuid::Uuid::parse_str(id).is_ok()).context("Codex 完成回执缺少原生会话 ID")?.to_owned();
+            result.session_locator["threadId"] = id.clone().into();
+            if let Some(member) = store.bind_codex_thread(&run_id, &id, request.codex_storage, &cwd)? {
+                let sessions = &request.terminal_host.sessions;
+                let lifecycle = sessions.lifecycle_lock(&member);
+                let _guard = lifecycle.lock().unwrap();
+                if let Some(record) = sessions.get(&member) {
+                    // An unrelated interactive terminal may still own this member.
+                    // Its running process and native binding must remain together.
+                    if record.runtime_command_host || record.claude_session_id == id
+                        || !record.pty_id.is_some_and(|pty| request.terminal_host.pty.is_running(pty)) {
+                        sessions.bind_codex_thread(&member, request.codex_storage, Some(&id), &cwd)?;
+                    }
+                }
+            }
+        }
+        Ok(result)
+    });
+    let outcome = outcome.map_err(|error| {
+        if agent.runtime_kind == AgentRuntimeKind::Codex && !request.codex_storage.is_personal()
+            && error.downcast_ref::<UnverifiedStop>().is_none()
+            && error.downcast_ref::<PermanentRunError>().is_none()
+            && CodexStorage::needs_login(&format!("{error:#}")) {
+            if let Ok(help) = request.codex_storage.login_help() {
+                return anyhow!(PermanentRunError(format!("Codex 专用目录认证失败。{help}。{error:#}")));
+            }
+        }
+        error
+    });
+    match outcome {
         Ok(result) => {
             let checkpoint_requested = request.task.id.starts_with("conversation-task-") && store.design_requested(&run_id)?;
             if design_task || checkpoint_requested {
@@ -2498,7 +2573,7 @@ pub(super) fn execute_run(
             };
             let message = if managed { format!("{error:#}") } else { error.to_string() };
             if status == RunStatus::Failed {
-                let locator = if managed { None } else { Some(serde_json::json!({"cwd": cwd})) };
+                let locator = if managed || agent.runtime_kind == AgentRuntimeKind::Codex { None } else { Some(serde_json::json!({"cwd": cwd})) };
                 if managed && store.latest_session_locator(&request.task.id)?.is_some_and(|saved| {
                     saved["managedPromptDispatched"] == true && (locator_string(Some(&saved), &["threadId", "sessionId"]).is_none()
                         || matches!(saved["managedTurn"].as_str(), Some("dispatched" | "accepted")))
@@ -2518,7 +2593,7 @@ pub(super) fn execute_run(
                     status,
                     output_summary: None,
                     error: Some(message.clone()),
-                    session_locator: if managed { None } else { Some(serde_json::json!({"cwd": cwd})) },
+                    session_locator: if managed || agent.runtime_kind == AgentRuntimeKind::Codex { None } else { Some(serde_json::json!({"cwd": cwd})) },
                 });
             }
             let _ = store.append_run_log(&run_id, "stderr", &format!("执行失败：{message}"));
@@ -3480,15 +3555,14 @@ fn execute_preferred_acp(
     request
         .store
         .link_agent_app_session(&request.project.id, &request.agent.id, &session.id)?;
-    request
-        .terminal_host
-        .sessions
-        .set_runtime_command_host(&session.id, true)?;
-    request.terminal_host.sessions.mark_agent_activity(
-        &session.id,
-        SessionStatus::Running,
-        None,
-    )?;
+    let preserve_terminal = kind == ManagedAcpKind::Codex && !session.runtime_command_host
+        && session.pty_id.is_some_and(|pty| request.terminal_host.pty.is_running(pty));
+    let publish_activity = |status, error| -> Result<()> {
+        if !preserve_terminal { request.terminal_host.sessions.mark_agent_activity(&session.id, status, error)?; }
+        Ok(())
+    };
+    if !preserve_terminal { request.terminal_host.sessions.set_runtime_command_host(&session.id, true)?; }
+    publish_activity(SessionStatus::Running, None)?;
     request.log_launch(mode_label, "ACP")?;
     let permission_handler: Option<crate::acp::ManagedPermissionHandler> =
         if (kind == ManagedAcpKind::DeepSeekHarness || native_discussion) && matches!(mode, ManagedAcpMode::Default | ManagedAcpMode::Inherit) {
@@ -3589,7 +3663,18 @@ fn execute_preferred_acp(
                 Some(Box::new(move |id| store.checkpoint_managed_turn(&run, "dispatched",
                     serde_json::json!({"sessionId":id,"engine":"claude_code"}), runtime, &cwd)))
             } else { None })
-    } else { execute_managed_acp(
+    } else {
+      let codex = (kind == ManagedAcpKind::Codex).then(|| {
+          let store = request.store.clone();
+          let run = request.run_id.clone();
+          let cwd = request.cwd.clone();
+          let storage = request.codex_storage;
+          crate::acp::ManagedCodexThread {
+              storage,
+              opened: Box::new(move |id| store.bind_codex_thread(&run, id, storage, &cwd).map(|_| ())),
+          }
+      });
+      execute_managed_acp(
         kind,
         &session.id,
         &request.cwd.display().to_string(),
@@ -3604,6 +3689,7 @@ fn execute_preferred_acp(
         update_handler,
         scoped_design_tool(request)?,
         &images,
+        codex,
     ) };
     let outcome = match outcome {
         Ok(outcome) => outcome,
@@ -3619,11 +3705,7 @@ fn execute_preferred_acp(
             } else {
                 SessionStatus::Error
             };
-            let _ = request.terminal_host.sessions.mark_agent_activity(
-                &session.id,
-                status,
-                Some(error.to_string()),
-            );
+            let _ = publish_activity(status, Some(error.to_string()));
             return Err(error);
         }
     };
@@ -3634,11 +3716,7 @@ fn execute_preferred_acp(
                 request.checkpoint_managed_turn("accepted", identity.clone())?;
                 request.checkpoint_managed_turn("completed", identity)?;
             }
-            request.terminal_host.sessions.mark_agent_activity(
-                &session.id,
-                SessionStatus::Completed,
-                None,
-            )?;
+            publish_activity(SessionStatus::Completed, None)?;
             let _ = request.store.append_run_log(
                 &request.run_id,
                 "system",
@@ -3664,6 +3742,9 @@ fn execute_preferred_acp(
             }))
         }
         ManagedAcpOutcome::Unavailable(reason) => {
+            if kind == ManagedAcpKind::Codex && resume_session_id.is_some() {
+                bail!("无法恢复原 Codex 会话，未创建替代会话：{reason}");
+            }
             if discussion { return Err(anyhow!("群聊 ACP 未就绪，未更换权限或切换供应商：{reason}")); }
             if kind == ManagedAcpKind::DeepSeekHarness {
                 request.terminal_host.sessions.mark_agent_activity(
@@ -3674,11 +3755,7 @@ fn execute_preferred_acp(
                 return Err(anyhow!("DeepSeek Harness ACP 启动失败：{reason}"));
             }
             request.store.clear_acp_execution(&request.run_id)?;
-            request.terminal_host.sessions.mark_agent_activity(
-                &session.id,
-                SessionStatus::Pending,
-                None,
-            )?;
+            publish_activity(SessionStatus::Pending, None)?;
             let _ = request.store.append_run_log(
                 &request.run_id,
                 "system",
@@ -4199,6 +4276,7 @@ fn configure_codex_collaboration_mcp(command: &mut Command, mcp_url: &str, token
 }
 
 fn configure_codex_base(command: &mut Command, request: &RuntimeRequest, channel: &str) -> Result<()> {
+    request.codex_storage.configure(command, false)?;
     let session = request
         .terminal_host
         .sessions
@@ -4463,6 +4541,11 @@ impl AgentRuntimeAdapter for CodexAdapter {
         AgentRuntimeKind::Codex
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        request.codex_storage.prepare()?;
+        if !request.codex_storage.is_personal() {
+            let executable = super::resolve_runtime_executable_checked(AgentRuntimeKind::Codex).map_err(anyhow::Error::msg)?;
+            request.codex_storage.verify_device_policy(&executable, &request.cwd)?;
+        }
         if request.managed_planner() { return managed_events::codex_planner(request, cancelled); }
         if request.managed && !request.managed_native() {
             let mut command = runtime_command(self.kind())?;
@@ -4481,14 +4564,14 @@ impl AgentRuntimeAdapter for CodexAdapter {
             return Ok(result);
         }
         let mut command = runtime_command(self.kind())?;
-        // Windows PTYs also import the registry environment. Use the same
-        // Codex home as the parent that validates this run's notify identity.
-        if request.managed_native() {
-            if let Some(home) = std::env::var_os("CODEX_HOME") { command.env("CODEX_HOME", home); }
-        }
         configure_codex_base(&mut command, request,
             if request.managed_native() { "Codex 原生交互终端 · 托管工作树" } else { "Codex TUI" })?;
         if request.managed_native() {
+            if !request.codex_storage.is_personal() {
+                // A release notice can arrive after workspace trust but before
+                // the composer. An unattended run must never drive the updater.
+                command.arg("-c").arg("check_for_update_on_startup=false");
+            }
             configure_codex_restricted_workspace(&mut command, &request.cwd)?;
         }
         command.arg("--no-alt-screen");
@@ -4518,7 +4601,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
         command
             .arg("-c")
             .arg(format!("notify={}", serde_json::to_string(&notify)?));
-        let thread_id = locator_string(request.resume_locator.as_ref(), &["threadId", "thread_id"]);
+        let thread_id = locator_string(request.resume_locator.as_ref(), &["threadId", "thread_id", "sessionId"]);
         if let Some(thread_id) = thread_id {
             command.arg("resume").arg(thread_id);
         }
@@ -4543,6 +4626,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
                 let mut fallback = runtime_command(self.kind())?;
                 configure_codex_base(&mut fallback, request, "Codex exec")?;
                 fallback.args(["exec", "--json"]);
+                if let Some(id) = thread_id { fallback.arg("resume").arg(id); }
                 append_codex_images(&mut fallback, request)?;
                 fallback.arg("-");
                 execute_command(self.kind(), fallback, Some(prompt), request, cancelled)

@@ -1943,7 +1943,12 @@ pub(crate) fn execute_managed_research_acp(
     });
     execute_managed_acp_inner(kind, app_session_id, cwd, None, prompt, mcp_url, token,
         ManagedAcpMode::ReadOnly, cancelled, None, Some(permissions), update_handler,
-        Some(ManagedResearchPolicy { tools_enabled }), None, images, before_prompt)
+        Some(ManagedResearchPolicy { tools_enabled }), None, images, before_prompt, None)
+}
+
+pub(crate) struct ManagedCodexThread {
+    pub storage: crate::codex_storage::CodexStorage,
+    pub opened: Box<dyn FnOnce(&str) -> Result<()> + Send>,
 }
 
 pub(crate) fn execute_managed_acp(
@@ -1961,9 +1966,10 @@ pub(crate) fn execute_managed_acp(
     update_handler: Option<Box<dyn FnMut(&Value) + Send>>,
     scoped_design_tool: Option<&'static str>,
     images: &[(PathBuf, String)],
+    codex: Option<ManagedCodexThread>,
 ) -> Result<ManagedAcpOutcome> {
     execute_managed_acp_inner(kind, app_session_id, cwd, resume_session_id, prompt, mcp_url, token,
-        mode, cancelled, model, permission_handler, update_handler, None, scoped_design_tool, images, None)
+        mode, cancelled, model, permission_handler, update_handler, None, scoped_design_tool, images, None, codex)
 }
 
 fn execute_managed_acp_inner(
@@ -1983,6 +1989,7 @@ fn execute_managed_acp_inner(
     scoped_design_tool: Option<&'static str>,
     images: &[(PathBuf, String)],
     before_prompt: Option<Box<dyn FnOnce(&str) -> Result<()> + Send>>,
+    codex: Option<ManagedCodexThread>,
 ) -> Result<ManagedAcpOutcome> {
     let process_id = Arc::new(AtomicU32::new(0));
     // 保留配置中启用的 http 类型用户 server 一并交给 Agent；
@@ -1994,6 +2001,11 @@ fn execute_managed_acp_inner(
         })),
         Err(error) => eprintln!("[crewvela] 读取用户 MCP 配置失败：{error:#}"),
     } }
+    let command = if let Some(owner) = &codex {
+        let mut command = adapter_command(kind)?;
+        owner.storage.configure(&mut command, true)?;
+        Some(command)
+    } else { None };
     let mut connection = match AcpConnection::spawn_for_with_cli_identity_policy(
         kind,
         cwd,
@@ -2013,16 +2025,22 @@ fn execute_managed_acp_inner(
         true,
         process_id,
         Some(app_session_id),
-        None,
+        command,
         None,
         research,
-        false,
+        codex.is_some() && resume_session_id.is_some(),
     ) {
         Ok(connection) => connection,
         Err(error) if error.downcast_ref::<UnverifiedStop>().is_some() => return Err(error),
         Err(error) => return Ok(ManagedAcpOutcome::Unavailable(format!("{error:#}"))),
     };
     let outcome = (|| -> Result<ManagedAcpOutcome> {
+    if let Some(owner) = codex {
+        if resume_session_id.is_some_and(|expected| expected != connection.session_id) {
+            return Err(anyhow!("Codex 恢复返回了不同的原生会话 ID"));
+        }
+        (owner.opened)(&connection.session_id)?;
+    }
     connection.permission_handler = permission_handler;
     connection.scoped_design_tool = scoped_design_tool;
     connection.single_use_permissions = matches!(mode,ManagedAcpMode::Inherit);

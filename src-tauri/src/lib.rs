@@ -13,6 +13,7 @@ mod browser_panel;
 mod browser_panel_macos;
 mod clipboard_image;
 mod codex_accounts;
+mod codex_storage;
 mod codex_communication;
 mod session_mcp;
 #[cfg(all(test, windows))]
@@ -3308,6 +3309,11 @@ fn open_runtime_session_checked(
     let runtime_cwd = multi_agent::external_command_path(std::path::Path::new(&record.cwd));
     command.current_dir(&runtime_cwd);
     command.env("TERM", "xterm-256color");
+    if kind == AgentRuntimeKind::Codex && record.multi_agent_agent_id.is_some() {
+        record.codex_storage.prepare().map_err(to_err)?;
+        record.codex_storage.verify_device_policy(&executable, &runtime_cwd).map_err(to_err)?;
+        record.codex_storage.configure(&mut command, false).map_err(to_err)?;
+    }
     session_state
         .configure_runtime_resume(&mut command, record)
         .map_err(to_err)?;

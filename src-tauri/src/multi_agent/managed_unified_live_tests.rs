@@ -66,7 +66,20 @@ fn real_unified_managed_unit_converter() -> Result<()> {
     let short_id = id();
     let root = std::env::temp_dir().join(format!("cvu-{}", &short_id[..8]));
     std::fs::create_dir(&root)?;
-    crate::test_profile::initialize(&root.join("profile"))?;
+    let codex_probe = std::env::var_os("CREWVELA_CODEX_MODEL_PROBE_ROOT").map(std::path::PathBuf::from);
+    let profile = if let Some(probe) = &codex_probe {
+        let canonical = probe.canonicalize()?;
+        ensure!(canonical.starts_with(std::env::temp_dir().canonicalize()?), "Codex 验收配置必须在临时目录内");
+        ensure!(std::fs::read_to_string(probe.join(".isolated-model-probe"))? == "crewvela-codex-model-probe-v1\n",
+            "Codex 验收配置缺少独立测试标记");
+        let source = std::env::var_os("CODEX_HOME").context("缺少隔离验收的对照目录")?;
+        ensure!(Path::new(&source).canonicalize()? == probe.join("codex-home").canonicalize()?,
+            "Codex 验收的对照目录不属于本次测试");
+        probe.join("app")
+    } else {
+        root.join("profile")
+    };
+    crate::test_profile::initialize(&profile)?;
     let working = root.join("project");
     let status = Command::new("git").args(["clone", "--quiet", "--no-local", "--branch", "main", "--"])
         .arg(seed).arg(&working).status()?;
@@ -102,11 +115,12 @@ fn real_unified_managed_unit_converter() -> Result<()> {
     let bridge = CollaborationBridge::start(store.clone())?;
     let chat = ConversationSupervisor::default();
     let engineering = MultiAgentSupervisor::default();
+    let manual = std::env::var("CREWVELA_UNIFIED_LIVE_MANUAL_APPROVAL").as_deref() == Ok("1");
     let body = r#"在隔离的单位换算器中交付一个输入快捷操作。点击「一键填入 25」按钮后把 25 填进现有输入框，保持手动点击「换算」。
 只安排三项任务，任务的 reviewerAgentId 一律为 null。换算器开发只改 public/index.html 与 tests/frontend.test.js，验证命令 node --test tests/frontend.test.js。独立审查直接依赖开发任务，只读检查实际提交及测试证据，返回审查结论，禁写且不运行命令。联调验收直接依赖该审查，在 README.md、crewvela.launch.json 和 tests/integration.test.js 中补充用法、Demo 清单和覆盖实际 HTTP 换算的测试，验证命令 node --test tests/integration.test.js。
 联调从提交版本本机启动 node server.js，验证首页、快捷按钮和 25°C 到 77°F，保留现有换算。Demo 清单使用 {"program":"node","args":["server.js"],"workingDirectory":".","url":null}，自动发现 PORT=0 的回环地址。只操作本测试项目，留在本地，不推送。"#;
     chat.send(store.clone(), ConversationSendInput {
-        native_capabilities: false, managed: true, expected_conversation_id: None, chat_dispatch: None,
+        native_capabilities: manual, managed: !manual, expected_conversation_id: None, chat_dispatch: None,
         project_id: project.id.clone(), client_message_id: id(), body: body.into(), attachment_ids: Vec::new(),
         participant_agent_ids: participants, mode: "execution_plan".into(), intent: "chat".into(),
         max_rounds: 1, max_duration_seconds: 900, task_rules: None,
@@ -131,6 +145,19 @@ fn real_unified_managed_unit_converter() -> Result<()> {
             }
             ensure!(!matches!(round.status.as_str(), "failed" | "unconfirmed" | "needs_decision"),
                 "live planning ended without delivery; inspect the isolated store at {}", root.display());
+            if manual && round.status == "completed" {
+                let plan = plan.context("人工确认前没有生成分工")?;
+                ensure!(plan.status == "pending" && plan.task_ids.is_empty() && plan.managed.is_none(),
+                    "人工确认前不得派发分工任务");
+                let approval = ConversationExecutePlanInput {
+                    project_id: project.id.clone(), plan_id: plan.id.clone(), client_request_id: id(),
+                };
+                let tasks = store.apply_conversation_plan(&approval)?;
+                ensure!(!tasks.is_empty() && store.apply_conversation_plan(&approval)? == tasks,
+                    "人工确认没有登记分工，或重复确认改变了任务");
+                eprintln!("REAL_MANUAL_PLAN_APPROVED_TASKS={}", tasks.len());
+                return Ok(());
+            }
             if let (Some(plan), Some(delivery)) = (plan, delivery) {
                 preview_plan = Some(plan.id.clone());
                 ensure!(delivery.status != "failed", "live execution failed; inspect the isolated store at {}", root.display());
@@ -143,6 +170,21 @@ fn real_unified_managed_unit_converter() -> Result<()> {
                     if preview["state"] == "running" {
                         let url = preview["url"].as_str().context("running Demo has no URL")?;
                         verify_in_browser(url, &root.join("browser.png"))?;
+                        if codex_probe.is_some() {
+                            let reopened = MultiAgentStore::open_at(root.join("store.db"))?;
+                            let mut verified = 0;
+                            for run in reopened.snapshot(&project.id)?.runs {
+                                let Some(locator) = &run.session_locator else { continue; };
+                                if locator["adapter"] != "codex" || locator["managedTurn"] != "completed" { continue; }
+                                ensure!(locator["codexStorage"] == "crewvela", "本轮 Codex 缺少隔离会话归属");
+                                let source = reopened.conversation_run_locator(&project.id, &run.id)?;
+                                let history = crate::session_switch_history::read_conversation_run(&source)?;
+                                ensure!(!history.is_empty(), "Codex 托管原会话回看为空");
+                                verified += 1;
+                            }
+                            ensure!(verified > 0, "本轮未验证任何 Codex 托管原会话");
+                            eprintln!("CODEX_NATIVE_READBACK_RUNS={verified}");
+                        }
                         eprintln!("DELIVERED_SHA={hash} BROWSER_SCREENSHOT={}", root.join("browser.png").display());
                         return Ok(());
                     }

@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { patchAdapter } from '../tools/codex-acp-wrapper.mjs';
 
 const original = (await readFile(new URL(import.meta.resolve('@agentclientprotocol/codex-acp')), 'utf8')).replaceAll('\r\n', '\n');
@@ -11,6 +14,42 @@ test('locked bridge preserves native module URL and refuses incompatible markers
   assert(!patched.includes('import.meta.url'));
   assert(patched.includes('createRequire("file:///native/package/dist/index.js")'));
   assert.throws(() => patchAdapter(original.replace('switch (argument.toLowerCase()) {', 'changed marker'), 'file:///other'));
+});
+test('isolated app-server pins both storage locations and preserves argument boundaries', async () => {
+  const start = patched.indexOf('function crewvelaStartIsolatedAppServer');
+  const source = patched.slice(start, patched.indexOf('function startCodexConnection', start));
+  const open = Function('path', 'spawn', 'process', source + ';return crewvelaStartIsolatedAppServer;');
+  const fake = (...args) => args;
+  const useExecutable = open(path, fake, { platform: 'linux', env: {} });
+  const home = path.resolve('CrewVela profile & database');
+  assert.deepEqual(useExecutable(path.resolve('codex'), home, { CODEX_HOME: 'personal', LANG: 'zh-CN' }), [
+    path.resolve('codex'), ['-c', `sqlite_home=${home}`, 'app-server'],
+    { env: { CODEX_HOME: home, CODEX_SQLITE_HOME: home, LANG: 'zh-CN' } },
+  ]);
+  assert.throws(() => useExecutable(path.resolve('codex'), 'relative', {}), /absolute/);
+  if (process.platform !== 'win32') return;
+
+  const root = await mkdtemp(path.join(tmpdir(), 'cv-acp-'));
+  try {
+    const profile = path.join(root, 'profile & db');
+    const reader = path.join(root, 'arg-reader.cjs');
+    const launcher = path.join(root, 'codex & shim.cmd');
+    await mkdir(profile);
+    await writeFile(reader, 'console.log(JSON.stringify({args: process.argv.slice(2), home: process.env.CODEX_HOME, sqlite: process.env.CODEX_SQLITE_HOME}));');
+    await writeFile(launcher, '@"%CV_PROBE_NODE%" "%CV_PROBE_READER%" %*\r\n');
+    const useShim = open(path, spawn, process);
+    const child = useShim(launcher, profile, { ...process.env, CV_PROBE_NODE: process.execPath, CV_PROBE_READER: reader });
+    let output = '';
+    child.stdout.setEncoding('utf8').on('data', chunk => { output += chunk; });
+    await new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', status => status === 0 ? resolve() : reject(new Error(`CLI shim exited with ${status}`)));
+    });
+    assert.deepEqual(JSON.parse(output), { args: ['-c', `sqlite_home=${profile}`, 'app-server'], home: profile, sqlite: profile });
+    assert.throws(() => useShim(launcher, `${profile}%PATH%`, process.env), /cannot quote/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 test('plugin resources become typed native mentions while ordinary links remain text', () => {
   assert.deepEqual(build([{ type: 'resource_link', name: 'Figma', uri: 'plugin://figma@openai-curated-remote' }]), [{ type: 'mention', name: 'Figma', path: 'plugin://figma@openai-curated-remote' }]);

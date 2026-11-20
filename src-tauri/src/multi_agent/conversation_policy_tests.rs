@@ -90,9 +90,20 @@ fn real_native_codex_group_inherits_model_and_completes() {
     let round = snapshot.rounds.iter().find(|item| item.id == round.id).unwrap();
     let replies = snapshot.messages.iter().filter(|message| message.sender_type == "agent").collect::<Vec<_>>();
     let tool_seen = events.iter().any(|event| event.event_type == "tool_protocol");
+    let native_history = (|| -> anyhow::Result<bool> {
+        let run = engine.runs.iter().find(|run| run.agent_id == fixture.agents[0])
+            .context("团队聊天未启动 Codex 成员")?;
+        ensure!(run.session_locator.as_ref().is_some_and(|locator| locator["codexStorage"] == "crewvela"),
+            "团队聊天缺少隔离会话归属");
+        let reopened = MultiAgentStore::open_at(fixture.root.join("store.db"))?;
+        let source = reopened.conversation_run_locator(&fixture.project, &run.id)?;
+        let history = crate::session_switch_history::read_conversation_run(&source)?;
+        Ok(history.iter().any(|message| message.role == "assistant" && message.text.contains(marker)))
+    })();
     let evidence = json!({"boundary":"production run_discussion -> ExistingRunExecutor -> execute_preferred_acp; isolated store/profile/CODEX_HOME; no Tauri GUI",
-        "passed":outcome.is_ok() && round.status == "completed" && replies.len() == 1 && replies[0].body.trim() == marker && !tool_seen,
+        "passed":outcome.is_ok() && round.status == "completed" && replies.len() == 1 && replies[0].body.trim() == marker && !tool_seen && native_history.as_ref().is_ok_and(|matched| *matched),
         "roundStatus":round.status,"stopReason":round.stop_reason,"toolSeen":tool_seen,
+        "nativeReadback":native_history.as_ref().ok(),"nativeReadbackError":native_history.as_ref().err().map(|error|format!("{error:#}")),
         "memberModel":fixture.store.agent_profile(&fixture.agents[0]).unwrap().model,
         "replies":replies.iter().map(|message|json!({"status":message.status,"body":message.body})).collect::<Vec<_>>(),
         "runs":engine.runs.iter().map(|run|json!({"status":run.status,"sessionLocator":run.session_locator})).collect::<Vec<_>>(),

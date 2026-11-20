@@ -8,6 +8,7 @@ pub(super) enum Choice {
     ClaudeExit,
     ClaudeTrust,
     CodexRestricted,
+    CodexSkipUntrustedHooks,
 }
 
 pub(super) fn choice(size: PtySize, transcript: &str) -> Option<Choice> {
@@ -41,6 +42,20 @@ pub(super) fn choice(size: PtySize, transcript: &str) -> Option<Choice> {
         && selected("1. open restricted")
     {
         return Some(Choice::CodexRestricted);
+    }
+    // The startup picker explicitly advertises Esc as "skip". The same key
+    // in a composer, approval or hook browser has a different meaning.
+    if let Some((_, panel)) = screen.rsplit_once("hooks need review ") {
+        if let Some((count, body)) = panel.split_once(' ') {
+            let count = count.parse::<u32>().ok()?;
+            let description = if count == 1 { "hook is new or changed." } else { "hooks are new or changed." };
+            let body = body.replace(['›', '❯', '>'], " ").split_whitespace().collect::<Vec<_>>().join(" ");
+            let expected = format!("{description} hooks can run outside the sandbox after you trust them. \
+                1. review hooks 2. trust all and continue 3. continue without trusting (hooks won't run) enter confirm · esc skip");
+            if count > 0 && body == expected && selected("1. review hooks") {
+                return Some(Choice::CodexSkipUntrustedHooks);
+            }
+        }
     }
     None
 }
@@ -103,7 +118,7 @@ impl Confirmation {
             return Some(b"\x1b[B");
         }
         self.submitted = true;
-        Some(b"\r")
+        if current == Choice::CodexSkipUntrustedHooks { Some(b"\x1b") } else { Some(b"\r") }
     }
 }
 
@@ -139,6 +154,28 @@ mod tests {
         assert_eq!(choice(SIZE, &restricted.replace("Open restricted", "Trust and continue")), None);
         assert_eq!(choice(SIZE, &restricted.replace("› 1.", "  1.").replace(" 2.", "› 2.")), None);
         assert_eq!(choice(SIZE, "Would you like to run the following command?\r\n› 1. Yes, proceed"), None);
+    }
+
+    #[test]
+    fn skips_the_complete_fresh_codex_hook_picker_with_one_escape() {
+        let frame = "Hooks need review\r\n2 hooks are new or changed.\r\nHooks can run outside the sandbox after you trust them.\r\n\r\n› 1. Review hooks\r\n  2. Trust all and continue\r\n  3. Continue without trusting (hooks won't run)\r\n\r\n enter confirm · esc skip";
+        let skip = Some(Choice::CodexSkipUntrustedHooks);
+        assert_eq!(choice(SIZE, frame), skip);
+        assert_eq!(choice(SIZE, &frame.replace("2 hooks are", "1 hook is")), skip);
+        for fragment in ["Hooks need review", "2 hooks are new or changed.", "Hooks can run outside the sandbox after you trust them.",
+            "1. Review hooks", "2. Trust all and continue", "3. Continue without trusting", "hooks won't run", "esc skip"] {
+            assert_eq!(choice(SIZE, &frame.replace(fragment, "")), None, "{fragment}");
+        }
+        assert_eq!(choice(SIZE, &frame.replace("esc skip", "esc back")), None);
+        assert_eq!(choice(SIZE, &format!("{frame}\x1b[2J\x1b[H› Ask Codex anything")), None);
+        let now = Instant::now();
+        let mut confirmation = Confirmation::default();
+        assert_eq!(confirmation.input(skip, now), None);
+        assert_eq!(confirmation.input(None, now + Duration::from_millis(240)), None);
+        assert_eq!(confirmation.input(skip, now + Duration::from_millis(300)), None);
+        assert_eq!(confirmation.input(skip, now + Duration::from_millis(549)), None);
+        assert_eq!(confirmation.input(skip, now + Duration::from_millis(550)), Some(b"\x1b".as_slice()));
+        assert_eq!(confirmation.input(skip, now + Duration::from_secs(2)), None);
     }
 
     #[test]

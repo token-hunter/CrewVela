@@ -33,9 +33,7 @@ pub(crate) fn read(
         return jsonl(Path::new(&locator));
     }
     if kind == "codex" {
-        let home = std::env::var_os("CODEX_HOME")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".codex"));
+        let home = record.codex_storage.home()?;
         return codex(&record.cwd, &locator, &home);
     }
     bail!("{kind} 原生历史读取尚无精确可验证适配；宿主终端记录作为补充资料")
@@ -81,9 +79,9 @@ fn read_chat_run(locator: &Value) -> Result<Vec<TranscriptMessage>> {
             crate::transcript::read_transcript_file(&path, 200)
         }
         Some("codex") => {
-            let id = locator["threadId"].as_str().or_else(|| locator["sessionId"].as_str())
+            let id = locator["threadId"].as_str().or_else(|| locator["thread_id"].as_str()).or_else(|| locator["sessionId"].as_str())
                 .filter(|id| !id.is_empty()).context("本次运行尚未记录 Codex 会话 ID")?;
-            codex(cwd, id, &home("CODEX_HOME", ".codex")?)
+            codex(cwd, id, &crate::codex_storage::CodexStorage::from_locator(locator)?.home()?)
         }
         _ => bail!("此运行未提供可回看的原生会话记录"),
     }
@@ -176,7 +174,7 @@ impl ManagedRunHistory {
                 ensure!(self.identity.as_ref().and_then(|proof| proof[key].as_str()) == Some(id),
                     "此历史托管运行缺少独立的原生会话 ID 回执");
                 if self.kind == AgentRuntimeKind::Codex {
-                    let root = home("CODEX_HOME", ".codex")?;
+                    let root = crate::codex_storage::CodexStorage::from_locator(&self.locator)?.home()?;
                     let sessions = owned_path(&root, Path::new("sessions"))?;
                     let suffix = format!("-{id}.jsonl");
                     let mut result = None;
@@ -468,7 +466,7 @@ pub(crate) fn codex_interactive_identity(
     }
     let root = match codex_home {
         Some(root) => root.to_path_buf(),
-        None => home("CODEX_HOME", ".codex")?,
+        None => record.codex_storage.home()?,
     };
     let sessions = root.join("sessions");
     if !sessions.exists() { return Ok(false); }

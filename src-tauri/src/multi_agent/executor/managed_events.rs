@@ -23,10 +23,9 @@ pub(super) fn codex_planner(
 ) -> Result<RuntimeResult> {
     let mut command = runtime_command(AgentRuntimeKind::Codex)?;
     configure_codex_unattended_tools(&mut command);
-    if let Some(home) = std::env::var_os("CODEX_HOME") {
-        command.env("CODEX_HOME", home);
-    }
+    request.codex_storage.configure(&mut command, false)?;
     let mut probe = runtime_command(AgentRuntimeKind::Codex)?;
+    request.codex_storage.configure(&mut probe, false)?;
     probe.arg("app-server");
     let effective = crate::codex_title_summary::read_effective_config(probe, &request.cwd)?;
     // Retain the actual provider and model without forwarding user MCPs, hooks,

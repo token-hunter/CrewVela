@@ -29,6 +29,13 @@ export function patchAdapter(source, originalUrl) {
     if (source.split(before).length !== 2) throw new Error(`Unsupported codex-acp 1.11.0 source marker: ${before.slice(0, 60)}`);
     source = source.replace(before, after);
   };
+  replaceOnce('  let codex;\n  if (codexPath) {',
+    `  let codex;
+  if (process.env.CREWVELA_CODEX_SQLITE_HOME !== undefined) {
+    codex = crewvelaStartIsolatedAppServer(codexPath, process.env.CREWVELA_CODEX_SQLITE_HOME, spawnEnv);
+  } else if (codexPath) {`);
+  replaceOnce('function startCodexConnection(codexPath, env) {', `${crewvelaStartIsolatedAppServer.toString()}
+function startCodexConnection(codexPath, env) {`);
   replaceOnce('return { type: "text", text: formatUriAsLink(block.name, block.uri), text_elements: [] };',
     'if (block.uri?.startsWith("plugin://")) { if (!/^plugin:\\/\\/[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/.test(block.uri)) throw new Error("Invalid plugin reference"); return { type: "mention", name: block.name, path: block.uri }; } return { type: "text", text: formatUriAsLink(block.name, block.uri), text_elements: [] };');
   replaceOnce('goal: {\n          version: GOAL_EXTENSION_VERSION,', 'crewvelaPlugins: { version: 1, catalogMethod: "_crewvela/plugins", nativeMentions: true },\n        crewvelaGoal: { version: 1, nativeSubscriptions: true },\n        goal: {\n          version: GOAL_EXTENSION_VERSION,');
@@ -91,11 +98,31 @@ export function patchAdapter(source, originalUrl) {
   return source.replaceAll('import.meta.url', JSON.stringify(originalUrl));
 }
 
+function crewvelaStartIsolatedAppServer(codexPath, home, inherited) {
+  if (!codexPath || !path.isAbsolute(codexPath) || !path.isAbsolute(home) || home.includes('\0')) {
+    throw new Error('CrewVela Codex isolation requires an absolute CLI and storage path');
+  }
+  const env = { ...inherited, CODEX_HOME: home, CODEX_SQLITE_HOME: home };
+  const override = `sqlite_home=${home}`;
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(codexPath)) {
+    // Keep the native npm shim without handing its paths to an interpolating shell.
+    // cmd quoting protects spaces/metacharacters but cannot disable percent expansion.
+    if (/["%!^\r\n]/.test(codexPath + home)) {
+      throw new Error('CrewVela Codex isolation cannot quote these paths for a Windows batch launcher');
+    }
+    return spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/v:off', '/c', `""${codexPath}" -c "${override}" app-server"`],
+      { env, windowsVerbatimArguments: true });
+  }
+  return spawn(codexPath, ['-c', override, 'app-server'], { env });
+}
+
 async function main() {
   const entry = process.argv[2] ?? await resolveAdapterEntry();
   const originalUrl = pathToFileURL(entry).href;
   const pkg = JSON.parse(await readFile(new URL('../package.json', originalUrl), 'utf8'));
+  const isolated = process.env.CREWVELA_CODEX_SQLITE_HOME !== undefined;
   if (pkg.version !== '1.11.0') {
+    if (isolated) throw new Error('CrewVela Codex isolation requires codex-acp 1.11.0');
     process.stderr.write('CrewVela plugin bridge unavailable: unsupported codex-acp version; using native adapter.\n');
     await import(originalUrl);
     return;
@@ -103,6 +130,7 @@ async function main() {
   let patched;
   try { patched = patchAdapter((await readFile(entry, 'utf8')).replaceAll('\r\n', '\n'), originalUrl); }
   catch (error) {
+    if (isolated) throw error;
     process.stderr.write(`CrewVela plugin bridge unavailable: ${error.message}; using native adapter.\n`);
     await import(originalUrl);
     return;

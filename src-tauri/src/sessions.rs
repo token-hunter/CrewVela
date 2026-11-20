@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -384,6 +384,8 @@ pub struct SessionRecord {
     /// 一次性任务的 PTY 是命令/日志宿主，不能接收聊天输入。
     #[serde(default)]
     pub runtime_command_host: bool,
+    #[serde(default, skip_serializing_if = "crate::codex_storage::CodexStorage::is_personal")]
+    pub codex_storage: crate::codex_storage::CodexStorage,
     /// 归属的项目（projects.json）；None 表示未分组。
     #[serde(default)]
     pub project_id: Option<String>,
@@ -756,6 +758,7 @@ impl SessionManager {
             retired_agent_runtime: false,
             agent_avatar_id: None,
             runtime_command_host: false,
+            codex_storage: Default::default(),
             project_id: input.project_id,
             worktree: None,
             provider_id: input.provider_id,
@@ -802,6 +805,7 @@ impl SessionManager {
             retired_agent_runtime: false,
             agent_avatar_id: None,
             runtime_command_host: false,
+            codex_storage: Default::default(),
             project_id: input.project_id,
             worktree: None,
             provider_id: "local-terminal".into(),
@@ -900,6 +904,7 @@ impl SessionManager {
             retired_agent_runtime: false,
             agent_avatar_id: None,
             runtime_command_host: false,
+            codex_storage: Default::default(),
             project_id: input.project_id,
             worktree: None,
             provider_id: format!("local-runtime-{runtime_kind}"),
@@ -978,6 +983,9 @@ impl SessionManager {
             shell: Some(TerminalShell::agent_host_default()),
             multi_agent_project_id: Some(input.project_id),
             multi_agent_agent_id: Some(input.agent_id),
+            codex_storage: if kind == crate::multi_agent::AgentRuntimeKind::Codex {
+                crate::codex_storage::CodexStorage::CrewVela
+            } else { Default::default() },
             agent_runtime_kind: Some(input.runtime_kind),
             retired_agent_runtime: false,
             agent_avatar_id: input.avatar_id,
@@ -1820,11 +1828,35 @@ impl SessionManager {
     }
 
     pub(crate) fn runtime_history_locator(&self, record: &SessionRecord) -> Result<Option<String>> {
+        if record.agent_runtime_kind.as_deref() == Some("codex") && record.multi_agent_agent_id.is_some()
+            && (!record.codex_storage.is_personal() || !record.claude_session_id.is_empty()) {
+            return Ok((!record.claude_session_id.is_empty()).then(|| record.claude_session_id.clone()));
+        }
         let path = self.runtime_locator_path(&record.id);
         if !path.exists() { return Ok(None); }
         let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
         if value["runtime"].as_str() != record.agent_runtime_kind.as_deref() { return Err(anyhow!("原生历史运行时身份不匹配")); }
         Ok(value["locator"].as_str().map(str::to_owned))
+    }
+    pub(crate) fn bind_codex_thread(
+        &self, id: &str, storage: crate::codex_storage::CodexStorage, native_id: Option<&str>, cwd: &Path,
+    ) -> Result<()> {
+        if let Some(native_id) = native_id {
+            anyhow::ensure!(uuid::Uuid::parse_str(native_id).is_ok(), "Codex 返回的原生会话 ID 无效");
+        }
+        let mut stored = self.data.lock().unwrap();
+        let mut data = stored.clone();
+        let record = data.sessions.iter_mut().find(|r| r.id == id).context("未找到 Codex 成员会话")?;
+        anyhow::ensure!(record.agent_runtime_kind.as_deref() == Some("codex") && record.multi_agent_agent_id.is_some(),
+            "只有项目 Codex 成员可绑定协作原生会话");
+        // The home, identity and working directory are one persisted binding.
+        let id = native_id.unwrap_or_default();
+        let cwd = cwd.to_string_lossy();
+        if record.codex_storage == storage && record.claude_session_id == id && record.cwd == cwd { return Ok(()); }
+        record.codex_storage = storage;
+        record.claude_session_id = id.into();
+        record.cwd = cwd.into_owned();
+        self.persist_candidate(&mut stored, data)
     }
     pub fn configure_runtime_resume(
         &self,
@@ -1844,6 +1876,13 @@ impl SessionManager {
                 Some("claude_code") => { command.arg("--resume").arg(locator); },
                 Some("codex") => { command.arg("resume").arg(locator); },
                 _ => { command.arg("--session").arg(locator); },
+            }
+            return Ok(());
+        }
+        if record.agent_runtime_kind.as_deref() == Some("codex") && record.multi_agent_agent_id.is_some() {
+            if let Some(id) = self.runtime_history_locator(record)? {
+                anyhow::ensure!(uuid::Uuid::parse_str(&id).is_ok(), "Codex 成员原生会话 ID 无效，未创建替代会话");
+                command.arg("resume").arg(id);
             }
             return Ok(());
         }
@@ -2176,7 +2215,9 @@ impl SessionManager {
         if codex_completion {
             let path = self.runtime_locator_path(&session.id);
             fs::create_dir_all(path.parent().context("缺少原生定位目录")?)?;
-            fs::write(path, serde_json::to_vec(&serde_json::json!({"runtime":"codex", "locator":claude_session_id}))?)?;
+            let mut locator = serde_json::json!({"runtime":"codex", "locator":claude_session_id});
+            session.codex_storage.mark(&mut locator);
+            crate::providers::write_atomic(&path, &serde_json::to_vec(&locator)?)?;
         }
         if session.claude_session_id != claude_session_id {
             session.claude_session_id = claude_session_id.to_string();
