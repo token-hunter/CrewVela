@@ -47,11 +47,29 @@ export function PrivacySettingsPanel({onNavigate}:{onNavigate:(destination:Priva
   const explanation=detail&&detail!=="directory"?PRIVACY_EXPLANATIONS[detail]:null;
   const sections=explanation?privacySections(privacyPolicy,explanation.headings):[];
   return <section className="privacy-settings" aria-label="隐私设置">
+    <div className="privacy-shield-pillars" aria-hidden="true">
+      <div className="privacy-pillar-card">
+        <strong>本机优先存储</strong>
+        <p>会话记录、协作快照与通知历史均持久化保存在本机磁盘。</p>
+      </div>
+      <div className="privacy-pillar-card">
+        <strong>CLI 独立鉴权</strong>
+        <p>模型请求由各 Agent CLI 本地配置直连发起，应用不中转密钥。</p>
+      </div>
+      <div className="privacy-pillar-card">
+        <strong>透明数据边界</strong>
+        <p>应用层数据、CLI 原生历史与共享记忆可按模块独立审阅和清理。</p>
+      </div>
+    </div>
     <SettingsSection className="privacy-group" title="数据说明">
-      {(["storage","services"] as const).map(id=><button key={id} type="button" className="privacy-disclosure" onClick={()=>setDetail(id)}><span>{PRIVACY_EXPLANATIONS[id].title}{id==="services"&&<small>请求由各 Agent CLI 与工具的配置决定。</small>}</span><CaretRight size={18} aria-hidden="true"/></button>)}
+      <div className="privacy-disclosure-grid">
+        {(["storage","services"] as const).map(id=><button key={id} type="button" className="privacy-disclosure" onClick={()=>setDetail(id)}><span>{PRIVACY_EXPLANATIONS[id].title}{id==="services"&&<small>请求由各 Agent CLI 与工具的配置决定。</small>}</span><CaretRight size={18} aria-hidden="true"/></button>)}
+      </div>
     </SettingsSection>
     <SettingsSection className="privacy-group privacy-data-group" title="你的数据">
-      {PRIVACY_DATA_ROWS.map(row=><div className="privacy-data-row" key={row.title}><div><h4>{row.title}</h4><p>{row.description}</p></div><button className="btn" aria-label={`${row.title}：${row.action}`} onClick={()=>row.destination?onNavigate(row.destination):setDetail("directory")}>{row.action}</button></div>)}
+      <div className="privacy-data-card">
+        {PRIVACY_DATA_ROWS.map(row=><div className="privacy-data-row" key={row.title}><div><h4>{row.title}</h4><p>{row.description}</p></div><button className="btn" aria-label={`${row.title}：${row.action}`} onClick={()=>row.destination?onNavigate(row.destination):setDetail("directory")}>{row.action}</button></div>)}
+      </div>
     </SettingsSection>
     <p className="privacy-boundary"><Info size={17} aria-hidden="true"/>应用记录、CLI 历史与外部服务数据需分别管理。</p>
     {detail==="directory"&&createPortal(<PrivacyDirectoryDialog onClose={()=>setDetail(null)}/>,document.body)}

@@ -82,31 +82,37 @@ export function BrowserControlSettingsPanel() {
     <div className="runtime-settings settings-workspace browser-settings">
       <div className="workspace-browser-stack">
         <fieldset className="workspace-section workspace-configuration" disabled={busy || !status}>
-          <SettingsGroup title="启用浏览器控制">
-            <SettingSwitch title="允许 Agent 操作浏览器" hint="打开网页、读取内容、点击与填写表单。" checked={draft.enabled} onChange={enabled => setDraft({ ...draft, enabled })} />
-          </SettingsGroup>
+          <div className="browser-master-card">
+            <SettingsGroup title="启用浏览器控制">
+              <SettingSwitch title="允许 Agent 操作浏览器" hint="打开网页、读取内容、点击与填写表单。" checked={draft.enabled} onChange={enabled => setDraft({ ...draft, enabled })} />
+            </SettingsGroup>
+          </div>
           <fieldset className="workspace-browser-options" disabled={!draft.enabled}>
-            <SettingsGroup title="浏览器">
-              <div className="runtime-field browser-channel-field">
-                <div><label htmlFor="browser-control-channel">{IS_MAC ? "外部浏览器" : "使用的浏览器"}</label>
-                  <small id="browser-control-channel-hint">{IS_MAC && draft.preferPanel ? "关闭内置面板优先后使用此配置。" : BROWSER_CHANNEL_OPTIONS.find(option => option.id === draft.browser)?.hint}</small>
+            <div className="browser-option-card">
+              <SettingsGroup title="浏览器" description="选择外部网页自动化调用的浏览器渠道。">
+                <div className="runtime-field browser-channel-field">
+                  <div><label htmlFor="browser-control-channel">{IS_MAC ? "外部浏览器" : "使用的浏览器"}</label>
+                    <small id="browser-control-channel-hint">{IS_MAC && draft.preferPanel ? "关闭内置面板优先后使用此配置。" : BROWSER_CHANNEL_OPTIONS.find(option => option.id === draft.browser)?.hint}</small>
+                  </div>
+                  <select id="browser-control-channel" aria-describedby="browser-control-channel-hint" value={draft.browser} onChange={event => selectChannel(event.target.value as BrowserChannelId)}>
+                    {BROWSER_CHANNEL_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
                 </div>
-                <select id="browser-control-channel" aria-describedby="browser-control-channel-hint" value={draft.browser} onChange={event => selectChannel(event.target.value as BrowserChannelId)}>
-                  {BROWSER_CHANNEL_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
-                </select>
-              </div>
-              {draft.browser === "custom" && <div className="runtime-path">
-                <label htmlFor="browser-control-custom-path">浏览器可执行文件路径</label>
-                <input id="browser-control-custom-path" value={draft.customPath} placeholder={IS_MAC ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"} onChange={e => setDraft({ ...draft, customPath: e.target.value })} />
-              </div>}
-            </SettingsGroup>
-            <SettingsGroup title="运行方式">
-              <SettingSwitch title="无头模式" hint="使用外部浏览器时隐藏窗口。" checked={draft.headless} onChange={headless => setDraft({ ...draft, headless })} />
-              <SettingSwitch title="优先内置浏览器面板" hint={IS_MAC ? "在应用内显示网页操作；如需外部 Chrome，请关闭此项并重启会话。" : "在应用内显示操作，面板不可用时使用外部浏览器。"} checked={draft.preferPanel} onChange={preferPanel => setDraft({ ...draft, preferPanel })} />
-            </SettingsGroup>
+                {draft.browser === "custom" && <div className="runtime-path">
+                  <label htmlFor="browser-control-custom-path">浏览器可执行文件路径</label>
+                  <input id="browser-control-custom-path" value={draft.customPath} placeholder={IS_MAC ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" : "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"} onChange={e => setDraft({ ...draft, customPath: e.target.value })} />
+                </div>}
+              </SettingsGroup>
+            </div>
+            <div className="browser-option-card">
+              <SettingsGroup title="运行方式" description="控制应用内嵌面板优先级与后台静默模式。">
+                <SettingSwitch title="无头模式" hint="使用外部浏览器时隐藏窗口。" checked={draft.headless} onChange={headless => setDraft({ ...draft, headless })} />
+                <SettingSwitch title="优先内置浏览器面板" hint={IS_MAC ? "在应用内显示网页操作；如需外部 Chrome，请关闭此项并重启会话。" : "在应用内显示操作，面板不可用时使用外部浏览器。"} checked={draft.preferPanel} onChange={preferPanel => setDraft({ ...draft, preferPanel })} />
+              </SettingsGroup>
+            </div>
           </fieldset>
         </fieldset>
-        <aside className="workspace-section workspace-status" aria-label="浏览器运行状态">
+        <aside className="workspace-section workspace-status browser-status-card" aria-label="浏览器运行状态">
         {status && <SettingsGroup title="当前运行环境" description="已保存的配置。">
           <dl className="browser-saved-facts"><div><dt>浏览器</dt><dd>{status.resolvedBrowser?.match(/^Chrome(?=[（(\s]|$)/)?.[0] ?? status.resolvedBrowser ?? "尚未解析浏览器"}</dd></div></dl>
           <details className="runtime-details"><summary>引擎与接入详情</summary>

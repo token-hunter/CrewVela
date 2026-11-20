@@ -20,16 +20,20 @@ interface Props {
 
 type NotificationSettingsView = "notifications" | "history";
 
-function ToggleRow({ title, description, checked, disabled, onChange }: {
+function ToggleRow({ title, description, checked, disabled, onChange, tone }: {
   title: string;
   description: string;
   checked: boolean;
   disabled?: boolean;
   onChange: (checked: boolean) => void;
+  tone?: "master" | "success" | "danger" | "warn";
 }) {
   return (
-    <label className={`notification-toggle-row${disabled ? " disabled" : ""}`}>
-      <span><strong>{title}</strong><small>{description}</small></span>
+    <label className={`notification-toggle-row${disabled ? " disabled" : ""}${tone ? ` tone-${tone}` : ""}`}>
+      <span className="notification-toggle-copy">
+        {tone && tone !== "master" && <i className={`notification-tone-dot ${tone}`} aria-hidden="true" />}
+        <span><strong>{title}</strong><small>{description}</small></span>
+      </span>
       <Switch wrapper="span" className="pet-switch" checked={checked} disabled={disabled} onChange={onChange} />
     </label>
   );
@@ -39,12 +43,25 @@ function categoryLabel(category: NotificationHistoryRecord["category"]): string 
   return ({ task: "任务", intervention: "人工处理", terminal: "终端", quota: "额度", test: "测试", general: "通知" })[category];
 }
 
+const HISTORY_FILTERS: Array<{ id: "all" | NotificationHistoryRecord["category"]; label: string }> = [
+  { id: "all", label: "全部" },
+  { id: "intervention", label: "人工处理" },
+  { id: "task", label: "任务" },
+  { id: "terminal", label: "终端" },
+  { id: "test", label: "测试" },
+];
+
 function NotificationHistoryView({ records, onReadAll, onClear, onOpenUrl }: {
   records: NotificationHistoryRecord[];
   onReadAll: () => void;
   onClear: () => void;
   onOpenUrl: (url: string) => void;
 }) {
+  const [categoryFilter, setCategoryFilter] = useState<"all" | NotificationHistoryRecord["category"]>("all");
+  const filteredRecords = categoryFilter === "all"
+    ? records
+    : records.filter((item) => item.category === categoryFilter);
+
   return (
     <section className="notification-history-panel">
       <header>
@@ -54,15 +71,37 @@ function NotificationHistoryView({ records, onReadAll, onClear, onOpenUrl }: {
           <button className="btn ghost" disabled={records.length === 0} onClick={onClear}><TrashIcon size={14} />清空记录</button>
         </div>
       </header>
+      {records.length > 0 && (
+        <div className="notification-history-filters" role="group" aria-label="通知分类筛选">
+          {HISTORY_FILTERS.map((filter) => {
+            const count = filter.id === "all" ? records.length : records.filter((r) => r.category === filter.id).length;
+            if (filter.id !== "all" && count === 0) return null;
+            return (
+              <button
+                key={filter.id}
+                type="button"
+                className={categoryFilter === filter.id ? "active" : ""}
+                aria-pressed={categoryFilter === filter.id}
+                onClick={() => setCategoryFilter(filter.id)}
+              >
+                {filter.label}
+                <em>{count}</em>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {records.length === 0 ? (
         <EmptyState className="notification-history-empty" icon={<BellRingingIcon size={24} />} title="暂无通知" description="任务状态和测试通知会显示在这里。" />
+      ) : filteredRecords.length === 0 ? (
+        <EmptyState className="notification-history-empty" icon={<BellRingingIcon size={24} />} title="该分类下暂无通知" description="切换到“全部”可查看其他类别的历史通知。" />
       ) : (
         <div className="notification-history-list">
-          {records.map((record) => (
-            <article key={record.id} className={record.read ? "" : "unread"}>
+          {filteredRecords.map((record) => (
+            <article key={record.id} className={record.read ? "" : "unread"} data-category={record.category}>
               <span className="notification-history-dot" aria-hidden="true" />
               <div>
-                <header><span>{categoryLabel(record.category)}</span><time>{new Date(record.createdAt).toLocaleString()}</time></header>
+                <header><span className={`notification-category-badge ${record.category}`}>{categoryLabel(record.category)}</span><time>{new Date(record.createdAt).toLocaleString()}</time></header>
                 <strong>{normalizeNotificationTitle(record.title)}</strong>
                 <p>{record.body}</p>
                 {record.url && <button type="button" onClick={() => onOpenUrl(record.url!)}>查看来源</button>}
@@ -106,7 +145,8 @@ export function NotificationSettingsPanel({ settings, onChange }: Props) {
     };
   }, []);
 
-  const unreadCount = history.filter((item) => !item.read).length;
+  const visibleHistory = history.filter((item) => item.category !== "quota");
+  const unreadCount = visibleHistory.filter((item) => !item.read).length;
 
   return (
     <div className="notification-settings-panel">
@@ -118,18 +158,18 @@ export function NotificationSettingsPanel({ settings, onChange }: Props) {
       {feedback && <p role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
       {activeView === "history" ? (
         <NotificationHistoryView
-          records={history}
+          records={visibleHistory}
           onReadAll={() => void updateHistory(markAllNotificationsRead)}
           onClear={() => void updateHistory(clearNotificationHistory)}
           onOpenUrl={openSource}
         />
       ) : <>
-        <section className="notification-card">
-          <ToggleRow title="启用通知" description={`为后台任务和需要人工处理的事件发送${IS_MAC ? "系统" : " Windows "}通知。`} checked={settings.enabled} onChange={(enabled) => update({ enabled })} />
+        <section className="notification-card notification-master-card">
+          <ToggleRow tone="master" title="启用通知" description={`为后台任务和需要人工处理的事件发送${IS_MAC ? "系统" : " Windows "}通知。`} checked={settings.enabled} onChange={(enabled) => update({ enabled })} />
           <div className="notification-divider" />
-          <ToggleRow title="Agent 任务完成" description="会话执行结束时提醒。" checked={settings.taskComplete} disabled={!settings.enabled} onChange={(taskComplete) => update({ taskComplete })} />
-          <ToggleRow title="执行失败与审核失败" description="任务失败或审核未通过时提醒。" checked={settings.taskFailed} disabled={!settings.enabled} onChange={(taskFailed) => update({ taskFailed })} />
-          <ToggleRow title="等待审批或人工输入" description="Agent 暂停并等待你处理时提醒。" checked={settings.waitingForUser} disabled={!settings.enabled} onChange={(waitingForUser) => update({ waitingForUser })} />
+          <ToggleRow tone="success" title="Agent 任务完成" description="会话执行结束时提醒。" checked={settings.taskComplete} disabled={!settings.enabled} onChange={(taskComplete) => update({ taskComplete })} />
+          <ToggleRow tone="danger" title="执行失败与审核失败" description="任务失败或审核未通过时提醒。" checked={settings.taskFailed} disabled={!settings.enabled} onChange={(taskFailed) => update({ taskFailed })} />
+          <ToggleRow tone="warn" title="等待审批或人工输入" description="Agent 暂停并等待你处理时提醒。" checked={settings.waitingForUser} disabled={!settings.enabled} onChange={(waitingForUser) => update({ waitingForUser })} />
         </section>
 
         <section className="notification-card notification-sound-card">

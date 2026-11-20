@@ -80,50 +80,63 @@ export function GeneralSettingsPanel({ theme = "dark" }: { theme?: AppTheme }) {
       <fieldset className="workspace-general-grid" disabled={busy || !status}>
         <div className="workspace-section workspace-network">
           <SettingsGroup title="网络代理" description="配置模型请求与 Agent 会话的网络出口。">
-            <div className="runtime-field">
-              <div><label htmlFor="general-http-proxy">HTTP 代理</label><small id="general-proxy-hint">留空时沿用系统环境变量。</small></div>
-              <input id="general-http-proxy" aria-describedby="general-proxy-hint" value={draft.httpProxy} placeholder="http://127.0.0.1:7890" onChange={e => setDraft({ ...draft, httpProxy: e.target.value })} />
+            {status && (
+              <div className="general-network-status-bar" aria-hidden="true">
+                <span className={`general-status-badge${status.proxyEnvActive ? " active" : ""}`}>
+                  <i />
+                  {status.proxyEnvActive ? "出口状态：已按配置覆盖" : "出口状态：沿用系统环境"}
+                </span>
+                <span className="general-status-meta">对新启动会话立即生效</span>
+              </div>
+            )}
+            <div className="general-network-fields">
+              <div className="runtime-field">
+                <div><label htmlFor="general-http-proxy">HTTP 代理</label><small id="general-proxy-hint">留空时沿用系统环境变量。</small></div>
+                <input id="general-http-proxy" aria-describedby="general-proxy-hint" value={draft.httpProxy} placeholder="http://127.0.0.1:7890" onChange={e => setDraft({ ...draft, httpProxy: e.target.value })} />
+              </div>
+              <div className="runtime-field">
+                <label htmlFor="general-http-no-proxy">不使用代理的地址<small>多个地址用逗号分隔，本机回环始终直连。</small></label>
+                <input id="general-http-no-proxy" value={draft.httpNoProxy} placeholder="localhost, 127.0.0.1, .internal" onChange={e => setDraft({ ...draft, httpNoProxy: e.target.value })} />
+              </div>
+              <div className="runtime-field">
+                <label htmlFor="general-http-ca-cert">CA 证书路径<small>可选，用于信任企业代理的 PEM 根证书。</small></label>
+                <input id="general-http-ca-cert" value={draft.httpCaCertPath} placeholder="PEM 文件的绝对路径" onChange={e => setDraft({ ...draft, httpCaCertPath: e.target.value })} />
+              </div>
             </div>
-            <div className="runtime-field">
-              <label htmlFor="general-http-no-proxy">不使用代理的地址<small>多个地址用逗号分隔，本机回环始终直连。</small></label>
-              <input id="general-http-no-proxy" value={draft.httpNoProxy} placeholder="localhost, 127.0.0.1, .internal" onChange={e => setDraft({ ...draft, httpNoProxy: e.target.value })} />
-            </div>
-            <div className="runtime-field">
-              <label htmlFor="general-http-ca-cert">CA 证书路径<small>可选，用于信任企业代理的 PEM 根证书。</small></label>
-              <input id="general-http-ca-cert" value={draft.httpCaCertPath} placeholder="PEM 文件的绝对路径" onChange={e => setDraft({ ...draft, httpCaCertPath: e.target.value })} />
-            </div>
-          </SettingsGroup>
-        </div>
-        <div className="workspace-section workspace-window">
-          <SettingsGroup title="窗口与电源">
-            <SettingSwitch title="关闭窗口时隐藏到托盘" hint={GENERAL_TRAY_DESCRIPTION} checked={draft.closeToTray} onChange={closeToTray => setDraft({ ...draft, closeToTray })} />
-            <SettingSwitch title="保持电脑运行" hint={IS_MAC ? "macOS 暂不支持保持电脑运行" : GENERAL_KEEP_AWAKE_DESCRIPTION} disabled={IS_MAC} checked={!IS_MAC && draft.keepAwake} onChange={keepAwake => setDraft({ ...draft, keepAwake })} />
           </SettingsGroup>
         </div>
         <div className="workspace-section workspace-terminal">
-          <SettingsGroup title="终端">
-            <div className="runtime-field">
-              <label htmlFor="general-terminal-font">字体<small>留空使用默认字体，备用字体以逗号分隔。</small></label>
-              <TerminalFontPicker value={draft.terminalFontFamily} preview={UI_PREVIEW}
-                onChange={terminalFontFamily => setDraft(current => ({ ...current, terminalFontFamily }))} />
-            </div>
-            <div className="runtime-field">
-              <label htmlFor="general-terminal-font-size">字号<small>保存后即时应用到终端。</small></label>
-              <select id="general-terminal-font-size" value={draft.terminalFontSize} onChange={e => setDraft({ ...draft, terminalFontSize: Number(e.target.value) })}>
-                {FONT_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size} px</option>)}
-              </select>
+          <SettingsGroup title="终端" description="定制终端工作区的等宽字体与字号排版，保存后即时生效。">
+            <div className="general-terminal-controls">
+              <div className="runtime-field">
+                <label htmlFor="general-terminal-font">字体<small>留空使用默认字体，备用字体以逗号分隔。</small></label>
+                <TerminalFontPicker value={draft.terminalFontFamily} preview={UI_PREVIEW}
+                  onChange={terminalFontFamily => setDraft(current => ({ ...current, terminalFontFamily }))} />
+              </div>
+              <div className="runtime-field general-font-size-field">
+                <label htmlFor="general-terminal-font-size">字号<small>保存后即时应用到终端。</small></label>
+                <select id="general-terminal-font-size" value={draft.terminalFontSize} onChange={e => setDraft({ ...draft, terminalFontSize: Number(e.target.value) })}>
+                  {FONT_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size} px</option>)}
+                </select>
+              </div>
             </div>
             <TerminalFontPreview fontFamily={draft.terminalFontFamily} fontSize={draft.terminalFontSize} theme={theme} />
           </SettingsGroup>
         </div>
+        <div className="workspace-section workspace-window">
+          <SettingsGroup title="窗口与电源" description="控制系统托盘驻留与长任务休眠策略。">
+            <SettingSwitch title="关闭窗口时隐藏到托盘" hint={GENERAL_TRAY_DESCRIPTION} checked={draft.closeToTray} onChange={closeToTray => setDraft({ ...draft, closeToTray })} />
+            <SettingSwitch title="保持电脑运行" hint={IS_MAC ? "macOS 暂不支持保持电脑运行" : GENERAL_KEEP_AWAKE_DESCRIPTION} disabled={IS_MAC} checked={!IS_MAC && draft.keepAwake} onChange={keepAwake => setDraft({ ...draft, keepAwake })} />
+          </SettingsGroup>
+        </div>
         <div className="workspace-section workspace-advanced">
-          <SettingsGroup title="高级">
+          <SettingsGroup title="高级" description="底层 WebView 硬件渲染加速选项。">
             <SettingSwitch title="WebView2 硬件加速" hint={IS_MAC ? "macOS 使用系统 WebKit，此项仅适用于 Windows WebView2" : GENERAL_HW_ACCEL_DESCRIPTION}
               disabled={IS_MAC} checked={!IS_MAC && draft.webview2HardwareAcceleration} onChange={webview2HardwareAcceleration => setDraft({ ...draft, webview2HardwareAcceleration })} />
           </SettingsGroup>
         </div>
       </fieldset>
-      {status && <details className="runtime-details">
+      {status && <details className="runtime-details general-runtime-details">
         <summary>查看运行状态</summary>
         <dl><div><dt>代理出口</dt><dd>{status.proxyEnvActive ? "已按配置覆盖" : "沿用系统环境变量"}</dd></div>
           <div><dt>保持运行</dt><dd>{IS_MAC || status.keepAwakeActive === null ? "当前平台不支持" : status.keepAwakeActive ? "正在阻止休眠" : "待命"}</dd></div>

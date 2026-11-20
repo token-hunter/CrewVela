@@ -183,6 +183,7 @@
 .settings-native :is(input, select, textarea) { accent-color: var(--accent); }
 /* Windows native option popups need an explicit surface instead of an OS white fallback. */
 .settings-native select :is(option, optgroup) { background-color: var(--bg-elev); color: var(--text); }
+.settings-native select option:disabled { color: var(--text-dim); }
 .settings-dialog.settings-native :is(.btn, .btn.primary, .btn.secondary) {
   min-height: 32px;
   height: auto;
@@ -197,45 +198,398 @@
 .settings-native :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) { border-radius: 6px; }
 .settings-dialog.settings-native :is(button, input, select, textarea, a, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Plain grouped rows, using the existing fields and save/error semantics. */
-.settings-native .runtime-settings.settings-workspace { --workspace-muted: var(--text-dim); --workspace-line: var(--border); gap: 24px; font-family: inherit; }
-.settings-native .settings-workspace :is(.workspace-general-grid, .workspace-control-grid, .workspace-browser-options) { display: flex; flex-direction: column; gap: 28px; }
+/* Grouped cards and refined hierarchy for settings sections. */
+.settings-native .runtime-settings.settings-workspace { --workspace-muted: var(--text-dim); --workspace-line: var(--border); gap: 18px; font-family: inherit; }
+.settings-native .settings-workspace :is(.workspace-general-grid, .workspace-control-grid, .workspace-browser-options) { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
 .settings-native .settings-workspace .workspace-section { width: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
-.settings-native .settings-workspace .workspace-terminal .runtime-group-body { display: block; }
+.settings-native .general-settings-panel .workspace-section {
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 2.5%, var(--settings-canvas));
+}
+.settings-native .general-network-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  font-size: 12px;
+}
+.settings-native .general-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 550;
+  color: var(--text);
+}
+.settings-native .general-status-badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.settings-native .general-status-badge.active i {
+  background: var(--success);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--success) 55%, transparent);
+}
+.settings-native .general-status-meta { color: var(--text-dim); }
+.settings-native .settings-workspace .workspace-terminal .runtime-group-body { display: grid; gap: 14px; }
+.settings-native .general-terminal-controls { display: grid; gap: 0; }
 .settings-native .settings-workspace .workspace-advanced .runtime-group { display: block; }
-.settings-native .runtime-settings.settings-workspace .runtime-group > header { padding: 0; margin: 0 0 10px; border: 0; }
-.settings-native .runtime-settings.settings-workspace .runtime-group h3 { font-size: 18px; font-weight: 600; }
+.settings-native .runtime-settings.settings-workspace .runtime-group > header { padding: 0 0 10px; margin: 0 0 8px; border-bottom: 1px solid var(--border); }
+.settings-native .runtime-settings.settings-workspace .runtime-group h3 { font-size: 16px; font-weight: 650; }
 .settings-native .settings-workspace .runtime-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(170px, 38%);
   align-items: center;
-  gap: 24px;
-  min-height: 62px;
-  padding: 12px 0;
+  gap: 20px;
+  min-height: 52px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--border);
 }
-.settings-native .runtime-settings.settings-workspace .runtime-field :is(input, select) { width: 100%; min-height: 32px; padding: 5px 9px; font-size: 14px; background: var(--settings-canvas); }
+.settings-native .settings-workspace .runtime-field:last-child { border-bottom: 0; padding-bottom: 2px; }
+.settings-native .runtime-settings.settings-workspace .runtime-field :is(input, select) { width: 100%; min-height: 34px; padding: 5px 10px; font-size: 13.5px; border-radius: 7px; background: var(--settings-canvas); }
 .settings-native .runtime-settings.settings-workspace .browser-control-toggle,
 .settings-native .runtime-settings.settings-workspace .browser-control-toggle:first-child,
-.settings-native .runtime-settings.settings-workspace .browser-control-toggle:last-child { min-height: 62px; padding: 12px 0; margin: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; }
+.settings-native .runtime-settings.settings-workspace .browser-control-toggle:last-child { min-height: 52px; padding: 10px 0; margin: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; }
+.settings-native .runtime-settings.settings-workspace .browser-control-toggle:last-child { border-bottom: 0; padding-bottom: 2px; }
 .settings-native .runtime-settings.settings-workspace .browser-control-toggle strong,
-.settings-native .runtime-settings.settings-workspace .runtime-field label { font-size: 16px; font-weight: 500; }
-.settings-native .runtime-settings.settings-workspace small { color: var(--text-dim); font-size: 13px; line-height: 1.6; }
-.settings-native .runtime-settings.settings-workspace .runtime-actions { padding: 16px 0 0; margin: 0; background: transparent; flex-wrap: wrap; }
+.settings-native .runtime-settings.settings-workspace .runtime-field label { font-size: 14.5px; font-weight: 550; }
+.settings-native .runtime-settings.settings-workspace small { color: var(--text-dim); font-size: 12.5px; line-height: 1.55; }
+.settings-native .general-runtime-details {
+  padding: 11px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+}
+.settings-native .general-runtime-details dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.settings-native .general-runtime-details dl > div {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--settings-canvas);
+}
+.settings-native .general-runtime-details dt { font-size: 11.5px; color: var(--text-dim); }
+.settings-native .general-runtime-details dd { margin: 3px 0 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.settings-native .runtime-settings.settings-workspace .runtime-actions { padding: 14px 0 0; margin: 0; background: transparent; flex-wrap: wrap; }
 .settings-native .runtime-actions > div { flex: 1; min-width: 180px; }
 .settings-native .browser-settings .workspace-browser-options .runtime-group + .runtime-group { padding: 0; border: 0; }
 .settings-native .browser-settings .workspace-status .runtime-group { display: block; }
 .settings-native .runtime-radios label { background: transparent; }
 
-/* Shared section language for all remaining settings menus. */
-.settings-native :is(.git-settings-card, .notification-card, .pet-settings-card, .appearance-terminal-section, .sm-page .sm-card, .mcp-server-card, .mcp-server-form) { padding: 16px 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; }
-.settings-native :is(.git-settings-card, .notification-card):first-child { padding-top: 0; }
-.settings-native :is(.git-settings-card h3, .appearance-settings-section h3, .pet-settings-panel h3, .sm-page h3, .automation-section h3) { font-size: 18px; font-weight: 600; }
-.settings-native :is(.notification-card strong, .git-settings-row strong) { font-size: 14px; font-weight: 500; }
-.settings-native :is(.notification-card small, .git-settings-card p, .pet-settings-panel p) { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
-.settings-native :is(.settings-section-tabs, .notification-view-tabs, .sm-tabs, .sm-agent-tabs, .plugin-market-tabs) { gap: 16px; margin-bottom: 20px; }
-.settings-dialog.settings-native .shared-memory-settings.sm-page { --sm-accent: var(--accent); gap: 20px; }
-.settings-native .sm-page .sm-button.sm-primary { color: #fff; }
+/* Git Settings Card Architecture */
+.settings-native .git-settings-only { display: grid; gap: 16px; }
+.settings-native .git-settings-card {
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 2.5%, var(--settings-canvas));
+  box-shadow: none;
+}
+.settings-native .git-settings-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-native .git-settings-card > header > div:first-child { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.settings-native .git-settings-card > header svg { color: var(--accent); flex: none; margin-top: 2px; }
+.settings-native .git-settings-card > header span { display: grid; gap: 2px; min-width: 0; }
+.settings-native .git-settings-card > header strong { font-size: 15.5px; font-weight: 650; color: var(--text); }
+.settings-native .git-settings-card > header small { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+.settings-native .git-settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 36%);
+  align-items: center;
+  gap: 20px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-native .git-settings-row:last-child { border-bottom: 0; padding-bottom: 2px; }
+.settings-native .git-settings-row > span { display: grid; gap: 3px; min-width: 0; }
+.settings-native .git-settings-row strong { font-size: 14px; font-weight: 550; color: var(--text); }
+.settings-native .git-settings-row small { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+.settings-native .git-settings-row :is(input, select),
+.settings-native .git-settings-block textarea {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--settings-canvas);
+  color: var(--text);
+  font-size: 13.5px;
+  box-sizing: border-box;
+}
+.settings-native .git-settings-block { display: grid; gap: 7px; }
+.settings-native .git-settings-block > span { font-size: 13px; font-weight: 550; color: var(--text-dim); }
+.settings-native .git-settings-block textarea { resize: vertical; line-height: 1.55; }
+.settings-native .git-prompt-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.settings-native .git-preset-chip {
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.settings-native .git-preset-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--text); background: var(--bg-hover); }
+.settings-native .git-settings-safety {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  background: color-mix(in srgb, var(--success) 5%, var(--settings-canvas));
+}
+.settings-native .git-settings-safety > header svg { color: var(--success); }
+.settings-native .git-safety-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+  font-size: 11px;
+  font-weight: 600;
+}
+.settings-native .git-settings-guarantees {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.settings-native .git-settings-guarantees > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--success) 24%, var(--border));
+  border-radius: 9px;
+  background: var(--settings-canvas);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.settings-native .git-settings-guarantees > li svg { color: var(--success); flex: none; margin-top: 3px; }
+.settings-native .git-settings-guarantees > li strong { display: block; color: var(--text); font-size: 13px; margin-bottom: 3px; }
+.settings-native .git-settings-feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+}
+.settings-native .git-settings-feedback.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.settings-native .git-settings-feedback.success { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--border)); background: color-mix(in srgb, var(--success) 8%, transparent); }
+.settings-native .git-settings-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding-top: 4px; }
+.settings-native .git-settings-dirty { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--accent); font-weight: 550; }
+.settings-native .git-settings-dirty i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+
+/* Notifications, Appearance, Pet & Shared Memory Card Polish */
+.settings-native :is(.mcp-server-card, .mcp-server-form) { padding: 16px 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; }
+.settings-native :is(.notification-card, .pet-settings-card, .appearance-settings-section) {
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 2.5%, var(--settings-canvas));
+  box-shadow: none;
+}
+.settings-native .notification-master-card {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.settings-native .notification-toggle-copy {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.settings-native .notification-toggle-copy > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.settings-native .notification-tone-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.settings-native .notification-tone-dot.success { background: var(--success); }
+.settings-native .notification-tone-dot.danger { background: var(--danger); }
+.settings-native .notification-tone-dot.warn { background: var(--warn); }
+.settings-native .notification-toggle-row.tone-master strong { font-size: 15px; font-weight: 650; }
+.settings-native .notification-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 2px 0 4px;
+}
+.settings-native .notification-history-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.settings-native .notification-history-filters button:hover { border-color: var(--border-strong); color: var(--text); }
+.settings-native .notification-history-filters button.active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.settings-native .notification-history-filters button em {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.85;
+  font-family: var(--mono-font);
+}
+
+/* Appearance Section Enhancements */
+.settings-native .appearance-settings-panel { gap: 16px; }
+.settings-native .appearance-settings-section + .appearance-settings-section { padding-top: 16px; border-top: 1px solid var(--border); }
+.settings-native .appearance-settings-section > h3 { margin: 0 0 4px; font-size: 16px; font-weight: 650; }
+.settings-native .appearance-settings-section > p { margin: 0 0 14px; font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+.settings-native .appearance-dual-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.settings-native .appearance-dual-sections > .appearance-settings-section { margin: 0; }
+.settings-native .appearance-theme-mode-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 7px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--preview-elev) 82%, transparent);
+  border: 1px solid var(--preview-border);
+  color: var(--preview-text);
+  font: 600 10px/1.3 var(--mono-font);
+  font-style: normal;
+}
+.settings-native .appearance-bg-hint {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+}
+.settings-native .appearance-accent-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings-native .appearance-accent-current {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-style: normal;
+}
+.settings-native .appearance-accent-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 4px;
+}
+.settings-native .appearance-reset {
+  position: static;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-native .appearance-terminal-opacity {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.settings-native .appearance-opacity-controls { display: grid; gap: 10px; min-width: 0; }
+
+/* Companionship (Desktop Pet) Stage & 4-Column Gallery */
+.settings-native .pet-hero-stage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(200px, 0.65fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.settings-native .pet-hero-controls {
+  display: grid;
+  gap: 12px;
+}
+.settings-native .pet-live-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-sunken));
+}
+.settings-native .pet-live-stage.disabled { opacity: 0.55; border-color: var(--border); background: var(--bg-sunken); }
+.settings-native .pet-live-stage-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.settings-native .pet-stage-tag { font: 600 10px/1 var(--mono-font); color: var(--text-dim); letter-spacing: 0.05em; }
+.settings-native .pet-stage-status { padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); font-size: 10.5px; font-weight: 600; }
+.settings-native .pet-live-stage.disabled .pet-stage-status { background: var(--bg-hover); color: var(--text-dim); }
+.settings-native .pet-live-stage-canvas { min-height: 92px; display: grid; place-items: center; }
+.settings-native .pet-live-stage-canvas img { object-fit: contain; image-rendering: pixelated; transition: width 140ms ease, height 140ms ease; }
+.settings-native .pet-live-stage-footer { text-align: center; display: grid; gap: 2px; }
+.settings-native .pet-live-stage-footer strong { font-size: 13px; color: var(--text); }
+.settings-native .pet-live-stage-footer small { font-size: 11px; color: var(--text-dim); }
+.settings-native .pet-settings-section {
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 2.5%, var(--settings-canvas));
+}
+.settings-native .pet-choice-grid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+/* Archived Sessions Enhancements */
+.settings-native :is(.git-settings-card h3, .appearance-settings-section h3, .pet-settings-panel h3, .sm-page h3, .automation-section h3) { font-size: 16px; font-weight: 650; }
+.settings-native :is(.notification-card strong, .git-settings-row strong) { font-size: 14px; font-weight: 550; }
+.settings-native :is(.notification-card small, .git-settings-card p, .pet-settings-panel p) { font-size: 12.5px; color: var(--text-dim); line-height: 1.55; }
+.settings-native :is(.settings-section-tabs, .notification-view-tabs, .sm-tabs, .sm-agent-tabs, .plugin-market-tabs) { gap: 16px; margin-bottom: 18px; }
+.settings-dialog.settings-native .shared-memory-settings.sm-page { --sm-accent: var(--accent); gap: 16px; }
+.settings-native .sm-page .sm-button.sm-primary { color: var(--on-accent-fill, #fff); }
 .settings-native .settings-provider-list { border: 0; border-radius: 0; background: transparent; }
 .settings-native .settings-provider-row { background: transparent; }
 .settings-dialog.settings-native .settings-provider-quota-list { gap: 0; padding-top: 0; }
@@ -249,10 +603,40 @@
 .settings-dialog.settings-native .settings-provider-quota-list .settings-provider-row.drop-target { background: var(--accent-soft); border-bottom-color: var(--accent); }
 .settings-native .settings-provider-quota-note { padding: 0 0 16px; }
 .settings-native :is(.mcp-toolbar, .skill-workspace-header) { flex-wrap: wrap; }
-.settings-native .archived-settings-group { border-radius: 6px; background: transparent; }
-.settings-native .archived-settings-toolbar { grid-template-columns: minmax(0, 1fr) minmax(140px, 180px); }
-.settings-native .archived-settings-row { min-width: 0; }
-.settings-native :is(.archived-settings-search, .archived-settings-toolbar select) { height: 34px; background: transparent; border-radius: 6px; }
+.settings-native .archived-settings-group {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 2.5%, var(--settings-canvas));
+}
+.settings-native .archived-settings-group > header {
+  background: var(--bg-sunken);
+  padding: 0 16px;
+  min-height: 42px;
+}
+.settings-native .archived-settings-group > header svg { color: var(--accent); }
+.settings-native .archived-settings-toolbar { grid-template-columns: minmax(0, 1fr) minmax(150px, 200px); }
+.settings-native .archived-settings-row { min-width: 0; background: transparent; padding: 13px 16px; transition: background 140ms ease; }
+.settings-native .archived-settings-row:hover { background: color-mix(in srgb, var(--text) 2%, transparent); }
+.settings-native .archived-settings-title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.settings-native .archived-provider-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 600 10.5px/1.3 var(--mono-font);
+  font-style: normal;
+}
+.settings-native .archived-settings-actions .archived-action-restore {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
+  font-weight: 550;
+}
+.settings-native .archived-settings-actions .archived-action-restore:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.settings-native :is(.archived-settings-search, .archived-settings-toolbar select) { height: 36px; background: var(--bg-sunken); border-radius: 8px; }
 .settings-native .automation-dialog.embedded { width: 100%; min-height: 0; height: auto; border: 0; background: transparent; }
 .settings-native .automation-dialog.embedded .automation-content { min-width: 0; }
 .settings-native .automation-dialog.embedded .automation-scroll-area { overflow: visible; }
@@ -309,6 +693,7 @@
   .settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner { padding: 24px; }
   .settings-native .settings-heading { flex-wrap: wrap; }
   .settings-native .collab-agent-card-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+  .settings-native :is(.general-dual-cards-row, .appearance-dual-sections, .appearance-terminal-opacity, .pet-hero-stage-grid, .git-settings-guarantees) { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 720px) {
   .settings-native-overlay { padding: 8px; }
@@ -319,7 +704,7 @@
   .settings-native .settings-nav-group .settings-nav-item { grid-template-columns: 1fr; justify-items: center; min-height: 36px; padding: 6px; }
   .settings-native .settings-nav-group + .settings-nav-group { margin-top: 12px; }
   .settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner { padding: 20px 16px; }
-  .settings-native .settings-workspace .runtime-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .settings-native .settings-workspace .runtime-field, .settings-native .git-settings-row, .settings-native .general-runtime-details dl { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .settings-native .archived-settings-toolbar, .settings-native .notification-controls { grid-template-columns: minmax(0, 1fr); }
   .settings-native .settings-window-header { padding-left: 16px; }
 }

@@ -439,46 +439,75 @@ export function SharedMemorySettingsPanel() {
         ] as const).map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{statusFresh && status?.serverRunning && count != null ? count.toLocaleString() : "—"}</dd></div>)}</dl>
         <div className="sm-service-footer"><div className="sm-endpoint"><span>本地地址</span><code>{status?.serverUrl ?? "—"}</code><button type="button" className="sm-icon-button" aria-label="复制服务地址" title={copied === "endpoint" ? "已复制" : "复制服务地址"} disabled={!status?.serverUrl} onClick={() => status && void copy(status.serverUrl, "endpoint")}>{copied === "endpoint" ? <CheckIcon size={16} /> : <CopyIcon size={16} />}</button></div><span>来源&nbsp; {source}</span></div>
       </section>
-      <section className="sm-card sm-wiki"><CubeIcon size={24} aria-hidden="true" /><strong>查看与检索共享记忆</strong><p className="sm-muted">在浏览器中打开本地 Wiki，查看项目记忆与会话记录。</p><button type="button" className="sm-button sm-primary" disabled={!statusFresh || !status?.serverRunning || !status.webUrl || Boolean(busy)} onClick={openWiki}>打开 Wiki <ArrowUpRightIcon size={16} aria-hidden="true" /></button></section>
-      <section className="sm-card sm-wiki" aria-label="智能体接入状态"><ChatCircleIcon size={24} aria-hidden="true" /><strong>{agent.label}：{integrationSummary}</strong><p className="sm-muted">配置与服务检查不代表当前会话已加载工具或捕获成功。</p><button type="button" className="sm-button" onClick={() => setView("setup")}>前往接入配置 <ArrowRightIcon size={16} aria-hidden="true" /></button></section>
+      <div className="sm-overview-bento-grid">
+        <section className="sm-card sm-wiki">
+          <div className="sm-bento-head">
+            <span className="sm-bento-icon"><CubeIcon size={22} aria-hidden="true" /></span>
+            <div>
+              <strong>查看与检索共享记忆</strong>
+              <p className="sm-muted">在浏览器中打开本地 Wiki，查看项目记忆与会话记录。</p>
+            </div>
+          </div>
+          <button type="button" className="sm-button sm-primary" disabled={!statusFresh || !status?.serverRunning || !status.webUrl || Boolean(busy)} onClick={openWiki}>打开 Wiki <ArrowUpRightIcon size={16} aria-hidden="true" /></button>
+        </section>
+        <section className="sm-card sm-wiki sm-agent-overview-card" aria-label="智能体接入状态">
+          <div className="sm-bento-head">
+            <span className="sm-bento-icon"><ChatCircleIcon size={22} aria-hidden="true" /></span>
+            <div>
+              <strong>{agent.label}：{integrationSummary}</strong>
+              <p className="sm-muted">配置与服务检查不代表当前会话已加载工具或捕获成功。</p>
+            </div>
+          </div>
+          <div className="sm-agent-quick-pills" aria-label="快速切换智能体接入">
+            {AGENTS.map((item, idx) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`sm-agent-pill${agentIndex === idx ? " active" : ""}`}
+                onClick={() => { setAgentIndex(idx); setView("setup"); }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="sm-button" onClick={() => setView("setup")}>前往接入配置 <ArrowRightIcon size={16} aria-hidden="true" /></button>
+        </section>
+      </div>
     </>}
-    {view === "setup" && <section className="sm-setup-v2" aria-labelledby="sm-setup-title">
-      <header className="sm-setup-heading">
-        <h3 id="sm-setup-title">接入配置</h3>
-        <span className={`sm-badge${checkFailed ? " sm-badge-warning" : ""}`}><span className="sm-dot" aria-hidden="true" />{integrationSummary}</span>
-      </header>
-
-      <div className="sm-setup-service-bar" role="group" aria-label="共享记忆服务状态与操作">
-        <div className="sm-setup-service-summary">
-          <span className={`sm-dot${statusFresh && status?.serverRunning ? " running" : ""}`} aria-hidden="true" />
-          <strong>{summary}</strong>
-          {statusFresh && status?.version && <span className="sm-badge">v{status.version}</span>}
+    {view === "setup" && <section className="sm-setup-v2" aria-label="接入配置">
+      <div className="sm-setup-toolbar" role="group" aria-label="共享记忆服务状态与操作">
+        <div className="sm-agent-segment" role="group" aria-label="选择智能体">
+          {AGENTS.map((item, index) => <button type="button" key={item.id} disabled={Boolean(busy)} aria-pressed={agentIndex === index} className={agentIndex === index ? "active" : ""} onClick={() => { setAgentIndex(index); setCheckReport(null); setExpanded({ hooks: false, mcp: false }); setOutputExpanded({ hooks: false, mcp: false }); setCopied(null); }}>{item.label}</button>)}
         </div>
-        <div className="sm-setup-service-actions">
-          <button type="button" className="sm-button" disabled={Boolean(busy)} onClick={() => void refreshStatus(true)}>{busy === "检测中…" ? busy : "重新检测"}</button>
-          {status && !status.installed && status.managedInstallAvailable !== false && <button type="button" className="sm-button sm-primary" disabled={Boolean(busy)} onClick={() => void run("ai_memory_install", "下载安装")}>{busy === "下载安装中…" ? "下载安装中…" : "下载安装"}</button>}
-          {canStart && <button type="button" className="sm-button sm-primary" disabled={Boolean(busy)} onClick={() => void run("ai_memory_serve", "启动服务")}>{busy === "启动服务中…" ? busy : "启动服务"}</button>}
+        <div className="sm-setup-service-right">
+          <div className="sm-setup-service-summary">
+            <span className={`sm-dot${statusFresh && status?.serverRunning ? " running" : ""}`} aria-hidden="true" />
+            <strong>{summary}</strong>
+            {statusFresh && status?.version && <span className="sm-badge">v{status.version}</span>}
+          </div>
+          <span className={`sm-badge${checkFailed ? " sm-badge-warning" : ""}`}><span className="sm-dot" aria-hidden="true" />{integrationSummary}</span>
+          <div className="sm-setup-service-actions">
+            <button type="button" className="sm-button" disabled={Boolean(busy)} onClick={() => void refreshStatus(true)}>{busy === "检测中…" ? busy : "重新检测"}</button>
+            {status && !status.installed && status.managedInstallAvailable !== false && <button type="button" className="sm-button sm-primary" disabled={Boolean(busy)} onClick={() => void run("ai_memory_install", "下载安装")}>{busy === "下载安装中…" ? "下载安装中…" : "下载安装"}</button>}
+            {canStart && <button type="button" className="sm-button sm-primary" disabled={Boolean(busy)} onClick={() => void run("ai_memory_serve", "启动服务")}>{busy === "启动服务中…" ? busy : "启动服务"}</button>}
+          </div>
         </div>
       </div>
 
-      <div className="sm-agent-segment" role="group" aria-label="选择智能体">
-        {AGENTS.map((item, index) => <button type="button" key={item.id} disabled={Boolean(busy)} aria-pressed={agentIndex === index} className={agentIndex === index ? "active" : ""} onClick={() => { setAgentIndex(index); setCheckReport(null); setExpanded({ hooks: false, mcp: false }); setOutputExpanded({ hooks: false, mcp: false }); setCopied(null); }}>{item.label}</button>)}
-      </div>
-
-      <section className="sm-setup-step" aria-labelledby="sm-project-title">
-        <div className="sm-step-heading"><span className="sm-step-index">01</span><div><h4 id="sm-project-title">选择验证项目</h4><p>选择要检查捕获记录的项目目录。</p></div></div>
+      <section className="sm-setup-step sm-card" aria-labelledby="sm-project-title">
+        <div className="sm-step-heading"><span className="sm-step-index">01</span><div className="sm-step-title-copy"><h4 id="sm-project-title">选择验证项目</h4><p>选择要检查捕获记录的项目目录。</p></div></div>
         <div className="sm-step-content">
           <div className="sm-project-picker">
             <div className={`sm-project-path${projectDir ? " selected" : ""}`}><FolderIcon size={20} aria-hidden="true" /><code>{projectDir ?? "尚未选择项目目录"}</code></div>
             <button type="button" className="sm-button" disabled={Boolean(busy)} onClick={() => void chooseProject()}>{projectDir ? "更换目录" : "选择项目目录"}</button>
           </div>
           {projectDir && <AdditionalProjectAccess key={projectDir} projectDir={projectDir} preview={PREVIEW} />}
-          <p className="sm-scope-copy"><strong>配置范围：</strong>{agent.id === "claude-code" ? "钩子仅写入当前项目，MCP 注册为用户全局。" : "钩子与 MCP 均写入用户全局配置，可能影响其他项目的新会话。"} 仅捕获指定项目需设置 allowlist。<button type="button" className="sm-inline-link" onClick={() => { if (faqRef.current) { faqRef.current.open = true; faqRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" }); } }}>查看说明 <ArrowUpRightIcon size={14} aria-hidden="true" /></button></p>
+          <p className="sm-scope-copy"><span><strong>配置范围：</strong>{agent.id === "claude-code" ? "钩子仅写入当前项目，MCP 注册为用户全局。" : "钩子与 MCP 均写入用户全局配置，可能影响其他项目的新会话。"} 仅捕获指定项目需设置 allowlist。</span><button type="button" className="sm-inline-link" onClick={() => { if (faqRef.current) { faqRef.current.open = true; faqRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" }); } }}>查看说明 <ArrowUpRightIcon size={14} aria-hidden="true" /></button></p>
         </div>
       </section>
 
-      <section className="sm-setup-step" aria-labelledby="sm-config-title">
-        <div className="sm-step-heading"><span className="sm-step-index">02</span><div><h4 id="sm-config-title">配置智能体</h4><p>启用会话捕获与记忆检索。</p></div></div>
+      <section className="sm-setup-step sm-card" aria-labelledby="sm-config-title">
+        <div className="sm-step-heading"><span className="sm-step-index">02</span><div className="sm-step-title-copy"><h4 id="sm-config-title">配置智能体</h4><p>启用会话捕获与记忆检索。</p></div></div>
         <div className="sm-step-content">
           <div className="sm-config-list">
             {([
@@ -495,7 +524,7 @@ export function SharedMemorySettingsPanel() {
               const disabledReasonId = `sm-disabled-reason-${key}`;
               return <div className={`sm-config-item${result && !result.success ? " failed" : ""}`} key={key}>
                 <div className="sm-config-row">
-                  <span className="sm-config-icon">{isHooks ? <LinkIcon size={21} aria-hidden="true" /> : <FileTextIcon size={21} aria-hidden="true" />}</span>
+                  <span className="sm-config-icon">{isHooks ? <LinkIcon size={18} aria-hidden="true" /> : <FileTextIcon size={18} aria-hidden="true" />}</span>
                   <div className="sm-config-copy"><h4>{title}</h4><p>{description}</p></div>
                   <span className={`sm-config-state ${state.tone}`}><span className="sm-config-state-dot" aria-hidden="true" />{state.label}</span>
                   <button type="button" className="sm-button sm-config-action" disabled={Boolean(disabledReason)} aria-describedby={disabledReason ? disabledReasonId : undefined} onClick={() => void executeSetup(key)}>{busy === resultKey ? "执行中…" : hasConfiguration ? repeatLabel : actionLabel}</button>
@@ -523,21 +552,21 @@ export function SharedMemorySettingsPanel() {
             })}
           </div>
           {!selected && <p className="sm-unavailable">检测到可执行文件和数据目录后显示安装命令。</p>}
-          <p className="sm-setup-notice"><WarningCircleIcon size={17} aria-hidden="true" /><span>安装或注册会修改配置；ai-memory 会备份已有配置并保留其他 MCP 服务。执行最长等待 60 秒。</span></p>
+          <p className="sm-setup-notice"><WarningCircleIcon size={16} aria-hidden="true" /><span>安装或注册会修改配置；ai-memory 会备份已有配置并保留其他 MCP 服务。执行最长等待 60 秒。</span></p>
           {copied === `${agent.id}-hooks` || copied === `${agent.id}-mcp` ? <p className="sm-copy-feedback" role="status">命令已复制到剪贴板</p> : null}
         </div>
       </section>
 
-      <section className="sm-setup-step" aria-labelledby="sm-verify-title">
-        <div className="sm-step-heading"><span className="sm-step-index">03</span><div><h4 id="sm-verify-title">验证接入</h4><p>检查配置后，再确认实际会话行为。</p></div></div>
+      <section className="sm-setup-step sm-card" aria-labelledby="sm-verify-title">
+        <div className="sm-step-heading"><span className="sm-step-index">03</span><div className="sm-step-title-copy"><h4 id="sm-verify-title">验证接入</h4><p>只读检查配置文件、服务工具和历史捕获记录，不会修改配置。</p></div></div>
         <div className="sm-step-content sm-verify-content">
-          <p className={`sm-verification-state${checkFailed ? " failed" : checked ? " checked" : ""}`}><span className="sm-config-state-dot" aria-hidden="true" />{verificationMessage}</p>
-          <p className="sm-restart-help">{restartInstruction}</p>
-          <div className="sm-check-action-row">
-            <button type="button" className="sm-button sm-primary" disabled={Boolean(busy) || !projectDir || !status?.installed} onClick={() => void checkIntegration()}><MagnifyingGlassIcon size={16} aria-hidden="true" />{busy === "check-integration" ? "检查中…" : "检查接入"}</button>
-            <span>仅读取配置、服务工具和历史捕获记录。</span>
+          <div className="sm-verify-main-row">
+            <div className="sm-verify-copy">
+              <p className={`sm-verification-state${checkFailed ? " failed" : checked ? " checked" : ""}`}><span className="sm-config-state-dot" aria-hidden="true" />{verificationMessage}</p>
+              <p className="sm-restart-help">{restartInstruction}</p>
+            </div>
+            <button type="button" className="sm-button sm-primary sm-verify-btn" disabled={Boolean(busy) || !projectDir || !status?.installed} onClick={() => void checkIntegration()}><MagnifyingGlassIcon size={16} aria-hidden="true" />{busy === "check-integration" ? "检查中…" : "检查接入"}</button>
           </div>
-          <p className="sm-check-caption">检查不会修改配置或运行钩子；配置成功也不代表当前会话捕获已生效。</p>
           {checked && <div className="sm-check-report sm-check-report-v2" role="status"><div className="sm-check-report-heading"><strong>{agent.label}</strong><code>{checked.projectDir}</code></div>{([["MCP 注册配置", checked.mcp], ["钩子配置", checked.hooks], ["记忆服务工具", checked.tools], ["项目捕获记录", checked.capture]] as const).map(([label, item]) => <div key={label} className={`sm-check-item ${item.state}`}><strong>{label}</strong><p>{item.detail}</p></div>)}</div>}
         </div>
       </section>

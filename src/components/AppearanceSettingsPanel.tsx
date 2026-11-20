@@ -16,22 +16,23 @@ interface Props {
   onChange: Dispatch<SetStateAction<AppAppearance>>;
 }
 
-const THEME_OPTIONS: Array<{ id: AppearanceTheme; label: string }> = [
-  { id: "dark", label: "深色" },
-  { id: "ocean", label: "暖夜黑" },
-  { id: "purple", label: "石墨黑" },
-  { id: "light", label: "浅色" },
-  { id: "sand", label: "暖沙" },
-  { id: "aurora", label: "暖瓷白" },
+const THEME_OPTIONS: Array<{ id: AppearanceTheme; label: string; modeLabel: string }> = [
+  { id: "dark", label: "深色", modeLabel: "Dark" },
+  { id: "ocean", label: "暖夜黑", modeLabel: "Dark" },
+  { id: "purple", label: "石墨黑", modeLabel: "Dark" },
+  { id: "light", label: "浅色", modeLabel: "Light" },
+  { id: "sand", label: "暖沙", modeLabel: "Light" },
+  { id: "aurora", label: "暖瓷白", modeLabel: "Light" },
 ];
 
 const BACKGROUND_OPTIONS: Array<{
   id: AppearanceBackground;
   label: string;
+  hint: string;
 }> = [
-  { id: "solid", label: "纯色" },
-  { id: "soft", label: "柔光" },
-  { id: "texture", label: "微纹理" },
+  { id: "solid", label: "纯色", hint: "纯净无干扰" },
+  { id: "soft", label: "柔光", hint: "边缘环境微光" },
+  { id: "texture", label: "微纹理", hint: "精密斜线网格" },
 ];
 
 const ACCENT_OPTIONS: Array<{ id: AppearanceAccent; label: string }> = [
@@ -49,10 +50,11 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
   const selectTheme = (theme: AppearanceTheme) => {
     onChange((current) => ({ ...current, theme, followSystem: false }));
   };
+  const currentAccent = ACCENT_OPTIONS.find((item) => item.id === appearance.accent) ?? ACCENT_OPTIONS[1];
 
   return (
     <div className="appearance-settings-panel">
-      <SettingsSection className="appearance-settings-section" title="主题">
+      <SettingsSection className="appearance-settings-section appearance-theme-section" title="主题" description="选择深色或浅色界面调色板，切换后立即应用至全局工作区。">
         <div className="appearance-theme-grid">
           {THEME_OPTIONS.map((option) => {
             const selected =
@@ -62,6 +64,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                 className={`appearance-theme-option${selected ? " selected" : ""}`}
                 type="button"
                 key={option.id}
+                aria-label={option.label}
                 aria-pressed={selected}
                 onClick={() => selectTheme(option.id)}
               >
@@ -79,6 +82,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                     <b />
                     <b />
                   </span>
+                  <em className="appearance-theme-mode-tag">{option.modeLabel}</em>
                   {selected && (
                     <span className="appearance-option-check">
                       <CheckIcon size={13} weight="bold" />
@@ -92,33 +96,71 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
         </div>
       </SettingsSection>
 
-      <SettingsSection className="appearance-settings-section" title="背景">
-        <div className="appearance-background-grid">
-          {BACKGROUND_OPTIONS.map((option) => {
-            const selected = appearance.background === option.id;
-            return (
-              <button
-                className={`appearance-background-option ${option.id}${selected ? " selected" : ""}`}
-                type="button"
-                key={option.id}
-                aria-pressed={selected}
-                onClick={() =>
-                  onChange((current) => ({ ...current, background: option.id }))
-                }
-              >
-                <span aria-hidden="true">
-                  {selected && (
-                    <i className="appearance-option-check">
-                      <CheckIcon size={13} weight="bold" />
-                    </i>
-                  )}
-                </span>
-                <strong>{option.label}</strong>
-              </button>
-            );
-          })}
-        </div>
-      </SettingsSection>
+      <div className="appearance-dual-sections">
+        <SettingsSection className="appearance-settings-section appearance-background-section" title="背景" description="调整主工作区画布的光学质感。">
+          <div className="appearance-background-grid">
+            {BACKGROUND_OPTIONS.map((option) => {
+              const selected = appearance.background === option.id;
+              return (
+                <button
+                  className={`appearance-background-option ${option.id}${selected ? " selected" : ""}`}
+                  type="button"
+                  key={option.id}
+                  aria-label={option.label}
+                  aria-pressed={selected}
+                  onClick={() =>
+                    onChange((current) => ({ ...current, background: option.id }))
+                  }
+                >
+                  <span aria-hidden="true">
+                    <small className="appearance-bg-hint">{option.hint}</small>
+                    {selected && (
+                      <i className="appearance-option-check">
+                        <CheckIcon size={13} weight="bold" />
+                      </i>
+                    )}
+                  </span>
+                  <strong>{option.label}</strong>
+                </button>
+              );
+            })}
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          className="appearance-settings-section appearance-accent-section"
+          title={<span className="appearance-accent-heading"><span>强调色</span><em className="appearance-accent-current" aria-hidden="true">{currentAccent.label}</em></span>}
+          description="用于主按钮、焦点环、激活导航与状态高亮。"
+        >
+          <div className="appearance-accent-footer-row">
+            <div className="appearance-accent-list" role="radiogroup" aria-label="强调色">
+              {ACCENT_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  role="radio"
+                  key={option.id}
+                  className={appearance.accent === option.id ? "selected" : ""}
+                  data-accent={option.id}
+                  aria-label={option.label}
+                  aria-checked={appearance.accent === option.id}
+                  title={option.label}
+                  onClick={() =>
+                    onChange((current) => ({ ...current, accent: option.id }))
+                  }
+                />
+              ))}
+            </div>
+            <button
+              className="appearance-reset"
+              type="button"
+              onClick={() => onChange(DEFAULT_APPEARANCE)}
+            >
+              <ArrowCounterClockwiseIcon size={14} />
+              恢复默认
+            </button>
+          </div>
+        </SettingsSection>
+      </div>
 
       <section className="appearance-settings-section appearance-terminal-section">
         <Switch
@@ -143,43 +185,45 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
             appearance.terminalTransparent ? " enabled" : ""
           }`}
         >
-          <div className="appearance-terminal-opacity-copy">
-            <span>页面底板不透明度</span>
-            <div className="appearance-terminal-opacity-actions">
-              <output>
-                {Math.round((appearance.terminalOpacity ?? 0.65) * 100)}%
-                {(appearance.terminalOpacity ?? 0.65) === 0 ? " · 完全透明" : ""}
-              </output>
-              <button
-                type="button"
-                disabled={!appearance.terminalTransparent}
-                onClick={() =>
-                  onChange((current) => ({
-                    ...current,
-                    terminalTransparent: true,
-                    terminalOpacity: 0,
-                  }))
-                }
-              >
-                完全透明
-              </button>
+          <div className="appearance-opacity-controls">
+            <div className="appearance-terminal-opacity-copy">
+              <span>页面底板不透明度</span>
+              <div className="appearance-terminal-opacity-actions">
+                <output>
+                  {Math.round((appearance.terminalOpacity ?? 0.65) * 100)}%
+                  {(appearance.terminalOpacity ?? 0.65) === 0 ? " · 完全透明" : ""}
+                </output>
+                <button
+                  type="button"
+                  disabled={!appearance.terminalTransparent}
+                  onClick={() =>
+                    onChange((current) => ({
+                      ...current,
+                      terminalTransparent: true,
+                      terminalOpacity: 0,
+                    }))
+                  }
+                >
+                  完全透明
+                </button>
+              </div>
             </div>
+            <input
+              type="range"
+              min="0"
+              max="90"
+              step="5"
+              value={Math.round((appearance.terminalOpacity ?? 0.65) * 100)}
+              disabled={!appearance.terminalTransparent}
+              aria-label="页面底板不透明度"
+              onChange={(event) =>
+                onChange((current) => ({
+                  ...current,
+                  terminalOpacity: Number(event.target.value) / 100,
+                }))
+              }
+            />
           </div>
-          <input
-            type="range"
-            min="0"
-            max="90"
-            step="5"
-            value={Math.round((appearance.terminalOpacity ?? 0.65) * 100)}
-            disabled={!appearance.terminalTransparent}
-            aria-label="页面底板不透明度"
-            onChange={(event) =>
-              onChange((current) => ({
-                ...current,
-                terminalOpacity: Number(event.target.value) / 100,
-              }))
-            }
-          />
           <div className="appearance-terminal-preview" aria-hidden="true">
             <span>&gt; claude</span>
             <span>正在分析项目文件...</span>
@@ -187,34 +231,6 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
           </div>
         </div>
       </section>
-
-      <SettingsSection className="appearance-settings-section appearance-accent-section" title="强调色">
-        <div className="appearance-accent-list" role="radiogroup" aria-label="强调色">
-          {ACCENT_OPTIONS.map((option) => (
-            <button
-              type="button"
-              role="radio"
-              key={option.id}
-              className={appearance.accent === option.id ? "selected" : ""}
-              data-accent={option.id}
-              aria-label={option.label}
-              aria-checked={appearance.accent === option.id}
-              title={option.label}
-              onClick={() =>
-                onChange((current) => ({ ...current, accent: option.id }))
-              }
-            />
-          ))}
-        </div>
-        <button
-          className="appearance-reset"
-          type="button"
-          onClick={() => onChange(DEFAULT_APPEARANCE)}
-        >
-          <ArrowCounterClockwiseIcon size={14} />
-          恢复默认
-        </button>
-      </SettingsSection>
     </div>
   );
 }

@@ -35,29 +35,65 @@
 .settings-dialog.settings-native .runtime-settings.browser-settings .workspace-browser-options {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  align-items: stretch;
+  width: 100%;
+  margin-top: 16px;
+  gap: 16px;
 }
-.settings-native .runtime-settings.browser-settings .workspace-browser-options > .runtime-group {
+.settings-native .runtime-settings.browser-settings :is(.browser-master-card, .browser-option-card, .browser-status-card) {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 2.5%, var(--settings-canvas));
+}
+.settings-native .runtime-settings.browser-settings .browser-master-card {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--settings-canvas));
+}
+.settings-native .runtime-settings.browser-settings .browser-master-card > .runtime-group > header {
+  display: none;
+}
+.settings-native .runtime-settings.browser-settings .browser-master-card .browser-control-toggle {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+}
+.settings-native .runtime-settings.browser-settings .workspace-browser-options > .runtime-group,
+.settings-native .runtime-settings.browser-settings .browser-option-card > .runtime-group {
+  display: block;
   width: 100%;
   padding: 0;
   border: 0;
 }
+.settings-native .runtime-settings.browser-settings .browser-option-card > .runtime-group > header {
+  display: block;
+  margin-bottom: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
 .settings-native .runtime-settings.browser-settings .workspace-browser-options .runtime-group > header h3 {
-  font-size: 18px;
+  font-size: 16px;
 }
 .settings-native .runtime-settings.browser-settings .browser-control-toggle {
   width: 100%;
   box-sizing: border-box;
 }
 .settings-native .runtime-settings.browser-settings .browser-channel-field {
-  padding-top: 0;
-  padding-bottom: 20px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-bottom: 0;
 }
 .browser-settings .browser-channel-field small { display: block; margin-top: 4px; }
 .settings-native .runtime-settings.browser-settings .workspace-status {
-  margin-top: 28px;
-  padding-top: 0;
-  border: 0;
+  margin-top: 16px;
+}
+.settings-native .runtime-settings.browser-settings .workspace-status .runtime-group {
+  display: block;
+}
+.settings-native .runtime-settings.browser-settings .workspace-status .runtime-group > header {
+  margin-bottom: 10px;
 }
 .browser-settings .browser-saved-facts { margin: 0; }
 .browser-settings .browser-saved-facts > div {

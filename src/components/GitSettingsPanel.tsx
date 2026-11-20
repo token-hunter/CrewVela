@@ -1040,48 +1040,67 @@ export function GitSettingsPanel() {
   const dirty = savedSnapshot !== null
     && JSON.stringify(settings) !== JSON.stringify(savedSnapshot);
 
+  const appendInstructionPreset = (preset: string) => {
+    if (loading || busy || !savedSnapshot) return;
+    setSettings((current) => {
+      const base = current.commitInstruction.trim();
+      if (base.includes(preset)) return current;
+      return {
+        ...current,
+        commitInstruction: base ? `${base}\n${preset}` : preset,
+      };
+    });
+  };
+
   return (
     <div className="git-settings-only">
       <section className="git-settings-card">
         <header>
           <div><GitBranch size={18} /><span><strong>分支与比较</strong><small>控制 CrewVela 创建 Worktree 分支和审查变更时使用的默认规则。</small></span></div>
         </header>
-        <label className="git-settings-row">
-          <span><strong>Worktree 分支前缀</strong><small>新建会话或 Agent Worktree 时使用。</small></span>
-          <input
-            disabled={loading || busy || !savedSnapshot}
-            value={settings.branchPrefix}
-            onChange={(event) => setSettings((current) => ({ ...current, branchPrefix: event.target.value }))}
-            placeholder="crewvela/"
-          />
-        </label>
-        <label className="git-settings-row">
-          <span><strong>默认比较基准</strong><small>只影响 Diff 和变更统计，不改变合并目标。</small></span>
-          <select
-            disabled={loading || busy || !savedSnapshot}
-            value={settings.compareStrategy}
-            onChange={(event) => setSettings((current) => ({ ...current, compareStrategy: event.target.value as GitSettings["compareStrategy"] }))}
-          >
-            <option value="repository_default">仓库默认分支</option>
-            <option value="branch_upstream">当前分支 Upstream</option>
-          </select>
-        </label>
-        <label className="git-settings-row">
-          <span><strong>Pull 策略</strong><small>同步远端时使用的合并方式；发生分叉时仅快进会停止并显示原因。</small></span>
-          <select
-            disabled={loading || busy || !savedSnapshot}
-            value={settings.pullStrategy}
-            onChange={(event) => setSettings((current) => ({ ...current, pullStrategy: event.target.value as GitSettings["pullStrategy"] }))}
-          >
-            <option value="ff_only">仅快进合并（--ff-only）</option>
-            <option value="rebase">变基合并（--rebase）</option>
-          </select>
-        </label>
+        <div className="git-settings-rows">
+          <label className="git-settings-row">
+            <span><strong>Worktree 分支前缀</strong><small>新建会话或 Agent Worktree 时使用。</small></span>
+            <input
+              disabled={loading || busy || !savedSnapshot}
+              value={settings.branchPrefix}
+              onChange={(event) => setSettings((current) => ({ ...current, branchPrefix: event.target.value }))}
+              placeholder="crewvela/"
+            />
+          </label>
+          <label className="git-settings-row">
+            <span><strong>默认比较基准</strong><small>只影响 Diff 和变更统计，不改变合并目标。</small></span>
+            <select
+              disabled={loading || busy || !savedSnapshot}
+              value={settings.compareStrategy}
+              onChange={(event) => setSettings((current) => ({ ...current, compareStrategy: event.target.value as GitSettings["compareStrategy"] }))}
+            >
+              <option value="repository_default">仓库默认分支</option>
+              <option value="branch_upstream">当前分支 Upstream</option>
+            </select>
+          </label>
+          <label className="git-settings-row">
+            <span><strong>Pull 策略</strong><small>同步远端时使用的合并方式；发生分叉时仅快进会停止并显示原因。</small></span>
+            <select
+              disabled={loading || busy || !savedSnapshot}
+              value={settings.pullStrategy}
+              onChange={(event) => setSettings((current) => ({ ...current, pullStrategy: event.target.value as GitSettings["pullStrategy"] }))}
+            >
+              <option value="ff_only">仅快进合并（--ff-only）</option>
+              <option value="rebase">变基合并（--rebase）</option>
+            </select>
+          </label>
+        </div>
       </section>
 
-      <section className="git-settings-card">
+      <section className="git-settings-card git-settings-commit-card">
         <header>
           <div><MagicWand size={18} /><span><strong>提交信息</strong><small>作为 Agent 生成提交说明时的固定要求，生成后仍可在 Git 面板中编辑。</small></span></div>
+          <div className="git-prompt-presets" aria-label="快捷指令模板">
+            <button type="button" className="git-preset-chip" disabled={loading || busy || !savedSnapshot} onClick={() => appendInstructionPreset("遵循 Conventional Commits 规范（feat/fix/refactor/docs）。")}>+ Conventional</button>
+            <button type="button" className="git-preset-chip" disabled={loading || busy || !savedSnapshot} onClick={() => appendInstructionPreset("首行使用简明中文概括，长度不超过 50 字。")}>+ 中文摘要</button>
+            <button type="button" className="git-preset-chip" disabled={loading || busy || !savedSnapshot} onClick={() => appendInstructionPreset("在正文列出核心改动模块与破坏性变更说明。")}>+ 影响面列表</button>
+          </div>
         </header>
         <label className="git-settings-block">
           <span>提交信息指令</span>
@@ -1089,7 +1108,7 @@ export function GitSettingsPanel() {
             disabled={loading || busy || !savedSnapshot}
             value={settings.commitInstruction}
             onChange={(event) => setSettings((current) => ({ ...current, commitInstruction: event.target.value }))}
-            rows={5}
+            rows={4}
           />
         </label>
       </section>
@@ -1097,6 +1116,7 @@ export function GitSettingsPanel() {
       <section className="git-settings-card git-settings-safety">
         <header>
           <div><Warning size={18} /><span><strong>安全保证</strong><small>这些底线由 CrewVela 固定执行，无需也无法修改。</small></span></div>
+          <span className="git-safety-badge" aria-hidden="true">平台级强制保护</span>
         </header>
         <ul className="git-settings-guarantees">
           <li><Check size={14} weight="bold" /><span><strong>推送保护</strong>强制推送必须手动确认，并始终使用 <code>--force-with-lease</code>，不会覆盖远端新增提交。</span></li>
@@ -1108,7 +1128,7 @@ export function GitSettingsPanel() {
       {notice && !error && <div className="git-settings-feedback success"><Check size={15} />{notice}</div>}
       <div className="git-settings-actions">
         {!loading && !savedSnapshot && <button type="button" className="btn" onClick={() => setReload(value => value + 1)}>重新读取</button>}
-        {dirty && <span className="git-settings-dirty">有未保存更改</span>}
+        {dirty && <span className="git-settings-dirty"><i aria-hidden="true" />有未保存更改</span>}
         <button type="button" className="btn primary" onClick={() => void save()} disabled={busy || loading || !savedSnapshot}>
           {busy ? "保存中…" : "保存设置"}
         </button>

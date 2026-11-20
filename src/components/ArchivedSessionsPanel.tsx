@@ -103,37 +103,45 @@ export function ArchivedSessionsPanel({
                 <span>{group.sessions.length}</span>
               </header>
               <div className="archived-settings-list">
-                {group.sessions.map((session) => (
-                  <article className="archived-settings-row" key={session.id}>
-                    <div className="archived-settings-copy">
-                      <strong>{sessionDisplayTitle(session)}</strong>
-                      <span>
-                        {session.agentRuntimeKind === "oh_my_pi" ? "Oh My Pi（已移除）" : sessionDisplayProvider(session)} · {dateFormatter.format(session.archivedAt ?? session.updatedAt)}
-                      </span>
-                      <small title={session.cwd}>{session.cwd}</small>
-                    </div>
-                    <div className="archived-settings-actions">
-                      {session.kind === "claude" && (
-                        <button type="button" onClick={() => onViewTranscript(session)}>
-                          <FileTextIcon size={14} aria-hidden="true" />
-                          查看记录
+                {group.sessions.map((session) => {
+                  const providerLabel = session.agentRuntimeKind === "oh_my_pi"
+                    ? "Oh My Pi（已移除）"
+                    : sessionDisplayProvider(session);
+                  return (
+                    <article className="archived-settings-row" key={session.id}>
+                      <div className="archived-settings-copy">
+                        <div className="archived-settings-title-line">
+                          <strong>{sessionDisplayTitle(session)}</strong>
+                          <em className="archived-provider-badge">{providerLabel}</em>
+                        </div>
+                        <span>
+                          {providerLabel} · {dateFormatter.format(session.archivedAt ?? session.updatedAt)}
+                        </span>
+                        <small title={session.cwd}>{session.cwd}</small>
+                      </div>
+                      <div className="archived-settings-actions">
+                        {session.kind === "claude" && (
+                          <button type="button" className="archived-action-view" onClick={() => onViewTranscript(session)}>
+                            <FileTextIcon size={14} aria-hidden="true" />
+                            查看记录
+                          </button>
+                        )}
+                        <button type="button" className="archived-action-restore" onClick={() => void onRestore(session)}>
+                          <ArrowCounterClockwiseIcon size={14} aria-hidden="true" />
+                          取消归档
                         </button>
-                      )}
-                      <button type="button" onClick={() => void onRestore(session)}>
-                        <ArrowCounterClockwiseIcon size={14} aria-hidden="true" />
-                        取消归档
-                      </button>
-                      <button
-                        className="danger"
-                        type="button"
-                        onClick={() => void onDelete(session)}
-                      >
-                        <TrashIcon size={14} aria-hidden="true" />
-                        永久删除
-                      </button>
-                    </div>
-                  </article>
-                ))}
+                        <button
+                          className="danger archived-action-delete"
+                          type="button"
+                          onClick={() => void onDelete(session)}
+                        >
+                          <TrashIcon size={14} aria-hidden="true" />
+                          永久删除
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             </section>
           ))}

@@ -92,20 +92,66 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
     });
   };
 
+  const activePet = pets.find((pet) => pet.id === settings.selectedId) ?? pets[0];
+  const stageImgSize = Math.round(44 + ((settings.size - 72) / (192 - 72)) * 44);
+
   return (
     <div className="pet-settings-panel">
-      <section className="pet-settings-card pet-settings-master">
-        <div>
-          <h3>显示桌宠</h3>
-          <p>在工作区右下角显示水果伙伴，并根据 Agent 状态做出动作。</p>
+      <div className="pet-hero-stage-grid">
+        <div className="pet-hero-controls">
+          <section className="pet-settings-card pet-settings-master">
+            <div>
+              <h3>显示桌宠</h3>
+              <p>在工作区右下角显示水果伙伴，并根据 Agent 状态做出动作。</p>
+            </div>
+            <Switch
+              className="pet-switch"
+              label="显示桌宠"
+              checked={settings.enabled}
+              onChange={(checked) => { enabledRevision.current += 1; onChange({ ...settings, enabled: checked }); }}
+            />
+          </section>
+
+          <section className="pet-settings-card pet-size-card">
+            <div>
+              <h3>宠物大小</h3>
+              <p>可以直接拖动桌宠改变位置。</p>
+            </div>
+            <div className="pet-size-control">
+              <input
+                type="range"
+                min={72}
+                max={192}
+                step={4}
+                value={settings.size}
+                onChange={(event) => onChange({ ...settings, size: clampPetSize(Number(event.target.value)) })}
+              />
+              <span>{settings.size}px</span>
+            </div>
+          </section>
         </div>
-        <Switch
-          className="pet-switch"
-          label="显示桌宠"
-          checked={settings.enabled}
-          onChange={(checked) => { enabledRevision.current += 1; onChange({ ...settings, enabled: checked }); }}
-        />
-      </section>
+
+        {activePet && (
+          <aside className={`pet-live-stage${settings.enabled ? "" : " disabled"}`} aria-hidden="true">
+            <header className="pet-live-stage-header">
+              <span className="pet-stage-tag">LIVE STAGE</span>
+              <span className="pet-stage-status">{settings.enabled ? "互动陪伴中" : "已隐藏"}</span>
+            </header>
+            <div className="pet-live-stage-canvas">
+              <img
+                src={activePet.src}
+                alt=""
+                draggable={false}
+                style={{ width: `${stageImgSize}px`, height: `${stageImgSize}px` }}
+              />
+            </div>
+            <footer className="pet-live-stage-footer">
+              <strong>{activePet.name}</strong>
+              <small>{activePet.description} · {settings.size}px</small>
+            </footer>
+          </aside>
+        )}
+      </div>
 
       <section className="pet-settings-section">
         <div className="pet-settings-section-heading">
@@ -154,24 +200,6 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
               </article>
             );
           })}
-        </div>
-      </section>
-
-      <section className="pet-settings-card pet-size-card">
-        <div>
-          <h3>宠物大小</h3>
-          <p>可以直接拖动桌宠改变位置。</p>
-        </div>
-        <div className="pet-size-control">
-          <input
-            type="range"
-            min={72}
-            max={192}
-            step={4}
-            value={settings.size}
-            onChange={(event) => onChange({ ...settings, size: clampPetSize(Number(event.target.value)) })}
-          />
-          <span>{settings.size}px</span>
         </div>
       </section>
     </div>
