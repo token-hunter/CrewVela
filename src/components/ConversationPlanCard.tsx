@@ -1,16 +1,18 @@
 import { Play, Square, Stack } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
+import { ManagedDeliveryMembers } from "./ManagedDeliveryMembers";
 import { ProjectPreviewActions } from "./ProjectPreviewActions";
-import type { AgentProfile, ConversationExecutionPlan } from "../types";
+import type { ConversationExecutionPlan, MultiAgentSnapshot } from "../types";
 
-export function ConversationPlanCard({ plan, agents, blocked, paused, onConfirm, onAdjust, onTasks }: {
+export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfirm, onAdjust, onTasks, onTaskRecords }: {
   plan: ConversationExecutionPlan;
-  agents: AgentProfile[];
+  snapshot: MultiAgentSnapshot | null;
   blocked: boolean;
   paused: boolean;
   onConfirm: () => void;
   onAdjust: () => void;
   onTasks: () => void;
+  onTaskRecords: (taskId: string) => void;
 }) {
   const managed = plan.managed;
   if (managed) {
@@ -21,6 +23,7 @@ export function ConversationPlanCard({ plan, agents, blocked, paused, onConfirm,
       : managed.summary;
     return <section className="conversation-plan team-plan-card" aria-label="全自动托管结果">
       <header className="team-plan-heading"><Stack size={23} /><h3>{ready ? "成品已交付" : managed.status === "failed" ? "全自动托管未交付" : paused && managed.status === "running" ? "全自动托管已暂停" : "全自动托管中"}</h3></header>
+      <ManagedDeliveryMembers plan={plan} snapshot={snapshot} onRecords={onTaskRecords} />
       {summary && <p className="team-plan-summary">{summary}</p>}
       {ready && <p className="team-plan-acceptance">验收通过 <code>{managed.verificationCommand}</code> · {managed.target.branch}（{managed.commit?.slice(0, 8)}）</p>}
       {ready ? <ProjectPreviewActions key={plan.id} projectId={plan.projectId} planId={plan.id} config={managed.preview} demo={managed.demo} root={managed.target.root}
@@ -28,6 +31,7 @@ export function ConversationPlanCard({ plan, agents, blocked, paused, onConfirm,
         : plan.status === "applied" && <div className="team-plan-actions"><button type="button" className="conversation-text-button" onClick={onTasks}>查看任务执行</button></div>}
     </section>;
   }
+  const agents = snapshot?.agents ?? [];
   const pending = plan.status === "pending";
   const acceptance = [...new Set(plan.tasks.map(task => task.acceptanceCriteria).filter(Boolean))].join("；");
   return <section className="conversation-plan team-plan-card" aria-label={pending ? "待确认分工" : "项目分工"}>

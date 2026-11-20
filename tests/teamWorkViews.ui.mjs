@@ -331,10 +331,98 @@ try {
  assert.equal(await managed.getByRole('dialog',{name:'配置项目启动',exact:true}).count(),0);
  assert.equal((await calls(managed,'ma_project_preview_save')).length,1,'automatic preview never saves a manual configuration');
  assert.equal((await calls(managed,'ma_conversation_execute_plan')).length,0);
- await managed.evaluate(()=>Object.assign(window.conversationMock.chats.A.executionPlans[0].managed,{
-   status:'failed',summary:'最终验收连续三次未通过',commit:null,verificationCommand:null,
- }));
+ await managed.evaluate(() => {
+   const mock = window.conversationMock;
+   const { agents, tasks } = mock.snapshot('A');
+   const { runHistory } = mock;
+   const build = tasks.find(task => task.id === 't-build');
+   const review = tasks.find(task => task.id === 't-review');
+   Object.assign(agents.find(agent => agent.id === 'codex'), { name: 'OpenCode 开发', runtimeKind: 'opencode' });
+   Object.assign(agents.find(agent => agent.id === 'kimi'), { name: 'Pi 审查', runtimeKind: 'pi' });
+   Object.assign(build, { status: 'done', reviewerAgentId: null });
+   Object.assign(review, { status: 'done' });
+   const integration = { ...build, id: 't-delivery', title: '联调 Demo', assigneeAgentId: 'pi-integrator' };
+   agents.push({ ...agents.find(agent => agent.id === 'kimi'), id: 'pi-integrator', name: 'Pi 联调', role: 'integrator' });
+   tasks.push(integration);
+   const managedPlan = mock.chats.A.executionPlans[0];
+   managedPlan.taskIds = [build.id, review.id, integration.id];
+   managedPlan.tasks = [build, review, integration];
+   const at = Date.now();
+   for (const attempt of [2, 1]) runHistory.push({
+     id: `managed-attempt-${attempt}`, projectId: 'A', taskId: 't-build', agentId: 'codex', attempt,
+     status: attempt === 2 ? 'succeeded' : 'failed', outputSummary: `运行 ${attempt}`, error: null,
+     createdAt: at + attempt, startedAt: at, finishedAt: at + attempt,
+     sessionLocator: { sessionId: 'native-opencode', turnId: `turn-${attempt}`, managedTurn: 'completed' },
+   });
+   const successfulBuild = runHistory.find(run => run.id === 'managed-attempt-2');
+   for (const task of [review, integration]) runHistory.push({
+     ...successfulBuild, id: `managed-run-${task.id}`, taskId: task.id, agentId: task.assigneeAgentId, attempt: 1,
+     sessionLocator: { sessionId: `native-${task.id}`, managedTurn: 'completed' },
+   });
+ });
+ const developmentRecord = outcome.getByRole('button',{name:/OpenCode 开发.*接口对接/});
+ const reviewRecord = outcome.getByRole('button',{name:/Pi 审查.*测试与审查/});
+ const integrationRecord = outcome.getByRole('button',{name:/Pi 联调.*联调 Demo/});
+ await developmentRecord.waitFor();
+ const memberDeliveries = outcome.getByRole('group',{name:'成员交付明细',exact:true});
+ assert.equal(await memberDeliveries.getByRole('button').count(),3,'只显示这轮托管绑定的任务');
+ assert.match(await developmentRecord.innerText(),/验收通过/);
+ assert.match(await developmentRecord.innerText(),/首轮失败.*重试成功/s);
+ assert.match(await reviewRecord.innerText(),/验收通过/);
+ assert.match(await integrationRecord.innerText(),/验收通过/);
+ await managed.setViewportSize({width:320,height:980});
+ assert.equal(await outcome.evaluate(card => card.scrollWidth <= card.clientWidth),true,'托管卡片适应窄面板');
+ await outcome.screenshot({path:`${out}/managed-delivery-members-narrow.png`});
+ await managed.setViewportSize({width:680,height:980});
+ await outcome.screenshot({path:`${out}/managed-delivery-members.png`});
+ await developmentRecord.click();
+ assert.equal(await tab(managed,'任务执行').getAttribute('aria-selected'),'true');
+ await managed.getByRole('article',{name:'任务详情 接口对接',exact:true}).waitFor();
+ const runRecords = managed.getByRole('region',{name:'任务执行记录',exact:true});
+ await managed.waitForFunction(() => {
+   const heading = document.querySelector('.team-task-records h3');
+   const panel = document.querySelector('.team-tasks-panel');
+   if (!heading || !panel) return false;
+   const recordHeading = heading.getBoundingClientRect();
+   const taskPanel = panel.getBoundingClientRect();
+   return recordHeading.top >= taskPanel.top - 1 && recordHeading.bottom <= Math.min(taskPanel.bottom, innerHeight);
+ });
+ const openRun = runRecords.getByRole('button',{name:'查看原会话记录',exact:true});
+ await openRun.click();
+ await runRecords.getByLabel('执行尝试').selectOption('managed-attempt-1');
+ await openRun.click();
+ assert.deepEqual((await calls(managed,'fixture_open_session')).map(({args})=>[args.sessionId,args.original.projectId,args.original.runId,args.original.source]),
+   [[null,'A','managed-attempt-2','managed_task'],[null,'A','managed-attempt-1','managed_task']]);
+ await tab(managed,'团队聊天').click();
+ await reviewRecord.click();
+ await managed.getByRole('article',{name:'任务详情 测试与审查',exact:true}).waitFor();
+ assert.match(await runRecords.innerText(),/managed-run-t-review/);
+ await tab(managed,'团队聊天').click();
+ await integrationRecord.click();
+ await managed.getByRole('article',{name:'任务详情 联调 Demo',exact:true}).waitFor();
+ assert.match(await runRecords.innerText(),/managed-run-t-delivery/);
+ await tab(managed,'团队聊天').click();
+ await managed.evaluate(() => {
+   const mock = window.conversationMock;
+   const agents = mock.snapshot('A').agents;
+   agents.splice(agents.findIndex(agent => agent.id === 'pi-integrator'),1);
+   mock.chats.A.executionPlans[0].managed.target.members = { 'pi-integrator': { runtime: 'pi', role: 'integrator' } };
+ });
+ const historicalRecord = outcome.getByRole('button',{name:/Pi.*历史成员.*联调 Demo/});
+ await historicalRecord.click();
+ const integrationDetail = managed.getByRole('article',{name:'任务详情 联调 Demo',exact:true});
+ await integrationDetail.getByText('Pi（历史成员）',{exact:true}).waitFor();
+ assert.match(await runRecords.innerText(),/managed-run-t-delivery/);
+ await tab(managed,'团队聊天').click();
+ await managed.evaluate(() => {
+   const mock = window.conversationMock;
+   Object.assign(mock.chats.A.executionPlans[0].managed, {
+     status: 'failed', summary: '最终验收连续三次未通过', commit: null, verificationCommand: null,
+   });
+   mock.snapshot('A').tasks.find(task => task.id === 't-delivery').status = 'failed';
+ });
  await outcome.getByText('最终验收连续三次未通过',{exact:true}).waitFor();
+ assert.doesNotMatch(await historicalRecord.innerText(),/验收通过/,'进程回执成功不足以证明任务通过验收');
  assert.equal(await outcome.getByRole('button',{name:'启动项目',exact:true}).count(),0);
  await managed.evaluate(()=>{
    const chat = window.conversationMock.chats.A;

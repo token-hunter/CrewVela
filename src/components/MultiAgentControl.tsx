@@ -25,7 +25,7 @@ import { RUNTIME_LABELS } from "../runtimeLogos";
 import { visibleProjectTasks } from "../collaborationTasks";
 import { hasMentionToken, mentionTextSegments, selectMentionTokens } from "../multiAgentMention";
 import { useRuntimeAvailability } from "../runtimeAvailability";
-import type { AgentProfile, ConversationAttachment, ConversationDesignDelegation, ConversationExecutionPlan, ConversationMessage, ConversationOriginalSession, ConversationRound, ConversationSendInput, ConversationSnapshot, MultiAgentProject, MultiAgentSnapshot, SessionRecord } from "../types";
+import type { AgentProfile, AgentRun, ConversationAttachment, ConversationDesignDelegation, ConversationExecutionPlan, ConversationMessage, ConversationOriginalSession, ConversationRound, ConversationSendInput, ConversationSnapshot, MultiAgentProject, MultiAgentSnapshot, MultiAgentTask, SessionRecord } from "../types";
 import "../styles/collaboration-conversation.css";
 import "../styles/team-work-views.css";
 import "../styles/conversation-member-activity.css";
@@ -94,7 +94,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [draftFiles, setDraftFiles] = useState<string[]>([]);
   const [pickingFiles, setPickingFiles] = useState(false);
   const [archivedRuleId, setArchivedRuleId] = useState("");
-  const [workView, setWorkView] = useState<"chat" | "tasks">("chat");
+  const [requestedView, setWorkView] = useState<"chat" | "tasks" | "taskRecords">("chat");
+  const workView = requestedView === "taskRecords" ? "tasks" : requestedView;
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const workViewId = useId();
   const [selected, setSelected] = useState<string[]>([]);
@@ -614,6 +615,20 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     } catch (reason) { if (mounted.current && currentProject.current === id && generation.current === epoch) setOperationError(String(reason)); }
     finally { mutation.current = false; if (mounted.current) setBusy(false); if (mounted.current && currentProject.current === id && generation.current === epoch) void refresh(); }
   };
+  const openSessionRecord = async (id: string | null, original?: ConversationOriginalSession) => {
+    if ((!id && !original) || !onOpenSession) { setOperationError("原会话记录暂不可用。"); return; }
+    setOperationError("");
+    try { await onOpenSession(id, original); } catch (reason) { setOperationError(`打开原会话失败：${String(reason)}`); }
+  };
+  const openManagedRunRecord = (run: AgentRun, task: MultiAgentTask) => openSessionRecord(null, {
+    projectId: run.projectId,
+    runId: run.id,
+    source: "managed_task",
+    agentName: snapshot?.agents.find(agent => agent.id === run.agentId)?.name ?? "历史成员",
+    request: task.description,
+    reply: run.outputSummary ?? "",
+    error: run.error,
+  });
   const openAgentSession = async (message: ConversationMessage, agentName: string) => {
     const belongsToAgent = (item: SessionRecord) => item.multiAgentProjectId === message.projectId
       && item.multiAgentAgentId === message.agentId && !item.retiredAgentRuntime;
@@ -632,10 +647,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       reply: message.senderType === "agent" ? message.body : run?.outputSummary ?? "",
       error: run?.error ?? (message.senderType === "system" ? message.body : null),
     } : undefined;
-    const id = session?.id ?? binding?.appSessionId ?? null;
-    if ((!id && !original) || !onOpenSession) { setOperationError("原会话记录暂不可用。"); return; }
-    setOperationError("");
-    try { await onOpenSession(id, original); } catch (reason) { setOperationError(`打开原会话失败：${String(reason)}`); }
+    await openSessionRecord(session?.id ?? binding?.appSessionId ?? null, original);
   };
   const mentionSegments = useMemo(() => mentionTextSegments(draft, mentionTokens), [draft, mentionTokens]);
   const highlightMentions = !composingMention && mentionSegments.some(segment => segment.mention);
@@ -686,7 +698,10 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     ? `分工 · ${mentionCount || selected.length} 位`
     : mentionCount ? `已 @ ${mentionCount} 位` : `发给全体 · ${availableRecipients.length} 位`;
   const sendLabel = discussing ? "发送插话" : "发送消息";
-  const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} agents={snapshot?.agents ?? []} blocked={busy || !healthy || discussing || !active} paused={snapshot?.project.status === "paused"} onConfirm={() => void applyPlan(plan)} onAdjust={() => editPlan(plan)} onTasks={() => setWorkView("tasks")} />;
+  const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} snapshot={snapshot}
+    blocked={busy || !healthy || discussing || !active} paused={snapshot?.project.status === "paused"}
+    onConfirm={() => void applyPlan(plan)} onAdjust={() => editPlan(plan)} onTasks={() => setWorkView("tasks")}
+    onTaskRecords={id => { setSelectedTaskId(id); setWorkView("taskRecords"); }} />;
 
   const conversationId = conversation?.conversation.id;
   const delegationsByRun = useMemo(() => {
@@ -925,7 +940,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           </header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || (manualMembers.has(agent.id) && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? " · 用户接管中" : ""}</small></span></label>)}</div>}
       </ResizableConversationComposer>
     </footer></div>
-    {workView === "tasks" && <div id={`${workViewId}-tasks-panel`} className="team-tasks-panel" role="tabpanel" aria-labelledby={`${workViewId}-tasks-tab`}><ConversationTaskView snapshot={snapshot} tasks={tasks} plans={conversation?.executionPlans ?? []} discussion={latestDiscussion} selectedId={selectedTaskId} blocked={busy || !healthy || !active} onSelect={setSelectedTaskId} onExecution={action => void updateExecution(action)} onChat={returnToChat} onFullRecords={onOpenProjectSettings ? openProjectTasks : undefined} onRefresh={refresh} /></div>}
+    {workView === "tasks" && <div id={`${workViewId}-tasks-panel`} className="team-tasks-panel" role="tabpanel" aria-labelledby={`${workViewId}-tasks-tab`}><ConversationTaskView snapshot={snapshot} tasks={tasks} plans={conversation?.executionPlans ?? []} discussion={latestDiscussion} selectedId={selectedTaskId} initialRecordTaskId={requestedView === "taskRecords" ? selectedTaskId : null} blocked={busy || !healthy || !active} onSelect={setSelectedTaskId} onExecution={action => void updateExecution(action)} onChat={returnToChat} onFullRecords={onOpenProjectSettings ? openProjectTasks : undefined} onOpenRun={onOpenSession ? (run, task) => void openManagedRunRecord(run, task) : undefined} onRefresh={refresh} /></div>}
 
     {creatingProject && <CollaborationProjectDialog onClose={() => setCreatingProject(false)} onCreate={async (input, gitSetup) => {
       const project = await invoke<MultiAgentProject>("ma_create_project", { input: { ...input, defaultBranch: "main" }, gitSetup });

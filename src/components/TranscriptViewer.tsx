@@ -64,16 +64,17 @@ export function TranscriptViewer({ session, original, onClose, preview = false, 
     { role: "assistant", text: original.reply, at: null },
   ].filter(item => item.text.trim()) : null;
   const runError = original?.error ?? (session?.status === "error" ? session.lastError || "本次执行失败，未记录具体错误。查看记录不会自动重试任务。" : null);
+  const managedRecord = original?.source === "managed_task";
 
   const content = <>
       <h2 id={titleId}>
           {session ? sessionDisplayTitle(session) : `${original?.agentName} · 原会话`}
-          <small className="transcript-subtitle">历史记录（每段最多 200 条）</small>
+          <small className="transcript-subtitle">{managedRecord ? "只读记录" : "历史记录"}（每段最多 200 条）</small>
         </h2>
         {runError && <p className="session-error" role="alert">{runError}</p>}
         <div className="transcript-messages">
           {fallback && <div className="transcript-empty" role="status">
-            原会话记录暂不可用。{fallback.length ? "以下为群聊保存的本次对话。" : "本次运行尚无可回看的对话。"}
+            原会话记录暂不可用。{fallback.length ? (managedRecord ? "以下为任务保存的本次记录。" : "以下为群聊保存的本次对话。") : "本次运行尚无可回看的对话。"}
           </div>}
           {error && !original && <div className="transcript-empty" role="alert">{error}</div>}
           {!error && messages === null && (

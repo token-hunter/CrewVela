@@ -973,6 +973,7 @@ export interface ConversationMessage {
 export interface ConversationOriginalSession {
   projectId: string;
   runId: string;
+  source?: "managed_task";
   agentName: string;
   request: string;
   reply: string;
@@ -1055,7 +1056,7 @@ export interface ConversationExecutionPlan {
   status: "pending" | "applied" | "superseded";
   taskIds: string[];
   managed?: {
-    target: { root: string; branch: string };
+    target: { root: string; branch: string; members?: Record<string, { runtime: AgentRuntimeKind; role: AgentRole }> };
     status: "planning" | "running" | "completed" | "failed";
     summary: string | null;
     commit: string | null;

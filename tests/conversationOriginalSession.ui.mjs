@@ -57,6 +57,14 @@ try {
     sessionId: null, original: { projectId: "A", runId: "old", agentName: "成员 A", request: "", reply: "", error: null },
   }));
   await managed.getByRole("dialog", { name: /成员 A · 原会话/ }).getByText("从 Claude 原会话读取的历史正文", { exact: true }).waitFor();
+  await managed.keyboard.press("Escape");
+  await managed.evaluate(() => window.appSessionMock.emit("crewvela-conversation-open-session", {
+    sessionId: null, original: { projectId: "A", runId: "unavailable", source: "managed_task", agentName: "成员 A", request: "本次托管任务", reply: "本次执行摘要", error: null },
+  }));
+  const managedRecord = managed.getByRole("dialog", { name: /成员 A · 原会话/ });
+  await managedRecord.getByText("只读记录（每段最多 200 条）", { exact: true }).waitFor();
+  await managedRecord.getByText("原会话记录暂不可用。以下为任务保存的本次记录。", { exact: true }).waitFor();
+  assert.deepEqual(await managed.evaluate(() => window.appSessionMock.calls), []);
   assert.deepEqual(errors, []);
   console.log("PASS: exact conversation run history, unavailable history fallback, cross-workspace terminal, and detached route");
 } finally {
