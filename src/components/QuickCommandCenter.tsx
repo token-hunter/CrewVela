@@ -33,6 +33,8 @@ export interface QuickCommandCenterProps {
 const receiptLabels: Record<QuickReceipt["state"], string> = {
   queued: "已排队", text_written: "内容已写入", started: "已启动", stopped: "已停止", removed: "已从列表删除", failed: "失败",
 };
+const displayPath = (p?: string | null) =>
+  !p ? "" : p.startsWith("\\\\?\\UNC\\") ? `\\\\${p.slice(8)}` : p.startsWith("\\\\?\\") && /^[A-Za-z]:[\\/]/.test(p.slice(4)) ? p.slice(4) : p;
 const capabilityCache = createQuickCapabilityCache(invoke);
 export function QuickCommandCenter({ sessions, providers, context = {}, manage = false, initialCommand, onClose, onSessionsChange, onOpenSettings }: QuickCommandCenterProps) {
   const id = useId();
@@ -62,7 +64,7 @@ export function QuickCommandCenter({ sessions, providers, context = {}, manage =
   const [draft, setDraft] = useState<QuickCommand>({ id: "builtin:send", title: "向会话发送消息", action: "send", scope: initialSettings.value.defaultScope, body: "检查当前项目并给出下一步建议", ...initialCommand });
   const [editing, setEditing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [cwd, setCwd] = useState(context.cwd ?? "");
+  const [cwd, setCwd] = useState(() => displayPath(context.cwd));
   const [count, setCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<QuickExecutionPlan | null>(null);
@@ -147,7 +149,7 @@ export function QuickCommandCenter({ sessions, providers, context = {}, manage =
   const canExecute = ready && !busy && !editing && (draft.action === "launch" ? !loading && !capabilityError && runtimeReady && !!cwd.trim() && count >= 1 && count <= 12 : !sessionLoading && !sessionError && targets.length > 0 && (draft.action !== "send" || !!draft.body.trim()));
   const choose = (c: QuickCommand) => {
     setDraft({ ...c, scope: c.id.startsWith("builtin:") ? settings.defaultScope : c.scope });
-    setCwd(c.cwd ?? context.cwd ?? ""); setCount(c.count ?? 1);
+    setCwd(displayPath(c.cwd ?? context.cwd)); setCount(c.count ?? 1);
     setSelectedIds([]); setEditing(false); setConfirmation(null); setRemoveCommand(null); setNotice("");
   };
   const updateDraft = (change: Partial<QuickCommand>) => { setDraft(c => ({ ...c, ...change })); setConfirmation(null); };
@@ -229,12 +231,12 @@ export function QuickCommandCenter({ sessions, providers, context = {}, manage =
           {(loading || !runtimeReady) && <p className="quick-center-notice">{loading ? "正在核对本机能力，完成后可启动。" : "该指令的 Agent 或 Provider 当前不可用，请检查安装、启用状态与配置。"}</p>}
         </> : <>
           <div className="quick-center-scope-row"><label>范围<select aria-label="范围" value={draft.scope} disabled={busy} onChange={e => { updateDraft({ scope: e.target.value as QuickScope }); setSelectedIds([]); }}>
-            {Object.entries(SCOPE_LABELS).map(([v, label]) => <option key={v} value={v} disabled={(v === "workspace" && context.workspaceSessionIds === undefined) || (v === "project" && !context.projectId)}>{v === "all" && draft.action === "delete" ? "全部未归档 Agent 会话" : label}</option>)}</select></label>
-          <p className="quick-center-directory" title={context.cwd || "未关联工作目录"}><FolderIcon size={19} aria-hidden="true" /><span>{context.cwd || "未关联工作目录"}</span></p></div>
+            {Object.entries(SCOPE_LABELS).map(([v, label]) => <option key={v} value={v}>{v === "all" && draft.action === "delete" ? "全部未归档 Agent 会话" : label}</option>)}</select></label>
+          <p className="quick-center-directory" title={displayPath(context.cwd) || "未关联工作目录"}><FolderIcon size={19} aria-hidden="true" /><span>{displayPath(context.cwd) || "未关联工作目录"}</span></p></div>
           {draft.scope === "workspace" && context.workspaceSessionIds === undefined && <p className="quick-center-notice">此入口没有工作区上下文，请回主窗口或选择其他范围。</p>}
           {draft.scope === "project" && !context.projectId && <p className="quick-center-notice">当前未选择项目，请回主窗口选择项目或使用其他范围。</p>}
           <div className="quick-center-target-heading"><strong>目标会话 · 已选 {targets.length} / {eligible.length}</strong><button type="button" disabled={busy || !eligible.length} onClick={() => { setConfirmation(null); setSelectedIds(targets.length === eligible.length ? [] : eligible.map(s => s.id)); }}>{targets.length === eligible.length && targets.length ? "取消全选" : "选择此范围全部"}</button></div>
-          <div className="quick-center-targets">{eligible.map(s => <label key={s.id} title={`${s.title} · ${s.providerName} · ${s.cwd}`}><input type="checkbox" disabled={busy} checked={selectedIds.includes(s.id)} onChange={e => { setConfirmation(null); setSelectedIds(ids => e.target.checked ? [...ids, s.id] : ids.filter(i => i !== s.id)); }} /><span>{s.title}<small>{s.providerName}{draft.scope !== "project" && ` · ${s.cwd}`}</small></span></label>)}{!eligible.length && <p>此范围暂无可操作的 Agent 会话。</p>}</div>
+          <div className="quick-center-targets">{eligible.map(s => <label key={s.id} title={`${s.title} · ${s.providerName} · ${displayPath(s.cwd)}`}><input type="checkbox" disabled={busy} checked={selectedIds.includes(s.id)} onChange={e => { setConfirmation(null); setSelectedIds(ids => e.target.checked ? [...ids, s.id] : ids.filter(i => i !== s.id)); }} /><span>{s.title}<small>{s.providerName}{draft.scope !== "project" && ` · ${displayPath(s.cwd)}`}</small></span></label>)}{!eligible.length && <p>此范围暂无可操作的 Agent 会话。</p>}</div>
         </>}
         {(draft.action === "send" || draft.action === "launch") && <label className="quick-center-message">{draft.action === "launch" ? "启动任务（可选）" : "消息内容"}<textarea rows={4} disabled={busy} value={draft.body} onChange={e => updateDraft({ body: e.target.value })} placeholder="填写要执行的具体任务" /></label>}
         <p className="quick-center-help">已排队不代表已送达、已读或任务完成。</p>
@@ -242,9 +244,9 @@ export function QuickCommandCenter({ sessions, providers, context = {}, manage =
         {!editing && draft.id.startsWith("custom:") && <button type="button" className="quick-center-remove" disabled={busy || !!storageError} onClick={() => setRemoveCommand(draft.id)}>删除这条自定义指令</button>}
         {removeCommand === draft.id && <div className="quick-center-confirm" role="group" aria-label="确认删除指令"><p>只删除这条本地指令，不删除会话。</p><button type="button" onClick={() => { if (mutateSettings(s => ({ ...s, commands: s.commands.filter(c => c.id !== draft.id), favorites: s.favorites.filter(i => i !== draft.id), recent: s.recent.filter(i => i !== draft.id) }))) { choose(catalog[0]); } }}>确认删除指令</button><button type="button" onClick={() => setRemoveCommand(null)}>保留</button></div>}
       </section>
-    {confirmation && <div className="quick-center-confirm" role="group" aria-label="批量操作二次确认"><strong>确认{ACTION_LABELS[confirmation.command.action]} · {confirmation.targets.length} 个目标？</strong><ul>{confirmation.targets.map(s => <li key={targetIdentity(s)}>{s.title} · {s.cwd}</li>)}</ul><p>{draft.action === "delete" ? "会话将从列表移除；不是归档。不会删除项目目录。" : "将停止所选会话的运行进程，正在执行的工作会被中断。"}</p><button type="button" className="danger" onClick={() => void run(confirmation)}>确认{draft.action === "delete" ? "删除所选会话" : "停止所选会话"}</button><button type="button" onClick={() => setConfirmation(null)}>取消操作</button></div>}
+    {confirmation && <div className="quick-center-confirm" role="group" aria-label="批量操作二次确认"><strong>确认{ACTION_LABELS[confirmation.command.action]} · {confirmation.targets.length} 个目标？</strong><ul>{confirmation.targets.map(s => <li key={targetIdentity(s)}>{s.title} · {displayPath(s.cwd)}</li>)}</ul><p>{draft.action === "delete" ? "会话将从列表移除；不是归档。不会删除项目目录。" : "将停止所选会话的运行进程，正在执行的工作会被中断。"}</p><button type="button" className="danger" onClick={() => void run(confirmation)}>确认{draft.action === "delete" ? "删除所选会话" : "停止所选会话"}</button><button type="button" onClick={() => setConfirmation(null)}>取消操作</button></div>}
     {receipts.length > 0 && <section className="quick-center-receipts" aria-label="执行结果" aria-live="polite"><h3>执行结果</h3>{receipts.map(r => <div key={`${r.targetId}-${r.requestId ?? r.state}`} data-state={r.state}><span>{r.title}</span><strong>{receiptLabels[r.state]}</strong>{r.detail && <small>{r.detail}</small>}</div>)}</section>}
-    <footer className="quick-center-footer"><span>{draft.action === "launch" ? `将在 ${cwd || "未选择目录"} 启动 ${count} 个会话` : `已选择 ${targets.length} 个目标 · ${SCOPE_LABELS[draft.scope]}`}</span><button type="button" className={draft.action === "stop" || draft.action === "delete" ? "danger" : "primary"} disabled={!canExecute || !!confirmation} onClick={prepare}>{busy ? "执行中…" : draft.action === "launch" ? "确认启动" : draft.action === "send" ? "确认发送" : "核对批量操作"}</button></footer>
+    <footer className="quick-center-footer"><span>{draft.action === "launch" ? `将在 ${displayPath(cwd) || "未选择目录"} 启动 ${count} 个会话` : `已选择 ${targets.length} 个目标 · ${SCOPE_LABELS[draft.scope]}`}</span><button type="button" className={draft.action === "stop" || draft.action === "delete" ? "danger" : "primary"} disabled={!canExecute || !!confirmation} onClick={prepare}>{busy ? "执行中…" : draft.action === "launch" ? "确认启动" : draft.action === "send" ? "确认发送" : "核对批量操作"}</button></footer>
       </div>
     </div>
   </>;
