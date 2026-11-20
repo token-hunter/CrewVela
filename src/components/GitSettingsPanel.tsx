@@ -1116,7 +1116,6 @@ export function GitSettingsPanel() {
       <section className="git-settings-card git-settings-safety">
         <header>
           <div><Warning size={18} /><span><strong>安全保证</strong><small>这些底线由 CrewVela 固定执行，无需也无法修改。</small></span></div>
-          <span className="git-safety-badge" aria-hidden="true">平台级强制保护</span>
         </header>
         <ul className="git-settings-guarantees">
           <li><Check size={14} weight="bold" /><span><strong>推送保护</strong>强制推送必须手动确认，并始终使用 <code>--force-with-lease</code>，不会覆盖远端新增提交。</span></li>

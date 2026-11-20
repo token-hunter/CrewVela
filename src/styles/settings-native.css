@@ -351,19 +351,6 @@
   cursor: pointer;
 }
 .settings-native .git-preset-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--text); background: var(--bg-hover); }
-.settings-native .git-settings-safety {
-  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
-  background: color-mix(in srgb, var(--success) 5%, var(--settings-canvas));
-}
-.settings-native .git-settings-safety > header svg { color: var(--success); }
-.settings-native .git-safety-badge {
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--success) 15%, transparent);
-  color: var(--success);
-  font-size: 11px;
-  font-weight: 600;
-}
 .settings-native .git-settings-guarantees {
   list-style: none;
   padding: 0;
@@ -377,14 +364,14 @@
   align-items: flex-start;
   gap: 9px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--success) 24%, var(--border));
+  border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--settings-canvas);
   color: var(--text-dim);
   font-size: 12.5px;
   line-height: 1.55;
 }
-.settings-native .git-settings-guarantees > li svg { color: var(--success); flex: none; margin-top: 3px; }
+.settings-native .git-settings-guarantees > li svg { color: var(--accent); flex: none; margin-top: 3px; }
 .settings-native .git-settings-guarantees > li strong { display: block; color: var(--text); font-size: 13px; margin-bottom: 3px; }
 .settings-native .git-settings-feedback {
   display: flex;
