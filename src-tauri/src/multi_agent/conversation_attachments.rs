@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{ensure, Context, Result};
@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 pub(super) const MAX_FILES: usize = 8;
 const MAX_FILE_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_VIDEO_BYTES: u64 = 100 * 1024 * 1024;
+const VIDEO_HEADER_BYTES: u64 = 4 * 1024;
 const MAX_TEXT_CHARS: usize = 4_000;
 const MAX_CONTEXT_TEXT_CHARS: usize = 8_000;
 
@@ -26,6 +28,7 @@ pub(super) const FILE_EXTENSIONS: &[(&str, &str)] = &[
     ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
     ("png", "image/png"), ("jpg", "image/jpeg"), ("jpeg", "image/jpeg"),
     ("webp", "image/webp"), ("gif", "image/gif"),
+    ("mp4", "video/mp4"), ("mov", "video/quicktime"), ("webm", "video/webm"),
 ];
 
 fn mime_type(path: &Path) -> Result<&'static str> {
@@ -40,20 +43,56 @@ fn matches_format(media_type: &str, data: &[u8]) -> bool {
         "image/jpeg" => data.starts_with(b"\xff\xd8\xff"),
         "image/gif" => data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a"),
         "image/webp" => data.starts_with(b"RIFF") && data.get(8..12) == Some(b"WEBP"),
+        "video/mp4" => data.len() >= 16 && data.get(4..8) == Some(b"ftyp"),
+        "video/quicktime" => data.len() >= 16 && matches!(data.get(4..8), Some(b"ftyp" | b"moov" | b"mdat" | b"wide")),
+        "video/webm" => data.starts_with(b"\x1a\x45\xdf\xa3") && data.windows(7).any(|bytes| bytes == b"\x42\x82\x84webm"),
         "application/pdf" => data.starts_with(b"%PDF-"),
         value if value.starts_with("text/") => !data.contains(&0),
         _ => data.starts_with(b"PK\x03\x04"),
     }
 }
 
-fn read_attachment(path: &Path, name: &str, media_type: &str) -> Result<Vec<u8>> {
+fn open_attachment(path: &Path, name: &str) -> Result<File> {
     ensure!(fs::metadata(path).with_context(|| format!("无法读取附件：{name}"))?.is_file(), "附件必须是文件：{name}");
+    File::open(path).with_context(|| format!("无法打开附件：{name}"))
+}
+
+fn read_attachment(path: &Path, name: &str, media_type: &str) -> Result<Vec<u8>> {
     let mut data = Vec::new();
-    File::open(path).with_context(|| format!("无法打开附件：{name}"))?
+    open_attachment(path, name)?
         .take(MAX_FILE_BYTES + 1).read_to_end(&mut data)?;
     ensure!(!data.is_empty() && data.len() as u64 <= MAX_FILE_BYTES, "附件为空或超过 20 MB：{name}");
     ensure!(matches_format(media_type, &data), "附件内容与文件格式不符：{name}");
     Ok(data)
+}
+
+fn video_input(path: &Path, name: &str, media_type: &str) -> Result<(io::Take<File>, Vec<u8>)> {
+    let source = open_attachment(path, name)?;
+    let length = source.metadata()?.len();
+    ensure!(length > 0 && length <= MAX_VIDEO_BYTES, "视频为空或超过 100 MB：{name}");
+    let mut source = source.take(MAX_VIDEO_BYTES + 1);
+    let mut header = Vec::new();
+    (&mut source).take(VIDEO_HEADER_BYTES).read_to_end(&mut header)?;
+    ensure!(matches_format(media_type, &header), "附件内容与文件格式不符：{name}");
+    Ok((source, header))
+}
+
+fn copy_video(path: &Path, name: &str, media_type: &str, target: &mut File) -> Result<u64> {
+    let (mut source, header) = video_input(path, name, media_type)?;
+    target.write_all(&header)?;
+    let bytes = header.len() as u64 + io::copy(&mut source, target)?;
+    ensure!(bytes <= MAX_VIDEO_BYTES, "视频超过 100 MB：{name}");
+    Ok(bytes)
+}
+
+pub(super) fn video_path(path: &Path) -> Result<PathBuf> {
+    ensure!(path.is_absolute(), "附件必须是本地文件");
+    let path = path.canonicalize().context("视频附件不存在或无法读取")?;
+    let media_type = mime_type(&path)?;
+    ensure!(media_type.starts_with("video/"), "仅支持预览视频附件");
+    let name = path.file_name().and_then(|name| name.to_str()).context("附件名称无效")?;
+    video_input(&path, name, media_type)?;
+    Ok(path)
 }
 
 pub(super) fn read_image(path: &Path) -> Result<Vec<u8>> {
@@ -85,14 +124,20 @@ pub(super) fn stage(directory: &Path, paths: &[String]) -> Result<Vec<Conversati
             let name = source.file_name().and_then(|name| name.to_str()).context("附件名称无效")?;
             ensure!(!name.chars().any(|ch| ch.is_control() || matches!(ch, ':' | '\\')), "附件名称包含不支持的字符");
             let media_type = mime_type(source)?;
-            let data = read_attachment(source, name, media_type)?;
             let id = Uuid::new_v4().to_string();
             let target = directory.join(&id);
             fs::create_dir_all(&target).context("无法保存会话附件")?;
             let path = target.join(name);
             added.push((path.clone(), target));
-            File::options().create_new(true).write(true).open(&path)?.write_all(&data)?;
-            attachments.push(ConversationAttachment { id, name: name.into(), bytes: data.len() as u64, media_type: media_type.into() });
+            let mut output = File::options().create_new(true).write(true).open(&path)?;
+            let bytes = if media_type.starts_with("video/") {
+                copy_video(source, name, media_type, &mut output)?
+            } else {
+                let data = read_attachment(source, name, media_type)?;
+                output.write_all(&data)?;
+                data.len() as u64
+            };
+            attachments.push(ConversationAttachment { id, name: name.into(), bytes, media_type: media_type.into() });
         }
         Ok(attachments)
     })();

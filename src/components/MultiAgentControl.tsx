@@ -9,6 +9,7 @@ import { ResizableConversationComposer } from "./ResizableConversationComposer";
 import { ConversationMarkdown } from "./ConversationMarkdown";
 import { ConversationMessageCopy } from "./ConversationMessageCopy";
 import { ConversationImageAttachment } from "./ConversationImageAttachment";
+import { ConversationVideoAttachment } from "./ConversationVideoAttachment";
 import { ConversationApprovalRequests } from "./ConversationApprovalRequests";
 import { ConversationMemberActivity } from "./ConversationMemberActivity";
 import { conversationMemberActivity } from "../conversationActivity";
@@ -54,9 +55,9 @@ const PLAN_VALIDATION_FAILURE = "真实成员已回复，但分工计划未通�
 const MAX_ATTACHMENTS = 8;
 const DOCUMENT_EXTENSIONS = ["pdf", "docx", "txt", "md", "csv"];
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"];
+const VIDEO_EXTENSIONS = ["mp4", "mov", "webm"];
 const attachmentDraftKey = (projectId: string, conversationId: string) => `crewvela.team-attachment-draft.${projectId}.${conversationId}`;
 const fileName = (path: string) => path.split(/[\\/]/u).pop() || path;
-const isImagePath = (path: string) => IMAGE_EXTENSIONS.includes(path.split(".").pop()?.toLowerCase() ?? "");
 function storedAttachmentDraft(projectId: string, conversationId: string): string[] {
   try {
     const files: unknown = JSON.parse(stored(attachmentDraftKey(projectId, conversationId)));
@@ -110,6 +111,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [membersPosition, setMembersPosition] = useState({ left: 0, top: 0, width: MAX_MEMBER_MENU_WIDTH, maxHeight: 320 });
   const membersId = useId();
   const sendScopeId = useId();
+  const attachmentTooltipId = useId();
   const headerMemberTrigger = useRef<HTMLButtonElement>(null);
   const composerMemberTrigger = useRef<HTMLButtonElement>(null);
   const membersMenu = useRef<HTMLDivElement>(null);
@@ -384,8 +386,9 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     setOperationError("");
     try {
       const selected = await open({ multiple: true, directory: false, title: "添加附件", filters: [
-        { name: "图片和文档", extensions: [...DOCUMENT_EXTENSIONS, ...IMAGE_EXTENSIONS] },
+        { name: "图片、视频和文档", extensions: [...DOCUMENT_EXTENSIONS, ...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS] },
         { name: "图片", extensions: IMAGE_EXTENSIONS },
+        { name: "视频", extensions: VIDEO_EXTENSIONS },
         { name: "文档", extensions: DOCUMENT_EXTENSIONS },
       ] });
       if (!selected || !mounted.current || currentProject.current !== id || currentConversation.current !== conversationId) return;
@@ -892,13 +895,15 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const previous = visibleMessages[index - 1];
         const continuation = !!plan && previous?.senderType === "agent" && previous.agentId === message.agentId;
         const fromUser = message.senderType === "user";
-        const attachments = !!message.attachments?.length && <div className="conversation-attachments" aria-label="消息附件">{message.attachments.map(file => file.mediaType.startsWith("image/")
-          ? <ConversationImageAttachment key={file.id} name={file.name} source={{ kind: "message", projectId: message.projectId,
-              conversationId: message.conversationId, messageId: message.id, attachmentId: file.id }} onOpenFile={() => void openAttachment(message, file)} />
-          : <button key={file.id} type="button" title={file.name} onClick={() => void openAttachment(message, file)}>
-              <Paperclip size={15} /><span>{file.name}</span>
-            </button>
-        )}</div>;
+        const attachments = !!message.attachments?.length && <div className="conversation-attachments" aria-label="消息附件">{message.attachments.map(file => {
+          const source = { kind: "message" as const, projectId: message.projectId,
+            conversationId: message.conversationId, messageId: message.id, attachmentId: file.id };
+          if (file.mediaType.startsWith("image/")) return <ConversationImageAttachment key={file.id} name={file.name} source={source} onOpenFile={() => void openAttachment(message, file)} />;
+          if (file.mediaType.startsWith("video/")) return <ConversationVideoAttachment key={file.id} name={file.name} source={source} />;
+          return <button key={file.id} type="button" title={file.name} onClick={() => void openAttachment(message, file)}>
+            <Paperclip size={15} /><span>{file.name}</span>
+          </button>;
+        })}</div>;
         return <article className={`conversation-message ${message.senderType} ${message.status}${continuation ? " plan-continuation" : ""}`} key={message.id} data-message-id={message.id}>
           {!fromUser && (agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar"><Robot size={21} /></span>)}
           <div className="conversation-message-content"><header>
@@ -980,13 +985,16 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       <ResizableConversationComposer onSubmit={event => void submit(event)}>
          {!!draftFiles.length && <div className="conversation-attachments conversation-draft-attachments" aria-label="待发送附件">{draftFiles.map(path => {
            const name = fileName(path);
+           const extension = name.split(".").pop()?.toLowerCase() ?? "";
            const removeDisabled = busy || !!pending || pickingFiles;
            const remove = () => { if (projectId && currentConversation.current) changeDraftFiles(draftFiles.filter(file => file !== path), projectId, currentConversation.current); };
-           return isImagePath(path)
-             ? <ConversationImageAttachment key={`${conversation?.conversation.id}:${path}`} name={name} source={{ kind: "draft", path }} onRemove={remove} removeDisabled={removeDisabled} />
-             : <button key={path} type="button" title={name} aria-label={`移除附件 ${name}`} disabled={removeDisabled} onClick={remove}>
-                 <Paperclip size={15} /><span>{name}</span><X size={12} />
-               </button>;
+           const source = { kind: "draft" as const, path };
+           const key = `${conversation?.conversation.id}:${path}`;
+           if (IMAGE_EXTENSIONS.includes(extension)) return <ConversationImageAttachment key={key} name={name} source={source} onRemove={remove} removeDisabled={removeDisabled} />;
+           if (VIDEO_EXTENSIONS.includes(extension)) return <ConversationVideoAttachment key={key} name={name} source={source} onRemove={remove} removeDisabled={removeDisabled} />;
+           return <button key={path} type="button" title={name} aria-label={`移除附件 ${name}`} disabled={removeDisabled} onClick={remove}>
+             <Paperclip size={15} /><span>{name}</span><X size={12} />
+           </button>;
          })}</div>}
         <div className="conversation-editor multi-agent-composer-editor" data-highlighted={highlightMentions}>
           {highlightMentions && <ConversationMentionHighlight textareaRef={editor} segments={mentionSegments}/> }
@@ -1018,8 +1026,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
                 onClick={() => void submit(undefined, undefined, true, true)}>全自动托管</button>
             </div>
           </div>
-           <div className="conversation-composer-send-actions"><button type="button" className="conversation-icon conversation-add-attachment" aria-label="添加附件" title="添加图片或文档"
+           <div className="conversation-composer-send-actions"><button type="button" className="conversation-icon conversation-add-attachment" aria-label="添加附件" aria-describedby={attachmentTooltipId}
              disabled={!projectId || !conversation || !active || busy || !!pending || pickingFiles} onClick={() => void pickAttachments()}><Paperclip size={18} /></button>
+             <span className="conversation-attachment-tooltip" id={attachmentTooltipId} role="tooltip">
+               <span>图片 · {IMAGE_EXTENSIONS.join("、").toUpperCase()}</span>
+               <span>视频 · {VIDEO_EXTENSIONS.join("、").toUpperCase()}</span>
+               <span>文档 · {DOCUMENT_EXTENSIONS.join("、").toUpperCase()}</span>
+             </span>
            <span id={sendScopeId} className="conversation-send-scope">{sendScopeLabel}</span>
            <button type="submit" className="conversation-send" aria-label={sendLabel} title={sendLabel} aria-describedby={sendScopeId}
              disabled={busy || pickingFiles || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || (!draft.trim() && !draftFiles.length) || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}>

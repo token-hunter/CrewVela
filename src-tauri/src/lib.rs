@@ -1286,10 +1286,31 @@ async fn ma_conversation_stage_attachments(project_id: String, conversation_id: 
 }
 
 #[tauri::command]
-async fn ma_conversation_preview_image(source: multi_agent::conversation::ConversationImageSource,
+async fn ma_conversation_preview_image(source: multi_agent::conversation::ConversationAttachmentSource,
     state: State<'_, MultiAgentStore>) -> Result<tauri::ipc::Response, String> {
     let store = state.inner().clone();
     blocking_command(move || store.conversation_image_bytes(source).map(tauri::ipc::Response::new).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_conversation_preview_video(source: multi_agent::conversation::ConversationAttachmentSource,
+    app: AppHandle, state: State<'_, MultiAgentStore>) -> Result<String, String> {
+    let store = state.inner().clone();
+    blocking_command(move || {
+        let path = store.conversation_video_path(source).map_err(to_err)?;
+        app.asset_protocol_scope().allow_file(&path).map_err(to_err)?;
+        Ok(path.display().to_string())
+    }).await
+}
+
+#[tauri::command]
+async fn ma_conversation_open_video(source: multi_agent::conversation::ConversationAttachmentSource,
+    state: State<'_, MultiAgentStore>) -> Result<(), String> {
+    let store = state.inner().clone();
+    blocking_command(move || {
+        let path = store.conversation_video_path(source).map_err(to_err)?;
+        tauri_plugin_opener::open_path(multi_agent::external_command_path(&path), None::<&str>).map_err(to_err)
+    }).await
 }
 
 #[tauri::command]
@@ -6601,6 +6622,8 @@ pub fn run() {
             ma_conversation_resume_managed_after_login,
             ma_conversation_stage_attachments,
             ma_conversation_preview_image,
+            ma_conversation_preview_video,
+            ma_conversation_open_video,
             ma_conversation_open_attachment,
             ma_project_preview_save,
             ma_project_preview_start,

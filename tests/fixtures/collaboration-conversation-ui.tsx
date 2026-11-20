@@ -297,7 +297,7 @@ const mock = {
     if (command === "ma_conversation_stage_attachments") {
       return args.paths.map((path: string) => {
         const file = { id: crypto.randomUUID(), name: path.split(/[\\/]/).pop()!, bytes: 21,
-          mediaType: path.endsWith(".png") ? "image/png" : "text/markdown" };
+          mediaType: path.endsWith(".png") ? "image/png" : path.endsWith(".mp4") ? "video/mp4" : "text/markdown" };
         stagedAttachments.set(file.id, file);
         return file;
       });
@@ -316,6 +316,10 @@ const mock = {
       return blob.arrayBuffer();
     }
     if (command === "ma_conversation_open_attachment") return null;
+    if (command === "ma_conversation_preview_video") return params.has("broken-video")
+      ? "/tests/fixtures/collaboration-conversation-ui.html"
+      : "/tests/fixtures/conversation-preview.webm";
+    if (command === "ma_conversation_open_video") return null;
     if (["ma_conversation_send", "ma_conversation_interrupt"].includes(command)) {
       const input = args.input, chat = chats[input.projectId];
       if (params.get("natural") === "1") {
@@ -396,7 +400,10 @@ const mock = {
     if (command === "plugin:event|emit") return null;
     if (command === "ma_create_project") { const project = { ...args.input, id: crypto.randomUUID(), status: "active", createdAt: clock, updatedAt: clock }; projects = [...projects, project]; chats[project.id] = emptyChat(project.id); return project; }
     if (command === "ma_project_git_status") return { state: "missingRepository", repositoryPath: null, hasFiles: false, stagedFiles: [], stagedToken: null };
-    if (command === "plugin:dialog|open") return params.has("attachments") ? ["/fixture/设计截图.png", "/fixture/需求说明.md"] : "/fixture/new-project";
+    if (command === "plugin:dialog|open") {
+      if (params.has("video")) return ["/fixture/操作演示.mp4"];
+      return params.has("attachments") ? ["/fixture/设计截图.png", "/fixture/需求说明.md"] : "/fixture/new-project";
+    }
     if (command === "get_runtime_preferences") return { disabledRuntimes: params.get("disabled") ? [params.get("disabled")] : [] };
     if (command === "plugin:event|listen") return 1;
     if (command === "plugin:event|unlisten") return null;
@@ -413,7 +420,7 @@ if(params.get("queued")==="1") {
 }
 if(params.get("markdown")==="1") chats.A.messages.push(message("m90","agent",'# 方案\n\n**已经确认**，使用 `read()`。\n\n- 第一步\n- 第二步\n\n```js\nconst value = "<safe>";\n```\n\n| 名称 | 状态 |\n| --- | --- |\n| 接口 | 完成 |\n\n[安全链接](https://example.com/) [危险链接](javascript:alert(1))\n\n![不要自动加载](https://example.invalid/tracking.png)\n\n<script>window.unsafeExecuted=true</script>',"claude"));
 (window as any).conversationMock = mock;
-(window as any).__TAURI_INTERNALS__ = { invoke: mock.invoke, transformCallback: () => 1 };
+(window as any).__TAURI_INTERNALS__ = { invoke: mock.invoke, transformCallback: () => 1, convertFileSrc: (path: string) => path };
 function Fixture() {
   const [taskRequest,setTaskRequest] = useState<CollaborationTasksRequest>();
   const taskSequence = useRef(0);

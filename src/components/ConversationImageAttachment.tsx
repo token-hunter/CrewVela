@@ -4,13 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { Image, X } from "@phosphor-icons/react";
 import { Modal } from "./ui/Modal";
 
-type ImageSource =
+export type ConversationAttachmentSource =
   | { kind: "draft"; path: string }
   | { kind: "message"; projectId: string; conversationId: string; messageId: string; attachmentId: string };
 
 interface Props {
   name: string;
-  source: ImageSource;
+  source: ConversationAttachmentSource;
   onRemove?: () => void;
   removeDisabled?: boolean;
   onOpenFile?: () => void;

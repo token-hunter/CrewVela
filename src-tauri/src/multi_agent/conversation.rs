@@ -24,7 +24,7 @@ pub use attachments::ConversationAttachment;
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub(crate) enum ConversationImageSource {
+pub(crate) enum ConversationAttachmentSource {
     Draft { path: std::path::PathBuf },
     Message { project_id: String, conversation_id: String, message_id: String, attachment_id: String },
 }
@@ -812,13 +812,20 @@ impl MultiAgentStore {
         Ok(attachments::resolve(&directory, id)?.1)
     }
 
-    pub(crate) fn conversation_image_bytes(&self, source: ConversationImageSource) -> Result<Vec<u8>> {
-        let path = match source {
-            ConversationImageSource::Draft { path } => path,
-            ConversationImageSource::Message { project_id, conversation_id, message_id, attachment_id } =>
-                self.conversation_attachment_path(&project_id, &conversation_id, &message_id, &attachment_id)?,
-        };
-        attachments::read_image(&path)
+    fn conversation_attachment_source_path(&self, source: ConversationAttachmentSource) -> Result<std::path::PathBuf> {
+        match source {
+            ConversationAttachmentSource::Draft { path } => Ok(path),
+            ConversationAttachmentSource::Message { project_id, conversation_id, message_id, attachment_id } =>
+                self.conversation_attachment_path(&project_id, &conversation_id, &message_id, &attachment_id),
+        }
+    }
+
+    pub(crate) fn conversation_image_bytes(&self, source: ConversationAttachmentSource) -> Result<Vec<u8>> {
+        attachments::read_image(&self.conversation_attachment_source_path(source)?)
+    }
+
+    pub(crate) fn conversation_video_path(&self, source: ConversationAttachmentSource) -> Result<std::path::PathBuf> {
+        attachments::video_path(&self.conversation_attachment_source_path(source)?)
     }
 
     pub(super) fn conversation_task_images(&self, task: &str) -> Result<Vec<(std::path::PathBuf, String)>> {
