@@ -112,6 +112,7 @@
 .conversation-message.user { justify-content: flex-end; }
 .conversation-message.user > .conversation-message-content { display: flex; flex: 0 1 auto; flex-direction: column; align-items: flex-end; max-inline-size: min(82%, 680px); }
 .conversation-message.user > .conversation-message-content > header { justify-content: flex-end; gap: 2px 8px; min-height: 22px; text-align: end; overflow-wrap: anywhere; }
+.conversation-message.user .conversation-user-avatar { width: 28px; height: 28px; border-radius: 7px; }
 .conversation-user-bubble { box-sizing: border-box; max-inline-size: 100%; min-inline-size: 0; padding: 8px 14px; border-radius: 14px; background: color-mix(in srgb, var(--text) 11%, var(--bg-elev)); }
 .conversation-user-bubble .conversation-attachments { margin: 8px 0 0; }
 .conversation-user-bubble .conversation-attachments:first-child { margin-top: 0; }

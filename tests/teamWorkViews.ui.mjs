@@ -74,10 +74,15 @@ try {
   const user = p.locator('[data-message-id="a0"]');
   const agent = p.locator('[data-message-id="m90"]');
   await agent.locator('.conversation-message-body').waitFor();
-  const typography = (message) => message.evaluate(node => {
-   const sender = node.querySelector('.conversation-message-content > header strong');
-   const body = node.querySelector('.conversation-message-body');
-   return { sender: getComputedStyle(sender).fontSize, body: getComputedStyle(body).fontSize };
+   const messageMetrics = (message) => message.evaluate(node => {
+    const body = getComputedStyle(node.querySelector('.conversation-message-body')).fontSize;
+    const avatar = node.querySelector('.conversation-user-avatar');
+    if (avatar) {
+     const { width, height } = getComputedStyle(avatar);
+     return { avatar: [width, height], body };
+    }
+    const sender = node.querySelector('.conversation-message-content > header strong');
+    return { sender: getComputedStyle(sender).fontSize, body };
   });
   await p.getByRole('button',{name:'查看活动',exact:true}).first().click();
   const surfaces = () => layout.evaluate(node => {
@@ -105,8 +110,8 @@ try {
     return [selector,Object.fromEntries(properties.map(property => [property,style[property]]))];
    }));
   });
-  const wideUser = await typography(user);
-  const wideAgent = await typography(agent);
+   const wideUser = await messageMetrics(user);
+   const wideAgent = await messageMetrics(agent);
   const wideSurfaces = await surfaces();
   const alignedBounds = () => p.locator('.team-work-views').evaluate(panel => {
    const bounds = node => { const {left, right, width} = node.getBoundingClientRect(); return {left, right, width}; };
@@ -133,8 +138,8 @@ try {
   const wideHeight = await replyBody.evaluate(node => node.offsetHeight);
   for (const width of [320, 440, 500, 620, 680, 760, 899, 900, 941, 999, 1000, 1400, 1800]) {
    await layout.evaluate((node, width) => node.style.width = `${width}px`, width);
-   assert.deepEqual(await typography(user), wideUser, `user typography at ${width}px`);
-   assert.deepEqual(await typography(agent), wideAgent, `agent typography at ${width}px`);
+    assert.deepEqual(await messageMetrics(user), wideUser, `user message dimensions at ${width}px`);
+    assert.deepEqual(await messageMetrics(agent), wideAgent, `agent typography at ${width}px`);
    const measured = await surfaces();
    for (const [selector, expected] of Object.entries(wideSurfaces))
     assert.deepEqual(measured[selector], expected, `${selector} at ${width}px`);
@@ -146,8 +151,8 @@ try {
   assert.deepEqual((await alignedBounds()).surfaces['.conversation-tabs-row'], tabsBefore, 'shared tabs stay in place');
   assert.ok((await p.locator('.team-task-list').boundingBox()).width > 1500, 'wide task list keeps the workspace width');
   await tab(p,'团队聊天').click();
-  assert.deepEqual(wideUser, {sender:'14px', body:'14px'});
-  assert.deepEqual(wideAgent, wideUser);
+   assert.deepEqual(wideUser, {avatar:['28px','28px'], body:'14px'});
+   assert.deepEqual(wideAgent, {sender:'14px', body:'14px'});
   await layout.evaluate(node => node.style.width = '320px');
   assert.ok(await replyBody.evaluate(node => node.offsetHeight) > wideHeight, 'narrow panel wraps text');
   assert.ok(await layout.locator('.conversation-composer-actions').evaluate(node => node.scrollWidth <= node.clientWidth), 'narrow composer controls fit');

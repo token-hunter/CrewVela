@@ -14,14 +14,17 @@ try {
   const copy=user.getByRole('button',{name:'复制消息',exact:true});
   await copy.waitFor();assert.equal(await empty.getByRole('button',{name:'复制消息'}).count(),0);
   const bubble=user.locator('.conversation-user-bubble');
+  const avatar=user.getByRole('img',{name:'我',exact:true});
+  assert.ok(await avatar.isVisible());
+  assert.equal(await user.getByText('我',{exact:true}).count(),0);
   const assertRightAligned=async()=>{
-   const [row, card, button]=await Promise.all([user.boundingBox(),bubble.boundingBox(),copy.boundingBox()]);
+   const [row, card, button, icon]=await Promise.all([user.boundingBox(),bubble.boundingBox(),copy.boundingBox(),avatar.boundingBox()]);
    assert.ok(card.x>row.x && Math.abs(card.x+card.width-row.x-row.width)<2,'user bubble is inset from the left and anchored right');
    assert.ok(Math.abs(button.x+button.width-card.x-card.width)<2,'copy aligns with the right side of the bubble');
+   assert.ok(icon.y+icon.height<=card.y && Math.abs(icon.x+icon.width-card.x-card.width)<2,'user avatar aligns above the right side of the bubble');
   };
   await assertRightAligned();
   assert.ok(await user.getByText('接手成员 · Claude Code',{exact:true}).isVisible());
-  assert.equal(await user.locator('.conversation-avatar').count(),0);
   assert.equal(await agent.locator('.conversation-user-bubble').count(),0);
   assert.ok(await agent.locator('.conversation-avatar').isVisible());
   await copy.hover();await user.getByRole('tooltip',{name:'复制消息',exact:true}).waitFor();

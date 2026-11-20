@@ -901,9 +901,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         )}</div>;
         return <article className={`conversation-message ${message.senderType} ${message.status}${continuation ? " plan-continuation" : ""}`} key={message.id} data-message-id={message.id}>
           {!fromUser && (agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar"><Robot size={21} /></span>)}
-          <div className="conversation-message-content"><header><strong>{fromUser ? "我" : agent?.name ?? "历史成员"}</strong>
+          <div className="conversation-message-content"><header>
+            {!fromUser && <strong>{agent?.name ?? "历史成员"}</strong>}
             {requestRound?.chatDispatch?.kind === "assigned" && requestRound.participantAgentIds.length > 1 && <small>发给 {requestRound.participantAgentIds.length} 位</small>}
             {recipientId && <small>接手成员 · {snapshot?.agents.find(item => item.id === recipientId)?.name ?? "历史成员"}</small>}
+            {fromUser && <span className="conversation-avatar conversation-user-avatar" role="img" aria-label="我"><User size={21} aria-hidden="true" /></span>}
           </header>
             {fromUser ? ((!!message.body && !plan) || attachments) && <div className="conversation-user-bubble">
               {!!message.body && !plan && <ConversationMarkdown body={message.body} mentionTokens={mentionTokens} />}
