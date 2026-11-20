@@ -826,21 +826,27 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         if (message.senderType === "system") return <div className={`conversation-event ${message.status}`} key={message.id}><span className="conversation-status-dot" /><p>{message.body || CONVERSATION_STATUS[message.status]}{delegated?.phase === "source" && delegationLink(delegated.item)}</p>{openOriginal && <button type="button" className="conversation-text-button" onClick={openOriginal}>查看原会话<ArrowSquareOut size={13} /></button>}</div>;
         const previous = visibleMessages[index - 1];
         const continuation = !!plan && previous?.senderType === "agent" && previous.agentId === message.agentId;
+        const fromUser = message.senderType === "user";
+        const attachments = !!message.attachments?.length && <div className="conversation-attachments" aria-label="消息附件">{message.attachments.map(file => file.mediaType.startsWith("image/")
+          ? <ConversationImageAttachment key={file.id} name={file.name} source={{ kind: "message", projectId: message.projectId,
+              conversationId: message.conversationId, messageId: message.id, attachmentId: file.id }} onOpenFile={() => void openAttachment(message, file)} />
+          : <button key={file.id} type="button" title={file.name} onClick={() => void openAttachment(message, file)}>
+              <Paperclip size={15} /><span>{file.name}</span>
+            </button>
+        )}</div>;
         return <article className={`conversation-message ${message.senderType} ${message.status}${continuation ? " plan-continuation" : ""}`} key={message.id} data-message-id={message.id}>
-          {agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar">{message.senderType === "user" ? <User size={21} /> : <Robot size={21} />}</span>}
-          <div className="conversation-message-content"><header><strong>{message.senderType === "user" ? "我" : agent?.name ?? "历史成员"}</strong>
+          {!fromUser && (agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar"><Robot size={21} /></span>)}
+          <div className="conversation-message-content"><header><strong>{fromUser ? "我" : agent?.name ?? "历史成员"}</strong>
             {requestRound?.chatDispatch?.kind === "assigned" && requestRound.participantAgentIds.length > 1 && <small>发给 {requestRound.participantAgentIds.length} 位</small>}
             {recipientId && <small>接手成员 · {snapshot?.agents.find(item => item.id === recipientId)?.name ?? "历史成员"}</small>}
           </header>
-            {!plan && (message.senderType === "agent" ? <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={conversationMemberActivity(message,snapshot?.runs.find(run=>run.id===message.runId),activityEvents,snapshot?.approvals ?? [],activityNow)} now={activityNow} onOpen={message.runId ? openOriginal : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"} completedLabel={planReplyRound ? "规划成员已回复" : undefined}>{message.body && !generatingPlan && !rawPlanReply ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity> : message.body ? <ConversationMarkdown body={message.body}/> : null)}
-             {!!message.attachments?.length && <div className="conversation-attachments" aria-label="消息附件">{message.attachments.map(file => file.mediaType.startsWith("image/")
-               ? <ConversationImageAttachment key={file.id} name={file.name} source={{ kind: "message", projectId: message.projectId,
-                   conversationId: message.conversationId, messageId: message.id, attachmentId: file.id }} onOpenFile={() => void openAttachment(message, file)} />
-               :
-               <button key={file.id} type="button" title={file.name} onClick={() => void openAttachment(message, file)}>
-                 <Paperclip size={15} /><span>{file.name}</span>
-               </button>
-             )}</div>}
+            {fromUser ? ((!!message.body && !plan) || attachments) && <div className="conversation-user-bubble">
+              {!!message.body && !plan && <ConversationMarkdown body={message.body} mentionTokens={mentionTokens} />}
+              {attachments}
+            </div> : <>
+              {!plan && <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={conversationMemberActivity(message,snapshot?.runs.find(run=>run.id===message.runId),activityEvents,snapshot?.approvals ?? [],activityNow)} now={activityNow} onOpen={message.runId ? openOriginal : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"} completedLabel={planReplyRound ? "规划成员已回复" : undefined}>{message.body && !generatingPlan && !rawPlanReply ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity>}
+              {attachments}
+            </>}
             {message.queuedInput && <div className="conversation-progress"><span>{message.status === "queued" ? "等待前一轮确认停止后发送" : message.status === "cancelled" ? "这条消息尚未发送，已取消" : "这条消息尚未发送，等待你确认继续"}</span>{message.status === "needs_decision" && <button type="button" className="conversation-text-button" disabled={busy || !!pending || !healthy || !active || discussing} onClick={() => void mutationCall("ma_conversation_send", { input: message.queuedInput }).then(() => refresh()).catch(() => {})}>继续发送</button>}</div>}
             {plan && renderPlan(plan)}
             {rawPlanReply && !generatingPlan && <details className="conversation-raw-plan">
@@ -920,16 +926,21 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         </div>
         {mentionOpen && mentionMatch && (mentionOptions.length > 0 || mentionMultiple) && <AgentMentionMenu id="conversation-mentions" options={mentionOptions} activeIndex={Math.min(mentionIndex, mentionOptions.length - 1)} onHighlight={setMentionIndex} onSelect={mentionMultiple ? toggleMentionSelection : insertMention} allSelected={allMentionsSelected} onSelectAll={selectAllMentions} multiple={mentionMultiple} selectedKeys={mentionSelection} selectedCount={selectedMentionOptions.length} onMultipleChange={enabled => { if (enabled !== mentionMultiple) { setMentionMultiple(enabled); setMentionSelection([]); } }} onConfirm={insertSelectedMentions} />}
         <div className="conversation-composer-actions">
-          <button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"}
-            aria-controls={membersOpen === "composer" ? membersId : undefined} title="选择分工与托管成员。消息中有 @ 时，优先使用点名成员。"
-            onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}>
-            <User size={16} /><span>分工与托管 · 已选 {selected.length} 位</span><CaretDown size={12} />
-          </button>
           {!!conversation?.archivedTaskRules?.length && <label className="conversation-task-rule">本次规则<select aria-label="本次规则" title={conversation.archivedTaskRules.find(rule => rule.id === archivedRuleId)?.instructions ?? "仅在本条请求生效，不自动延续到下一条"} value={archivedRuleId} disabled={busy || !!pending} onChange={event => setArchivedRuleId(event.target.value)}><option value="">无附加规则</option>{conversation.archivedTaskRules.map(rule => <option key={rule.id} value={rule.id}>{rule.agentId ? agents.find(agent => agent.id === rule.agentId)?.name ?? "历史成员" : "项目"} · {rule.label} · {new Date(rule.createdAt).toLocaleString("zh-CN")}</option>)}</select></label>}
-          <button type="button" className="conversation-text-button team-generate-plan" title={canGeneratePlan ? undefined : "请填写要完成的目标，再生成分工"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button>
-          <button type="button" className="conversation-text-button team-generate-plan" title="一次授权，自动分工、开发、审查和验收"
-            disabled={busy || discussing || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || archivedRuleId !== "" || ["stopping", "unconfirmed"].includes(round?.status ?? "")}
-            onClick={() => void submit(undefined, undefined, true, true)}>全自动托管</button>
+          <div className="conversation-composer-plan-actions">
+            <button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"}
+              aria-label={`分工与托管 · 已选 ${selected.length} 位`} aria-controls={membersOpen === "composer" ? membersId : undefined}
+              title="选择分工与托管成员。消息中有 @ 时，优先使用点名成员。"
+              onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}>
+              <User size={16} /><span><b className="conversation-target-prefix">分工与托管 · </b>已选 {selected.length} 位</span><CaretDown size={12} />
+            </button>
+            <div className="conversation-composer-plan-buttons">
+              <button type="button" className="conversation-text-button team-generate-plan" title={canGeneratePlan ? undefined : "请填写要完成的目标，再生成分工"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button>
+              <button type="button" className="conversation-text-button team-generate-plan" title="一次授权，自动分工、开发、审查和验收"
+                disabled={busy || discussing || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || archivedRuleId !== "" || ["stopping", "unconfirmed"].includes(round?.status ?? "")}
+                onClick={() => void submit(undefined, undefined, true, true)}>全自动托管</button>
+            </div>
+          </div>
            <div className="conversation-composer-send-actions"><button type="button" className="conversation-icon conversation-add-attachment" aria-label="添加附件" title="添加图片或文档"
              disabled={!projectId || !conversation || !active || busy || !!pending || pickingFiles} onClick={() => void pickAttachments()}><Paperclip size={18} /></button>
            <span id={sendScopeId} className="conversation-send-scope">{sendScopeLabel}</span>

@@ -99,6 +99,29 @@ try {
   await page.setViewportSize({ width: 1100, height: 1000 });
   await page.locator(".conversation-composer-resizer[data-edge='n']").dblclick();
   await page.screenshot({ path: "output/playwright/conversation-composer-resize-default.png" });
+  const toolbar = () => form.evaluate(node => {
+    const bounds = selector => node.querySelector(selector).getBoundingClientRect();
+    const centerY = rect => rect.top + rect.height / 2;
+    const target = bounds(".conversation-target"), attachment = bounds(".conversation-add-attachment");
+    const layout = bounds(".conversation-composer-actions"), send = bounds(".conversation-send");
+    return {
+      planningY: [...node.querySelectorAll(".team-generate-plan")].map(button => centerY(button.getBoundingClientRect())),
+      targetY: centerY(target), sendY: centerY(send), inset: attachment.left - layout.left, right: layout.right - send.right,
+    };
+  });
+  let actions = await toolbar();
+  closeTo(actions.targetY, actions.sendY, "wide composer keeps one toolbar row");
+  // Narrow the form while the panel and the window both remain wide.
+  await drag("e", 340 - (await box()).width, 0);
+  actions = await toolbar();
+  await contained();
+  closeTo(actions.planningY[0], actions.planningY[1], "planning buttons stay together");
+  assert.ok(actions.sendY > actions.planningY[1] + 20, "send controls move to a separate row");
+  closeTo(actions.inset, 0, "attachment anchors to the left edge");
+  closeTo(actions.right, 0, "send anchors to the right edge");
+  assert.equal(await form.locator(".conversation-target span").innerText(), "已选 3 位");
+  await form.getByRole("button", { name: /^分工与托管 · 已选 \d+ 位$/ }).click();
+  await form.locator(".conversation-recipient-menu").waitFor();
   assert.deepEqual(errors, []);
   console.log("PASS composer resize: 8 edges/corners, native glyph removed, opposite-edge anchors, panel/minimum bounds, keyboard/reset, blur cleanup, draft retention, menus/send, narrow viewport");
 } finally { await browser.close(); }

@@ -109,6 +109,13 @@
 .conversation-message-content > header strong { font-size: 14px; font-weight: 650; }
 .conversation-message-content > header small { color: var(--text-dim); font-size: 11px; }
 .conversation-message-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
+.conversation-message.user { justify-content: flex-end; }
+.conversation-message.user > .conversation-message-content { display: flex; flex: 0 1 auto; flex-direction: column; align-items: flex-end; max-inline-size: min(82%, 680px); }
+.conversation-message.user > .conversation-message-content > header { justify-content: flex-end; gap: 2px 8px; min-height: 22px; text-align: end; overflow-wrap: anywhere; }
+.conversation-user-bubble { box-sizing: border-box; max-inline-size: 100%; min-inline-size: 0; padding: 8px 14px; border-radius: 14px; background: color-mix(in srgb, var(--text) 11%, var(--bg-elev)); }
+.conversation-user-bubble .conversation-attachments { margin: 8px 0 0; }
+.conversation-user-bubble .conversation-attachments:first-child { margin-top: 0; }
+.conversation-message-mention { color: color-mix(in srgb, var(--text) 35%, var(--accent)); }
 .conversation-pending { margin: 2px 0 0; color: var(--text-dim); font-size: 13px; }
 .conversation-message-status { color: var(--text-dim); font-size: 12px; }
 .conversation-message-status:is(.failed, .unconfirmed), .conversation-event.failed { color: var(--danger); }
@@ -162,8 +169,10 @@
 .conversation-message.plan-continuation > .conversation-avatar { visibility: hidden; height: 0; }
 .conversation-message.plan-continuation .conversation-message-content > header { display: none; }
 .conversation-composer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-top: 4px; }
-.conversation-composer-send-actions { display: flex; flex: none; align-items: center; gap: 10px; margin-left: auto; }
-.conversation-send-scope { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+.conversation-composer-plan-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; max-width: 100%; }
+.conversation-composer-plan-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; max-width: 100%; }
+.conversation-composer-send-actions { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; margin-inline-start: auto; }
+.conversation-send-scope { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); font-size: 12px; white-space: nowrap; }
 .conversation-attachments { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin: 6px 0; }
 .collaboration-conversation .conversation-attachments > button { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 27px; padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-hover); color: var(--text); font-size: 12px; }
 .conversation-attachments > button > svg { flex: none; }
@@ -188,11 +197,20 @@
 .conversation-image-dialog > img { display: block; min-height: 0; max-width: 100%; max-height: 75dvh; object-fit: contain; }
 .conversation-target { display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; max-width: 100%; min-height: 31px; padding: 4px 7px; border: 0; border-radius: 6px; color: var(--text); background: var(--bg-hover); font-size: 12px !important; }
 .conversation-target span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-target-prefix { font-weight: inherit; }
 .conversation-target svg { flex: none; }
 .conversation-composer-actions > small { color: var(--text-dim); font-size: 11px; }
-.conversation-send { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 35px; height: 35px; margin-left: auto; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--text) 12%, var(--bg-elev)); color: var(--text); }
+.conversation-send { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 35px; height: 35px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--text) 12%, var(--bg-elev)); color: var(--text); }
 .conversation-send:not(:disabled):hover { background: color-mix(in srgb, var(--text) 18%, var(--bg-elev)); }
 .conversation-send:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@container conversation-composer (max-width: 510px) {
+  .conversation-composer-plan-actions, .conversation-composer-send-actions { flex-basis: 100%; }
+  .conversation-composer-plan-actions { justify-content: space-between; }
+  .conversation-composer-send-actions .conversation-add-attachment { margin-inline-end: auto; }
+}
+@container conversation-composer (max-width: 350px) {
+  .conversation-target-prefix { display: none; }
+}
 .conversation-send-pending { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 6px 0; color: var(--warn); font-size: 12px; }
 .conversation-footnote { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; color: var(--text-dim); font-size: 11px; }
 .conversation-footnote svg { flex: none; margin-top: 3px; }

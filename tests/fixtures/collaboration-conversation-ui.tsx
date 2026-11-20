@@ -89,6 +89,7 @@ if (params.has("launch-mode")) runLogs.unshift({ seq: -1, projectId: "A", taskId
   stream: "launch_mode", content: "启动模式 · 已保存：Approve for me · 实际：Approve for me（Codex TUI） · 原因：已授权的可写任务继承管理 Runtime", createdAt: clock });
 if(params.get("copy")==="1") {
   chats.A.executionPlans=[];
+  chats.A.rounds=chats.A.rounds.map((round: any)=>({...round,mode:"discussion",participantAgentIds:["claude"]}));
   chats.A.messages=[message("m1","user","@Claude 请检查接口。\n保留第二行与缩进。"),message("m2","agent","**结果**：已核对。\n\n```ts\nconst answer = 42;\n```\n\n[文档](https://example.com/docs)","claude"),message("m3","agent","","codex","paused")];
 }
 const activityEvents: any[] = [];

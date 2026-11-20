@@ -13,6 +13,17 @@ try {
   const user=page.locator('[data-message-id="m1"]'),agent=page.locator('[data-message-id="m2"]'),empty=page.locator('[data-message-id="m3"]');
   const copy=user.getByRole('button',{name:'复制消息',exact:true});
   await copy.waitFor();assert.equal(await empty.getByRole('button',{name:'复制消息'}).count(),0);
+  const bubble=user.locator('.conversation-user-bubble');
+  const assertRightAligned=async()=>{
+   const [row, card, button]=await Promise.all([user.boundingBox(),bubble.boundingBox(),copy.boundingBox()]);
+   assert.ok(card.x>row.x && Math.abs(card.x+card.width-row.x-row.width)<2,'user bubble is inset from the left and anchored right');
+   assert.ok(Math.abs(button.x+button.width-card.x-card.width)<2,'copy aligns with the right side of the bubble');
+  };
+  await assertRightAligned();
+  assert.ok(await user.getByText('接手成员 · Claude Code',{exact:true}).isVisible());
+  assert.equal(await user.locator('.conversation-avatar').count(),0);
+  assert.equal(await agent.locator('.conversation-user-bubble').count(),0);
+  assert.ok(await agent.locator('.conversation-avatar').isVisible());
   await copy.hover();await user.getByRole('tooltip',{name:'复制消息',exact:true}).waitFor();
   await page.screenshot({path:`.scratch/conversation-message-copy/${theme}.png`});
   await copy.click();await user.locator('.conversation-copy-feedback').getByText('已复制',{exact:true}).waitFor();
@@ -46,6 +57,11 @@ try {
   await page.setViewportSize({width:390,height:844});await user.getByRole('button',{name:'复制消息'}).scrollIntoViewIfNeeded();
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   const button=await user.getByRole('button',{name:'复制消息'}).boundingBox();assert.ok(button.x>=0&&button.x+button.width<=390);
+  const longMessage=`@Claude Code 请检查接口。\n\n${'未加空格的长消息'.repeat(35)}${'unbroken'.repeat(35)}`;
+  await page.evaluate(body=>{const m=window.conversationMock.chats.A.messages.find(m=>m.id==='m1');m.body=body;m.updatedAt=Date.now();},longMessage);
+  await bubble.locator('.conversation-message-mention').getByText('@Claude Code',{exact:true}).waitFor();
+  await assertRightAligned();
+  assert.ok(await bubble.evaluate(el=>el.scrollWidth <= el.clientWidth),'long unbroken text wraps inside the narrow bubble');
   if(theme==='dark')await page.screenshot({path:'.scratch/conversation-message-copy/narrow.png'});
   // Changing projects while a write is pending must not show old feedback in the new chat.
   await page.evaluate(()=>window.conversationMock.holdCopy=true);await agentCopy.click();
