@@ -272,6 +272,8 @@ try {
    status:'completed',summary:'成品通过启动和计分测试',commit:'c4cb7a9e',verificationCommand:'node --test tests/acceptance.test.js',
  }));
  await outcome.getByRole('heading',{name:'成品已交付',exact:true}).waitFor();
+ assert.equal(await outcome.getByText('成品通过启动和计分测试',{exact:true}).count(),0);
+ assert.equal(await outcome.getByText('node --test tests/acceptance.test.js',{exact:true}).count(),0);
  await outcome.getByRole('button',{name:'查看启动说明',exact:true}).click();
  assert.deepEqual((await calls(managed,'workspace_reveal_path')).at(-1).args,{root:'/fixture/todo-app',relativePath:'README.md'});
  await outcome.getByRole('button',{name:'启动项目',exact:true}).click();
@@ -317,11 +319,41 @@ try {
    mock.preview = { state: 'running', url: 'http://127.0.0.1:49202/' };
  });
  const openDemo = outcome.getByRole('button',{name:'打开 Demo',exact:true});
+ const stopDemo = outcome.getByRole('button',{name:'停止 Demo',exact:true});
  await openDemo.waitFor();
+ await outcome.getByRole('status').getByText('运行中',{exact:true}).waitFor();
+ assert.equal(await outcome.locator('.project-preview-logs').getAttribute('open'),null);
+ for (const width of [680,480,320]) {
+   await managed.setViewportSize({width,height:980});
+   const [open, stop] = await Promise.all([openDemo.boundingBox(),stopDemo.boundingBox()]);
+   assert.ok(Math.abs(open.width-stop.width)<1 && Math.abs(open.height-stop.height)<1 && open.y===stop.y,`Demo controls share equal cells at ${width}px`);
+   assert.ok(await outcome.evaluate(card=>card.scrollWidth<=card.clientWidth),'delivery card fits its container');
+   if(width===320) {
+     const [address, logs] = await Promise.all([outcome.locator('.project-preview-url').boundingBox(),outcome.locator('.project-preview-logs').boundingBox()]);
+     assert.ok(address.height<22 && logs.y>=address.y+address.height,'narrow footer keeps the address on one line');
+   }
+ }
+ await outcome.screenshot({path:`${out}/managed-delivery-demo-narrow.png`});
+ await managed.setViewportSize({width:680,height:980});
+ const actionColors = () => outcome.locator('.project-preview-buttons').evaluate(actions => Array.from(actions.querySelectorAll('button'), button => {
+   const style=getComputedStyle(button);
+   return [style.backgroundColor,style.borderTopColor,style.color];
+ }));
+ const clay = await actionColors();
+ await managed.evaluate(()=>{document.documentElement.dataset.appearanceAccent='purple';});
+ const purple = await actionColors();
+ assert.notEqual(purple[0][0],clay[0][0],'primary fill follows accent changes');
+ assert.notEqual(purple[1][1],clay[1][1],'stop outline follows accent changes');
+ assert.equal(purple[0][0],purple[1][1],'fill and outline use the same active accent');
+ await managed.evaluate(()=>{document.documentElement.dataset.theme='light';});
+ const light = await actionColors();
+ assert.notEqual(light[0][0],purple[0][0],'light theme uses the matching light accent');
+ assert.equal(light[0][0],light[1][1],'light fill and outline stay synchronized');
+ await managed.evaluate(()=>Object.assign(document.documentElement.dataset,{theme:'dark',appearanceAccent:'clay'}));
  await outcome.screenshot({path:`${out}/managed-delivery-demo.png`});
  await openDemo.click();
  await managed.waitForFunction(() => window.conversationMock.previewBrowsed.at(-1) === 'http://127.0.0.1:49202/');
- await outcome.getByRole('button',{name:'停止 Demo',exact:true}).click();
+ await stopDemo.click();
  assert.equal((await calls(managed,'ma_project_preview_stop')).at(-1).args.planId,'managed-demo-result');
  await openDemo.click();
  await outcome.getByRole('button',{name:'正在准备 Demo…',exact:true}).waitFor();
@@ -360,21 +392,28 @@ try {
      sessionLocator: { sessionId: `native-${task.id}`, managedTurn: 'completed' },
    });
  });
- const developmentRecord = outcome.getByRole('button',{name:/OpenCode 开发.*接口对接/});
- const reviewRecord = outcome.getByRole('button',{name:/Pi 审查.*测试与审查/});
- const integrationRecord = outcome.getByRole('button',{name:/Pi 联调.*联调 Demo/});
+ await outcome.getByRole('button',{name:'查看任务执行',exact:true}).click();
+ const deliveryDetails = managed.getByRole('region',{name:'交付详情',exact:true});
+ const developmentRecord = deliveryDetails.getByRole('button',{name:/OpenCode 开发.*接口对接/});
+ const reviewRecord = deliveryDetails.getByRole('button',{name:/Pi 审查.*测试与审查/});
+ const integrationRecord = deliveryDetails.getByRole('button',{name:/Pi 联调.*联调 Demo/});
  await developmentRecord.waitFor();
- const memberDeliveries = outcome.getByRole('group',{name:'成员交付明细',exact:true});
+ const acceptanceSummary = deliveryDetails.getByText('成品通过启动和计分测试',{exact:true});
+ assert.equal(await acceptanceSummary.isVisible(),false,'long summary starts collapsed');
+ await deliveryDetails.getByText('查看验收详情',{exact:true}).click();
+ await acceptanceSummary.waitFor();
+ await deliveryDetails.getByText('查看验收详情',{exact:true}).click();
+ const memberDeliveries = deliveryDetails.getByRole('group',{name:'成员交付明细',exact:true});
  assert.equal(await memberDeliveries.getByRole('button').count(),3,'只显示这轮托管绑定的任务');
  assert.match(await developmentRecord.innerText(),/验收通过/);
  assert.match(await developmentRecord.innerText(),/首轮失败.*重试成功/s);
  assert.match(await reviewRecord.innerText(),/验收通过/);
  assert.match(await integrationRecord.innerText(),/验收通过/);
  await managed.setViewportSize({width:320,height:980});
- assert.equal(await outcome.evaluate(card => card.scrollWidth <= card.clientWidth),true,'托管卡片适应窄面板');
- await outcome.screenshot({path:`${out}/managed-delivery-members-narrow.png`});
+ assert.equal(await deliveryDetails.evaluate(card => card.scrollWidth <= card.clientWidth),true,'交付详情适应窄面板');
+ await deliveryDetails.screenshot({path:`${out}/managed-delivery-members-narrow.png`});
  await managed.setViewportSize({width:680,height:980});
- await outcome.screenshot({path:`${out}/managed-delivery-members.png`});
+ await deliveryDetails.screenshot({path:`${out}/managed-delivery-members.png`});
  await developmentRecord.click();
  assert.equal(await tab(managed,'任务执行').getAttribute('aria-selected'),'true');
  await managed.getByRole('article',{name:'任务详情 接口对接',exact:true}).waitFor();
@@ -393,22 +432,19 @@ try {
  await openRun.click();
  assert.deepEqual((await calls(managed,'fixture_open_session')).map(({args})=>[args.sessionId,args.original.projectId,args.original.runId,args.original.source]),
    [[null,'A','managed-attempt-2','managed_task'],[null,'A','managed-attempt-1','managed_task']]);
- await tab(managed,'团队聊天').click();
  await reviewRecord.click();
  await managed.getByRole('article',{name:'任务详情 测试与审查',exact:true}).waitFor();
  assert.match(await runRecords.innerText(),/managed-run-t-review/);
- await tab(managed,'团队聊天').click();
  await integrationRecord.click();
  await managed.getByRole('article',{name:'任务详情 联调 Demo',exact:true}).waitFor();
  assert.match(await runRecords.innerText(),/managed-run-t-delivery/);
- await tab(managed,'团队聊天').click();
  await managed.evaluate(() => {
    const mock = window.conversationMock;
    const agents = mock.snapshot('A').agents;
    agents.splice(agents.findIndex(agent => agent.id === 'pi-integrator'),1);
    mock.chats.A.executionPlans[0].managed.target.members = { 'pi-integrator': { runtime: 'pi', role: 'integrator' } };
  });
- const historicalRecord = outcome.getByRole('button',{name:/Pi.*历史成员.*联调 Demo/});
+ const historicalRecord = deliveryDetails.getByRole('button',{name:/Pi.*历史成员.*联调 Demo/});
  await historicalRecord.click();
  const integrationDetail = managed.getByRole('article',{name:'任务详情 联调 Demo',exact:true});
  await integrationDetail.getByText('Pi（历史成员）',{exact:true}).waitFor();
@@ -422,7 +458,7 @@ try {
    mock.snapshot('A').tasks.find(task => task.id === 't-delivery').status = 'failed';
  });
  await outcome.getByText('最终验收连续三次未通过',{exact:true}).waitFor();
- assert.doesNotMatch(await historicalRecord.innerText(),/验收通过/,'进程回执成功不足以证明任务通过验收');
+ assert.doesNotMatch(await outcome.getByRole('button',{name:/Pi.*历史成员.*联调 Demo/}).innerText(),/验收通过/,'进程回执成功不足以证明任务通过验收');
  assert.equal(await outcome.getByRole('button',{name:'启动项目',exact:true}).count(),0);
  await managed.evaluate(()=>{
    const chat = window.conversationMock.chats.A;

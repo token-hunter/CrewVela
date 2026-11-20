@@ -97,6 +97,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [requestedView, setWorkView] = useState<"chat" | "tasks" | "taskRecords">("chat");
   const workView = requestedView === "taskRecords" ? "tasks" : requestedView;
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const workViewId = useId();
   const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -176,7 +177,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     currentProject.current = id; currentConversation.current = undefined; setProjectId(id); setSnapshot(null); setConversation(null); setHealthy(false); setLoading(false);
     operationError.current = ""; setError(""); setSelected([]); setMembersOpen(null); setShowOlder(false); setMentionOpen(false);
     setHistoryMenuOpen(false); setHistoryOpen(false); setClearConfirmation(null); setClearError("");
-    setWorkView("chat"); setSelectedTaskId(null);
+    setWorkView("chat"); setSelectedTaskId(null); setSelectedDeliveryId(null);
     setArchivedRuleId("");
     setPlanIssues([]);
     setDraft(id ? stored(draftKey(id)) : ""); setDraftFiles([]); setPending(id ? storedPending(id) : null); followMessages.current = true;
@@ -592,7 +593,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     const clientRequestId = stored(key) || crypto.randomUUID(); save(key, clientRequestId);
     try {
       const result = await mutationCall("ma_conversation_execute_plan", { input: { projectId, planId: plan.id, clientRequestId } });
-      if (result?.executionPlans.some(item => item.id === plan.id && item.status === "applied") && currentProject.current === id && generation.current === epoch) { setSelectedTaskId(result.executionPlans.find(item => item.id === plan.id)?.taskIds[0] ?? null); setWorkView("tasks"); void refresh(); }
+      if (result?.executionPlans.some(item => item.id === plan.id && item.status === "applied") && currentProject.current === id && generation.current === epoch) { setSelectedTaskId(result.executionPlans.find(item => item.id === plan.id)?.taskIds[0] ?? null); setSelectedDeliveryId(null); setWorkView("tasks"); void refresh(); }
     } catch { /* Backend deduplicates the retained identity. */ }
   };
   const editPlan = (plan: ConversationExecutionPlan) => {
@@ -602,7 +603,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     requestAnimationFrame(() => { editor.current?.focus(); editor.current?.setSelectionRange(editor.current.value.length, editor.current.value.length); });
   };
   const returnToChat = (messageId?: string) => {
-    setWorkView("chat"); followMessages.current = !messageId;
+    setWorkView("chat"); setSelectedDeliveryId(null); followMessages.current = !messageId;
     if (messageId) { setShowOlder(true); requestAnimationFrame(() => transcript.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: "center" })); }
   };
   const updateExecution = async (action: "pause" | "resume") => {
@@ -700,8 +701,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const sendLabel = discussing ? "发送插话" : "发送消息";
   const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} snapshot={snapshot}
     blocked={busy || !healthy || discussing || !active} paused={snapshot?.project.status === "paused"}
-    onConfirm={() => void applyPlan(plan)} onAdjust={() => editPlan(plan)} onTasks={() => setWorkView("tasks")}
-    onTaskRecords={id => { setSelectedTaskId(id); setWorkView("taskRecords"); }} />;
+    onConfirm={() => void applyPlan(plan)} onAdjust={() => editPlan(plan)} onTasks={() => {
+      setSelectedDeliveryId(plan.managed?.status === "completed" ? plan.id : null);
+      setWorkView("tasks");
+    }}
+    onTaskRecords={id => { setSelectedDeliveryId(null); setSelectedTaskId(id); setWorkView("taskRecords"); }} />;
 
   const conversationId = conversation?.conversation.id;
   const delegationsByRun = useMemo(() => {
@@ -744,9 +748,9 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       <div className="conversation-tabs-row"><div className="conversation-modes" role="tablist" aria-label="协作视图">{([['chat', '团队聊天'], ['tasks', '任务执行']] as const).map(([value, label]) => <button type="button" role="tab" id={`${workViewId}-${value}-tab`} aria-label={label} aria-controls={`${workViewId}-${value}-panel`} key={value} aria-selected={workView === value} tabIndex={workView === value ? 0 : -1} onKeyDown={event => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault(); const next = event.key === "Home" ? "chat" : event.key === "End" ? "tasks" : workView === "chat" ? "tasks" : "chat";
-        setWorkView(next); setMembersOpen(null); setHistoryMenuOpen(false);
+        setWorkView(next); setSelectedDeliveryId(null); setMembersOpen(null); setHistoryMenuOpen(false);
         requestAnimationFrame(() => document.getElementById(`${workViewId}-${next}-tab`)?.focus());
-      }} onClick={() => { setWorkView(value); setMembersOpen(null); setHistoryMenuOpen(false); }}>{label}{value === "tasks" && <span className="team-task-count">{tasks.length}</span>}</button>)}</div>
+      }} onClick={() => { setWorkView(value); setSelectedDeliveryId(null); setMembersOpen(null); setHistoryMenuOpen(false); }}>{label}{value === "tasks" && <span className="team-task-count">{tasks.length}</span>}</button>)}</div>
         <div className="conversation-history-actions"><button ref={historyTrigger} type="button" className="conversation-icon" aria-label="讨论记录操作" aria-haspopup="menu" aria-expanded={historyMenuOpen} aria-controls={historyMenuOpen ? historyMenuId : undefined} disabled={!projectId || busy || !active} onClick={() => { setMembersOpen(null); setHistoryMenuOpen(value => !value); }}><DotsThree size={21} /></button>
           {historyMenuOpen && <div ref={historyMenu} id={historyMenuId} className="conversation-history-menu" role="menu" aria-label="讨论记录操作">
           <button type="button" role="menuitem" disabled={newConversationBlocked} title={conversation?.rounds.some(conversationIsActive) ? "团队正在回复，结束后可新建会话" : pending ? "请先核对未确认的发送" : "开始新的团队会话"} onClick={() => void startNewConversation()}><Plus size={17} />新建会话</button>
@@ -940,7 +944,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           </header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || (manualMembers.has(agent.id) && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? " · 用户接管中" : ""}</small></span></label>)}</div>}
       </ResizableConversationComposer>
     </footer></div>
-    {workView === "tasks" && <div id={`${workViewId}-tasks-panel`} className="team-tasks-panel" role="tabpanel" aria-labelledby={`${workViewId}-tasks-tab`}><ConversationTaskView snapshot={snapshot} tasks={tasks} plans={conversation?.executionPlans ?? []} discussion={latestDiscussion} selectedId={selectedTaskId} initialRecordTaskId={requestedView === "taskRecords" ? selectedTaskId : null} blocked={busy || !healthy || !active} onSelect={setSelectedTaskId} onExecution={action => void updateExecution(action)} onChat={returnToChat} onFullRecords={onOpenProjectSettings ? openProjectTasks : undefined} onOpenRun={onOpenSession ? (run, task) => void openManagedRunRecord(run, task) : undefined} onRefresh={refresh} /></div>}
+    {workView === "tasks" && <div id={`${workViewId}-tasks-panel`} className="team-tasks-panel" role="tabpanel" aria-labelledby={`${workViewId}-tasks-tab`}><ConversationTaskView snapshot={snapshot} tasks={tasks} plans={conversation?.executionPlans ?? []} deliveryPlan={conversation?.executionPlans.find(plan => plan.id === selectedDeliveryId)} discussion={latestDiscussion} selectedId={selectedTaskId} initialRecordTaskId={requestedView === "taskRecords" ? selectedTaskId : null} blocked={busy || !healthy || !active} onSelect={setSelectedTaskId} onExecution={action => void updateExecution(action)} onChat={returnToChat} onFullRecords={onOpenProjectSettings ? openProjectTasks : undefined} onOpenRun={onOpenSession ? (run, task) => void openManagedRunRecord(run, task) : undefined} onRefresh={refresh} /></div>}
 
     {creatingProject && <CollaborationProjectDialog onClose={() => setCreatingProject(false)} onCreate={async (input, gitSetup) => {
       const project = await invoke<MultiAgentProject>("ma_create_project", { input: { ...input, defaultBranch: "main" }, gitSetup });

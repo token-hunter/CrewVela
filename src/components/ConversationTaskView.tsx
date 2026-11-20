@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowBendUpLeft, CheckCircle, Circle, ClockCounterClockwise, FileText, LinkSimple, Pause, Play, PlayCircle, Target, User, WarningCircle } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
+import { ManagedDeliveryMembers } from "./ManagedDeliveryMembers";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
 import { TaskRunRecords } from "./TaskRunRecords";
 import { CONVERSATION_STATUS, TASK_STATUS } from "../collaborationConversation";
@@ -11,10 +12,11 @@ import type { AgentRun, ConversationExecutionPlan, ConversationRound, MultiAgent
 const running = (task: MultiAgentTask) => ["claimed", "running"].includes(task.status);
 const statusLabel = (task: MultiAgentTask, pendingDependency: boolean) => ["draft", "ready"].includes(task.status) ? "待执行" : task.status === "blocked" ? pendingDependency ? "等待依赖" : "等待处理" : TASK_STATUS[task.status] ?? task.status;
 
-export function ConversationTaskView({ snapshot, tasks, plans, discussion, selectedId, initialRecordTaskId, blocked, onSelect, onExecution, onChat, onFullRecords, onOpenRun, onRefresh }: {
+export function ConversationTaskView({ snapshot, tasks, plans, deliveryPlan, discussion, selectedId, initialRecordTaskId, blocked, onSelect, onExecution, onChat, onFullRecords, onOpenRun, onRefresh }: {
   snapshot: MultiAgentSnapshot | null;
   tasks: MultiAgentTask[];
   plans: ConversationExecutionPlan[];
+  deliveryPlan?: ConversationExecutionPlan;
   discussion?: ConversationRound;
   selectedId: string | null;
   initialRecordTaskId: string | null;
@@ -28,16 +30,15 @@ export function ConversationTaskView({ snapshot, tasks, plans, discussion, selec
 }) {
   const [recordTask, setRecordTask] = useState(initialRecordTaskId);
   const recordsSection = useRef<HTMLElement>(null);
-  useLayoutEffect(() => {
-    const section = recordsSection.current;
-    if (section) {
-      section.focus({ preventScroll: true });
-      section.scrollIntoView({ block: "start" });
-    }
-  }, []);
   const orderedTasks = [...tasks].sort((left, right) => Number(running(right)) - Number(running(left))
     || right.updatedAt - left.updatedAt || right.createdAt - left.createdAt);
   const task = tasks.find(item => item.id === selectedId) ?? orderedTasks.find(running);
+  const revealRecords = () => {
+    recordsSection.current?.focus({ preventScroll: true });
+    recordsSection.current?.scrollIntoView({ block: "start" });
+  };
+  useLayoutEffect(revealRecords, [recordTask, task?.id]);
+  const delivery = deliveryPlan?.managed?.status === "completed" && deliveryPlan.projectId === snapshot?.project.id ? deliveryPlan.managed : undefined;
   const agents = snapshot?.agents ?? [];
   const label = (item: MultiAgentTask) => statusLabel(item, (snapshot?.dependencies ?? []).some(dependency => dependency.taskId === item.id && snapshot?.tasks.find(other => other.id === dependency.dependsOnTaskId)?.status !== "done"));
   const planForTask = (id: string) => plans.find(plan => plan.taskIds.includes(id));
@@ -57,6 +58,18 @@ export function ConversationTaskView({ snapshot, tasks, plans, discussion, selec
       <button type="button" className="conversation-text-button" onClick={() => onChat(discussion.userMessageId)}>查看本轮聊天</button>
     </div>}
     {paused && <p className="team-execution-paused" role="status">项目调度已暂停。继续调度会执行已就绪的任务。</p>}
+    {delivery && deliveryPlan && <section className="team-execution-delivery" aria-label="交付详情">
+      <ManagedDeliveryMembers plan={deliveryPlan} snapshot={snapshot} onRecords={id => {
+        if (recordTask === id && task?.id === id) revealRecords();
+        else { onSelect(id); setRecordTask(id); }
+      }} />
+      {(delivery.summary || delivery.verificationCommand || delivery.commit) && <details className="team-delivery-metadata">
+        <summary>查看验收详情</summary>
+        {delivery.summary && <p>{delivery.summary}</p>}
+        {delivery.verificationCommand && <p>验收命令 <code>{delivery.verificationCommand}</code></p>}
+        {delivery.commit && <p>{delivery.target.branch} · <code>{delivery.commit}</code></p>}
+      </details>}
+    </section>}
     {!snapshot ? <p role="status">正在读取任务…</p> : !tasks.length ? <div className="team-tasks-empty"><p>暂无工程任务</p><button type="button" className="conversation-text-button" onClick={() => onChat()}>返回团队聊天</button></div> : <>
       <div className="team-task-list" aria-label="项目任务">{orderedTasks.map(item => {
         const member = taskMember(agents, item.assigneeAgentId, planForTask(item.id));
