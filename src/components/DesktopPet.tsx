@@ -51,6 +51,7 @@ export function DesktopPet({ settings, sessions, onPositionChange }: Props) {
   );
   const [position, setPosition] = useState(settings.position ?? defaultPosition);
   const positionRef = useRef(position);
+  const prevPositionSettingRef = useRef(settings.position);
   const [action, setAction] = useState<PetAction>("idle");
   const [actionTick, setActionTick] = useState(0);
   const [animationFrame, setAnimationFrame] = useState(0);
@@ -64,6 +65,16 @@ export function DesktopPet({ settings, sessions, onPositionChange }: Props) {
     if (movementFrame.current !== null) cancelAnimationFrame(movementFrame.current);
     movementFrame.current = null;
   }, []);
+
+  useEffect(() => {
+    const prev = prevPositionSettingRef.current;
+    prevPositionSettingRef.current = settings.position;
+    if (settings.position === null && prev !== null) {
+      stopMovement();
+      positionRef.current = defaultPosition;
+      setPosition(defaultPosition);
+    }
+  }, [defaultPosition, settings.position, stopMovement]);
 
   // 持续 waiting/error 曾永久覆盖自主动作；提醒限频，播放后继续原动作牌组。
   const takeReminder = useCallback(() => {
