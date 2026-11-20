@@ -988,6 +988,69 @@ export function GitSourceControlPanel({
   );
 }
 
+const COMMIT_INSTRUCTION_PRESETS = [
+  {
+    id: "conventional",
+    label: "Conventional",
+    text: "遵循 Conventional Commits 规范（feat/fix/refactor/docs）。",
+  },
+  {
+    id: "chinese",
+    label: "中文摘要",
+    text: "首行使用简明中文概括，长度不超过 50 字。",
+  },
+  {
+    id: "impact",
+    label: "影响面列表",
+    text: "在正文列出核心改动模块与破坏性变更说明。",
+  },
+] as const;
+
+const COMPARE_STRATEGY_OPTIONS: ReadonlyArray<{
+  value: GitSettings["compareStrategy"];
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: "repository_default",
+    label: "仓库默认分支",
+    hint: "Diff 与变更统计以仓库默认分支（如 origin/main）为基准，不改变合并目标。",
+  },
+  {
+    value: "branch_upstream",
+    label: "当前 Upstream",
+    hint: "Diff 与变更统计以当前分支跟踪的远端 Upstream 为基准，不改变合并目标。",
+  },
+];
+
+const PULL_STRATEGY_OPTIONS: ReadonlyArray<{
+  value: GitSettings["pullStrategy"];
+  shortLabel: string;
+  flag: string;
+  title: string;
+  hint: string;
+}> = [
+  {
+    value: "ff_only",
+    shortLabel: "仅快进",
+    flag: "--ff-only",
+    title: "仅快进合并（--ff-only）",
+    hint: "仅允许快进合并；发生分叉时会安全停止并提示原因，不改写本地提交。",
+  },
+  {
+    value: "rebase",
+    shortLabel: "变基",
+    flag: "--rebase",
+    title: "变基合并（--rebase）",
+    hint: "拉取时使用 --rebase 将本地提交线性重放到远端之上；遇冲突需手动解决。",
+  },
+];
+
+function previewWorktreeBranch(rawPrefix: string): string {
+  const trimmed = rawPrefix.trim().replace(/^\/+|\/+$/g, "");
+  return trimmed ? `${trimmed}/task-fix-login` : "task-fix-login";
+}
+
 export function GitSettingsPanel() {
   const [settings, setSettings] = useState<GitSettings>(DEFAULT_SETTINGS);
   const [savedSnapshot, setSavedSnapshot] = useState<GitSettings | null>(null);
@@ -1018,8 +1081,13 @@ export function GitSettingsPanel() {
     };
   }, [reload]);
 
+  const dirty = savedSnapshot !== null
+    && JSON.stringify(settings) !== JSON.stringify(savedSnapshot);
+
+  const controlsDisabled = loading || busy || !savedSnapshot;
+
   const save = async () => {
-    if (saveInFlight.current || loading || !savedSnapshot) return;
+    if (saveInFlight.current || loading || !savedSnapshot || !dirty) return;
     saveInFlight.current = true;
     setBusy(true);
     setError(null);
@@ -1037,101 +1105,234 @@ export function GitSettingsPanel() {
     }
   };
 
-  const dirty = savedSnapshot !== null
-    && JSON.stringify(settings) !== JSON.stringify(savedSnapshot);
+  const resetDraft = () => {
+    if (!savedSnapshot || busy) return;
+    setSettings(savedSnapshot);
+    setError(null);
+    setNotice(null);
+  };
 
-  const appendInstructionPreset = (preset: string) => {
-    if (loading || busy || !savedSnapshot) return;
-    setSettings((current) => {
-      const base = current.commitInstruction.trim();
-      if (base.includes(preset)) return current;
+  const updateSettings = (updater: (current: GitSettings) => GitSettings) => {
+    setNotice(null);
+    setSettings(updater);
+  };
+
+  const toggleInstructionPreset = (preset: string) => {
+    if (controlsDisabled) return;
+    updateSettings((current) => {
+      const base = current.commitInstruction;
+      if (base.includes(preset)) {
+        const next = base
+          .split("\n")
+          .filter((line) => line.trim() !== preset.trim())
+          .join("\n")
+          .trim();
+        return { ...current, commitInstruction: next };
+      }
+      const trimmed = base.trim();
       return {
         ...current,
-        commitInstruction: base ? `${base}\n${preset}` : preset,
+        commitInstruction: trimmed ? `${trimmed}\n${preset}` : preset,
       };
     });
   };
 
+  const activeCompare = COMPARE_STRATEGY_OPTIONS.find((item) => item.value === settings.compareStrategy) ?? COMPARE_STRATEGY_OPTIONS[0];
+  const activePull = PULL_STRATEGY_OPTIONS.find((item) => item.value === settings.pullStrategy) ?? PULL_STRATEGY_OPTIONS[0];
+
   return (
     <div className="git-settings-only">
-      <section className="git-settings-card">
-        <header>
-          <div><GitBranch size={18} /><span><strong>分支与比较</strong><small>控制 CrewVela 创建 Worktree 分支和审查变更时使用的默认规则。</small></span></div>
+      <div className="dialog-heading settings-heading git-settings-heading">
+        <div>
+          <h2 id="settings-title">Git 设置</h2>
+          <p>配置分支、比较基准、提交信息和安全同步策略。</p>
+        </div>
+        <div className="settings-heading-actions git-settings-actions">
+          {!loading && !savedSnapshot && (
+            <button type="button" className="btn" onClick={() => setReload((value) => value + 1)}>
+              重新读取
+            </button>
+          )}
+          {dirty && (
+            <>
+              <span className="git-settings-dirty"><i aria-hidden="true" />未保存</span>
+              <button type="button" className="btn" onClick={resetDraft} disabled={busy}>
+                还原
+              </button>
+            </>
+          )}
+          {!dirty && notice && !error && (
+            <span className="git-settings-saved-inline" role="status">
+              <Check size={14} weight="bold" aria-hidden="true" />
+              {notice}
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => void save()}
+            disabled={busy || loading || !savedSnapshot || !dirty}
+          >
+            {busy ? "保存中…" : "保存设置"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="git-settings-feedback error" role="alert">
+          <Warning size={15} aria-hidden="true" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <section className="git-settings-section">
+        <header className="git-settings-section-head">
+          <span className="git-section-icon" aria-hidden="true"><GitBranch size={15} /></span>
+          <strong>分支与比较</strong>
+          <span className="git-section-sub">· Worktree 与远端同步默认规则</span>
         </header>
+
         <div className="git-settings-rows">
           <label className="git-settings-row">
-            <span><strong>Worktree 分支前缀</strong><small>新建会话或 Agent Worktree 时使用。</small></span>
-            <input
-              disabled={loading || busy || !savedSnapshot}
-              value={settings.branchPrefix}
-              onChange={(event) => setSettings((current) => ({ ...current, branchPrefix: event.target.value }))}
-              placeholder="crewvela/"
-            />
+            <span>
+              <strong>Worktree 分支前缀</strong>
+              <small>新建会话或 Agent Worktree 时自动拼接。</small>
+            </span>
+            <div className="git-prefix-control">
+              <input
+                disabled={controlsDisabled}
+                value={settings.branchPrefix}
+                onChange={(event) => updateSettings((current) => ({ ...current, branchPrefix: event.target.value }))}
+                placeholder="crewvela/"
+              />
+              <span className="git-branch-preview">
+                预览 <code>{previewWorktreeBranch(settings.branchPrefix)}</code>
+              </span>
+            </div>
           </label>
-          <label className="git-settings-row">
-            <span><strong>默认比较基准</strong><small>只影响 Diff 和变更统计，不改变合并目标。</small></span>
-            <select
-              disabled={loading || busy || !savedSnapshot}
-              value={settings.compareStrategy}
-              onChange={(event) => setSettings((current) => ({ ...current, compareStrategy: event.target.value as GitSettings["compareStrategy"] }))}
-            >
-              <option value="repository_default">仓库默认分支</option>
-              <option value="branch_upstream">当前分支 Upstream</option>
-            </select>
-          </label>
-          <label className="git-settings-row">
-            <span><strong>Pull 策略</strong><small>同步远端时使用的合并方式；发生分叉时仅快进会停止并显示原因。</small></span>
-            <select
-              disabled={loading || busy || !savedSnapshot}
-              value={settings.pullStrategy}
-              onChange={(event) => setSettings((current) => ({ ...current, pullStrategy: event.target.value as GitSettings["pullStrategy"] }))}
-            >
-              <option value="ff_only">仅快进合并（--ff-only）</option>
-              <option value="rebase">变基合并（--rebase）</option>
-            </select>
-          </label>
+
+          <div className="git-settings-row">
+            <span>
+              <strong>默认比较基准</strong>
+              <small>{activeCompare.hint}</small>
+            </span>
+            <div className="git-segmented" role="radiogroup" aria-label="默认比较基准">
+              {COMPARE_STRATEGY_OPTIONS.map((option) => {
+                const active = settings.compareStrategy === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    className={`git-segmented-btn${active ? " active" : ""}`}
+                    disabled={controlsDisabled}
+                    onClick={() => updateSettings((current) => ({ ...current, compareStrategy: option.value }))}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="git-settings-row">
+            <span>
+              <strong>Pull 策略</strong>
+              <small>{activePull.hint}</small>
+            </span>
+            <div className="git-segmented" role="radiogroup" aria-label="Pull 策略">
+              {PULL_STRATEGY_OPTIONS.map((option) => {
+                const active = settings.pullStrategy === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    aria-label={option.title}
+                    title={option.title}
+                    className={`git-segmented-btn${active ? " active" : ""}`}
+                    disabled={controlsDisabled}
+                    onClick={() => updateSettings((current) => ({ ...current, pullStrategy: option.value }))}
+                  >
+                    <span>{option.shortLabel}</span>
+                    <code>{option.flag}</code>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="git-settings-card git-settings-commit-card">
-        <header>
-          <div><MagicWand size={18} /><span><strong>提交信息</strong><small>作为 Agent 生成提交说明时的固定要求，生成后仍可在 Git 面板中编辑。</small></span></div>
-          <div className="git-prompt-presets" aria-label="快捷指令模板">
-            <button type="button" className="git-preset-chip" disabled={loading || busy || !savedSnapshot} onClick={() => appendInstructionPreset("遵循 Conventional Commits 规范（feat/fix/refactor/docs）。")}>+ Conventional</button>
-            <button type="button" className="git-preset-chip" disabled={loading || busy || !savedSnapshot} onClick={() => appendInstructionPreset("首行使用简明中文概括，长度不超过 50 字。")}>+ 中文摘要</button>
-            <button type="button" className="git-preset-chip" disabled={loading || busy || !savedSnapshot} onClick={() => appendInstructionPreset("在正文列出核心改动模块与破坏性变更说明。")}>+ 影响面列表</button>
+      <section className="git-settings-section git-settings-commit-section">
+        <header className="git-settings-section-head git-settings-section-head-stacked">
+          <span className="git-section-icon" aria-hidden="true"><MagicWand size={15} /></span>
+          <div>
+            <strong>提交信息</strong>
+            <small>作为 Agent 生成提交说明时的固定要求，生成后仍可在 Git 面板中编辑。</small>
           </div>
         </header>
-        <label className="git-settings-block">
-          <span>提交信息指令</span>
+
+        <div className="git-commit-editor">
           <textarea
-            disabled={loading || busy || !savedSnapshot}
+            aria-label="提交信息指令"
+            disabled={controlsDisabled}
             value={settings.commitInstruction}
-            onChange={(event) => setSettings((current) => ({ ...current, commitInstruction: event.target.value }))}
-            rows={4}
+            onChange={(event) => updateSettings((current) => ({ ...current, commitInstruction: event.target.value }))}
+            rows={2}
+            placeholder="输入生成提交说明时的规范要求…"
           />
-        </label>
+          <div className="git-commit-editor-footer">
+            <div className="git-prompt-presets" aria-label="快捷指令模板">
+              <span className="git-presets-label">快捷模板</span>
+              {COMMIT_INSTRUCTION_PRESETS.map((preset) => {
+                const applied = settings.commitInstruction.includes(preset.text);
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`git-preset-chip${applied ? " applied" : ""}`}
+                    aria-pressed={applied}
+                    disabled={controlsDisabled}
+                    onClick={() => toggleInstructionPreset(preset.text)}
+                  >
+                    {applied ? <Check size={12} weight="bold" aria-hidden="true" /> : <Plus size={11} weight="bold" aria-hidden="true" />}
+                    <span>{preset.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <span className="git-commit-char-count">{settings.commitInstruction.length} / 2000</span>
+          </div>
+        </div>
       </section>
 
-      <section className="git-settings-card git-settings-safety">
-        <header>
-          <div><Warning size={18} /><span><strong>安全保证</strong><small>这些底线由 CrewVela 固定执行，无需也无法修改。</small></span></div>
+      <section className="git-settings-section git-settings-safety">
+        <header className="git-settings-section-head">
+          <span className="git-section-icon" aria-hidden="true"><Warning size={15} /></span>
+          <strong>安全保证</strong>
+          <span className="git-section-sub">· 这些底线由 CrewVela 固定执行，无需也无法修改</span>
         </header>
+
         <ul className="git-settings-guarantees">
-          <li><Check size={14} weight="bold" /><span><strong>推送保护</strong>强制推送必须手动确认，并始终使用 <code>--force-with-lease</code>，不会覆盖远端新增提交。</span></li>
-          <li><Check size={14} weight="bold" /><span><strong>同步策略</strong>仅快进模式遇到分叉会停止；选择变基模式时，Pull 会重新应用本地提交，冲突需要手动处理。</span></li>
+          <li>
+            <Check size={14} weight="bold" aria-hidden="true" />
+            <span>
+              <strong>推送保护</strong>
+              强制推送必须手动确认，并始终使用 <code>--force-with-lease</code>，不会覆盖远端新增提交。
+            </span>
+          </li>
+          <li>
+            <Check size={14} weight="bold" aria-hidden="true" />
+            <span>
+              <strong>同步策略</strong>
+              仅快进模式遇到分叉会停止；选择变基模式时，Pull 会重新应用本地提交，冲突需要手动处理。
+            </span>
+          </li>
         </ul>
       </section>
-
-      {error && <div className="git-settings-feedback error"><Warning size={15} />{error}</div>}
-      {notice && !error && <div className="git-settings-feedback success"><Check size={15} />{notice}</div>}
-      <div className="git-settings-actions">
-        {!loading && !savedSnapshot && <button type="button" className="btn" onClick={() => setReload(value => value + 1)}>重新读取</button>}
-        {dirty && <span className="git-settings-dirty"><i aria-hidden="true" />有未保存更改</span>}
-        <button type="button" className="btn primary" onClick={() => void save()} disabled={busy || loading || !savedSnapshot}>
-          {busy ? "保存中…" : "保存设置"}
-        </button>
-      </div>
     </div>
   );
 }

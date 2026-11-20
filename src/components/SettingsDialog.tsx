@@ -365,7 +365,7 @@ export function SettingsDialog({
             className="settings-content-inner"
             data-settings-section={activeSection}
           >
-            {activeSection !== "skills" && (activeSection !== "automation" || automationEditing) && <div className="dialog-heading settings-heading">
+            {activeSection !== "skills" && activeSection !== "git" && (activeSection !== "automation" || automationEditing) && <div className="dialog-heading settings-heading">
                 <div>
                   <h2 id="settings-title">{activeSection === "automation" && automationEditing ? automationEditing === "edit" ? "编辑定时任务" : "创建自动化" : sectionCopy.title}</h2>
                   {!(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}

@@ -288,105 +288,15 @@
 .settings-native .browser-settings .workspace-status .runtime-group { display: block; }
 .settings-native .runtime-radios label { background: transparent; }
 
-/* Git Settings Card Architecture */
-.settings-native .git-settings-only { display: grid; gap: 16px; }
-.settings-native .git-settings-card {
-  padding: 18px 20px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--text) 2.5%, var(--settings-canvas));
-  box-shadow: none;
-}
-.settings-native .git-settings-card > header {
+/* Git Settings: minimalist native stream lives in git-workbench.css; keep only native dialog spacing harmony here. */
+.settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner[data-settings-section="git"] {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding-bottom: 12px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--border);
+  flex-direction: column;
 }
-.settings-native .git-settings-card > header > div:first-child { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-.settings-native .git-settings-card > header svg { color: var(--accent); flex: none; margin-top: 2px; }
-.settings-native .git-settings-card > header span { display: grid; gap: 2px; min-width: 0; }
-.settings-native .git-settings-card > header strong { font-size: 15.5px; font-weight: 650; color: var(--text); }
-.settings-native .git-settings-card > header small { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
-.settings-native .git-settings-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 36%);
-  align-items: center;
-  gap: 20px;
-  padding: 11px 0;
-  border-bottom: 1px solid var(--border);
+.settings-native .git-settings-only .git-settings-actions .btn {
+  min-height: 32px;
+  padding: 5px 13px;
 }
-.settings-native .git-settings-row:last-child { border-bottom: 0; padding-bottom: 2px; }
-.settings-native .git-settings-row > span { display: grid; gap: 3px; min-width: 0; }
-.settings-native .git-settings-row strong { font-size: 14px; font-weight: 550; color: var(--text); }
-.settings-native .git-settings-row small { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
-.settings-native .git-settings-row :is(input, select),
-.settings-native .git-settings-block textarea {
-  width: 100%;
-  min-height: 34px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--settings-canvas);
-  color: var(--text);
-  font-size: 13.5px;
-  box-sizing: border-box;
-}
-.settings-native .git-settings-block { display: grid; gap: 7px; }
-.settings-native .git-settings-block > span { font-size: 13px; font-weight: 550; color: var(--text-dim); }
-.settings-native .git-settings-block textarea { resize: vertical; line-height: 1.55; }
-.settings-native .git-prompt-presets { display: flex; flex-wrap: wrap; gap: 6px; }
-.settings-native .git-preset-chip {
-  padding: 4px 9px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-sunken);
-  color: var(--text-dim);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.settings-native .git-preset-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--text); background: var(--bg-hover); }
-.settings-native .git-settings-guarantees {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.settings-native .git-settings-guarantees > li {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--settings-canvas);
-  color: var(--text-dim);
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-.settings-native .git-settings-guarantees > li svg { color: var(--accent); flex: none; margin-top: 3px; }
-.settings-native .git-settings-guarantees > li strong { display: block; color: var(--text); font-size: 13px; margin-bottom: 3px; }
-.settings-native .git-settings-feedback {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  border: 1px solid var(--border);
-}
-.settings-native .git-settings-feedback.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: color-mix(in srgb, var(--danger) 8%, transparent); }
-.settings-native .git-settings-feedback.success { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, var(--border)); background: color-mix(in srgb, var(--success) 8%, transparent); }
-.settings-native .git-settings-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding-top: 4px; }
-.settings-native .git-settings-dirty { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--accent); font-weight: 550; }
-.settings-native .git-settings-dirty i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 
 /* Notifications, Appearance, Pet & Shared Memory Card Polish */
 .settings-native :is(.mcp-server-card, .mcp-server-form) { padding: 16px 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; }
