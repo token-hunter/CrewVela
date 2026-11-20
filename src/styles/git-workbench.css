@@ -1877,12 +1877,65 @@
 .right-sidebar-start::before { flex: 9 0 0; }
 .right-sidebar-start::after { flex: 11 0 0; }
 .right-sidebar-start > * { flex-shrink: 0; }
-.right-sidebar-start-tools { width: 100%; max-width: none; display: flex; flex-direction: column; gap: 0; }
-.right-sidebar-start-tools > button { min-height: 44px; display: flex; align-items: center; gap: 22px; padding: 10px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.right-sidebar-start-tools {
+  box-sizing: border-box;
+  width: min(212px, 100%);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.right-sidebar-start-tools > button {
+  box-sizing: border-box;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
 .right-sidebar-start-tools > button:hover:not(:disabled) { background: var(--bg-hover); }
-.right-sidebar-start-tools > button > svg { flex-shrink: 0; color: var(--text-dim); }
-.right-sidebar-start-tools > button > span { min-width: 0; overflow-wrap: anywhere; line-height: 24px; }
-.right-sidebar-start-tools > button > .right-sidebar-start-arrow { margin-left: auto; width: 16px; height: 16px; }
+.right-sidebar-start-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  transition: color 120ms ease;
+}
+.right-sidebar-start-tools > button:hover:not(:disabled) .right-sidebar-start-icon {
+  color: var(--text);
+}
+.right-sidebar-start-tools > button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 22px; }
+.right-sidebar-start-arrow-pill {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  opacity: 0;
+  transform: translateX(-2px);
+  transition: opacity 120ms ease, transform 120ms ease, color 120ms ease;
+}
+.right-sidebar-start-tools > button:hover:not(:disabled) .right-sidebar-start-arrow-pill {
+  opacity: 1;
+  transform: none;
+  color: var(--text-dim);
+}
+.right-sidebar-start-tools > button .right-sidebar-start-arrow { width: 14px; height: 14px; }
 .right-sidebar-start-tools > button:disabled { opacity: .4; cursor: default; }
 
 /* 终端面板的高度与标题栏独立于开始页菜单样式。 */
