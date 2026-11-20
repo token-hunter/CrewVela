@@ -9,7 +9,8 @@ export function sameSessionSnapshot(
     current.every(
       (session, index) =>
         session.id === next[index]?.id &&
-        session.updatedAt === next[index]?.updatedAt,
+        session.updatedAt === next[index]?.updatedAt &&
+        session.backgroundChatHost === next[index]?.backgroundChatHost,
     )
   );
 }

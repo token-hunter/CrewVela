@@ -40,7 +40,7 @@ export function subscribePtyPolling(onSessions: (sessions: SessionRecord[]) => v
         setWorkingCliPtys(result.workingCliPtyIds ?? []);
         window.dispatchEvent(new CustomEvent("pty:chunk", { detail: result.chunks }));
         const next = result.sessions.map(session => [session.id, session.status, session.ptyId,
-          sessionDisplayTitle(session), session.updatedAt]).flat().join("|");
+          sessionDisplayTitle(session), session.updatedAt, session.backgroundChatHost]).flat().join("|");
         if (next !== signature) {
           signature = next;
           for (const notify of subscribers) notify(result.sessions);

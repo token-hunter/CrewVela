@@ -323,10 +323,15 @@ impl AgentTerminalHost {
                 return Err(PermanentRunError("原生终端正在工作，已保留当前会话并停止托管派发".into()).into());
             }
         }
+        // A chat reply may reuse a terminal that was already visible for other work.
+        let background_chat_host = request.agent.runtime_kind == AgentRuntimeKind::Pi && !request.managed
+            && super::conversation::is_conversation_task(&request.task.id)
+            && (session.background_chat_host || !session.pty_id.is_some_and(|id| self.pty.is_running(id)))
+            && request.store.is_plain_chat_turn(&request.task.id)?;
         self.sessions.set_runtime_command_host(&session.id, true)?;
         let environment = command.get_envs().map(|(key, value)| (key.to_os_string(), value.map(|value| value.to_os_string()))).collect();
         let pty_id = self.ensure_environment_terminal(&session, &request.cwd, environment)?;
-        session = self.sessions.attach_runtime(&session.id, pty_id)?;
+        session = self.sessions.attach_runtime_in(&session.id, pty_id, None, background_chat_host)?;
         request.store.link_agent_app_session(
             &request.project.id,
             &request.agent.id,
@@ -443,7 +448,7 @@ impl AgentTerminalHost {
                 auto_confirm_workspace_trust && !request.managed_native(),
             )?;
             let bind_workspace = request.managed_native() || std::path::Path::new(&session.cwd) != request.cwd;
-            session = match self.sessions.attach_runtime_in(&session.id, id, bind_workspace.then_some(request.cwd.as_path())) {
+            session = match self.sessions.attach_runtime_in(&session.id, id, bind_workspace.then_some(request.cwd.as_path()), false) {
                 Ok(session) => session,
                 Err(error) => {
                     self.pty.kill(id).map_err(|error| anyhow!(UnverifiedStop(error.to_string())))?;

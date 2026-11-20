@@ -45,6 +45,18 @@ export function isPtySession(session: SessionRecord): boolean {
   return !isNativeChatSession(session) && session.ptyId !== null;
 }
 
+export function isBackgroundChatHost(session: SessionRecord): boolean {
+  return session.backgroundChatHost === true && session.runtimeCommandHost === true && session.ptyId !== null;
+}
+
+export function isForegroundSessionActive(session: SessionRecord): boolean {
+  return isSessionActive(session) && !isBackgroundChatHost(session);
+}
+
+export function isWorkspaceTerminal(session: SessionRecord, selectedId: string | null): boolean {
+  return isPtySession(session) && (session.id === selectedId || !isBackgroundChatHost(session));
+}
+
 /** 兼容旧会话的默认名称，仅调整显示，不改写历史或自定义标题。 */
 export function sessionDisplayTitle(session: SessionRecord): string {
   if (session.agentRuntimeKind === "zcode") {

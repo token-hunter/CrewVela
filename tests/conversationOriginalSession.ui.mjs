@@ -65,8 +65,27 @@ try {
   await managedRecord.getByText("只读记录（每段最多 200 条）", { exact: true }).waitFor();
   await managedRecord.getByText("原会话记录暂不可用。以下为任务保存的本次记录。", { exact: true }).waitFor();
   assert.deepEqual(await managed.evaluate(() => window.appSessionMock.calls), []);
+  await managed.close();
+
+  const pi = await openTeam("&pi-chat-host=1");
+  await openOriginal(pi, "live");
+  await pi.getByRole("dialog", { name: /成员 A · 原会话/ }).getByText("原始用户消息", { exact: true }).waitFor();
+  assert.equal(await pi.getByRole("tab", { name: "工作区 A" }).getAttribute("aria-selected"), "true");
+  assert.deepEqual(await pi.evaluate(() => window.appSessionMock.originalRunReads), [{ projectId: "A", runId: "live" }]);
+  await pi.keyboard.press("Escape");
+  await pi.evaluate(() => window.appSessionMock.emit("multi-agent-workspace-open", { projectId: "A" }));
+  const project = pi.locator(".multi-agent-workspace");
+  await project.locator(".ma-terminal-awaiting").waitFor();
+  assert.equal(await project.locator(".pane").count(), 0);
+  await pi.getByRole("button", { name: "关闭通信提示" }).click();
+  await project.getByRole("button", { name: /^成员 ▾/ }).click();
+  await project.locator(".ma-agent-strip").getByRole("button", { name: /成员 A/ }).click();
+  await project.locator(".pane-maximized").getByText("Pi 审查", { exact: true }).waitFor();
+  await project.getByRole("button", { name: "显示全部终端" }).click();
+  await project.locator(".ma-terminal-awaiting").waitFor();
+  assert.deepEqual(await pi.evaluate(() => window.appSessionMock.calls), []);
   assert.deepEqual(errors, []);
-  console.log("PASS: exact conversation run history, unavailable history fallback, cross-workspace terminal, and detached route");
+  console.log("PASS: exact conversation history, cross-workspace terminal, detached route, and opt-in project view of a background Pi chat host");
 } finally {
   await browser.close();
 }

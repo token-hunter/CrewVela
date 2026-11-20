@@ -15,10 +15,11 @@ let sessions: SessionRecord[] = ["one", "two"].map((id, i) => ({
 }));
 const bulkFixture = new URLSearchParams(location.search).get("bulk-actions");
 const originalRunFixture = new URLSearchParams(location.search).has("original-run");
+const originalPiChatHost = new URLSearchParams(location.search).has("pi-chat-host");
 if (originalRunFixture) {
-  sessions[0] = { ...sessions[0], title: "Claude 原终端", agentRuntimeKind: "claude_code",
+  sessions[0] = { ...sessions[0], title: originalPiChatHost ? "Pi 审查" : "Claude 原终端", agentRuntimeKind: originalPiChatHost ? "pi" : "claude_code",
     multiAgentProjectId: "A", multiAgentAgentId: "agent-A", status: "running", ptyId: 1,
-    runtimeCommandHost: new URLSearchParams(location.search).has("command-host") };
+    runtimeCommandHost: originalPiChatHost || new URLSearchParams(location.search).has("command-host"), backgroundChatHost: originalPiChatHost };
 }
 if (bulkFixture) {
   sessions = [
@@ -64,6 +65,7 @@ const api = {
   bulkCalls: [] as Array<{command:string;sessionId:string}>,
   rejectBulkDelete: "", rejectBulkStop: "",
   bulkSessions: () => structuredClone(sessions),
+  setSessions(next: SessionRecord[]) { sessions = structuredClone(next); },
   addBulkSession() { sessions = [...sessions, { ...sessions[0], id: "arrived", title: "newly-arrived", status: "stopped", ptyId: null }]; },
   replaceBulkSession() { sessions = sessions.map((session,index) => index === 0 ? { ...session, id: "replacement", title: "replacement-session" } : session); },
   help: {
@@ -96,7 +98,7 @@ const api = {
         const snapshot = navigationSnapshot(String(args?.projectId));
         return {
           ...snapshot,
-          agents: snapshot.agents.map(agent => ({ ...agent, runtimeKind: "claude_code" })),
+          agents: snapshot.agents.map(agent => ({ ...agent, runtimeKind: originalPiChatHost ? "pi" : "claude_code" })),
           runs: ["old", "unavailable", "live"].map(id => ({ id, projectId: "A", taskId: "task-A", agentId: "agent-A",
             status: id === "live" ? "running" : "succeeded", startedAt: Date.now() - 7000,
             finishedAt: id === "live" ? null : Date.now() - 4000, sessionLocator: id === "live" ? { ptyId: 1 } : null })),
@@ -108,7 +110,7 @@ const api = {
         const entry = { projectId: conversation.projectId, conversationId: conversation.id,
           phase: "chat", status: "completed", createdAt: Date.now() - 8000, updatedAt: Date.now() - 4000 };
         return {
-          conversation, rounds: [], executionPlans: [], supportedDiscussionRuntimes: ["claude_code"],
+          conversation, rounds: [], executionPlans: [], supportedDiscussionRuntimes: [originalPiChatHost ? "pi" : "claude_code"],
           messages: [
             { ...entry, id: "prompt", senderType: "user", kind: "message", body: "原始用户消息" },
             ...["old", "unavailable", "live"].map((id, index) => ({ ...entry, id, runId: id,
@@ -216,7 +218,11 @@ const api = {
         sessions = sessions.filter(session => session.id !== sessionId);
       } else {
         if (api.rejectBulkStop === sessionId) throw Error("fixture stop rejected");
-        sessions = sessions.map(session => session.id === sessionId ? { ...session, status: "stopped", ptyId: null } : session);
+        const target = sessions.find(session => session.id === sessionId);
+        if (!target) throw Error("fixture session missing");
+        const stopped: SessionRecord = { ...target, status: "stopped", ptyId: null, updatedAt: Date.now() };
+        sessions = sessions.map(session => session.id === sessionId ? stopped : session);
+        return structuredClone(stopped);
       }
       return null;
     }

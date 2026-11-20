@@ -876,6 +876,22 @@ fn bounded_rounds_members_and_unsupported_runtime_reject_before_persistence() {
 }
 
 #[test]
+fn background_chat_host_requires_an_ordinary_chat_round() {
+    for (mode, intent, expected) in [
+        ("discussion", "chat", true),
+        ("discussion", "exchange", false),
+        ("execution_plan", "chat", false),
+    ] {
+        let fixture = Fixture::new();
+        let input = ConversationSendInput { mode: mode.into(), intent: intent.into(), ..fixture.input() };
+        let (round, _) = fixture.store.begin_conversation(input).unwrap();
+        let turn = prepare_turn(&fixture.store, &round.id, 0, &round.phase, 0, &fixture.agents[0]).unwrap();
+        assert_eq!(fixture.store.is_plain_chat_turn(&turn.task_id).unwrap(), expected, "{mode} {intent}");
+        assert!(!fixture.store.is_plain_chat_turn("unrelated-task").unwrap());
+    }
+}
+
+#[test]
 fn discussion_tasks_cannot_be_claimed_by_general_scheduler() {
     let fixture = Fixture::new();
     let (round, _) = fixture.store.begin_conversation(fixture.input()).unwrap();

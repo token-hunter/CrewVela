@@ -828,6 +828,16 @@ impl MultiAgentStore {
         attachments::video_path(&self.conversation_attachment_source_path(source)?)
     }
 
+    pub(super) fn is_plain_chat_turn(&self, task: &str) -> Result<bool> {
+        let connection = self.connection.lock().unwrap();
+        Ok(connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ma_conversation_turns t JOIN ma_conversation_rounds r ON r.id=t.round_id
+             WHERE t.task_id=?1 AND json_extract(r.data_json,'$.mode')='discussion'
+             AND COALESCE(json_extract(r.data_json,'$.intent'),'chat')='chat')",
+            [task], |row| row.get(0),
+        )?)
+    }
+
     pub(super) fn conversation_task_images(&self, task: &str) -> Result<Vec<(std::path::PathBuf, String)>> {
         let connection = self.connection.lock().unwrap();
         let source_id: Option<String> = connection.query_row(

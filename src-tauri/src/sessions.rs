@@ -384,6 +384,9 @@ pub struct SessionRecord {
     /// 一次性任务的 PTY 是命令/日志宿主，不能接收聊天输入。
     #[serde(default)]
     pub runtime_command_host: bool,
+    /// The attached PTY was opened solely to deliver an ordinary team chat reply.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub background_chat_host: bool,
     #[serde(default, skip_serializing_if = "crate::codex_storage::CodexStorage::is_personal")]
     pub codex_storage: crate::codex_storage::CodexStorage,
     /// 归属的项目（projects.json）；None 表示未分组。
@@ -705,6 +708,7 @@ impl SessionManager {
         for session in &mut data.sessions {
             recovered |= retire_removed_runtime(session);
             if session.pty_id.take().is_some() {
+                session.background_chat_host = false;
                 session.status = SessionStatus::Stopped;
                 session.updated_at = now_millis();
                 recovered = true;
@@ -758,6 +762,7 @@ impl SessionManager {
             retired_agent_runtime: false,
             agent_avatar_id: None,
             runtime_command_host: false,
+            background_chat_host: false,
             codex_storage: Default::default(),
             project_id: input.project_id,
             worktree: None,
@@ -806,6 +811,7 @@ impl SessionManager {
             agent_avatar_id: None,
             runtime_command_host: false,
             codex_storage: Default::default(),
+            background_chat_host: false,
             project_id: input.project_id,
             worktree: None,
             provider_id: "local-terminal".into(),
@@ -905,6 +911,7 @@ impl SessionManager {
             agent_avatar_id: None,
             runtime_command_host: false,
             codex_storage: Default::default(),
+            background_chat_host: false,
             project_id: input.project_id,
             worktree: None,
             provider_id: format!("local-runtime-{runtime_kind}"),
@@ -990,6 +997,7 @@ impl SessionManager {
             retired_agent_runtime: false,
             agent_avatar_id: input.avatar_id,
             runtime_command_host: false,
+            background_chat_host: false,
             project_id: None,
             worktree: None,
             provider_id: "multi-agent-runtime".into(),
@@ -1424,12 +1432,12 @@ impl SessionManager {
     }
 
     pub fn attach_runtime(&self, id: &str, pty_id: u32) -> Result<SessionRecord> {
-        self.attach_runtime_in(id, pty_id, None)
+        self.attach_runtime_in(id, pty_id, None, false)
     }
 
     // A member reuses its app panel across tasks. Bind the new native process
     // to the real task worktree before validating any provider hook or thread.
-    pub(crate) fn attach_runtime_in(&self, id: &str, pty_id: u32, managed_cwd: Option<&std::path::Path>) -> Result<SessionRecord> {
+    pub(crate) fn attach_runtime_in(&self, id: &str, pty_id: u32, managed_cwd: Option<&std::path::Path>, background_chat_host: bool) -> Result<SessionRecord> {
         let _approval_registry = self.approval_registry.read().unwrap();
         let approval_gate = self.approval_lock(id);
         let _approval_gate = approval_gate.lock().unwrap();
@@ -1451,6 +1459,7 @@ impl SessionManager {
             session.waiting_reason = None;
         }
         session.pty_id = Some(pty_id);
+        session.background_chat_host = background_chat_host;
         session.status = if session.kind == SessionKind::Terminal {
             SessionStatus::Running
         } else {
@@ -2843,6 +2852,7 @@ impl SessionManager {
             .ok_or_else(|| anyhow!("未找到会话: {id}"))?;
         let clear_prompt = enabled || session.runtime_command_host != enabled;
         session.runtime_command_host = enabled;
+        if !enabled { session.background_chat_host = false; }
         self.persist_candidate(&mut stored, data)?;
         drop(stored);
         if clear_prompt {
@@ -4558,6 +4568,31 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn background_chat_host_visibility_follows_the_attached_pty() {
+        let (path, events) = test_paths("pi-background-chat-host");
+        let sessions = SessionManager::open_at(path.clone(), events.clone()).unwrap();
+        let member = sessions.create_agent(NewAgentSession {
+            project_id: "project".into(), agent_id: "member".into(), runtime_kind: "pi".into(),
+            agent_name: "Pi".into(), cwd: ".".into(), avatar_id: None,
+        }).unwrap();
+        assert!(serde_json::to_value(&member).unwrap().get("backgroundChatHost").is_none());
+        sessions.set_runtime_command_host(&member.id, true).unwrap();
+        let chat = sessions.attach_runtime_in(&member.id, 9, None, true).unwrap();
+        assert!(chat.background_chat_host && chat.runtime_command_host);
+        assert_eq!(chat.pty_id, Some(9));
+        sessions.mark_agent_activity(&chat.id, SessionStatus::Completed, None).unwrap();
+        assert!(sessions.get(&chat.id).unwrap().background_chat_host);
+        let foreground = sessions.attach_runtime(&chat.id, 9).unwrap();
+        assert!(foreground.runtime_command_host && !foreground.background_chat_host);
+        sessions.attach_runtime_in(&member.id, 10, None, true).unwrap();
+        let reopened = SessionManager::open_at(path.clone(), events).unwrap();
+        let stopped = reopened.get(&chat.id).unwrap();
+        assert!(!stopped.background_chat_host && stopped.runtime_command_host);
+        assert_eq!(stopped.pty_id, None);
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]

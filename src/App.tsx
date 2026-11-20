@@ -76,7 +76,7 @@ import { AddProjectDialog } from "./components/AddProjectDialog";
 import { TranscriptViewer } from "./components/TranscriptViewer";
 import { SessionSwitchDialog } from "./components/SessionSwitchDialog";
 import { SWITCH_RUNTIME_LABELS, isStructuredZCodeCli, switchRecoveryKind, switchRecoveryInWorkspace, projectSwitchSessions, retainedSwitchSource, switchSlotId, switchSelectionAfterSnapshot, switchWorkspaceAssignment, switchedHistory, type SessionSwitchRecord } from "./sessionSwitch";
-import { isPtySession, isSessionActive, isNativeChatSession, isStandaloneHarnessSession, isStandaloneClaudeChatSession, isStandaloneCodexChatSession, isStandaloneKimiChatSession, isStandaloneOpenCodeChatSession, isStandalonePiChatSession, isStandaloneZCodeSession } from "./sessionCapabilities";
+import { isPtySession, isBackgroundChatHost, isWorkspaceTerminal, isForegroundSessionActive, isSessionActive, isNativeChatSession, isStandaloneHarnessSession, isStandaloneClaudeChatSession, isStandaloneCodexChatSession, isStandaloneKimiChatSession, isStandaloneOpenCodeChatSession, isStandalonePiChatSession, isStandaloneZCodeSession } from "./sessionCapabilities";
 import {
   SettingsDialog,
   type SettingsSection,
@@ -955,6 +955,10 @@ export default function App() {
     () => tabSessions.filter(item => !sidebarTerminalIds.includes(item.id) && isSessionActive(item)),
     [tabSessions, sidebarTerminalIds],
   );
+  const foregroundLiveSessions = useMemo(() => liveSessions.filter(isForegroundSessionActive), [liveSessions]);
+  const tabHasWorkspaceTerminal = tabSessions.some(item => !sidebarTerminalIds.includes(item.id) && isWorkspaceTerminal(item, selectedSessionId));
+  const backgroundOnlyGrid = !tabHasWorkspaceTerminal && tabSessions.some(isBackgroundChatHost)
+    && !tabSessions.some(item => retainedSwitchSource(item.id, switchRecords));
   const anyLivePtySessions = sessions.some(item => !sidebarTerminalIds.includes(item.id) && isPtySession(item));
   const hiddenSessionIds = useMemo(
     () =>
@@ -2249,9 +2253,9 @@ export default function App() {
   const focusFirstLiveSession = useCallback(
     () =>
       setSelectedSessionId(
-        (current) => current ?? liveSessions[0]?.id ?? null,
+        (current) => current ?? foregroundLiveSessions[0]?.id ?? null,
       ),
-    [liveSessions],
+    [foregroundLiveSessions],
   );
   const clearSelectedSession = useCallback(
     () => setSelectedSessionId(null),
@@ -2302,7 +2306,7 @@ export default function App() {
     filesAvailable: Boolean(activeWorkspaceRoot),
     terminalAvailable: Boolean(activeWorkspaceRoot || existingViewPanel("terminal", openRightSidebarTabs, activeRightSidebarTab, lastRightSidebarTab)),
     focused: selectedSessionId !== null,
-    canFocus: !nativeSessionView && liveSessions.some(isPtySession),
+    canFocus: !nativeSessionView && foregroundLiveSessions.some(isPtySession),
     canOverview: !nativeSessionView,
     fullscreen: windowFullscreen.fullscreen,
     fullscreenPending: windowFullscreen.pending,
@@ -2314,7 +2318,7 @@ export default function App() {
     onToggleRight: toggleRightSidebar,
     onPanel: openViewPanel,
     onFocus: () => setSelectedSessionId(current => {
-      const terminals = liveSessions.filter(isPtySession);
+      const terminals = foregroundLiveSessions.filter(isPtySession);
       return terminals.some(session => session.id === current) ? current : terminals[0]?.id ?? null;
     }),
     onOverview: clearSelectedSession,
@@ -2371,7 +2375,7 @@ export default function App() {
         onDeleteProject={handleDeleteProject}
         onArchiveProjectSessions={archiveProjectSessions}
         viewFocused={selectedSessionId !== null}
-        viewSwitchDisabled={liveSessions.length === 0}
+        viewSwitchDisabled={foregroundLiveSessions.length === 0 && !(selectedSession && isBackgroundChatHost(selectedSession))}
         onFocusView={focusFirstLiveSession}
         onOverviewView={clearSelectedSession}
         stopAllDisabled={liveSessions.length === 0}
@@ -2471,7 +2475,7 @@ export default function App() {
                   />
                 )}
                 {anyLivePtySessions && (
-                  <div className="main-terminal-host" hidden={!!multiAgentWorkspaceProjectId || !!selectedRelaySource || !!(selectedSession && (isNativeChatSession(selectedSession) || isStructuredZCodeCli(selectedSession, switchRecords)))}>
+                  <div className="main-terminal-host" hidden={backgroundOnlyGrid || !!multiAgentWorkspaceProjectId || !!selectedRelaySource || !!(selectedSession && (isNativeChatSession(selectedSession) || isStructuredZCodeCli(selectedSession, switchRecords)))}>
                     <MemoMultiTerminal
                       sessions={displaySessions.filter(item => !sidebarTerminalIds.includes(item.id))}
                       selectedSessionId={selectedSessionId}
@@ -2511,7 +2515,7 @@ export default function App() {
                     )}
                   </div>
                 ) : !multiAgentWorkspaceProjectId && !selectedSession &&
-                  !tabSessions.some(item => !sidebarTerminalIds.includes(item.id) && isPtySession(item)) ? (
+                  !tabHasWorkspaceTerminal ? (
                   <EmptyWorkspaceLauncher
                     key={workspace.activeTabId}
                     projects={projects}

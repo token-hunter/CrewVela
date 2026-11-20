@@ -5,7 +5,7 @@ import { TerminalPane } from "./TerminalPane";
 import type { AppTheme, SessionRecord } from "../types";
 import { retainedSwitchSource, sessionSwitchReason, switchSlotId, switchedHistory, type SessionSwitchRecord } from "../sessionSwitch";
 import { HandoffSourceView } from "./HandoffSourceView";
-import { isNativeChatSession, isPtySession } from "../sessionCapabilities";
+import { isNativeChatSession, isPtySession, isWorkspaceTerminal } from "../sessionCapabilities";
 
 interface Props {
   sessions: SessionRecord[];
@@ -76,23 +76,19 @@ export function MultiTerminal({
 
   useEffect(() => {
     setSlotIds((current) => {
-      const liveIds = new Set(
-        sessions.filter(session => isPtySession(session) || (!isNativeChatSession(session) && retainedSwitchSource(session.id, switchRecords))).map((session) => switchSlotId(session.id, switchRecords)),
-      );
+      const liveIds = new Set(sessions
+        .filter(session => isWorkspaceTerminal(session, selectedSessionId) || (!isNativeChatSession(session) && retainedSwitchSource(session.id, switchRecords)))
+        .map(session => switchSlotId(session.id, switchRecords)));
       const next = current.filter((id) => liveIds.has(id));
       const nextIds = new Set(next);
-      for (const session of sessions) {
-        const slotId = switchSlotId(session.id, switchRecords);
-        if ((isPtySession(session) || (!isNativeChatSession(session) && retainedSwitchSource(session.id, switchRecords))) && !nextIds.has(slotId)) {
-          next.push(slotId);
-          nextIds.add(slotId);
-        }
+      for (const slotId of liveIds) {
+        if (!nextIds.has(slotId)) next.push(slotId);
       }
       return next.length === current.length && next.every((id, index) => id === current[index])
         ? current
         : next;
     });
-  }, [sessions, switchRecords]);
+  }, [sessions, switchRecords, selectedSessionId]);
 
   const visibleCount = hiddenSessionIds
     ? slotIds.filter((id) => !hiddenSessionIds.has(sessions.find((session) => switchSlotId(session.id, switchRecords) === id)?.id ?? id)).length

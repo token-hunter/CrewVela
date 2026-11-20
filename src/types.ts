@@ -264,6 +264,8 @@ export interface SessionRecord {
   modelAssignment?: { connectionId: string; model: string | null; source: string } | null;
   /** 一次性执行日志宿主不能接收普通聊天或 Agent 接力。 */
   runtimeCommandHost?: boolean;
+  /** This PTY carries an ordinary group reply in the background. */
+  backgroundChatHost?: boolean;
   id: string;
   claudeSessionId: string;
   kind: SessionKind;

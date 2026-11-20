@@ -2,7 +2,7 @@ import { sessionDisplayTitle, sessionDisplayProvider } from "../sessionCapabilit
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { sessionSwitchReason } from "../sessionSwitch";
 import { createPortal } from "react-dom";
-import { isSessionActive } from "../sessionCapabilities";
+import { isForegroundSessionActive, isSessionActive } from "../sessionCapabilities";
 import { CaretDoubleLeftIcon } from "@phosphor-icons/react/dist/csr/CaretDoubleLeft";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
 import { CaretDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
@@ -161,8 +161,8 @@ export function SessionList({
   const actionMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const actionMenuItemsRef = useRef<HTMLButtonElement[]>([]);
-  const liveCount = sessions.filter(isSessionActive).length;
-  const stoppedCount = sessions.length - liveCount;
+  const liveCount = sessions.filter(isForegroundSessionActive).length;
+  const stoppedCount = sessions.filter(session => !isSessionActive(session)).length;
   const favoriteCount = sessions.filter((session) => favorites.has(logicalSessionId(session.id))).length;
   const claudeCount = sessions.filter((session) => sessionType(session) === "claude").length;
   const terminalCount = sessions.filter((session) => sessionType(session) === "terminal").length;
@@ -371,7 +371,7 @@ export function SessionList({
       (session) => typeFilter === "all" || sessionType(session) === typeFilter,
     );
     let filtered: SessionRecord[];
-    if (filter === "running") filtered = typeSessions.filter(isSessionActive);
+    if (filter === "running") filtered = typeSessions.filter(isForegroundSessionActive);
     else if (filter === "stopped") filtered = typeSessions.filter((session) => !isSessionActive(session));
     else if (filter === "favorites") {
       filtered = typeSessions.filter((session) => favorites.has(logicalSessionId(session.id)));

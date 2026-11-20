@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { COLLABORATION_UI_PREVIEW_SNAPSHOT } from "./CollaborationSettingsPanel";
 import { workspaceParticipation } from "../multiAgentWorkspacePresentation";
+import { isBackgroundChatHost } from "../sessionCapabilities";
 import { MultiTerminal } from "./MultiTerminal";
 import type {
   AppTheme,
@@ -201,8 +202,9 @@ export function MultiAgentWorkspace({
   const hiddenSessionIds = new Set(
     sessions.filter((session) => !linkedSessionIds.has(session.id)).map((session) => session.id),
   );
-  const visualSessionCount = sessions.filter((session) => linkedSessionIds.has(session.id)).length;
   const focusedAppSessionId = focusedAgentId ? appSessionByAgent.get(focusedAgentId) ?? null : null;
+  const hasProjectSession = sessions.some(session => linkedSessionIds.has(session.id)
+    && (session.id === focusedAppSessionId || !isBackgroundChatHost(session)));
 
   return (
     <section className="multi-agent-workspace">
@@ -243,7 +245,7 @@ export function MultiAgentWorkspace({
             })}
             {!participatingAgents.length && <span className="ma-no-participants">当前没有参与任务的成员；可在项目协作设置中编辑团队。</span>}
           </div>}
-          {visualSessionCount > 0 ? (
+          {hasProjectSession ? (
             <MultiTerminal
               sessions={sessions}
               selectedSessionId={focusedAppSessionId}

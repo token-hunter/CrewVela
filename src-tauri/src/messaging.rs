@@ -406,6 +406,7 @@ mod tests {
             retired_agent_runtime: false,
             agent_avatar_id: None,
             runtime_command_host: false,
+            background_chat_host: false,
             codex_storage: Default::default(),
             project_id: None,
             worktree: None,
