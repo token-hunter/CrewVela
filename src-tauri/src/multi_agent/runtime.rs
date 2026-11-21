@@ -798,6 +798,66 @@ pub(crate) fn command_for_path(path: &std::path::Path) -> Command {
     }
 }
 
+/// On Windows the stock npm shim starts cmd, Node and finally Codex on the
+/// same console. Launch that exact npm-owned binary for interactive handoffs.
+/// A custom launcher may configure a different account, so leave it intact.
+pub(crate) fn codex_handoff_command(selected: &std::path::Path) -> Command {
+    #[cfg(windows)]
+    if let Some((binary, package)) = npm_handoff_binary(selected) {
+        let mut command = Command::new(binary);
+        command.env("CODEX_MANAGED_PACKAGE_ROOT", package)
+            .env("CODEX_MANAGED_BY_NPM", "1")
+            .env_remove("CODEX_MANAGED_BY_PNPM").env_remove("CODEX_MANAGED_BY_BUN").env_remove("CODEX_MANAGED_BY_VITE_PLUS");
+        return command;
+    }
+    command_for_path(selected)
+}
+
+#[cfg(windows)]
+fn npm_handoff_binary(shim: &std::path::Path) -> Option<(PathBuf, PathBuf)> {
+    if !shim.file_name()?.eq_ignore_ascii_case("codex.cmd") { return None; }
+    let parent = shim.parent()?;
+    let local = parent.file_name().is_some_and(|name| name.eq_ignore_ascii_case(".bin"));
+    let entry = if local { r"..\@openai\codex\bin\codex.js" } else { r"node_modules\@openai\codex\bin\codex.js" };
+    let template = r#"@ECHO off
+GOTO start
+:find_dp0
+SET dp0=%~dp0
+EXIT /b
+:start
+SETLOCAL
+CALL :find_dp0
+
+IF EXIST "%dp0%\node.exe" (
+  SET "_prog=%dp0%\node.exe"
+) ELSE (
+  SET "_prog=node"
+  SET PATHEXT=%PATHEXT:;.JS;=;%
+)
+
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\ENTRY" %*"#;
+    if std::fs::read_to_string(shim).ok()?.replace("\r\n", "\n").trim_end() != template.replace("ENTRY", entry) { return None; }
+    let node_modules = if local { parent.parent()?.to_owned() } else { parent.join("node_modules") };
+    if node_modules.join(".modules.yaml").exists() { return None; }
+    let root = node_modules.join("@openai/codex").canonicalize().ok()?;
+    let manifest = |p: &std::path::Path| -> Option<serde_json::Value> {
+        serde_json::from_slice(&std::fs::read(p.join("package.json")).ok()?).ok()
+    };
+    let launcher = manifest(&root)?;
+    if launcher["name"] != "@openai/codex" || launcher["bin"]["codex"] != "bin/codex.js" { return None; }
+    let version = launcher["version"].as_str()?;
+    let (package, triple, executable) = native_codex_package()?;
+    let dependency = format!("@openai/{package}");
+    let pinned = launcher["optionalDependencies"].get(&dependency)?.as_str()?.strip_prefix("npm:@openai/codex@")?;
+    if !pinned.starts_with(&format!("{version}-win32-")) { return None; }
+    let platform = [root.join("node_modules").join(&dependency), node_modules.join(&dependency)].into_iter().find(|p| p.join("package.json").is_file())?;
+    let installed = manifest(&platform)?;
+    if installed["name"] != "@openai/codex" || installed["version"] != pinned { return None; }
+    let binary = platform.join("vendor").join(triple).join("bin").join(executable);
+    if !binary.is_file() || read_version(&binary).0.as_deref() != Some(&format!("codex-cli {version}")) { return None; }
+    Some((binary, root))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

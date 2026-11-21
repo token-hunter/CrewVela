@@ -479,17 +479,27 @@ impl PtyManager {
         app_session_id: &str,
         auto_confirm_workspace_trust: bool,
     ) -> Result<u32> {
+        self.open_agent_program_with_handoff(command, app_session_id, auto_confirm_workspace_trust, None)
+    }
+
+    pub(crate) fn open_agent_program_with_handoff(&self, command: &Command, app_session_id: &str, auto_confirm_workspace_trust: bool,
+        handoff: Option<&crate::control::codex_handoff::Launch>) -> Result<u32> {
         let mut cmd = build_agent_program_command(command);
         inject_crewvela_identity(&mut cmd, app_session_id);
-        self.spawn_command(cmd, app_session_id, auto_confirm_workspace_trust)
+        self.spawn_with_handoff(cmd, app_session_id, auto_confirm_workspace_trust, handoff)
     }
 
     fn spawn_command(
         &self,
-        mut cmd: CommandBuilder,
+        cmd: CommandBuilder,
         app_session_id: &str,
         auto_confirm_workspace_trust: bool,
     ) -> Result<u32> {
+        self.spawn_with_handoff(cmd, app_session_id, auto_confirm_workspace_trust, None)
+    }
+
+    fn spawn_with_handoff(&self, mut cmd: CommandBuilder, app_session_id: &str, auto_confirm_workspace_trust: bool,
+        handoff: Option<&crate::control::codex_handoff::Launch>) -> Result<u32> {
         let _admission = self.admission.admit()?;
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -506,7 +516,17 @@ impl PtyManager {
             use std::os::windows::io::AsRawHandle;
             cmd.set_windows_job(process_job.as_handle().as_raw_handle() as usize);
         }
-        let child = pair.slave.spawn_command(cmd).context("启动终端进程失败")?;
+        if let Some(handoff) = handoff { handoff.arm()?; }
+        let child = match pair.slave.spawn_command(cmd) {
+            Ok(child) => child,
+            Err(error) => {
+                // Our Windows ConPTY backend returns Err only before, or on a
+                // failed CreateProcessW. A later setup/attach failure is ambiguous.
+                #[cfg(windows)]
+                if let Some(handoff) = handoff { handoff.not_started()?; }
+                return Err(error).context("启动终端进程失败");
+            }
+        };
         drop(pair.slave);
         #[cfg(windows)]
         let (process_identity, identity_error) = match child.as_raw_handle()

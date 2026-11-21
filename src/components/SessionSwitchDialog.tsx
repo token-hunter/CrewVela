@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentRuntimeKind, SessionRecord } from "../types";
-import { SWITCH_RUNTIME_LABELS as LABELS, switchRuntime, switchTargets, type SessionSwitchRecord } from "../sessionSwitch";
+import { SWITCH_RUNTIME_LABELS as LABELS, switchDeliveryText, switchRuntime, switchTargets, type SessionSwitchRecord } from "../sessionSwitch";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { Modal } from "./ui/Modal";
 interface Props { source: SessionRecord; record?: SessionSwitchRecord; sourcePosition?: number; preview?: boolean; initialTarget?: AgentRuntimeKind; onRecord: (record: SessionSwitchRecord) => void; onClose: () => void; }
@@ -13,7 +13,10 @@ export function SessionSwitchDialog({ source, record, sourcePosition = 0, previe
   const [draft, setDraft] = useState<SessionSwitchRecord | null>(record ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [official, setOfficial] = useState(record?.historyMode === "official");
+  const [official, setOfficial] = useState(record?.historyMode === "official" || record?.state === "importing");
+  useEffect(() => {
+    if (record?.codexDelivery) setDraft(current => current?.id === record.id ? record : current);
+  }, [record]);
   // ai-memory 共享记忆交接棒：只读展示（offer-not-claim），接棒由目标智能体
   // 自己的 SessionStart 钩子完成，这里不代替消费。
   const [batons, setBatons] = useState<OpenHandoffInfo[] | null>(preview ? [{ id: "preview-baton-1", fromAgent: "claude-code", createdAtMs: Date.now() - 5 * 60_000 }] : null);
@@ -66,12 +69,13 @@ export function SessionSwitchDialog({ source, record, sourcePosition = 0, previe
     {(error || draft?.error) && <p className="session-error" role="alert">{error ?? draft?.error}</p>}
     {draft && <details><summary>预览交接资料</summary><pre className="session-switch-context">{draft.context}</pre></details>}
     {switchRuntime(source) === "claude_code" && target === "codex" && !["queued", "cancelled"].includes(draft?.state ?? "") && <label><input type="checkbox" checked={official} disabled={busy} onChange={e => setOfficial(e.target.checked)} />使用 Codex 官方实验历史导入（失败后可改用工作交接包）</label>}
-    {draft?.state === "queued" && <p role="status">{draft.historyMode === "official" ? "历史已导入；" : "交接资料已提交；"}等待目标 Agent 接手回复。</p>}
+    {draft?.state === "queued" && <p role="status">{switchDeliveryText(draft)}</p>}
     {draft?.state === "cancelled" && <p role="status">本次接力已取消。恢复来源仅用于撤销；若要接回目标的新进度，请从目标发起新的接力。</p>}
     <div className="editor-actions">
       <button className="btn secondary" disabled={busy} onClick={onClose}>关闭</button>
       {draft && draft.state !== "cancelled" && <button className="btn secondary" disabled={busy} onClick={() => void run(true)}>{draft.state === "preview" ? "取消交接" : "撤销接力并恢复来源"}</button>}
       {!draft && <button className="btn primary" disabled={busy || !isRuntimeEnabled(target)} onClick={() => void prepare()}>{busy ? "准备中…" : "准备交接资料"}</button>}
+      {draft?.state === "queued" && draft.codexDelivery === "pending" && <button className="btn primary" disabled={busy || !isRuntimeEnabled(target)} onClick={() => void run(false)}>继续接手会话</button>}
       {draft && !["queued", "cancelled"].includes(draft.state) && <button className="btn primary" disabled={busy || !isRuntimeEnabled(target)} onClick={() => void run(false)}>{busy ? "正在交接…" : draft.state === "preview" ? "确认交接并继续" : "重试接力"}</button>}
     </div>
   </Modal>;

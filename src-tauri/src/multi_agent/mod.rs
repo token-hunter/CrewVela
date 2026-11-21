@@ -48,6 +48,6 @@ pub(crate) use runtime::{version_number, version_is_newer};
 pub use runtime::{
     check_runtime_updates, probe_all_runtimes, upgrade_runtime, RuntimeProbe, RuntimeUpgradeReceipt,
 };
-pub(crate) use runtime::{command_for_path, resolve_runtime_executable, resolve_runtime_executable_checked};
+pub(crate) use runtime::{codex_handoff_command, command_for_path, resolve_runtime_executable, resolve_runtime_executable_checked};
 pub use store::MultiAgentStore;
 pub(crate) use store::delegation::DesignDelivery;

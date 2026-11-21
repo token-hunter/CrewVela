@@ -36,6 +36,10 @@ impl AcceptanceHarness {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir(&root)?;
+        Self::open(root)
+    }
+
+    fn open(root: PathBuf) -> anyhow::Result<Self> {
         let temp = std::env::temp_dir().canonicalize()?;
         anyhow::ensure!(
             root.canonicalize()?.starts_with(&temp),
@@ -566,4 +570,139 @@ fn real_claude_codex_bidirectional_pty() -> anyhow::Result<()> {
     }
     harness.diagnostics(if result.is_ok() { "passed" } else { "failed" })?;
     result
+}
+
+#[test]
+#[ignore = "requires the installed Codex CLI and Node; runs a loopback model with an isolated Codex home"]
+fn installed_codex_handoff_submits_the_complete_prompt_once() -> anyhow::Result<()> {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Child, Stdio};
+
+    const CHILD: &str = "CREWVELA_HANDOFF_PTY_TEST_ROOT";
+    struct StopChild(Child);
+    impl Drop for StopChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let Some(root) = std::env::var_os(CHILD).map(PathBuf::from) else {
+        // AF_UNIX control sockets on Windows have a 108-byte path limit.
+        let id = uuid::Uuid::new_v4().simple().to_string();
+        let root = std::env::temp_dir().join(format!("cvh-{}", &id[..8]));
+        let home = root.join("c");
+        std::fs::create_dir(&root)?;
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args(["installed_codex_handoff_submits_the_complete_prompt_once", "--ignored", "--nocapture", "--test-threads=1"])
+            .env(CHILD, &root)
+            .env("CODEX_HOME", &home)
+            .env("CODEX_SQLITE_HOME", &home)
+            .env_remove("OPENAI_API_KEY").env_remove("CODEX_API_KEY")
+            .output()?;
+        if home.join("app-server-daemon/daemon.pid").is_file() {
+            let executable = multi_agent::resolve_runtime_executable(AgentRuntimeKind::Codex)
+                .context("Codex CLI unavailable for isolated daemon cleanup")?;
+            let mut stop = multi_agent::command_for_path(&executable);
+            stop.args(["app-server", "daemon", "stop"])
+                .env("CODEX_HOME", &home)
+                .env("CODEX_SQLITE_HOME", &home)
+                .env_remove("OPENAI_API_KEY")
+                .env_remove("CODEX_API_KEY");
+            let _ = title_summary::run_cli_with_timeout(
+                stop, None, Duration::from_secs(15), 64 * 1024, "stop fixture Codex daemon",
+            );
+        }
+        anyhow::ensure!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+            "installed Codex handoff failed:\n{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        std::fs::remove_dir_all(root)?;
+        return Ok(());
+    };
+    anyhow::ensure!(root.canonicalize()?.starts_with(std::env::temp_dir().canonicalize()?));
+    let home = root.join("c");
+    anyhow::ensure!(std::env::var_os("CODEX_HOME").as_deref() == Some(home.as_os_str()));
+    crate::test_profile::initialize(&root.join("crewvela"))?;
+    let cwd = root.join("workspace");
+    std::fs::create_dir(&home)?;
+    std::fs::create_dir(&cwd)?;
+    let proof = root.join("received.jsonl");
+    let server = r#"
+const http = require('node:http'), fs = require('node:fs');
+http.createServer(async (req, res) => {
+  if (req.method !== 'POST') { res.writeHead(404); res.end(); return; }
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const payload = JSON.parse(Buffer.concat(chunks));
+  const prompts = (payload.input || []).filter(item => item.role === 'user')
+    .flatMap(item => item.content || []).map(item => item.text || '');
+  fs.appendFileSync(process.argv[1], JSON.stringify(prompts) + '\n');
+  const item = { id:'msg_handoff', type:'message', role:'assistant', status:'completed',
+    content:[{type:'output_text', text:'HANDOFF_NATIVE_RECEIPT_OK', annotations:[]}] };
+  res.writeHead(200, {'Content-Type':'text/event-stream'});
+  const write = (type, fields) => res.write('event: ' + type + '\ndata: ' + JSON.stringify({type, ...fields}) + '\n\n');
+  write('response.created', {response:{id:'resp_handoff', created_at:1, status:'in_progress', output:[]}});
+  write('response.output_item.added', {output_index:0, item:{...item, content:[], status:'in_progress'}});
+  write('response.output_item.done', {output_index:0, item});
+  write('response.completed', {response:{id:'resp_handoff', created_at:1, status:'completed', output:[item],
+    usage:{input_tokens:1, output_tokens:1, total_tokens:2}}});
+  res.end();
+}).listen(0, '127.0.0.1', function() { console.log('http://127.0.0.1:' + this.address().port + '/v1'); });
+"#;
+    let mut provider = StopChild(std::process::Command::new(which::which("node")?)
+        .args(["-e", server]).arg(&proof).stdout(Stdio::piped()).spawn()?);
+    let mut endpoint = String::new();
+    BufReader::new(provider.0.stdout.take().context("missing loopback endpoint")?).read_line(&mut endpoint)?;
+    let endpoint = endpoint.trim();
+    anyhow::ensure!(endpoint.starts_with("http://127.0.0.1:"));
+    std::fs::write(home.join("config.toml"), format!(
+        "model = 'gpt-5.4'\nmodel_provider = 'handoff'\ncheck_for_update_on_startup = false\n[model_providers.handoff]\nname = 'Local test'\nbase_url = '{endpoint}'\nwire_api = 'responses'\nrequest_max_retries = 0\nstream_max_retries = 0\n"
+    ))?;
+
+    let mut harness = AcceptanceHarness::open(crate::providers::config_dir()?)?;
+    harness.deadline = Instant::now() + Duration::from_secs(45);
+    let source = harness.sessions.create_runtime(sessions::NewRuntimeSession {
+        runtime_kind: "claude_code".into(), cwd: cwd.display().to_string(), project_id: None,
+    })?;
+    let target = harness.sessions.create_runtime(sessions::NewRuntimeSession {
+        runtime_kind: "codex".into(), cwd: cwd.display().to_string(), project_id: None,
+    })?;
+    let handoff = uuid::Uuid::new_v4().to_string();
+    let body = format!(
+        "[CrewVela handoff {handoff}]\n{}\n  保留 \"引号\"、C:\\demo\\file、%PATH% 和 &\n最后一行 →°×🐍",
+        "君子和而不同。测试交接正文保留换行、符号和中英文。abcdefghijklmnopqrstuvwxyz\n".repeat(22),
+    );
+    let mut message = control::QueuedMessage::new(body.clone(), None);
+    message.id = handoff;
+    session_switch::seed_codex_handoff_for_test(&source, &target, &message, None)?;
+    harness.queue.enqueue_codex_handoff(&target.id, message.clone(), None)?;
+    let running = open_runtime_session_for_switch(&target, &harness.pty, &harness.sessions, &message.id)
+        .map_err(anyhow::Error::msg)?;
+    let pty = running.pty_id.context("Codex handoff did not open a PTY")?;
+    harness.owned_ptys.push(pty);
+    harness.pty.resize(pty, 34, 78)?;
+    harness.wait_for("the exact Codex handoff to be durably accepted", |h| {
+        proof.is_file() && h.queue.peek_next(&target.id).is_none()
+    })?;
+    harness.wait_for("the Codex reply in the original target terminal", |h| {
+        h.pty.transcript_tail(pty, 64 * 1024).is_ok_and(|bytes| {
+            String::from_utf8_lossy(&bytes).contains("HANDOFF_NATIVE_RECEIPT_OK")
+        })
+    })?;
+    let requests = std::fs::read_to_string(proof)?;
+    let user_inputs: Vec<String> = requests
+        .lines()
+        .map(serde_json::from_str::<Vec<String>>)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    let received: Vec<_> = user_inputs
+        .iter()
+        .filter(|prompt| prompt.starts_with("[CrewVela handoff "))
+        .collect();
+    anyhow::ensure!(
+        received.len() == 1 && *received[0] == body,
+        "Codex did not receive exactly one untruncated handoff ({} handoff prompts)",
+        received.len(),
+    );
+    Ok(())
 }

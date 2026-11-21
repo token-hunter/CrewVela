@@ -4,8 +4,8 @@ use crate::pty::PtyManager;
 use crate::sessions::{
     NewRuntimeSession, PermissionMode, SessionKind, SessionManager, SessionRecord,
 };
-use anyhow::{anyhow, bail, Context, Result};
-use rusqlite::{params, Connection};
+use anyhow::{anyhow, bail, ensure, Context, Result};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
@@ -112,6 +112,8 @@ pub struct SwitchRecord {
     pub source_permission: Option<String>,
     pub state: String,
     pub history_mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_delivery: Option<String>,
     pub context: String,
     pub error: Option<String>,
 }
@@ -119,6 +121,7 @@ pub struct SwitchRecord {
 fn open_at(path: &std::path::Path) -> Result<Connection> {
     let db = Connection::open(path)?;
     db.execute_batch("CREATE TABLE IF NOT EXISTS session_switches(id TEXT PRIMARY KEY, record_json TEXT NOT NULL);")?;
+    db.execute_batch("CREATE TABLE IF NOT EXISTS codex_import_receipts(source TEXT NOT NULL, cwd TEXT NOT NULL, digest TEXT NOT NULL, thread TEXT NOT NULL, PRIMARY KEY(source,cwd));")?;
     Ok(db)
 }
 #[cfg(test)]
@@ -283,7 +286,68 @@ fn context(source: &SessionRecord) -> String {
 }
 #[tauri::command]
 pub fn session_switch_list() -> Result<Vec<SwitchRecord>, String> {
-    existing_records().map_err(|error| error.to_string())
+    (|| -> Result<_> {
+        let mut items = existing_records()?;
+        for item in &mut items {
+            if let Err(error) = refresh_codex_delivery(item) { item.error = Some(error.to_string()); }
+        }
+        Ok(items)
+    })().map_err(|error| error.to_string())
+}
+
+fn refresh_codex_delivery(item: &mut SwitchRecord) -> Result<()> {
+    if item.codex_delivery.is_none() || item.state != "queued" { return Ok(()); }
+    let target = item.target_id.as_deref().context("缺少 Codex 交接目标")?;
+    let saved = crate::control::codex_handoff::read_attempt(&switch_directory()?, &item.id, target, &item.context)?;
+    use crate::control::codex_handoff::Phase;
+    item.codex_delivery = Some(match saved.map(|s| (s.phase, s.reference_prompt.is_some())) {
+        None | Some((Phase::Unsent, _)) => "pending",
+        Some((Phase::AwaitingReceipt, _)) => "awaiting_receipt",
+        Some((Phase::Confirmed, false)) => "confirmed",
+        Some((Phase::Confirmed, true)) => "confirmed_reference",
+    }.into());
+    Ok(())
+}
+
+pub(crate) enum CodexHandoffResume { Fresh, Thread(String) }
+
+pub(crate) fn uses_codex_handoff(id: &str) -> Result<bool> {
+    Ok(managed_records(id)?.iter().any(|r| r.target_id.as_deref() == Some(id) && r.codex_delivery.is_some() && r.state != "cancelled"))
+}
+
+pub(crate) fn prepare_codex_launch(command: &mut Command, target: &str) -> Result<Option<crate::control::codex_handoff::Launch>> {
+    let Some(item) = managed_records(target)?.into_iter().find(|r| r.target_id.as_deref() == Some(target)
+        && r.codex_delivery.is_some() && r.state != "cancelled") else { return Ok(None); };
+    crate::control::codex_handoff::Launch::prepare(&switch_directory()?, command, &item.id, target, &item.context,
+        item.source_history.iter().rev().find(|m| m.role == "user").map(|m| m.text.as_str()))
+}
+
+#[cfg(test)]
+pub(crate) fn seed_codex_handoff_for_test(source: &SessionRecord, target: &SessionRecord, message: &QueuedMessage, thread: Option<String>) -> Result<()> {
+    let item = SwitchRecord { id: message.id.clone(), source: source.clone(), source_position: 0, source_pty: None,
+        target_id: Some(target.id.clone()), thread_id: thread, target_runtime: "codex".into(), logical_id: None,
+        preserve_source: true, recovery_dismissed: false, source_history: vec![], source_permission: Some("plan".into()),
+        state: "launching".into(), history_mode: "handoff".into(), codex_delivery: Some("pending".into()), context: message.body.clone(), error: None };
+    save(&database()?, &item)?;
+    mark_managed(&source.id)?;
+    mark_managed(&target.id)
+}
+
+pub(crate) fn codex_handoff_resume(target: &str) -> Result<Option<CodexHandoffResume>> {
+    let Some(item) = managed_records(target)?.into_iter().find(|r| r.target_id.as_deref() == Some(target)
+        && r.codex_delivery.is_some() && r.thread_id.is_none() && r.state != "cancelled") else { return Ok(None); };
+    use crate::control::codex_handoff::Phase;
+    let attempt = crate::control::codex_handoff::read_attempt(&switch_directory()?, &item.id, target, &item.context)?;
+    match attempt {
+        None => Ok(Some(CodexHandoffResume::Fresh)),
+        Some(saved) if saved.phase == Phase::Unsent => Ok(Some(CodexHandoffResume::Fresh)),
+        Some(saved) if saved.phase == Phase::Confirmed => {
+            let thread = saved.thread.context("Codex 提交回执缺少线程 ID")?;
+            uuid::Uuid::parse_str(&thread)?;
+            Ok(Some(CodexHandoffResume::Thread(thread)))
+        }
+        _ => bail!("已尝试提交交接包，正在等待原 Codex 线程回执；请核对接手会话，避免重复投递"),
+    }
 }
 fn dismiss_recovery_at(db: &Connection, id: &str, sessions: &SessionManager) -> Result<SwitchRecord> {
     let mut item = records(db)?.into_iter().find(|item| item.id == id).context("接力记录不存在")?;
@@ -464,6 +528,7 @@ fn prepare_switch_preview<R: tauri::Runtime>(
             thread_id: None,
             state: "preview".into(),
             history_mode: "handoff".into(),
+            codex_delivery: None,
             error: None,
         };
         save(&db, &item)?;
@@ -656,6 +721,17 @@ fn confirm(
             .find(|item| item.id == id)
             .context("切换预览不存在")?;
         if item.state == "queued" {
+            refresh_codex_delivery(&mut item)?;
+            if item.codex_delivery.as_deref() == Some("pending") {
+                let target = item.target_id.as_ref().and_then(|id| sessions.get(id)).context("接手会话不存在")?;
+                let lock = sessions.lifecycle_lock(&target.id);
+                let _target = lock.lock().unwrap();
+                let target = sessions.get(&target.id).context("接手会话不存在")?;
+                ensure!(target.archived_at.is_none(), "接手会话已归档");
+                if !target.pty_id.is_some_and(|id| ptys.is_running(id)) {
+                    crate::open_runtime_session_for_switch(&target, ptys, sessions, id).map_err(anyhow::Error::msg)?;
+                }
+            }
             return Ok(item);
         }
         if item.state == "cancelled" {
@@ -793,17 +869,32 @@ fn execute<R: tauri::Runtime>(
             && source_runtime(&source) == "claude_code"
             && item.target_runtime == "codex"
         {
-            if item.state == "importing" {
-                bail!("上次历史导入结果不确定，请使用工作交接包或恢复来源");
-            }
+            let recovering = item.state == "importing";
             item.state = "importing".into();
-            save(db, item)?;
-            item.thread_id = Some(import_history(&item.source)?);
             item.history_mode = "official".into();
+            save(db, item)?;
+            let ensure_available = |thread: &str| -> Result<()> {
+                let items = records(db)?;
+                ensure!(!sessions.list().iter().any(|s| s.agent_runtime_kind.as_deref() == Some("codex")
+                    && s.pty_id.is_some_and(|p| ptys.is_running(p))
+                    && (s.claude_session_id == thread || items.iter().any(|r| r.target_id.as_ref() == Some(&s.id) && r.thread_id.as_deref() == Some(thread)))),
+                    "该 Codex 线程已有运行中的接手会话，请先核对并停止该会话");
+                Ok(())
+            };
+            item.thread_id = Some(match import_history(db, &item.source, recovering, ensure_available) {
+                Ok(thread) => thread,
+                Err(error) => {
+                    if error.is::<CompletedImportFailure>() { item.state = "stopped".into(); }
+                    return Err(error);
+                }
+            });
         } else {
             item.history_mode = "handoff".into();
         }
         item.target_id = Some(uuid::Uuid::new_v4().to_string());
+        if source_runtime(&source) == "claude_code" && item.target_runtime == "codex" {
+            item.codex_delivery = Some("pending".into());
+        }
         item.state = "imported".into();
         save(db, item)?;
     }
@@ -877,6 +968,13 @@ fn execute<R: tauri::Runtime>(
         item.state = "queued".into();
         save(db, item)?;
     } else {
+        let confirmed_delivery = item.codex_delivery.is_some();
+        let thread = item.thread_id.clone();
+        if confirmed_delivery {
+            let mut message = QueuedMessage::new(body.clone(), None);
+            message.id = id.clone();
+            queue.enqueue_codex_handoff(&target.id, message, thread)?;
+        }
         finish_transfer(
             db,
             item,
@@ -886,6 +984,7 @@ fn execute<R: tauri::Runtime>(
                     .map_err(|error| anyhow!(error))
             },
             || {
+                if confirmed_delivery { return Ok(()); }
                 let mut message = QueuedMessage::new(body, None);
                 message.id = id.clone();
                 queue.enqueue_handoff(&target.id, message)
@@ -968,6 +1067,9 @@ fn restore_switch<R: tauri::Runtime>(
                     sessions.mark_stopped(&target.id)?;
                 }
                 sessions.archive(&target.id)?;
+                if item.codex_delivery.is_some() && queue.contains_message(&target.id, &item.id) {
+                    ensure!(queue.commit_delivered_message(&target.id, &item.id), "取消 Codex 待发交接包时保存失败");
+                }
                 Ok(())
             })?;
         }
@@ -1061,6 +1163,16 @@ impl Drop for ImportProcess {
     }
 }
 impl ImportProcess {
+    fn connect(cwd: &str) -> Result<Self> {
+        let mut process = Self::start(cwd)?;
+        process.send(serde_json::json!({"id":1,"method":"initialize","params":{
+            "clientInfo":{"name":"crewvela_session_switch","version":"0.1.0"},
+            "capabilities":{"experimentalApi":true}}}))?;
+        process.response(1)?;
+        process.send(serde_json::json!({"method":"initialized","params":{}}))?;
+        Ok(process)
+    }
+
     fn start(cwd: &str) -> Result<Self> {
         let runtime_lease =
             crate::runtime_preferences::acquire(crate::multi_agent::AgentRuntimeKind::Codex)?;
@@ -1178,30 +1290,32 @@ fn same_path(a: &str, b: &str) -> bool {
         _ => false,
     }
 }
-fn imported_thread(value: &serde_json::Value, source_path: &str, cwd: &str) -> Result<String> {
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+struct CompletedImportFailure(String);
+
+fn imported_thread(value: &serde_json::Value, source_path: &str, cwd: &str) -> Result<Option<String>> {
     let results = value
         .pointer("/params/itemTypeResults")
         .and_then(serde_json::Value::as_array)
         .context("导入完成通知缺少结果")?;
-    let result = results
+    let mut sessions = results
         .iter()
-        .find(|item| item.get("itemType").and_then(serde_json::Value::as_str) == Some("SESSIONS"))
-        .context("没有会话导入结果")?;
-    if let Some(failures) = result.get("failures").and_then(serde_json::Value::as_array) {
-        if !failures.is_empty() {
-            bail!(
-                "会话历史导入失败：{}",
-                failures[0]
-                    .get("message")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("请更新 Codex 后重试")
-            );
-        }
+        .filter(|item| item.get("itemType").and_then(serde_json::Value::as_str) == Some("SESSIONS"));
+    let result = sessions.next().context("没有会话导入结果")?;
+    ensure!(sessions.next().is_none(), "会话导入结果不唯一");
+    let failures = result["failures"].as_array().context("缺少导入失败记录")?;
+    if !failures.is_empty() {
+        let reason = failures[0]["message"].as_str().unwrap_or("请更新 Codex 后重试");
+        return Err(CompletedImportFailure(format!("会话历史导入失败：{reason}")).into());
     }
     let successes = result
         .get("successes")
         .and_then(serde_json::Value::as_array)
         .context("缺少导入成功记录")?;
+    if successes.is_empty() {
+        return Ok(None);
+    }
     if successes.len() != 1 {
         bail!("导入成功记录数量不匹配；未启动接手 Agent");
     }
@@ -1226,30 +1340,104 @@ fn imported_thread(value: &serde_json::Value, source_path: &str, cwd: &str) -> R
         .and_then(serde_json::Value::as_str)
         .context("成功记录缺少 Codex threadId")?;
     uuid::Uuid::parse_str(target).context("导入 threadId 无效")?;
-    Ok(target.to_owned())
+    Ok(Some(target.to_owned()))
 }
-fn import_history(source: &SessionRecord) -> Result<String> {
+fn source_digest(path: &std::path::Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    std::io::copy(&mut std::fs::File::open(path)?, &mut hash)?;
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+fn previous_import(db: &Connection, histories: &serde_json::Value, path: &str, cwd: &str, digest: &str) -> Result<String> {
+    let stored: Option<(String, String)> = db.query_row(
+        "SELECT digest,thread FROM codex_import_receipts WHERE source=?1 AND cwd=?2",
+        params![path, cwd], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional()?;
+    let (previous_digest, thread) = stored.context("Codex 未新增会话，缺少该来源版本的已核验导入记录；可选择工作交接包或恢复来源")?;
+    ensure!(digest == previous_digest, "Claude 历史已变化，Codex 未确认导入新内容；可选择工作交接包或恢复来源");
+    uuid::Uuid::parse_str(&thread).context("已保存的 Codex threadId 无效")?;
+    let mut matched = false;
+    for entry in histories["data"].as_array().context("缺少 Codex 导入历史")? {
+        for success in entry["successes"].as_array().context("Codex 导入历史缺少成功记录")? {
+            if success["itemType"] == "SESSIONS" && success["source"].as_str().is_some_and(|source| same_path(source, path))
+                && success["cwd"].as_str().is_some_and(|directory| same_path(directory, cwd)) {
+                ensure!(success["target"].as_str() == Some(&thread), "同一来源和目录存在不同的导入目标；未启动 Codex");
+                matched = true;
+            }
+        }
+    }
+    ensure!(matched, "Codex 导入历史无法确认已绑定的目标线程；可选择工作交接包或恢复来源");
+    Ok(thread)
+}
+
+fn verify_imported_thread(value: &serde_json::Value, expected: &str, cwd: &str, home: &std::path::Path) -> Result<()> {
+    let thread = &value["thread"];
+    ensure!(thread["id"].as_str() == Some(expected) && thread["cwd"].as_str().is_some_and(|dir| same_path(dir, cwd)),
+        "Codex 目标线程身份或工作目录已变化");
+    ensure!(matches!(thread.pointer("/status/type").and_then(serde_json::Value::as_str), Some("notLoaded" | "idle"))
+        && thread["canAcceptDirectInput"] != false, "Codex 目标线程正在使用或不可接手");
+    let path = std::path::Path::new(thread["path"].as_str().context("无法确认 Codex 目标历史文件")?).canonicalize()?;
+    ensure!(path.is_file() && path.starts_with(home.join("sessions").canonicalize()?)
+        && path.file_name().is_some_and(|f| f.to_string_lossy().ends_with(&format!("-{expected}.jsonl"))),
+        "Codex 目标线程已归档或历史文件不可用");
+    use std::io::BufRead;
+    let header = std::io::BufReader::new(std::fs::File::open(path)?).lines().next().context("Codex 目标历史为空")??;
+    let header: serde_json::Value = serde_json::from_str(&header)?;
+    ensure!(header["type"] == "session_meta" && header["payload"]["id"] == expected
+        && header["payload"]["cwd"].as_str().is_some_and(|dir| same_path(dir, cwd)), "Codex 目标历史文件身份不匹配");
+    Ok(())
+}
+
+fn import_history(db: &Connection, source: &SessionRecord, recovering: bool, ensure_available: impl Fn(&str) -> Result<()>) -> Result<String> {
     let path = crate::usage::transcript_path(source)
         .filter(|path| path.is_file())
         .context("原 Claude 对话文件尚不存在或无法定位；可显式选择工作交接包继续")?;
-    let path = path.canonicalize()?.display().to_string();
-    let mut process = ImportProcess::start(&source.cwd)?;
-    process.send(serde_json::json!({"id":1,"method":"initialize","params":{
-        "clientInfo":{"name":"crewvela_session_switch","version":"0.1.0"},
-        "capabilities":{"experimentalApi":true}}}))?;
-    process.response(1)?;
-    process.send(serde_json::json!({"method":"initialized","params":{}}))?;
-    process.send(serde_json::json!({"id":2,"method":"externalAgentConfig/import","params":{"migrationItems":[{
-        "itemType":"SESSIONS","description":"CrewVela Claude Code session transfer","cwd":null,
-        "details":{"plugins":[],"sessions":[{"path":path,"cwd":source.cwd,"title":null}],
-        "mcpServers":[],"hooks":[],"subagents":[],"commands":[]}}]}}))?;
-    let response = process.response(2)?;
-    let import_id = response
-        .get("importId")
-        .and_then(serde_json::Value::as_str)
-        .filter(|id| !id.is_empty())
-        .context("缺少 importId；未启动接手 Agent")?;
-    imported_thread(&process.completed(import_id)?, &path, &source.cwd)
+    import_history_at(db, source, &path, recovering, ensure_available)
+}
+
+fn import_history_at(db: &Connection, source: &SessionRecord, path: &std::path::Path, recovering: bool, ensure_available: impl Fn(&str) -> Result<()>) -> Result<String> {
+    let path = path.canonicalize()?;
+    let digest = source_digest(&path)?;
+    let path = path.to_str().context("Claude 历史路径编码不受支持")?;
+    let cwd = std::path::Path::new(&source.cwd).canonicalize()?.display().to_string();
+    if let Some(thread) = db.query_row("SELECT thread FROM codex_import_receipts WHERE source=?1 AND cwd=?2",
+        params![path, cwd], |row| row.get::<_, String>(0)).optional()? {
+        ensure_available(&thread)?;
+    }
+    let mut process = ImportProcess::connect(&source.cwd)?;
+    let success = if recovering {
+        // A previous import may have outlived its caller. Reconcile it using
+        // only read operations before allocating another destination.
+        None
+    } else {
+        process.send(serde_json::json!({"id":2,"method":"externalAgentConfig/import","params":{"migrationItems":[{
+            "itemType":"SESSIONS","description":"CrewVela Claude Code session transfer","cwd":null,
+            "details":{"plugins":[],"sessions":[{"path":path,"cwd":source.cwd,"title":null}],
+            "mcpServers":[],"hooks":[],"subagents":[],"commands":[]}}]}}))?;
+        let response = process.response(2)?;
+        let import_id = response["importId"].as_str().filter(|id| !id.is_empty()).context("缺少 importId；未启动接手 Agent")?;
+        imported_thread(&process.completed(import_id)?, path, &cwd)?
+    };
+    let thread = match success {
+        Some(thread) => thread,
+        None => {
+            let verified = (|| -> Result<String> {
+                process.send(serde_json::json!({"id":3,"method":"externalAgentConfig/import/readHistories","params":{}}))?;
+                let thread = previous_import(db, &process.response(3)?, path, &cwd, &digest)?;
+                process.send(serde_json::json!({"id":4,"method":"thread/read","params":{"threadId":thread,"includeTurns":false}}))?;
+                verify_imported_thread(&process.response(4)?, &thread, &cwd, &crate::codex_storage::CodexStorage::Personal.home()?)?;
+                Ok(thread)
+            })();
+            if recovering { verified.context("上次导入已中断，无法确认原结果；可显式选择工作交接包或恢复来源")? }
+            else { verified.map_err(|error| CompletedImportFailure(error.to_string()))? }
+        }
+    };
+    ensure!(source_digest(std::path::Path::new(path))? == digest, "导入期间 Claude 历史已变化，无法确认版本；可重试或选择工作交接包");
+    db.execute("INSERT INTO codex_import_receipts(source,cwd,digest,thread) VALUES(?1,?2,?3,?4) ON CONFLICT(source,cwd) DO UPDATE SET digest=excluded.digest,thread=excluded.thread",
+        params![path, cwd, digest, thread])?;
+    ensure_available(&thread)?;
+    Ok(thread)
 }
 
 #[cfg(test)]
@@ -1300,6 +1488,7 @@ mod tests {
                 source_permission: None,
                 state: "preview".into(),
                 history_mode: "official".into(),
+                codex_delivery: None,
                 context: "fixture".into(),
                 error: None,
             }
@@ -1763,7 +1952,7 @@ mod tests {
                 &fixture.root.display().to_string()
             )
             .unwrap(),
-            thread
+            Some(thread)
         );
         assert!(imported_thread(
             &serde_json::json!({"result":{"importId":"import-1"}}),
@@ -1773,12 +1962,12 @@ mod tests {
         .is_err());
         let mut skipped = value.clone();
         skipped["params"]["itemTypeResults"][0]["successes"] = serde_json::json!([]);
-        assert!(imported_thread(
+        assert_eq!(imported_thread(
             &skipped,
             &file.display().to_string(),
             &fixture.root.display().to_string()
         )
-        .is_err());
+        .unwrap(), None);
         let mut failed = value;
         failed["params"]["itemTypeResults"][0]["failures"] =
             serde_json::json!([{"message":"fixture importer failure"}]);
@@ -1802,6 +1991,106 @@ mod tests {
         assert!(result.chars().count() <= 31000);
         assert!(result.contains("request-199"));
         assert!(!result.contains("request-0 "));
+    }
+    #[test]
+    fn zero_import_requires_same_content_unique_thread_and_live_history() -> Result<()> {
+        let fixture = Fixture::new();
+        let file = fixture.root.join("source.jsonl");
+        std::fs::write(&file, "original Claude history")?;
+        let source = file.canonicalize()?.display().to_string();
+        let cwd = fixture.root.canonicalize()?.display().to_string();
+        let digest = source_digest(&file)?;
+        let thread = uuid::Uuid::new_v4().to_string();
+        let success = serde_json::json!({"itemType":"SESSIONS", "source":source, "cwd":cwd, "target":thread});
+        let history = serde_json::json!({"data":[{"successes":[success,success], "failures":[]}]});
+        assert!(previous_import(&fixture.db, &history, &source, &cwd, &digest).is_err());
+        fixture.db.execute("INSERT INTO codex_import_receipts VALUES(?1,?2,?3,?4)", params![source, cwd, digest, thread])?;
+        assert_eq!(previous_import(&fixture.db, &history, &source, &cwd, &digest)?, thread);
+        std::fs::write(&file, "Claude has a new turn")?;
+        assert!(previous_import(&fixture.db, &history, &source, &cwd, &source_digest(&file)?).is_err());
+        for (field, bad) in [("source", "another-source"), ("cwd", "another-directory"), ("target", "conflicting-thread")] {
+            let mut evidence = history.clone();
+            for row in evidence["data"][0]["successes"].as_array_mut().unwrap() { row[field] = bad.into(); }
+            assert!(previous_import(&fixture.db, &evidence, &source, &cwd, &digest).is_err());
+        }
+        let mut ambiguous = history.clone();
+        ambiguous["data"][0]["successes"][1]["target"] = uuid::Uuid::new_v4().to_string().into();
+        assert!(previous_import(&fixture.db, &ambiguous, &source, &cwd, &digest).is_err());
+        let directory = fixture.root.join("sessions");
+        std::fs::create_dir(&directory)?;
+        let target = directory.join(format!("rollout-fixture-{thread}.jsonl"));
+        std::fs::write(&target, serde_json::json!({"type":"session_meta","payload":{"id":thread,"cwd":cwd}}).to_string())?;
+        let read = serde_json::json!({"thread":{"id":thread,"cwd":cwd,"path":target,"status":{"type":"notLoaded"},"canAcceptDirectInput":null}});
+        verify_imported_thread(&read, &thread, &cwd, &fixture.root)?;
+        for (field, value) in [("id", serde_json::json!("other")), ("cwd", serde_json::json!("missing")),
+            ("status", serde_json::json!({"type":"active"})), ("canAcceptDirectInput", false.into())] {
+            let mut wrong = read.clone();
+            wrong["thread"][field] = value;
+            assert!(verify_imported_thread(&wrong, &thread, &cwd, &fixture.root).is_err());
+        }
+        std::fs::rename(target, fixture.root.join("archived.jsonl"))?;
+        assert!(verify_imported_thread(&read, &thread, &cwd, &fixture.root).is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires installed Codex CLI; uses isolated CODEX_HOME and Claude source, no model calls"]
+    fn installed_codex_reuses_verified_official_import() -> Result<()> {
+        use std::io::Write;
+        const VAR: &str = "CREWVELA_TEST_REIMPORT_ROOT";
+        let Some(root) = std::env::var_os(VAR).map(std::path::PathBuf::from) else {
+            let root = std::env::temp_dir().join(format!("crewvela-codex-reimport-{}", uuid::Uuid::new_v4()));
+            let home = root.join("codex");
+            std::fs::create_dir_all(&home)?;
+            let output = Command::new(std::env::current_exe()?)
+                .args(["installed_codex_reuses_verified_official_import", "--ignored", "--nocapture", "--test-threads=1"])
+                .env(VAR, &root).env("USERPROFILE", &root).env("HOME", &root)
+                .env("CODEX_HOME", &home).env("CODEX_SQLITE_HOME", &home).env_remove("OPENAI_API_KEY").env_remove("CODEX_API_KEY")
+                .output()?;
+            ensure!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+                "隔离导入验收失败：{} {}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            std::fs::remove_dir_all(root)?;
+            return Ok(());
+        };
+        ensure!(root.canonicalize()?.starts_with(std::env::temp_dir().canonicalize()?));
+        crate::test_profile::initialize(&root.join("crewvela"))?;
+        let fixture = Fixture::new();
+        let mut source = fixture.record().source;
+        source.claude_session_id = uuid::Uuid::new_v4().to_string();
+        let path = crate::usage::claude_transcript_path(&root.join(".claude"), &source.cwd, &source.claude_session_id).context("缺少临时 Claude 源路径")?;
+        ensure!(path.starts_with(&root), "测试 Claude 路径必须在临时目录");
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        let mut parent = None;
+        let mut append = |role: &str, text: &str| -> Result<()> {
+            let id = uuid::Uuid::new_v4().to_string();
+            let mut message = serde_json::json!({"role":role,"content":text});
+            if role == "assistant" { message = serde_json::json!({"role":role,"id":format!("msg_{id}"),"model":"test","type":"message","content":[{"type":"text","text":text}],"stop_reason":"end_turn"}); }
+            let row = serde_json::json!({"uuid":id,"parentUuid":parent,"sessionId":source.claude_session_id,
+                "type":role,"cwd":source.cwd,"timestamp":chrono::Utc::now().to_rfc3339(),"userType":"external","isSidechain":false,"message":message});
+            writeln!(std::fs::OpenOptions::new().create(true).append(true).open(&path)?, "{row}")?;
+            parent = Some(id);
+            Ok(())
+        };
+        append("user", "remember the isolated import fixture")?;
+        append("assistant", "recorded the fixture")?;
+        let first = import_history_at(&fixture.db, &source, &path, false, |_| Ok(()))?;
+        let same = import_history_at(&fixture.db, &source, &path, false, |_| Ok(()))?;
+        assert_eq!(same, first);
+        assert_eq!(import_history_at(&fixture.db, &source, &path, true, |_| Ok(()))?, first);
+        append("user", "continue the isolated fixture")?;
+        append("assistant", "completed the second fixture turn")?;
+        assert!(import_history_at(&fixture.db, &source, &path, true, |_| Ok(())).is_err(), "interrupted recovery cannot import a changed source");
+        assert_eq!(import_history_at(&fixture.db, &source, &path, false, |_| Ok(()))?, first);
+        let mut process = ImportProcess::connect(&source.cwd)?;
+        process.send(serde_json::json!({"id":2,"method":"thread/read","params":{"threadId":first,"includeTurns":true}}))?;
+        let read = process.response(2)?;
+        let turns = read["thread"]["turns"].as_array().context("Codex 未返回导入轮次")?;
+        let user_inputs: Vec<_> = turns.iter().flat_map(|turn| turn["items"].as_array().into_iter().flatten())
+            .filter(|item| item["type"] == "userMessage")
+            .flat_map(|item| item["content"].as_array().into_iter().flatten())
+            .filter_map(|content| content["text"].as_str()).collect();
+        assert_eq!(user_inputs, ["remember the isolated import fixture", "continue the isolated fixture"]);
+        Ok(())
     }
     struct SwitchDirectory;
     impl Drop for SwitchDirectory {
@@ -1891,6 +2180,7 @@ mod tests {
             recovery_dismissed: false,
             state: "preview".into(),
             history_mode: "handoff".into(),
+            codex_delivery: None,
             context: "fixture".into(),
             error: None,
         };

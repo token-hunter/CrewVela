@@ -14,9 +14,21 @@ export interface SessionSwitchRecord {
   preserveSource?: boolean;
   state: string;
   historyMode: "official" | "handoff";
+  codexDelivery?: "pending" | "awaiting_receipt" | "confirmed" | "confirmed_reference";
   context: string;
   error: string | null;
   recoveryDismissed?: boolean;
+}
+
+export function switchDeliveryText(record: SessionSwitchRecord): string {
+  const imported = record.historyMode === "official" ? "历史已导入。" : "";
+  switch (record.codexDelivery) {
+    case "pending": return imported + "交接资料已准备，正在等待 Codex CLI 启动。";
+    case "awaiting_receipt": return imported + "正在等待 Codex 原生提交回执。接手会话中的登录、信任或更新提示需要手动处理。";
+    case "confirmed": return imported + "Codex 原生会话已收到交接资料。";
+    case "confirmed_reference": return imported + "Codex 原生会话已收到交接包文件位置和最近指令摘录。全文保存在交接包中。";
+    default: return record.historyMode === "official" ? "历史已导入；等待目标 Agent 接手回复。" : "交接资料已提交；等待目标 Agent 接手回复。";
+  }
 }
 
 export const SWITCH_RUNTIME_LABELS: Partial<Record<AgentRuntimeKind, string>> = { claude_code: "Claude Code", codex: "Codex CLI", kimi_code: "Kimi Code", pi: "Pi", opencode: "OpenCode", zcode_cli: "ZCode CLI", deepseek_harness: "DeepSeek Harness", claude_chat: "Claude Code Chat", codex_chat: "Codex Chat", kimi_chat: "Kimi Chat", opencode_chat: "OpenCode Chat", pi_chat: "Pi Chat", zcode: "ZCode Desktop" };

@@ -1865,6 +1865,14 @@ impl SessionManager {
             .join(format!("session-{id}.json"))
     }
 
+    pub(crate) fn save_codex_locator(&self, session: &SessionRecord, thread: &str) -> Result<()> {
+        let path = self.runtime_locator_path(&session.id);
+        fs::create_dir_all(path.parent().context("缺少原生定位目录")?)?;
+        let mut locator = serde_json::json!({"runtime":"codex", "locator":thread});
+        session.codex_storage.mark(&mut locator);
+        crate::providers::write_atomic(&path, &serde_json::to_vec(&locator)?)
+    }
+
     pub(crate) fn runtime_history_locator(&self, record: &SessionRecord) -> Result<Option<String>> {
         if record.agent_runtime_kind.as_deref() == Some("codex") && record.multi_agent_agent_id.is_some()
             && (!record.codex_storage.is_personal() || !record.claude_session_id.is_empty()) {
@@ -1904,6 +1912,13 @@ impl SessionManager {
         if (crate::session_switch::is_handoff_target(&record.id)? || crate::session_switch::is_handoff_source(&record.id)?) && matches!(record.agent_runtime_kind.as_deref(), Some("claude_code" | "codex" | "kimi_code" | "opencode")) {
             // Fresh handoff targets have no native history yet. Later launches
             // must recover the exact native identity instead of creating anew.
+            if record.agent_runtime_kind.as_deref() == Some("codex") {
+                match crate::session_switch::codex_handoff_resume(&record.id)? {
+                    Some(crate::session_switch::CodexHandoffResume::Thread(thread)) => { command.arg("resume").arg(thread); return Ok(()); }
+                    Some(crate::session_switch::CodexHandoffResume::Fresh) if self.runtime_history_locator(record)?.is_none() => return Ok(()),
+                    _ => {}
+                }
+            }
             if record.status == SessionStatus::Pending && record.created_at == record.updated_at { return Ok(()); }
             if record.agent_runtime_kind.as_deref() == Some("codex") && crate::session_switch::handoff_imported_thread(&record.id)?.is_some() { return Ok(()); }
             let locator = crate::session_switch_history::resume_locator(record, self)?;
@@ -2252,11 +2267,7 @@ impl SessionManager {
             }
         }
         if codex_completion {
-            let path = self.runtime_locator_path(&session.id);
-            fs::create_dir_all(path.parent().context("缺少原生定位目录")?)?;
-            let mut locator = serde_json::json!({"runtime":"codex", "locator":claude_session_id});
-            session.codex_storage.mark(&mut locator);
-            crate::providers::write_atomic(&path, &serde_json::to_vec(&locator)?)?;
+            self.save_codex_locator(session, claude_session_id)?;
         }
         if session.claude_session_id != claude_session_id {
             session.claude_session_id = claude_session_id.to_string();

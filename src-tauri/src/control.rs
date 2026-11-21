@@ -13,6 +13,8 @@ use crate::providers::ProviderConfig;
 use crate::pty::PtyManager;
 use crate::sessions::{PermissionMode, SessionKind, SessionManager, SessionRecord};
 
+pub(crate) mod codex_handoff;
+
 pub const MAX_CONTROL_SESSIONS: u32 = 12;
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(90);
 const BACKTAB: &[u8] = b"\x1b[Z";
@@ -138,6 +140,8 @@ pub struct QueuedMessage {
     pub queued_at: u64,
     #[serde(default)]
     pub kind: MessageKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    codex_handoff: Option<codex_handoff::Destination>,
 }
 
 /// 群聊活跃度（Clawling 式三档，作用在 agent 互发的入站投递上，参考
@@ -174,6 +178,7 @@ impl QueuedMessage {
             body,
             queued_at: now_nanos(),
             kind,
+            codex_handoff: None,
         }
     }
 }
@@ -307,6 +312,7 @@ pub struct SessionActionQueue {
     mode_changes: Mutex<HashMap<String, PendingModeChange>>,
     /// 已写文本、待补提交回车的会话：session_id → 可发 `\r` 的时间点。
     pending_submits: Mutex<HashMap<String, PendingSubmit>>,
+    codex_handoffs: Mutex<HashMap<String, (Instant, Duration)>>,
     /// agent 互发限流计数：无序会话对 → 窗口内的消息时间戳。内存态，app 重启归零。
     agent_message_log: Mutex<HashMap<(String, String), VecDeque<Instant>>>,
     /// 每对会话每个窗口只回发一次超限通知，避免通知本身再来回。
@@ -395,6 +401,7 @@ impl SessionActionQueue {
             items: Mutex::new(HashMap::new()),
             mode_changes: Mutex::new(HashMap::new()),
             pending_submits: Mutex::new(HashMap::new()),
+            codex_handoffs: Mutex::new(HashMap::new()),
             agent_message_log: Mutex::new(HashMap::new()),
             agent_message_notices: Mutex::new(HashMap::new()),
             delivery_log: Mutex::new(VecDeque::new()),
@@ -442,6 +449,7 @@ impl SessionActionQueue {
             human_message_receipts: Mutex::new(file.human_message_receipts),
             mode_changes: Mutex::new(HashMap::new()),
             pending_submits: Mutex::new(HashMap::new()),
+            codex_handoffs: Mutex::new(HashMap::new()),
             agent_message_log: Mutex::new(HashMap::new()),
             agent_message_notices: Mutex::new(HashMap::new()),
             delivery_log: Mutex::new(VecDeque::new()),
@@ -586,6 +594,7 @@ impl SessionActionQueue {
             .get(session_id)?
             .iter()
             .find(|message| !held.contains(&message.id) && (!muted || message.kind != MessageKind::Chat || message.from.is_none()))
+            .filter(|message| message.codex_handoff.is_none())
             .cloned()
     }
 
@@ -885,25 +894,43 @@ impl SessionActionQueue {
     }
 
     pub fn discard(&self, session_id: &str) {
+        self.discard_for_session(session_id, false);
+    }
+
+    pub(crate) fn discard_on_stop(&self, session_id: &str) {
+        self.discard_for_session(session_id, true);
+    }
+
+    fn discard_for_session(&self, session_id: &str, preserve_handoff: bool) {
+        let _delivery = self.delivery_lock.lock().unwrap();
         let snapshot = {
             let mut items = self.items.lock().unwrap();
-            items.remove(session_id);
+            if let Some(queue) = items.get_mut(session_id) {
+                queue.retain(|m| preserve_handoff && m.codex_handoff.is_some());
+                if queue.is_empty() { items.remove(session_id); }
+            }
             items.clone()
         };
         self.mode_changes.lock().unwrap().remove(session_id);
         self.pending_submits.lock().unwrap().remove(session_id);
+        self.codex_handoffs.lock().unwrap().remove(session_id);
         self.activity.lock().unwrap().remove(session_id);
         self.persist(&snapshot);
     }
 
     pub fn clear(&self) {
+        let _delivery = self.delivery_lock.lock().unwrap();
         let snapshot = {
             let mut items = self.items.lock().unwrap();
-            items.clear();
+            items.retain(|_, messages| {
+                messages.retain(|message| message.codex_handoff.is_some());
+                !messages.is_empty()
+            });
             items.clone()
         };
         self.mode_changes.lock().unwrap().clear();
         self.pending_submits.lock().unwrap().clear();
+        self.codex_handoffs.lock().unwrap().clear();
         self.activity.lock().unwrap().clear();
         self.persist(&snapshot);
     }
@@ -1388,9 +1415,11 @@ impl SessionActionQueue {
         session_state: &SessionManager,
         pty_state: &PtyManager,
     ) -> Vec<String> {
-        self.flush_ready_with_writer_at(session_state, Instant::now(), |pty_id, bytes| {
+        let mut dispatched = self.flush_codex_handoffs(session_state);
+        dispatched.extend(self.flush_ready_with_writer_at(session_state, Instant::now(), |pty_id, bytes| {
             pty_state.write(pty_id, bytes)
-        })
+        }));
+        dispatched
     }
 
     fn flush_ready_with_writer_at<F>(

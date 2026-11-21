@@ -131,7 +131,8 @@ impl PsuedoCon {
         let mut pi: PROCESS_INFORMATION = unsafe { mem::zeroed() };
 
         let (mut exe, mut cmdline) = cmd.cmdline()?;
-        let cmd_os = OsString::from_wide(&cmdline);
+        // Arguments can contain an entire private user prompt.
+        let cmd_os = OsString::from_wide(exe.strip_suffix(&[0]).unwrap_or(&exe));
 
         let cwd = cmd.current_directory();
 

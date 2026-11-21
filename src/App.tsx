@@ -2762,7 +2762,7 @@ export default function App() {
             if (started) setCliLaunchRequest(null);
             return started;
           }} />}
-          {switchFor && <SessionSwitchDialog source={switchFor} initialTarget={switchTarget} sourcePosition={Math.max(0, displaySessions.findIndex((session) => session.id === switchFor.id))} record={switchDraft} preview={UI_PREVIEW} onRecord={handleSwitchRecord} onClose={() => setSwitchFor(null)} />}
+          {switchFor && <SessionSwitchDialog source={switchFor} initialTarget={switchTarget} sourcePosition={Math.max(0, displaySessions.findIndex((session) => session.id === switchFor.id))} record={switchRecords.find(item => item.source.id === switchFor.id && item.codexDelivery && item.state === "queued") ?? switchDraft} preview={UI_PREVIEW} onRecord={handleSwitchRecord} onClose={() => setSwitchFor(null)} />}
           {originalTranscript ? <TranscriptViewer key={originalTranscript.runId} original={originalTranscript} onClose={() => setOriginalTranscript(null)} /> : transcriptFor && (
             <TranscriptViewer
               session={transcriptFor}

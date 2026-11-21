@@ -3428,9 +3428,12 @@ fn open_runtime_session_checked(
     let _starting = session_state
         .begin_runtime_start(&record.id)
         .map_err(to_err)?;
+    let codex_handoff = kind == AgentRuntimeKind::Codex && session_switch::uses_codex_handoff(&record.id).map_err(to_err)?;
     // zcode CLI 独立会话直接进入交互式 TUI；cjs 入口需要 node 直启。
     let mut command: Command = if kind == AgentRuntimeKind::ZCodeCli {
         multi_agent::zcode::cli_tui_command().map_err(to_err)?
+    } else if codex_handoff {
+        multi_agent::codex_handoff_command(&executable)
     } else {
         multi_agent::command_for_path(&executable)
     };
@@ -3440,6 +3443,8 @@ fn open_runtime_session_checked(
     if kind == AgentRuntimeKind::Codex && record.multi_agent_agent_id.is_some() {
         record.codex_storage.prepare().map_err(to_err)?;
         record.codex_storage.verify_device_policy(&executable, &runtime_cwd).map_err(to_err)?;
+        record.codex_storage.configure(&mut command, false).map_err(to_err)?;
+    } else if codex_handoff {
         record.codex_storage.configure(&mut command, false).map_err(to_err)?;
     }
     session_state
@@ -3465,8 +3470,11 @@ fn open_runtime_session_checked(
             &providers::config_dir().map_err(to_err)?.join("outbox"),
         ).map_err(to_err)?;
     }
+    let handoff = if codex_handoff {
+        session_switch::prepare_codex_launch(&mut command, &record.id).map_err(to_err)?
+    } else { None };
     let pty_id = pty_state
-        .open_agent_program(&command, &record.id, yolo)
+        .open_agent_program_with_handoff(&command, &record.id, yolo, handoff.as_ref())
         .map_err(to_err)?;
     match session_state.attach_runtime(&record.id, pty_id) {
         Ok(updated) => Ok(updated),
@@ -4833,7 +4841,7 @@ fn detach_session_runtime(
         pty_state.kill(pty_id).map_err(to_err)?;
     }
     pty_state.kill_for_app_session(session_id).map_err(to_err)?;
-    action_queue.discard(session_id);
+    action_queue.discard_on_stop(session_id);
     Ok(record)
 }
 
@@ -4911,6 +4919,7 @@ fn delete_session_inner<R: tauri::Runtime>(
         session_state.delete(session_id)
     };
     deleted.map_err(to_err)?;
+    if action_queue.has_pending_work(session_id) { action_queue.discard(session_id); }
     action_queue.forget_human_message_receipts(session_id).map_err(to_err)
 }
 
@@ -5365,7 +5374,7 @@ fn process_polled_session_exits(
                 chunk.data.push_str(&format!("\r\n[输出警告] {warning}\r\n"));
             }
             if session_state.mark_exit_if_pty(&chunk.app_session_id, *pty_id, code).map_err(to_err)?.is_some() {
-                action_queue.discard(&chunk.app_session_id);
+                action_queue.discard_on_stop(&chunk.app_session_id);
             }
         }
     }
