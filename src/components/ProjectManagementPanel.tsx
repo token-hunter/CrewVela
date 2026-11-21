@@ -83,7 +83,8 @@ function ProjectEditDialog({ project, kind, onSaved, onClose }: {
     finally { inFlight.current = false; setSaving(false); }
   };
 
-  return <Modal className="project-management-dialog" ariaLabel={title} initialFocusRef={kind === "archive" ? cancel : undefined}
+  return <Modal className={kind === "collaboration" ? "project-management-dialog project-management-link-dialog" : "project-management-dialog"}
+    ariaLabel={title} initialFocusRef={kind === "archive" ? cancel : undefined}
     onClose={() => { if (!inFlight.current) onClose(); }}>
     <form onSubmit={event => void save(event)}>
       <h3>{title}</h3>

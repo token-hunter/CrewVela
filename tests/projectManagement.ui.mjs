@@ -19,7 +19,12 @@ try {
     mock.cliLaunch.pickerValue = "F:\\project-fixture";
     mock.invoke = async (command, args = {}) => {
       if (command === "list_projects") return structuredClone(projects);
-      if (command === "ma_list_projects") return [{ id: "team", name: "本地项目协作", rootPath: "F:\\project-fixture" }];
+      if (command === "ma_list_projects") return [
+        { id: "team", name: "本地项目协作", rootPath: "F:\\project-fixture" },
+        ...Array.from({ length: 60 }, (_, index) => ({
+          id: `team-${index + 1}`, name: `协作项目 ${index + 1}`, rootPath: `F:\\project-fixture-${index + 1}`,
+        })),
+      ];
       if (command === "create_project") {
         const added = { id: "added", name: args.name, path: args.path, createdAt: Date.now() };
         projects.push(added);
@@ -108,9 +113,37 @@ try {
   await card("单位换算器").getByRole("button", { name: "停止", exact: true }).click();
   await card("单位换算器").getByText("未运行", { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => window.projectManagementMock.states["second-project"].state), "running");
-  await card("单位换算器").getByRole("button", { name: "关联协作", exact: true }).click();
-  await page.getByRole("checkbox", { name: /本地项目协作/ }).check();
-  await save("关联协作项目");
+  await page.setViewportSize({ width: 820, height: 500 });
+  const linkButton = card("单位换算器").getByRole("button", { name: "关联协作", exact: true });
+  await linkButton.click();
+  const linkDialog = page.getByRole("dialog", { name: "关联协作项目", exact: true });
+  const list = linkDialog.locator(".project-management-links");
+  const firstProject = list.getByRole("checkbox", { name: /本地项目协作/ });
+  await firstProject.waitFor();
+  const cancelLink = linkDialog.getByRole("button", { name: "取消", exact: true });
+  const saveLink = linkDialog.getByRole("button", { name: "保存", exact: true });
+  const footer = linkDialog.locator("footer");
+  const footerBeforeScroll = await footer.boundingBox();
+  assert.ok(footerBeforeScroll.y + footerBeforeScroll.height <= 500, "footer is visible before scrolling");
+  assert.ok(await list.evaluate(node => node.scrollHeight > node.clientHeight), "only the project list needs scrolling");
+  await firstProject.check();
+  await cancelLink.click();
+  await linkDialog.waitFor({ state: "detached" });
+  await linkButton.click();
+  await firstProject.waitFor();
+  assert.equal(await firstProject.isChecked(), false);
+  await firstProject.check();
+  await list.hover();
+  await page.mouse.wheel(0, 10000);
+  await list.getByRole("checkbox", { name: /协作项目 60/ }).waitFor();
+  await page.waitForFunction(() => {
+    const list = document.querySelector(".project-management-links");
+    return list.scrollTop + list.clientHeight >= list.scrollHeight - 1;
+  });
+  assert.deepEqual(await footer.boundingBox(), footerBeforeScroll, "footer stays in place as the list scrolls");
+  await saveLink.click();
+  await linkDialog.waitFor({ state: "detached" });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await card("单位换算器").getByRole("button", { name: "本地项目协作" }).waitFor();
 
   await menu("单位换算器", "归档");

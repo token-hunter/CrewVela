@@ -87,7 +87,18 @@
 .project-management-dialog footer, .project-management-dialog header { display: flex; gap: 8px; align-items: center; }
 .project-management-dialog footer { justify-content: flex-end; padding-top: 6px; }
 .project-management-dialog header { justify-content: space-between; }
-.project-management-links { display: grid; gap: 8px; }
+.project-management-link-dialog { display: flex; flex-direction: column; overflow: hidden; }
+.project-management-link-dialog > form { display: flex; flex-direction: column; min-height: 0; }
+.project-management-link-dialog footer { flex-shrink: 0; }
+.project-management-links {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  margin-inline: -4px;
+  padding-inline: 4px;
+}
 .project-management-links label { display: flex; align-items: start; gap: 8px; padding-block: 5px; overflow-wrap: anywhere; }
 .project-management-links small { display: block; color: var(--text-dim); }
 .project-management-log { width: min(760px, calc(100vw - 32px)); }
