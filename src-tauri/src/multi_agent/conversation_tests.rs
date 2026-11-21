@@ -35,6 +35,43 @@ struct Fixture {
 }
 
 #[test]
+fn member_model_settings_are_project_scoped_and_dispatched_round_keeps_its_selection() {
+    use crate::multi_agent::conversation_models::Selection;
+    use serde_json::json;
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let member = &fixture.agents[0];
+    let kind = AgentRuntimeKind::Codex;
+    let catalog = [json!({"id":"model","type":"select","currentValue":"model-a","options":[
+        {"group":"Provider","options":[{"value":"model-a","name":"A"},{"value":"model-b","name":"B"}]}]}),
+        json!({"id":"effort","type":"select","options":[{"value":"high","name":"High"}]}),
+        json!({"id":"mode","type":"select","options":[{"value":"full-access","name":"Full"}]})];
+    store.observe_conversation_models(&fixture.project, member, kind, &catalog).unwrap();
+    let selected = Selection {model:Some("model-b".into()), reasoning:Some("high".into())};
+    assert!(store.set_conversation_member_models("unrelated-project", member, selected.clone()).is_err());
+    assert!(store.set_conversation_member_models(&fixture.project, member, Selection {
+        model:None, reasoning:Some("full-access".into()),
+    }).is_err());
+    store.set_conversation_member_models(&fixture.project, member, selected).unwrap();
+    let mut input = fixture.input();
+    input.native_capabilities = true;
+    let (round, _) = store.begin_conversation(input).unwrap();
+    store.set_conversation_member_models(&fixture.project, member, Selection::default()).unwrap();
+    let turn = prepare_turn(store, &round.id, 1, "chat", 0, member).unwrap();
+    let selection = store.discussion_model_selection(&turn.task_id, member, kind).unwrap();
+    assert_eq!(selection.model.as_deref(), Some("model-b"));
+    assert_eq!(selection.reasoning.as_deref(), Some("high"));
+    assert!(!store.discussion_model_selection(&turn.task_id, &fixture.agents[1], kind).unwrap().is_custom());
+    store.finish_conversation(&round.id, "completed", None).unwrap();
+    let mut input = fixture.input();
+    input.native_capabilities = true;
+    input.client_message_id = "user-2".into();
+    let (next_round, _) = store.begin_conversation(input).unwrap();
+    let next = prepare_turn(store, &next_round.id, 1, "chat", 0, member).unwrap();
+    assert!(!store.discussion_model_selection(&next.task_id, member, kind).unwrap().is_custom());
+}
+
+#[test]
 fn conversation_attachments_are_snapshotted_scoped_and_delivered() {
     let fixture = Fixture::new();
     let conversation = fixture.store.conversation_snapshot(&fixture.project).unwrap().conversation.id;

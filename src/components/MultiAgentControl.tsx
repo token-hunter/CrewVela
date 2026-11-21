@@ -12,6 +12,7 @@ import { ConversationImageAttachment } from "./ConversationImageAttachment";
 import { ConversationVideoAttachment } from "./ConversationVideoAttachment";
 import { ConversationApprovalRequests } from "./ConversationApprovalRequests";
 import { ConversationMemberActivity } from "./ConversationMemberActivity";
+import { ConversationMemberModels } from "./ConversationMemberModels";
 import { conversationMemberActivity } from "../conversationActivity";
 import { ConversationPlanCard } from "./ConversationPlanCard";
 import { ConversationHistoryDialog, conversationTitle } from "./ConversationHistoryDialog";
@@ -116,7 +117,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<PendingSend | null>(null);
   const [membersOpen, setMembersOpen] = useState<"header" | "composer" | null>(null);
-  const [membersPosition, setMembersPosition] = useState({ left: 0, top: 0, width: MAX_MEMBER_MENU_WIDTH, maxHeight: 320 });
+  const [modelMemberId, setModelMemberId] = useState<string>();
+  const [membersPosition, setMembersPosition] = useState({ left: 0, top: 0, width: MAX_MEMBER_MENU_WIDTH, maxHeight: 320, compact: false });
   const membersId = useId();
   const sendScopeId = useId();
   const attachmentTooltipId = useId();
@@ -316,7 +318,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const flipped = below < 160 && above > below;
       const maxHeight = Math.max(60, Math.min(340, flipped ? above : below));
       const height = Math.min(membersMenu.current?.scrollHeight ?? 300, maxHeight);
-      setMembersPosition({ left, width, maxHeight, top: flipped ? anchor.top - height - 8 : anchor.bottom + 8 });
+      setMembersPosition({ left, width, maxHeight, compact: left - panel.left < 270 || left < 272,
+        top: flipped ? anchor.top - height - 8 : anchor.bottom + 8 });
     };
     place();
     window.addEventListener("resize", place);
@@ -327,6 +330,15 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     if (membersMenu.current) observer.observe(membersMenu.current);
     return () => { observer.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
   }, [membersOpen, agents.length]);
+  useEffect(() => { setModelMemberId(undefined); }, [membersOpen, projectId]);
+  const modelMember = agents.find(agent => agent.id === modelMemberId);
+  const goBackToMembers = () => {
+    setModelMemberId(undefined);
+    requestAnimationFrame(() => {
+      Array.from(membersMenu.current?.querySelectorAll<HTMLButtonElement>("[data-model-member]") ?? [])
+        .find(button => button.dataset.modelMember === modelMemberId)?.focus();
+    });
+  };
   useEffect(() => {
     if (!membersOpen) return;
     const trigger = membersOpen === "header" ? headerMemberTrigger.current : composerMemberTrigger.current;
@@ -916,11 +928,18 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         projectId={projectId} currentId={conversation.conversation.id} currentTitle={currentTitle} blocked={newConversationBlocked} busy={busy}
         memberCount={selectionCount} onSwitch={switchConversation} onRename={startRename} />}
     </header>
-    {membersOpen === "header" && createPortal(<div id={membersId} ref={membersMenu} className="conversation-member-menu" role="group" aria-label="选择参与成员" style={membersPosition}><header>参与成员</header>{agents.map(agent => {
+    {membersOpen === "header" && createPortal(<div id={membersId} ref={membersMenu} className="conversation-member-menu-wrap" data-compact={membersPosition.compact}
+      style={{ left:membersPosition.left, top:membersPosition.top, width:membersPosition.width, "--conversation-member-menu-height":`${membersPosition.maxHeight}px` } as React.CSSProperties}>
+      <div className="conversation-member-menu" role="group" aria-label="选择参与成员" hidden={!!modelMember && membersPosition.compact}><header>参与成员</header>{agents.map(agent => {
       const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id);
       const reason = !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? "Runtime 已停用" : !supported.includes(agent.runtimeKind) ? "此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? "用户接管中" : "";
-      return <label key={agent.id} className={eligible ? "" : "unavailable"} title={`${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]}${reason ? ` · ${reason}` : ""}`}><input type="checkbox" aria-label={agent.name} checked={selected.includes(agent.id)} disabled={(!eligible && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span className="conversation-member-name"><strong>{agent.name}</strong><small>{ROLE[agent.role] ?? agent.role}{reason && ` · ${reason}`}{activeAgent?.id === agent.id && " · 正在回复"}</small></span><Check size={18} className="conversation-member-check" aria-hidden="true" /></label>;
-    })}{!agents.length && <p>还没有团队成员。{onOpenProjectSettings && <button type="button" className="conversation-text-button" onClick={() => { setMembersOpen(null); onOpenProjectSettings(projectId ?? undefined); }}>添加成员</button>}</p>}</div>, document.body)}
+      return <div key={agent.id} className="conversation-member-entry" data-active={modelMemberId === agent.id}>
+        <label title={`${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]}${reason ? ` · ${reason}` : ""}`}><input type="checkbox" aria-label={agent.name} checked={selected.includes(agent.id)} disabled={(!eligible && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span className="conversation-member-name"><strong>{agent.name}</strong><small>{ROLE[agent.role] ?? agent.role}{reason && ` · ${reason}`}{activeAgent?.id === agent.id && " · 正在回复"}</small></span><Check size={18} className="conversation-member-check" aria-hidden="true" /></label>
+        <button type="button" className="conversation-member-model-trigger" data-model-member={agent.id} aria-label={`${agent.name}的模型与推理`} title="模型与推理" aria-expanded={modelMemberId === agent.id} onClick={() => setModelMemberId(agent.id)}><CaretRight size={15} /></button>
+      </div>;
+    })}{!agents.length && <p>还没有团队成员。{onOpenProjectSettings && <button type="button" className="conversation-text-button" onClick={() => { setMembersOpen(null); onOpenProjectSettings(projectId ?? undefined); }}>添加成员</button>}</p>}</div>
+    {projectId && modelMember && <ConversationMemberModels key={`${projectId}:${modelMember.id}`} projectId={projectId} member={modelMember} compact={membersPosition.compact} onBack={goBackToMembers} />}
+    </div>, document.body)}
 
     {(error || runtimeError) && <div className="conversation-error" role="alert"><WarningCircle size={17} /><span>{error || `读取 Runtime 启用状态失败：${runtimeError}`}</span><button type="button" disabled={busy || loading} onClick={() => { void loadProjects().catch(reason => setError(String(reason))); void refreshAvailability(); void refresh(); }}>重新读取</button></div>}
     {exportNotice && exportNotice.conversationId === conversation?.conversation.id && <div className="conversation-progress conversation-export-status" role="status">已导出：{exportNotice.filename}</div>}

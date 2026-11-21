@@ -1188,6 +1188,19 @@ fn ma_conversation_snapshot(project_id: String, state: State<'_, MultiAgentStore
 }
 
 #[tauri::command]
+async fn ma_conversation_member_models(project_id: String, agent_id: String, refresh_pi: Option<bool>, state: State<'_, MultiAgentStore>) -> Result<multi_agent::conversation_models::MemberOptions, String> {
+    let store = state.inner().clone();
+    blocking_command(move || if refresh_pi.unwrap_or(false) {
+        store.refresh_pi_member_models(&project_id, &agent_id).map_err(to_err)
+    } else { store.conversation_member_models(&project_id, &agent_id).map_err(to_err) }).await
+}
+
+#[tauri::command]
+fn ma_set_conversation_member_models(project_id: String, agent_id: String, selection: multi_agent::conversation_models::Selection, state: State<'_, MultiAgentStore>) -> Result<multi_agent::conversation_models::MemberOptions, String> {
+    state.set_conversation_member_models(&project_id, &agent_id, selection).map_err(to_err)
+}
+
+#[tauri::command]
 async fn ma_conversation_export(
     project_id: String,
     conversation_id: String,
@@ -6620,6 +6633,8 @@ pub fn run() {
             ma_runtime_events,
             ma_send_message,
             ma_conversation_snapshot,
+            ma_conversation_member_models,
+            ma_set_conversation_member_models,
             ma_conversation_export,
             ma_conversation_design_delivery,
             ma_conversation_run_transcript,

@@ -1943,13 +1943,15 @@ pub(crate) fn execute_managed_research_acp(
     });
     execute_managed_acp_inner(kind, app_session_id, cwd, None, prompt, mcp_url, token,
         ManagedAcpMode::ReadOnly, cancelled, None, Some(permissions), update_handler,
-        Some(ManagedResearchPolicy { tools_enabled }), None, images, before_prompt, None)
+        Some(ManagedResearchPolicy { tools_enabled }), None, images, before_prompt, None, None)
 }
 
 pub(crate) struct ManagedCodexThread {
     pub storage: crate::codex_storage::CodexStorage,
     pub opened: Box<dyn FnOnce(&str) -> Result<()> + Send>,
 }
+
+pub(crate) type ConversationConfigurator = Box<dyn FnOnce(&mut AcpConnection) -> Result<()> + Send>;
 
 pub(crate) fn execute_managed_acp(
     kind: ManagedAcpKind,
@@ -1967,9 +1969,10 @@ pub(crate) fn execute_managed_acp(
     scoped_design_tool: Option<&'static str>,
     images: &[(PathBuf, String)],
     codex: Option<ManagedCodexThread>,
+    conversation_config: Option<ConversationConfigurator>,
 ) -> Result<ManagedAcpOutcome> {
     execute_managed_acp_inner(kind, app_session_id, cwd, resume_session_id, prompt, mcp_url, token,
-        mode, cancelled, model, permission_handler, update_handler, None, scoped_design_tool, images, None, codex)
+        mode, cancelled, model, permission_handler, update_handler, None, scoped_design_tool, images, None, codex, conversation_config)
 }
 
 fn execute_managed_acp_inner(
@@ -1990,6 +1993,7 @@ fn execute_managed_acp_inner(
     images: &[(PathBuf, String)],
     before_prompt: Option<Box<dyn FnOnce(&str) -> Result<()> + Send>>,
     codex: Option<ManagedCodexThread>,
+    conversation_config: Option<ConversationConfigurator>,
 ) -> Result<ManagedAcpOutcome> {
     let process_id = Arc::new(AtomicU32::new(0));
     // 保留配置中启用的 http 类型用户 server 一并交给 Agent；
@@ -2060,6 +2064,7 @@ fn execute_managed_acp_inner(
     if cancelled.load(Ordering::Acquire) {
         return Err(anyhow!("ACP Agent 任务已取消"));
     }
+    if let Some(configure) = conversation_config { configure(&mut connection)?; }
     let content = if connection.prompt_images_supported && !images.is_empty() {
         Some(managed_image_prompt(prompt, images)?)
     } else { None };

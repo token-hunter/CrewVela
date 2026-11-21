@@ -3543,6 +3543,27 @@ fn execute_preferred_acp(
         && (request.launch.mode().is_some() || request_requires_session_cli(request)?) {
         return Ok(None);
     }
+    let conversation_config: Option<crate::acp::ConversationConfigurator> = if native_discussion {
+        let store = request.store.clone();
+        let project = request.project.id.clone();
+        let agent = request.agent.id.clone();
+        let runtime = request.agent.runtime_kind;
+        let selection = store.discussion_model_selection(&request.task.id, &agent, runtime)?;
+        Some(Box::new(move |connection| {
+            let observe = |connection: &crate::acp::AcpConnection| {
+                if let Err(error) = store.observe_conversation_models(&project, &agent, runtime, connection.config_options()) {
+                    eprintln!("[crewvela] 无法保存群聊模型目录：{error:#}");
+                }
+            };
+            observe(connection);
+            if selection.is_custom() {
+                let result = super::conversation_models::apply_acp(connection, &selection);
+                observe(connection);
+                result.context("本轮模型与推理设置未获确认，请检查成员设置后重新发送")?;
+            }
+            Ok(())
+        }))
+    } else { None };
     let images = request.store.conversation_task_images(&request.task.id)?;
     let resume_session_id = locator_string(request.resume_locator.as_ref(), locator_keys);
     let mode = if native_discussion && request.agent.permission_profile == PermissionProfile::Default { ManagedAcpMode::Inherit } else { managed_acp_mode(
@@ -3721,6 +3742,7 @@ fn execute_preferred_acp(
         scoped_design_tool(request)?,
         &images,
         codex,
+        conversation_config,
     ) };
     let outcome = match outcome {
         Ok(outcome) => outcome,
@@ -4828,6 +4850,14 @@ impl AgentRuntimeAdapter for PiAdapter {
         }
         let mut command = runtime_command(self.kind())?;
         if native_conversation(request)? {
+            let selection = request.store.discussion_model_selection(&request.task.id, &request.agent.id, self.kind())?;
+            if selection.is_custom() {
+                let options = crate::native_pi_sessions::conversation_config_options(
+                    &request.cwd.display().to_string(), selection.model.as_deref(), selection.reasoning.as_deref())?;
+                request.store.observe_conversation_models(&request.project.id, &request.agent.id, self.kind(), &options)?;
+                if let Some(model) = selection.model.as_deref() { command.args(["--model", model]); }
+                if let Some(thinking) = selection.reasoning.as_deref() { command.args(["--thinking", thinking]); }
+            }
             command.args(["--print", "--mode", "json", "--session"]).arg(&session);
             request.log_launch("原生 CLI 配置", "Pi CLI")?;
             return execute_command(self.kind(), command, Some(render_task_prompt(request)), request, cancelled);

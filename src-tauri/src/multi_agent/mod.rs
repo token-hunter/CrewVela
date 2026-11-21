@@ -1,6 +1,7 @@
 mod bridge;
 mod coordinator;
 pub(crate) mod conversation;
+pub(crate) mod conversation_models;
 mod conversation_activity;
 mod direct_message;
 mod domain;

@@ -51,6 +51,7 @@ if (dualViews) {
 const emptyChat = (id: string): any => ({ conversation: { id: `conversation-${id}`, projectId: id, createdAt: clock }, messages: [], rounds: [], executionPlans: [], supportedDiscussionRuntimes: params.get("native") === "1" ? ["claude_code","codex","kimi_code","pi","opencode","deepseek_harness","zcode","zcode_cli"] : params.get("unsupported") === "1" ? ["claude_code", "codex"] : ["claude_code", "codex", "kimi_code", ...(params.get("header") === "1" ? ["zcode_cli"] : [])] });
 const message = (id: string, senderType: string, body: string, agentId: string | null = null, status = "completed", kind = "reply"): any => ({ id, projectId: "A", conversationId: "conversation-A", roundId: "round-1", replyToMessageId: "m1", taskId: null, runId: agentId ? `run-${agentId}` : null, agentId, senderType, kind, phase: "opinions", body, status, createdAt: clock + Number(id.slice(1) || 0) * 1000, updatedAt: clock });
 const chats: Record<string, any> = { A: emptyChat("A"), B: emptyChat("B") };
+const memberModelSettings = new Map<string, {model: string | null; reasoning: string | null}>();
 if (params.get("rules") === "1") chats.A.archivedTaskRules = [{ id: "acceptance-rule", agentId: "claude", label: "Claude 原验收规则", instructions: "只回复 ABC，不调用工具", tools: "none", createdAt: clock }];
 if (params.get("empty") !== "1") {
   chats.A.rounds = [{ id: "round-1", projectId: "A", conversationId: "conversation-A", userMessageId: "m1", participantAgentIds: ["claude", "codex", "kimi"], mode: "execution_plan", status: params.get("running") === "1" ? "running" : "completed", phase: "summary", maxRounds: 1, currentRound: 1, deadlineAt: clock + 600000, stopReason: null, createdAt: clock, updatedAt: clock }];
@@ -226,6 +227,13 @@ const mock = {
       return structuredClone(runLogs.filter(log => log.projectId === args.projectId && log.runId === args.runId).slice(-args.limit));
     }
     if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
+    if (["ma_conversation_member_models", "ma_set_conversation_member_models"].includes(command)) {
+      const key = `${args.projectId}:${args.agentId}`;
+      if (command === "ma_set_conversation_member_models") memberModelSettings.set(key, args.selection);
+      return { supported: true, observed: true,
+        selection: memberModelSettings.get(key) ?? {model: null, reasoning: null},
+        model: [{value: "fixture-a", label: "测试模型 A"}], reasoning: [{value: "high", label: "高"}] };
+    }
     if (command === "ma_conversation_codex_login") {
       if (params.has("hold-login")) await new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
       codexReady = true;

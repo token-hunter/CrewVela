@@ -1665,6 +1665,32 @@ fn read_image_attachment(path: &str) -> Result<Option<Value>> {
     Ok(Some(json!({"type": "image", "data": data, "mimeType": mime})))
 }
 
+pub(crate) fn conversation_config_options(cwd: &str, model: Option<&str>, thinking: Option<&str>) -> Result<Vec<Value>> {
+    let kind = crate::multi_agent::AgentRuntimeKind::Pi;
+    let executable = crate::multi_agent::resolve_runtime_executable_checked(kind).map_err(anyhow::Error::msg)?;
+    let mut command = crate::multi_agent::command_for_path(&executable);
+    command.current_dir(cwd).args(["--mode", "rpc", "--no-session", "--no-extensions", "--no-skills",
+        "--no-mcp", "--no-context-files", "--no-prompt-templates"]);
+    if let Some(model) = model { command.args(["--model", model]); }
+    if let Some(thinking) = thinking { command.args(["--thinking", thinking]); }
+    let client = PiClient::spawn(command, Box::new(|_| {}), Box::new(|| {}))?;
+    let outcome = (|| {
+        let state = client.command(START_TIMEOUT, json!({"type":"get_state"}))?;
+        let models = client.command(CONTROL_TIMEOUT, json!({"type":"get_available_models"}))?;
+        let levels = client.command(CONTROL_TIMEOUT, json!({"type":"get_available_thinking_levels"}))?;
+        let options = build_config_options(&state, &models, &levels);
+        for (id, value) in [("model", model), ("thinking", thinking)] {
+            if let Some(value) = value {
+                anyhow::ensure!(options.iter().any(|option| option["id"] == id && option["currentValue"] == value),
+                    "Pi 未确认本轮的模型或推理级别，请重新选择");
+            }
+        }
+        Ok(options)
+    })();
+    client.stop_checked()?;
+    outcome
+}
+
 /// 组装 configOptions（model + thinking），形状与 kimi fixture/ACP 一致。
 fn build_config_options(state: &Value, models: &Value, levels: &Value) -> Vec<Value> {
     let mut options = Vec::new();

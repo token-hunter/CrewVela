@@ -497,6 +497,7 @@ pub(super) fn migrate(connection: &Connection) -> Result<()> {
     if !has_start_state {
         connection.execute_batch("ALTER TABLE ma_conversation_plans ADD COLUMN start_state TEXT NOT NULL DEFAULT 'pending';")?;
     }
+    super::conversation_models::migrate(connection)?;
     policy::migrate_policy(connection)
 }
 
@@ -1194,6 +1195,9 @@ impl MultiAgentStore {
             queued_input: None,
         };
         tx.execute("INSERT INTO ma_conversation_rounds(id,project_id,client_message_id,request_json,status,data_json,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![round.id,round.project_id,input.client_message_id,request,round.status,serde_json::to_string(&round)?,stamp])?;
+        if round.mode == "discussion" {
+            super::conversation_models::snapshot_round(&tx, &round.id, &round.project_id)?;
+        }
         let source = format!("{}:{}", if queued.is_some() { "interrupt" } else { "human" }, input.client_message_id);
         save_message(&tx, &source, &message)?;
         // Chat follow-ups preserve a pending proposal. Only an explicit new plan replaces it.
