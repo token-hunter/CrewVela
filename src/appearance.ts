@@ -28,6 +28,7 @@ export const DEFAULT_APPEARANCE: AppAppearance = {
   followSystem: false,
   terminalTransparent: false,
   terminalOpacity: 0.65,
+  communicationMotion: false,
 };
 
 const APPEARANCE_THEMES: AppearanceTheme[] = [
@@ -79,6 +80,7 @@ export function loadAppearance(): AppAppearance {
           ? accent
           : DEFAULT_APPEARANCE.accent,
         followSystem: stored.followSystem === true,
+        ...(stored.communicationMotion === true ? { communicationMotion: true } : {}),
         terminalTransparent: stored.terminalTransparent === true,
         terminalOpacity:
           typeof stored.terminalOpacity === "number" &&

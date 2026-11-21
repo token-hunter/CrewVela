@@ -148,7 +148,7 @@ export function SettingsDialog({
         {
           id: "appearance" as const,
           label: "外观",
-          keywords: "外观 主题 背景 强调色 透明度",
+          keywords: "外观 主题 背景 强调色 透明度 会话通信动效 连线",
           icon: <PaletteIcon size={16} weight="regular" />,
         },
         {

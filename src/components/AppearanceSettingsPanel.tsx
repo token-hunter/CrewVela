@@ -244,6 +244,20 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
         </SettingsSection>
       </div>
 
+      <section className="appearance-settings-section">
+        <Switch
+          className="appearance-terminal-toggle"
+          checked={appearance.communicationMotion === true}
+          onChange={(checked) => onChange((current) => ({ ...current, communicationMotion: checked }))}
+          childrenPosition="before"
+        >
+          <span>
+            <strong>会话通信动效</strong>
+            <small>两个 Agent 终端同屏通信时，用强调色连线显示消息方向。</small>
+          </span>
+        </Switch>
+      </section>
+
       <section className="appearance-settings-section appearance-terminal-section">
         <Switch
           className="appearance-terminal-toggle"

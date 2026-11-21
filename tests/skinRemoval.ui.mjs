@@ -20,7 +20,7 @@ try {
   assert.equal(await page.locator(".appearance-theme-grid > button").count(), 6);
   await page.locator('.appearance-theme-grid > button').filter({ hasText: "暖沙" }).click();
   await page.getByRole("radio", { name: "无强调色", exact: true }).click();
-  await page.locator(".appearance-terminal-toggle > i").click();
+  await page.getByRole("switch", { name: /全局透明模式/ }).locator("..").click();
   await page.waitForFunction(() => document.documentElement.dataset.globalTransparent === "true");
   const opacity = page.locator('.appearance-terminal-opacity input[type="range"]');
   await opacity.press("Home");
@@ -28,7 +28,7 @@ try {
   await opacity.press("End");
   await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--terminal-pane-opacity") === "90%");
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("crewvela-appearance")).accent), "none");
-  await page.locator(".appearance-terminal-toggle > i").click();
+  await page.getByRole("switch", { name: /全局透明模式/ }).locator("..").click();
   await page.waitForFunction(() => document.documentElement.dataset.globalTransparent === "false");
   mkdirSync("output/playwright", { recursive: true });
   await page.locator(".settings-content").evaluate(element => { element.scrollTop = 0; });

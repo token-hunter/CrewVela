@@ -24,7 +24,7 @@ try {
    await none.scrollIntoViewIfNeeded();
    await page.screenshot({path:`output/playwright/accent-none-${theme}.png`,fullPage:true});
   }
-  const toggle=page.getByRole('switch'); await toggle.locator('..').click(); assert.equal(await toggle.getAttribute('aria-checked'),'true'); await toggle.locator('..').click(); assert.equal(await toggle.getAttribute('aria-checked'),'false');
+  const toggle=page.getByRole('switch',{name:/全局透明模式/}); await toggle.locator('..').click(); assert.equal(await toggle.getAttribute('aria-checked'),'true'); await toggle.locator('..').click(); assert.equal(await toggle.getAttribute('aria-checked'),'false');
   await page.getByRole('button',{name:'微纹理',exact:true}).click(); assert.equal(await page.getByRole('button',{name:'微纹理',exact:true}).getAttribute('aria-pressed'),'true');
   const purple=page.getByRole('radio',{name:'紫色',exact:true}); await purple.click();
   assert.equal(await purple.getAttribute('aria-checked'),'true');

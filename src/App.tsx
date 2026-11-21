@@ -2126,6 +2126,8 @@ export default function App() {
       ? null
       : (sessions.find((session) => session.id === selectedSessionId) ?? null);
   const selectedRelaySource = selectedSession ? retainedSwitchSource(selectedSession.id, switchRecords) : null;
+  const mainTerminalHidden = backgroundOnlyGrid || !!multiAgentWorkspaceProjectId || !!selectedRelaySource
+    || !!(selectedSession && (isNativeChatSession(selectedSession) || isStructuredZCodeCli(selectedSession, switchRecords)));
   const nativeTabs = nativeChatTabSessions(tabSessions.filter(isNativeChatSession), orderedNativeChatSlots(openNativeSlots, nativeTabOrders[workspace.activeTabId]), id => switchSlotId(id, switchRecords));
   const reorderNativeTab = (source: string, target: string, after: boolean) => {
     const workspaceId = workspace.activeTabId;
@@ -2470,13 +2472,14 @@ export default function App() {
                     terminalTransparent={
                       appearance.terminalTransparent === true
                     }
+                    communicationMotion={!settingsOpen && appearance.communicationMotion === true}
                     onSessionsChange={handleSessionSnapshot}
                     onCloseSession={closeSessionById}
                     onClose={() => setMultiAgentWorkspaceProjectId(null)}
                   />
                 )}
                 {anyLivePtySessions && (
-                  <div className="main-terminal-host" hidden={backgroundOnlyGrid || !!multiAgentWorkspaceProjectId || !!selectedRelaySource || !!(selectedSession && (isNativeChatSession(selectedSession) || isStructuredZCodeCli(selectedSession, switchRecords)))}>
+                  <div className="main-terminal-host" hidden={mainTerminalHidden}>
                     <MemoMultiTerminal
                       sessions={displaySessions.filter(item => !sidebarTerminalIds.includes(item.id))}
                       selectedSessionId={selectedSessionId}
@@ -2484,6 +2487,7 @@ export default function App() {
                       terminalTransparent={
                         appearance.terminalTransparent === true
                       }
+                      communicationMotion={!mainTerminalHidden && !settingsOpen && appearance.communicationMotion === true}
                       preview={UI_PREVIEW}
                       hiddenSessionIds={hiddenSessionIds}
                       onClose={closeSessionById}

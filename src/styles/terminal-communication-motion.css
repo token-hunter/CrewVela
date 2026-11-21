@@ -1,0 +1,58 @@
+.terminal-communication-grid {
+  position: relative;
+}
+
+.terminal-communication-motion {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--accent);
+}
+
+.terminal-communication-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0.85;
+  animation: communication-trace var(--communication-travel) linear forwards,
+    communication-fade 420ms ease calc(var(--communication-travel) + 100ms) forwards;
+}
+
+.terminal-communication-halo {
+  fill: currentColor;
+  opacity: 0.48;
+  filter: blur(3px);
+}
+
+.terminal-communication-dot {
+  fill: color-mix(in srgb, currentColor 60%, white);
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
+.terminal-communication-light {
+  animation: communication-fade 280ms ease var(--communication-travel) forwards;
+}
+
+.terminal-communication-receiver {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  opacity: 0;
+  filter: drop-shadow(0 0 5px currentColor);
+  animation: communication-arrival 470ms ease-out var(--communication-travel);
+}
+
+@keyframes communication-trace { to { stroke-dashoffset: 0; } }
+@keyframes communication-fade { to { opacity: 0; } }
+@keyframes communication-arrival { 15% { opacity: 0.82; } 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-communication-motion { display: none; }
+}

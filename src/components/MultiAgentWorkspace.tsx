@@ -25,6 +25,7 @@ interface Props {
   sessions: SessionRecord[];
   theme: AppTheme;
   terminalTransparent?: boolean;
+  communicationMotion?: boolean;
   onSessionsChange: (sessions: SessionRecord[]) => void;
   onCloseSession: (id: string) => void;
   onClose: () => void;
@@ -54,6 +55,7 @@ export function MultiAgentWorkspace({
   sessions,
   theme,
   terminalTransparent = false,
+  communicationMotion = false,
   onSessionsChange,
   onCloseSession,
   onClose,
@@ -251,6 +253,7 @@ export function MultiAgentWorkspace({
               selectedSessionId={focusedAppSessionId}
               theme={theme}
               terminalTransparent={terminalTransparent}
+              communicationMotion={communicationMotion}
               hiddenSessionIds={hiddenSessionIds}
               onClose={onCloseSession}
               onToggleMaximize={(appSessionId) => {

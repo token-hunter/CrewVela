@@ -138,6 +138,7 @@ export interface AppAppearance {
   followSystem: boolean;
   terminalTransparent?: boolean;
   terminalOpacity?: number;
+  communicationMotion?: boolean;
   rightSidebarStartStyle?: RightSidebarStartStyle;
 }
 
@@ -372,8 +373,15 @@ export interface GitBranchOption {
   remote: boolean;
 }
 
+export interface CommunicationDelivery {
+  id: string;
+  fromSessionId: string;
+  toSessionId: string;
+}
+
 export interface PollResult {
   workingCliPtyIds?: number[];
+  communicationDeliveries?: CommunicationDelivery[];
   chunks: Record<string, PtyChunk>;
   sessions: SessionRecord[];
 }

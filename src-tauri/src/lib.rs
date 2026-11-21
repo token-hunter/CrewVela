@@ -5860,6 +5860,8 @@ struct PollResult {
     chunks: std::collections::HashMap<u32, pty::PtyChunk>,
     sessions: Vec<SessionRecord>,
     working_cli_pty_ids: Vec<u32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    communication_deliveries: Vec<control::CommunicationDelivery>,
 }
 
 fn mark_interactive_runtime_prompts(
@@ -6164,7 +6166,8 @@ fn pty_poll_all(
     action_queue.flush_pending_submits(&session_state, &pty_state);
     let sessions = session_state.list();
     let working_cli_pty_ids = session_state.working_cli_pty_ids(&sessions);
-    Ok(PollResult { chunks, sessions, working_cli_pty_ids })
+    let communication_deliveries = action_queue.take_communication_deliveries();
+    Ok(PollResult { chunks, sessions, working_cli_pty_ids, communication_deliveries })
 }
 
 #[tauri::command]

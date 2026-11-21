@@ -290,6 +290,14 @@ pub struct DeliveryRecord {
     pub error: Option<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CommunicationDelivery {
+    id: String,
+    from_session_id: String,
+    to_session_id: String,
+}
+
 pub struct SessionActionQueue {
     /// After restart, uncertain automation mail must never be replayed automatically.
     held_automation_messages: Mutex<HashSet<String>>,
@@ -305,6 +313,7 @@ pub struct SessionActionQueue {
     agent_message_notices: Mutex<HashMap<(String, String), Instant>>,
     /// 成功投递记录（环形缓冲，封顶 DELIVERY_LOG_CAP 条）。
     delivery_log: Mutex<VecDeque<DeliveryRecord>>,
+    communication_deliveries: Mutex<VecDeque<(Instant, CommunicationDelivery)>>,
     delivery_errors: Mutex<HashMap<String, String>>,
     handoff_ids: Mutex<HashSet<String>>,
     processed_outbox_ids: Mutex<HashSet<String>>,
@@ -389,6 +398,7 @@ impl SessionActionQueue {
             agent_message_log: Mutex::new(HashMap::new()),
             agent_message_notices: Mutex::new(HashMap::new()),
             delivery_log: Mutex::new(VecDeque::new()),
+            communication_deliveries: Mutex::new(VecDeque::new()),
             delivery_errors: Mutex::new(HashMap::new()),
             handoff_ids: Mutex::new(HashSet::new()),
             processed_outbox_ids: Mutex::new(HashSet::new()),
@@ -435,6 +445,7 @@ impl SessionActionQueue {
             agent_message_log: Mutex::new(HashMap::new()),
             agent_message_notices: Mutex::new(HashMap::new()),
             delivery_log: Mutex::new(VecDeque::new()),
+            communication_deliveries: Mutex::new(VecDeque::new()),
             delivery_errors: Mutex::new(HashMap::new()),
             activity: Mutex::new(HashMap::new()),
             mailbox_path: Some(mailbox_path),
@@ -807,7 +818,11 @@ impl SessionActionQueue {
 
     fn acknowledge_submitted_message(&self, session_id: &str, message_id: &str) -> bool {
         match self.try_commit_delivered_message(session_id, message_id) {
-            Ok(_) => { self.update_delivery_stage(session_id, "submit_sent", None); true }
+            Ok(committed) => {
+                self.update_delivery_stage(session_id, "submit_sent", None);
+                if committed { self.record_communication_delivery(session_id, message_id); }
+                true
+            }
             Err(error) => {
                 let error = format!("提交回车已发送，但确认落盘失败；重启前请核对目标以免重复：{error:#}");
                 self.delivery_errors.lock().unwrap().insert("__mailbox__".into(), error.clone());
@@ -1416,6 +1431,7 @@ impl SessionActionQueue {
                         if message.kind != MessageKind::InitialPrompt {
                             self.record_delivery(&session.id, &message);
                             self.update_delivery_stage(&session.id, "bridge_received", None);
+                            self.record_communication_delivery(&session.id, &message.id);
                         }
                         dispatched.push(session.id.clone());
                         continue;
@@ -1517,6 +1533,26 @@ impl SessionActionQueue {
     /// 全部成功投递记录，协作工作台「协作记录」的只读投影数据源。
     pub fn delivery_records(&self) -> Vec<DeliveryRecord> {
         self.delivery_log.lock().unwrap().iter().cloned().collect()
+    }
+
+    fn record_communication_delivery(&self, session_id: &str, message_id: &str) {
+        let log = self.delivery_log.lock().unwrap();
+        let Some(record) = log.iter().rev().find(|record| record.id == message_id
+            && record.to_session_id == session_id && record.kind == MessageKind::Chat) else { return; };
+        let Some(from_session_id) = record.from_session_id.as_ref().filter(|id| id.as_str() != session_id) else { return; };
+        let delivery = CommunicationDelivery {
+            id: record.id.clone(), from_session_id: from_session_id.clone(), to_session_id: record.to_session_id.clone(),
+        };
+        drop(log);
+        let mut signals = self.communication_deliveries.lock().unwrap();
+        if signals.len() >= 32 { signals.pop_front(); }
+        signals.push_back((Instant::now(), delivery));
+    }
+
+    pub(crate) fn take_communication_deliveries(&self) -> Vec<CommunicationDelivery> {
+        self.communication_deliveries.lock().unwrap().drain(..)
+            .filter(|(at, _)| at.elapsed() < Duration::from_secs(1))
+            .map(|(_, delivery)| delivery).collect()
     }
 
     pub(crate) fn communication_evidence(&self) -> Vec<serde_json::Value> {
@@ -3282,6 +3318,33 @@ mod tests {
         queue.flush_pending_submits_with_writer_at(&sessions, now + SUBMIT_DELAY, |_, _| panic!("manual Enter already submitted"));
         assert_eq!(queue.delivery_records()[0].stage, "submit_sent");
         assert!(SessionActionQueue::open_at(root.join("mailbox.json"), root.join("outbox")).unwrap().peek_next(&record.id).is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn communication_motion_reports_confirmed_agent_delivery_once_without_message_body() {
+        let (root, sessions, record, queue) = durable_delivery_fixture("communication-motion");
+        ready_fixture_session(&sessions, &record, 1);
+        let message = QueuedMessage::new("message body".into(), Some(MessageOrigin {
+            session_id: "source-agent".into(), label: "Source".into(),
+        }));
+        queue.enqueue_message(&record.id, message.clone());
+        assert!(queue.take_communication_deliveries().is_empty());
+
+        let now = Instant::now();
+        queue.flush_ready_with_writer_at(&sessions, now, |_, _| Ok(()));
+        assert!(queue.take_communication_deliveries().is_empty());
+        queue.flush_pending_submits_with_writer_at(&sessions, now + SUBMIT_DELAY, |_, _| {
+            anyhow::bail!("injected terminal write failure")
+        });
+        assert!(queue.take_communication_deliveries().is_empty());
+        queue.flush_pending_submits_with_writer_at(&sessions, now + SUBMIT_DELAY, |_, _| Ok(()));
+
+        assert_eq!(serde_json::to_value(queue.take_communication_deliveries()).unwrap(), serde_json::json!([{
+            "id": message.id, "fromSessionId": "source-agent", "toSessionId": record.id,
+        }]));
+        assert!(queue.acknowledge_submitted_message(&record.id, &message.id));
+        assert!(queue.take_communication_deliveries().is_empty());
         std::fs::remove_dir_all(root).unwrap();
     }
 

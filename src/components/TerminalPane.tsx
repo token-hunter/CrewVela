@@ -39,6 +39,7 @@ import { useCliPtyWorking } from "../ptyPolling";
 
 interface Props {
   sessionId: number;
+  communicationSessionId?: string;
   title: string;
   providerName: string;
   kind: SessionKind;
@@ -169,6 +170,7 @@ function safeFit(fit: FitAddon | null) {
 
 export function TerminalPane({
   sessionId,
+  communicationSessionId,
   title,
   providerName,
   kind,
@@ -332,6 +334,7 @@ export function TerminalPane({
 
   return (
     <div
+      data-communication-session={communicationSessionId}
       className={
         "pane" +
         (kind === "terminal" && header.runtimeKind && isCliPetRuntimeKind(header.runtimeKind) ? " pane-has-cli-pet" : "") +

@@ -6,12 +6,15 @@ import type { AppTheme, SessionRecord } from "../types";
 import { retainedSwitchSource, sessionSwitchReason, switchSlotId, switchedHistory, type SessionSwitchRecord } from "../sessionSwitch";
 import { HandoffSourceView } from "./HandoffSourceView";
 import { isNativeChatSession, isPtySession, isWorkspaceTerminal } from "../sessionCapabilities";
+import { isCliRuntime } from "../runtimeLaunch";
+import { TerminalCommunicationMotion } from "./TerminalCommunicationMotion";
 
 interface Props {
   sessions: SessionRecord[];
   selectedSessionId: string | null;
   theme: AppTheme;
   terminalTransparent?: boolean;
+  communicationMotion?: boolean;
   preview?: boolean;
   /** 非当前页签的会话：保持挂载（保住 xterm 缓冲与轮询），仅视觉上隐藏 */
   hiddenSessionIds?: ReadonlySet<string>;
@@ -35,6 +38,7 @@ export function MultiTerminal({
   selectedSessionId,
   theme,
   terminalTransparent = false,
+  communicationMotion = false,
   preview = false,
   hiddenSessionIds,
   onClose,
@@ -94,9 +98,14 @@ export function MultiTerminal({
     ? slotIds.filter((id) => !hiddenSessionIds.has(sessions.find((session) => switchSlotId(session.id, switchRecords) === id)?.id ?? id)).length
     : slotIds.length;
   const cols = selectedSessionId === null ? gridCols(visibleCount) : 1;
+  const showMotion = communicationMotion && selectedSessionId === null && visibleCount > 1 && !draggedId;
+  const motionLayout = showMotion ? JSON.stringify(slotIds.map(id => {
+    const session = sessions.find(item => switchSlotId(item.id, switchRecords) === id);
+    return session && !hiddenSessionIds?.has(session.id) ? [session.id, session.ptyId] : null;
+  })) : "";
 
   return (
-    <div className="grid" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+    <div className={`grid${showMotion ? " terminal-communication-grid" : ""}`} style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
       {slotIds.map((id) => {
         const session = sessions.find((item) => switchSlotId(item.id, switchRecords) === id);
         const hidden =
@@ -110,10 +119,13 @@ export function MultiTerminal({
         if (!session || !isPtySession(session) || session.ptyId === null) {
           return <div key={id} className={`pane pane-vacant${hidden ? " pane-hidden" : ""}`} />;
         }
+        const interactiveCli = !session.runtimeCommandHost && !session.retiredAgentRuntime
+          && (session.kind === "claude" || isCliRuntime(session.agentRuntimeKind ?? ""));
         return (
           <TerminalPane
             key={`${session.id}:${session.ptyId}`}
             sessionId={session.ptyId}
+            communicationSessionId={showMotion && interactiveCli && !hidden ? session.id : undefined}
             title={sessionDisplayTitle(session)}
             providerName={sessionDisplayProvider(session)}
             kind={session.kind}
@@ -156,6 +168,7 @@ export function MultiTerminal({
           />
         );
       })}
+      {showMotion && <TerminalCommunicationMotion key={motionLayout} />}
     </div>
   );
 }

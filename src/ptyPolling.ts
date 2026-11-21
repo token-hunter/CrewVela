@@ -45,6 +45,9 @@ export function subscribePtyPolling(onSessions: (sessions: SessionRecord[]) => v
           signature = next;
           for (const notify of subscribers) notify(result.sessions);
         }
+        if (result.communicationDeliveries?.length) {
+          window.dispatchEvent(new CustomEvent("pty:communication-delivery", { detail: result.communicationDeliveries }));
+        }
       } catch (error) {
         console.error("poll_all 失败:", error);
       } finally {
