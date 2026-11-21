@@ -24,7 +24,12 @@ pub(super) fn choice(size: PtySize, transcript: &str) -> Option<Choice> {
                 .is_some_and(|text| text.trim_start().to_ascii_lowercase().starts_with(option))
         })
     };
-    if screen.contains("accessing workspace")
+    let claude_folder_menu = screen.contains("accessing workspace")
+        || (screen.contains("quick safety check:")
+            && screen.contains("read, edit, and execute files here")
+            && screen.contains("security guide")
+            && screen.contains("esc to cancel"));
+    if claude_folder_menu
         && screen.contains("yes, i trust this folder")
         && screen.contains("enter to confirm")
     {
@@ -145,6 +150,28 @@ mod tests {
         assert_eq!(confirmation.input(trust, elapsed(950)), None);
         assert_eq!(confirmation.input(trust, elapsed(1200)), Some(b"\r".as_slice()));
         assert_eq!(confirmation.input(trust, elapsed(1600)), None);
+    }
+
+    #[test]
+    fn recognizes_claude_quick_safety_check_instead_of_a_tool_approval() {
+        let size = PtySize { cols: 35, ..SIZE };
+        let exit = concat!(
+            "Quick safety check: Is this a\r\n",
+            "project you created or one you\r\n",
+            "trust?\r\n\r\n",
+            "Claude Code'll be able to read,\r\n",
+            "edit, and execute files here.\r\n\r\n",
+            "Security guide\r\n\r\n",
+            "❯ No, exit\r\n",
+            "  Yes, I trust this folder\r\n\r\n",
+            "Enter to confirm · Esc to cancel",
+        );
+        assert_eq!(choice(size, exit), Some(Choice::ClaudeExit));
+        let trust = exit.replace("❯ No", "  No").replace("  Yes", "❯ Yes");
+        assert_eq!(choice(size, &trust), Some(Choice::ClaudeTrust));
+        assert_eq!(choice(size, &trust.replace("Security guide", "")), None);
+        assert_eq!(choice(size, &trust.replace("Quick safety check:", "Tool approval:")), None);
+        assert_eq!(choice(size, &trust.replace("Esc to cancel", "Esc to stop")), None);
     }
 
     #[test]
