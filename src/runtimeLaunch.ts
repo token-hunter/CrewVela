@@ -1,8 +1,8 @@
 import catalog from "./runtimeLaunchModes.json" with { type: "json" };
-import type { AgentRuntimeKind } from "./types";
+import type { AgentRuntimeKind, WorktreeOptions } from "./types";
 
 export type CliRuntime = keyof typeof catalog;
-export interface RuntimeLaunchSelection { mode: string; saveAsDefault: boolean }
+export interface RuntimeLaunchSelection { mode: string; saveAsDefault: boolean; worktreeOptions?: WorktreeOptions }
 export function isCliRuntime(kind: string): kind is CliRuntime { return Object.prototype.hasOwnProperty.call(catalog, kind); }
 export function launchChoices(kind: string) { return isCliRuntime(kind) ? catalog[kind] : []; }
 export function launchModeLabel(kind: string | null | undefined, mode: string | null | undefined): string | null {

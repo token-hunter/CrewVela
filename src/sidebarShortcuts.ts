@@ -10,6 +10,7 @@ export interface SidebarShortcutOption {
 export const SIDEBAR_SHORTCUT_OPTIONS: SidebarShortcutOption[] = [
   { id: "generalSettings", label: "常规", group: "通用" },
   { id: "git", label: "Git", group: "通用" },
+  { id: "worktrees", label: "Worktrees", group: "通用" },
   { id: "notifications", label: "通知", group: "通用" },
   { id: "appearance", label: "外观", group: "通用" },
   { id: "companionship", label: "陪伴", group: "通用" },

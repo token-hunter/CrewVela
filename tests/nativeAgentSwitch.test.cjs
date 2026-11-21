@@ -122,6 +122,25 @@ test('new chat propagates failure and never selects a fictitious result', async 
   assert.equal(selected, false);
 });
 
+test('new and switched Chats request the same worktree by the immediate source session', async () => {
+  const { createNativeAgentConversation: createChat, openNativeAgentConversation: open } = await modulePromise;
+  const cwd = 'F:/managed/tree/subdirectory';
+  const owner = record('owner', { cwd, projectId: 'project-one', worktree: { path: 'F:/managed/tree' } });
+  const inherited = record('inherited', { cwd, projectId: owner.projectId, worktreeSourceSessionId: owner.id });
+  const calls = [];
+  const create = async (command, args) => {
+    calls.push([command, args]);
+    return record('next');
+  };
+
+  await createChat(owner, 'pi_chat', create, () => {});
+  await open([], inherited, 'codex_chat', 'w', () => 'w', create, async () => {});
+  assert.deepEqual(calls, [
+    ['create_pi_chat_session', { cwd, projectId: owner.projectId, sourceSessionId: owner.id }],
+    ['create_codex_chat_session', { cwd, projectId: owner.projectId, sourceSessionId: inherited.id }],
+  ]);
+});
+
 test('opened tabs preserve opening order and distinct same-Agent sessions; handoff replaces its logical slot', async () => {
   const { nativeChatTabSessions: tabs } = await modulePromise;
   const first = record('first');

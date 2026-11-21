@@ -189,6 +189,8 @@ export interface AgentActivityState {
   activity: AgentActivity;
 }
 
+export interface WorktreeOptions { baseRef: string; fetchUpstream: boolean }
+
 export interface SessionWorktree {
   repoRoot: string;
   path: string;
@@ -284,6 +286,7 @@ export interface SessionRecord {
   agentRuntimeKind?: AgentRuntimeKind | null;
   projectId?: string | null;
   worktree?: SessionWorktree | null;
+  worktreeSourceSessionId?: string | null;
   providerId: string;
   providerName: string;
   cwd: string;

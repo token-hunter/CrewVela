@@ -395,6 +395,11 @@ pub struct SessionRecord {
     /// 会话级独立 Git Worktree；None 表示直接在原目录运行。
     #[serde(default)]
     pub worktree: Option<SessionWorktree>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_source_session_id: Option<String>,
+    // Persisted before spawning. A different app instance cannot certify an interrupted process tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) worktree_runtime_owner: Option<String>,
     pub provider_id: String,
     pub provider_name: String,
     pub cwd: String,
@@ -747,8 +752,11 @@ impl SessionManager {
     }
 
     pub fn create(&self, input: NewSession) -> Result<SessionRecord> {
+        self.create_claude_in(input, uuid::Uuid::new_v4().to_string(), None)
+    }
+
+    pub(crate) fn create_claude_in(&self, input: NewSession, id: String, worktree: Option<SessionWorktree>) -> Result<SessionRecord> {
         crate::multi_agent::AgentRuntimeKind::ClaudeCode.ensure_available()?;
-        let id = uuid::Uuid::new_v4().to_string();
         let now = now_millis();
         let record = SessionRecord {
 
@@ -765,7 +773,9 @@ impl SessionManager {
             background_chat_host: false,
             codex_storage: Default::default(),
             project_id: input.project_id,
-            worktree: None,
+            worktree,
+            worktree_source_session_id: None,
+            worktree_runtime_owner: None,
             provider_id: input.provider_id,
             provider_name: input.provider_name,
             cwd: input.cwd,
@@ -787,11 +797,7 @@ impl SessionManager {
             created_at: now,
             updated_at: now,
         };
-        let mut stored = self.data.lock().unwrap();
-        let mut data = stored.clone();
-        data.sessions.push(record.clone());
-        self.persist_candidate(&mut stored, data)?;
-        Ok(record)
+        self.insert_session(record)
     }
 
     pub fn create_terminal(&self, input: NewTerminalSession) -> Result<SessionRecord> {
@@ -814,6 +820,8 @@ impl SessionManager {
             background_chat_host: false,
             project_id: input.project_id,
             worktree: None,
+            worktree_source_session_id: None,
+            worktree_runtime_owner: None,
             provider_id: "local-terminal".into(),
             provider_name: shell_name.into(),
             cwd: input.cwd,
@@ -835,11 +843,7 @@ impl SessionManager {
             created_at: now,
             updated_at: now,
         };
-        let mut stored = self.data.lock().unwrap();
-        let mut data = stored.clone();
-        data.sessions.push(record.clone());
-        self.persist_candidate(&mut stored, data)?;
-        Ok(record)
+        self.insert_session(record)
     }
 
     /// 创建一个由 CrewVela 直接托管的交互式 Agent CLI 会话。
@@ -852,7 +856,7 @@ impl SessionManager {
 
     pub(crate) fn create_runtime_with_launch_mode(&self, input: NewRuntimeSession, mode: &str) -> Result<SessionRecord> {
         crate::runtime_launch::validate(&input.runtime_kind, mode)?;
-        self.create_runtime_with_mode(input, uuid::Uuid::new_v4().to_string(), Some(mode.into()))
+        self.create_runtime_in(input, uuid::Uuid::new_v4().to_string(), Some(mode.into()), None, None)
     }
 
     /// Reserved identity is persisted by the switch coordinator before this write.
@@ -861,10 +865,10 @@ impl SessionManager {
         input: NewRuntimeSession,
         id: String,
     ) -> Result<SessionRecord> {
-        self.create_runtime_with_mode(input, id, None)
+        self.create_runtime_in(input, id, None, None, None)
     }
 
-    fn create_runtime_with_mode(&self, input: NewRuntimeSession, id: String, launch_mode: Option<String>) -> Result<SessionRecord> {
+    pub(crate) fn create_runtime_in(&self, input: NewRuntimeSession, id: String, launch_mode: Option<String>, worktree: Option<SessionWorktree>, worktree_source_session_id: Option<String>) -> Result<SessionRecord> {
         let kind: crate::multi_agent::AgentRuntimeKind =
             serde_json::from_value(serde_json::Value::String(input.runtime_kind.clone()))
                 .context("Runtime 类型无效")?;
@@ -874,6 +878,7 @@ impl SessionManager {
             if existing.agent_runtime_kind.as_deref() != Some(&input.runtime_kind)
                 || existing.cwd != input.cwd
                 || existing.project_id != input.project_id
+                || existing.worktree != worktree || existing.worktree_source_session_id != worktree_source_session_id
             {
                 return Err(anyhow!("预留接手身份与已有会话不匹配"));
             }
@@ -913,7 +918,9 @@ impl SessionManager {
             codex_storage: Default::default(),
             background_chat_host: false,
             project_id: input.project_id,
-            worktree: None,
+            worktree,
+            worktree_source_session_id,
+            worktree_runtime_owner: None,
             provider_id: format!("local-runtime-{runtime_kind}"),
             provider_name: runtime_label.to_string(),
             cwd: input.cwd,
@@ -935,11 +942,7 @@ impl SessionManager {
             created_at: now,
             updated_at: now,
         };
-        let mut stored = self.data.lock().unwrap();
-        let mut data = stored.clone();
-        data.sessions.push(record.clone());
-        self.persist_candidate(&mut stored, data)?;
-        Ok(record)
+        self.insert_session(record)
     }
 
     pub fn create_agent(&self, input: NewAgentSession) -> Result<SessionRecord> {
@@ -1000,6 +1003,8 @@ impl SessionManager {
             background_chat_host: false,
             project_id: None,
             worktree: None,
+            worktree_source_session_id: None,
+            worktree_runtime_owner: None,
             provider_id: "multi-agent-runtime".into(),
             provider_name: format!("{runtime_label} · {}", input.agent_name),
             cwd: input.cwd,
@@ -1021,11 +1026,32 @@ impl SessionManager {
             created_at: now,
             updated_at: now,
         };
+        self.insert_session(record)
+    }
+
+    fn insert_session(&self, record: SessionRecord) -> Result<SessionRecord> {
         let mut stored = self.data.lock().unwrap();
-        let mut data = stored.clone();
-        data.sessions.push(record.clone());
-        self.persist_candidate(&mut stored, data)?;
+        crate::worktree_management::verify_new_references(&stored.sessions, &record)?;
+        let mut next = stored.clone();
+        next.sessions.push(record.clone());
+        self.persist_candidate(&mut stored, next)?;
         Ok(record)
+    }
+
+    pub(crate) fn claim_worktree_runtime(&self, record: &SessionRecord) -> Result<()> {
+        if record.worktree.is_none() && record.worktree_source_session_id.is_none() { return Ok(()); }
+        let mut stored = self.data.lock().unwrap();
+        let mut next = stored.clone();
+        let current = next.sessions.iter_mut().find(|s| s.id == record.id).context("会话已删除")?;
+        crate::worktree_management::verify_process_owner(current)?;
+        if current.worktree_runtime_owner.is_some() { return Ok(()); }
+        current.worktree_runtime_owner = Some(crate::worktree_management::process_owner().to_owned());
+        self.persist_candidate(&mut stored, next)
+    }
+
+    pub(crate) fn with_worktree_records<T>(&self, operation: impl FnOnce(&[SessionRecord]) -> Result<T>) -> Result<T> {
+        let data = self.data.lock().map_err(|_| anyhow!("会话注册表锁损坏"))?;
+        operation(&data.sessions)
     }
 
     pub fn list(&self) -> Vec<SessionRecord> {
@@ -1271,7 +1297,7 @@ impl SessionManager {
             .iter_mut()
             .find(|session| session.id == id)
             .ok_or_else(|| anyhow!("未找到会话: {id}"))?;
-        session.cwd = worktree.path.clone();
+        session.cwd = worktree.cwd().display().to_string();
         session.worktree = Some(worktree);
         session.updated_at = now_millis();
         let updated = session.clone();
@@ -1603,6 +1629,7 @@ impl SessionManager {
             .iter_mut()
             .find(|session| session.id == id)
             .ok_or_else(|| anyhow!("未找到会话: {id}"))?;
+        crate::worktree_management::release_process_owner(session);
         session.pty_id = None;
         session.status = SessionStatus::Stopped;
         session.waiting_reason = None;
@@ -1624,6 +1651,7 @@ impl SessionManager {
         let now = now_millis();
         let mut changed = false;
         for session in &mut data.sessions {
+            changed |= crate::worktree_management::release_process_owner(session);
             if session.pty_id.take().is_some() {
                 session.status = SessionStatus::Stopped;
                 session.waiting_reason = None;
@@ -1701,7 +1729,8 @@ impl SessionManager {
         } else {
             SessionStatus::Stopped
         };
-        if session.exit_code == Some(code) && session.status == status && session.pty_id.is_none() {
+        let released = crate::worktree_management::release_process_owner(session);
+        if !released && session.exit_code == Some(code) && session.status == status && session.pty_id.is_none() {
             return Ok(Some(session.clone()));
         }
         session.pty_id = None;
@@ -1895,6 +1924,7 @@ impl SessionManager {
             }
             return Ok(());
         }
+        if crate::worktree_runtime::configure(command, record, self)? { return Ok(()); }
         let Some(kind @ "pi") = record.agent_runtime_kind.as_deref() else {
             return Ok(());
         };
@@ -2604,6 +2634,7 @@ impl SessionManager {
         let runtime_lease = crate::runtime_preferences::session_runtime(&record)?
             .map(crate::runtime_preferences::acquire)
             .transpose()?;
+        self.claim_worktree_runtime(&record)?;
         // Serialize with event application before exposing a fresh launch window.
         let _ingest = self.event_ingest_lock.lock().unwrap();
         let mut starting = self.starting_runtimes.lock().unwrap();
@@ -3367,7 +3398,7 @@ mod tests {
                     "archive-project" => { manager.archive_project_sessions("project")?; }
                     "clear-project" => { manager.clear_project("project")?; }
                     "worktree" => { manager.assign_worktree(&record.id, SessionWorktree {
-                        repo_root: ".".into(), path: "isolated-worktree".into(), branch: "task".into(),
+                        repo_root: ".".into(), path: "isolated-worktree".into(), branch: "task".into(), binding: None,
                     })?; }
                     "approval" => { manager.set_approval_policy(&record.id, ApprovalPolicy::Deny)?; }
                     "handoff" => { manager.set_handoff_plan(&record.id)?; }
@@ -3741,6 +3772,7 @@ mod tests {
         assert!(created.worktree.is_none());
 
         let worktree = crate::worktree::SessionWorktree {
+            binding: None,
             repo_root: "F:\\project\\demo".into(),
             path: "C:\\ConfigDir\\worktrees\\sessions\\abc".into(),
             branch: "crewvela/session-abcdef12".into(),

@@ -140,6 +140,32 @@ impl MultiAgentStore {
         Ok(project)
     }
 
+    /// Worktree settings need only the task ownership and checkout location, never transcripts or logs.
+    pub(crate) fn task_worktree_locations(&self) -> Result<Vec<(String, String, String, String, String, String, Option<String>)>> {
+        let connection = self.connection.lock().unwrap();
+        let mut statement = connection.prepare(
+            "SELECT p.name, t.title, p.root_path, p.id, t.id, r.id,
+                    json_extract(r.session_locator_json, '$.cwd')
+             FROM ma_runs r JOIN ma_tasks t ON t.id = r.task_id AND t.project_id = r.project_id
+             JOIN ma_projects p ON p.id = r.project_id ORDER BY r.created_at DESC"
+        )?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?,
+            row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub(crate) fn referenced_workspaces(&self) -> Result<Vec<String>> {
+        let connection = self.connection.lock().unwrap();
+        let mut statement = connection.prepare(
+            "SELECT root_path FROM ma_projects
+             UNION SELECT json_extract(session_locator_json, '$.cwd') FROM ma_runs
+                 WHERE json_type(session_locator_json, '$.cwd') = 'text'
+             UNION SELECT uri FROM ma_artifacts WHERE artifact_type IN ('workspace', 'git_commit', 'review')"
+        )?;
+        let paths = statement.query_map([], |row| row.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(paths)
+    }
+
     pub fn list_projects(&self) -> Result<Vec<MultiAgentProject>> {
         let connection = self.connection.lock().unwrap();
         let mut statement = connection.prepare(

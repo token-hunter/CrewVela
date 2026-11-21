@@ -59,6 +59,7 @@ import {
 const SIDEBAR_SHORTCUT_ICONS: Record<string, () => ReactNode> = {
   generalSettings: () => <GearSixIcon size={17} />,
   git: () => <GitBranchIcon size={17} />,
+  worktrees: () => <GitBranchIcon size={17} />,
   notifications: () => <BellIcon size={17} />,
   appearance: () => <PaletteIcon size={17} />,
   companionship: () => <HeartIcon size={17} />,

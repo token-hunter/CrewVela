@@ -32,6 +32,7 @@ import type {
   LaunchPreset,
   Project,
   SessionDirectory,
+  WorktreeOptions,
   ProviderConfig,
   SessionRecord,
   SessionTypeFilter,
@@ -1514,6 +1515,7 @@ export default function App() {
         cwd: picked,
         projectId: project?.id ?? null,
         launchMode: selection?.mode,
+        ...(selection?.worktreeOptions && { worktreeOptions: selection.worktreeOptions }),
       });
       setSessions((items) => [
         launched,
@@ -1529,7 +1531,7 @@ export default function App() {
     }
   }, [refreshSessions, selectedSessionId, sessions, showError]);
 
-  const openDeepSeekHarness = useCallback(async (project?: SessionDirectory) => {
+  const openDeepSeekHarness = useCallback(async (project?: SessionDirectory, worktreeOptions?: WorktreeOptions) => {
     if (!isRuntimeEnabled("deepseek_harness")) { showError("DeepSeek Harness 未启用或配置尚未加载"); return false; }
     if (UI_PREVIEW) {
       const id = project ? `preview-harness-${Date.now()}` : "preview-harness-session";
@@ -1548,7 +1550,7 @@ export default function App() {
     });
     if (typeof picked !== "string") return false;
     try {
-      const created = await invoke<SessionRecord>("create_deepseek_harness_session", { cwd: picked, projectId: project?.id ?? null });
+      const created = await invoke<SessionRecord>("create_deepseek_harness_session", { cwd: picked, projectId: project?.id ?? null, ...(worktreeOptions && { worktreeOptions }) });
       setSessions((items) => [created, ...items.filter((item) => item.id !== created.id)]);
       setSessionTypeFilter("all");
       setSelectedSessionId(created.id);
@@ -1560,7 +1562,7 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openZCode = useCallback(async (project?: SessionDirectory) => {
+  const openZCode = useCallback(async (project?: SessionDirectory, worktreeOptions?: WorktreeOptions) => {
     const label = "ZCode Desktop";
     if (!isRuntimeEnabled("zcode")) { showError(`${label} 未启用或配置尚未加载`); return false; }
     if (UI_PREVIEW) {
@@ -1580,7 +1582,7 @@ export default function App() {
     });
     if (typeof picked !== "string") return false;
     try {
-      const created = await invoke<SessionRecord>("create_zcode_session", { cwd: picked, projectId: project?.id ?? null });
+      const created = await invoke<SessionRecord>("create_zcode_session", { cwd: picked, projectId: project?.id ?? null, ...(worktreeOptions && { worktreeOptions }) });
       setSessions((items) => [created, ...items.filter((item) => item.id !== created.id)]);
       setSessionTypeFilter("all");
       setSelectedSessionId(created.id);
@@ -1592,7 +1594,7 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openClaudeChat = useCallback(async (project?: SessionDirectory) => {
+  const openClaudeChat = useCallback(async (project?: SessionDirectory, worktreeOptions?: WorktreeOptions) => {
     const label = "Claude Code Chat";
     if (!isRuntimeEnabled("claude_chat")) { showError(`${label} 未启用或配置尚未加载`); return false; }
     if (UI_PREVIEW) {
@@ -1612,7 +1614,7 @@ export default function App() {
     });
     if (typeof picked !== "string") return false;
     try {
-      const created = await invoke<SessionRecord>("create_claude_chat_session", { cwd: picked, projectId: project?.id ?? null });
+      const created = await invoke<SessionRecord>("create_claude_chat_session", { cwd: picked, projectId: project?.id ?? null, ...(worktreeOptions && { worktreeOptions }) });
       setSessions((items) => [created, ...items.filter((item) => item.id !== created.id)]);
       setSessionTypeFilter("all");
       setSelectedSessionId(created.id);
@@ -1624,7 +1626,7 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openCodexChat = useCallback(async (project?: SessionDirectory) => {
+  const openCodexChat = useCallback(async (project?: SessionDirectory, worktreeOptions?: WorktreeOptions) => {
     // codex_chat 原生聊天持独立启停开关；适配器驱动本机 codex CLI。
     const label = "Codex Chat";
     if (!isRuntimeEnabled("codex_chat")) { showError(`${label} 未启用或配置尚未加载`); return false; }
@@ -1645,7 +1647,7 @@ export default function App() {
     });
     if (typeof picked !== "string") return false;
     try {
-      const created = await invoke<SessionRecord>("create_codex_chat_session", { cwd: picked, projectId: project?.id ?? null });
+      const created = await invoke<SessionRecord>("create_codex_chat_session", { cwd: picked, projectId: project?.id ?? null, ...(worktreeOptions && { worktreeOptions }) });
       setSessions((items) => [created, ...items.filter((item) => item.id !== created.id)]);
       setSessionTypeFilter("all");
       setSelectedSessionId(created.id);
@@ -1657,7 +1659,7 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openKimiChat = useCallback(async (project?: SessionDirectory) => {
+  const openKimiChat = useCallback(async (project?: SessionDirectory, worktreeOptions?: WorktreeOptions) => {
     // kimi_chat 原生聊天持独立启停开关；直连本机 kimi CLI 的原生 ACP server（kimi acp）。
     const label = "Kimi Code Chat";
     if (!isRuntimeEnabled("kimi_chat")) { showError(`${label} 未启用或配置尚未加载`); return false; }
@@ -1678,7 +1680,7 @@ export default function App() {
     });
     if (typeof picked !== "string") return false;
     try {
-      const created = await invoke<SessionRecord>("create_kimi_chat_session", { cwd: picked, projectId: project?.id ?? null });
+      const created = await invoke<SessionRecord>("create_kimi_chat_session", { cwd: picked, projectId: project?.id ?? null, ...(worktreeOptions && { worktreeOptions }) });
       setSessions((items) => [created, ...items.filter((item) => item.id !== created.id)]);
       setSessionTypeFilter("all");
       setSelectedSessionId(created.id);
@@ -1690,7 +1692,7 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openOpenCodeChat = useCallback(async (project?: SessionDirectory) => {
+  const openOpenCodeChat = useCallback(async (project?: SessionDirectory, worktreeOptions?: WorktreeOptions) => {
     // opencode_chat 原生聊天持独立启停开关；直连本机 opencode CLI 的原生 ACP server（opencode acp）。
     const label = "OpenCode Chat";
     if (!isRuntimeEnabled("opencode_chat")) { showError(`${label} 未启用或配置尚未加载`); return false; }
@@ -1711,7 +1713,7 @@ export default function App() {
     });
     if (typeof picked !== "string") return false;
     try {
-      const created = await invoke<SessionRecord>("create_opencode_chat_session", { cwd: picked, projectId: project?.id ?? null });
+      const created = await invoke<SessionRecord>("create_opencode_chat_session", { cwd: picked, projectId: project?.id ?? null, ...(worktreeOptions && { worktreeOptions }) });
       setSessions((items) => [created, ...items.filter((item) => item.id !== created.id)]);
       setSessionTypeFilter("all");
       setSelectedSessionId(created.id);
@@ -1723,7 +1725,7 @@ export default function App() {
     }
   }, [isRuntimeEnabled, selectedSessionId, sessions, showError]);
 
-  const openPiChat = useCallback(async (project?: SessionDirectory) => {
+  const openPiChat = useCallback(async (project?: SessionDirectory, worktreeOptions?: WorktreeOptions) => {
     // pi_chat 原生聊天持独立启停开关；直连本机 pi CLI 的 pi --mode rpc 原生会话。
     const label = "Pi Chat";
     if (!isRuntimeEnabled("pi_chat")) { showError(`${label} 未启用或配置尚未加载`); return false; }
@@ -1744,7 +1746,7 @@ export default function App() {
     });
     if (typeof picked !== "string") return false;
     try {
-      const created = await invoke<SessionRecord>("create_pi_chat_session", { cwd: picked, projectId: project?.id ?? null });
+      const created = await invoke<SessionRecord>("create_pi_chat_session", { cwd: picked, projectId: project?.id ?? null, ...(worktreeOptions && { worktreeOptions }) });
       setSessions((items) => [created, ...items.filter((item) => item.id !== created.id)]);
       setSessionTypeFilter("all");
       setSelectedSessionId(created.id);
@@ -2681,7 +2683,7 @@ export default function App() {
             const nativeLaunchers = { deepseek_harness: openDeepSeekHarness, zcode: openZCode, claude_chat: openClaudeChat, codex_chat: openCodexChat, kimi_chat: openKimiChat, opencode_chat: openOpenCodeChat, pi_chat: openPiChat };
             const started = isCliRuntime(kind)
               ? await launchRuntimeSession(kind, directory, selection)
-              : await nativeLaunchers[kind](directory);
+              : await nativeLaunchers[kind](directory, selection.worktreeOptions);
             if (started) setCliLaunchRequest(null);
             return started;
           }} />}

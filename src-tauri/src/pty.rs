@@ -820,6 +820,10 @@ impl PtyManager {
         Ok(())
     }
 
+    pub(crate) fn has_tracking(&self, session_id: &str) -> bool {
+        self.session_arc_by_app_id(session_id).is_some()
+    }
+
     pub fn is_running(&self, id: u32) -> bool {
         let Ok(session) = self.session_arc(id) else {
             return false;

@@ -814,13 +814,13 @@ fn execute<R: tauri::Runtime>(
     let target = if let Some(target) = sessions.get(target_id) {
         target
     } else if item.state == "imported" {
-        sessions.create_runtime_with_id(
+        sessions.create_runtime_in(
             NewRuntimeSession {
                 runtime_kind: item.target_runtime.clone(),
                 cwd: source.cwd.clone(),
                 project_id: source.project_id.clone(),
             },
-            target_id.to_string(),
+            target_id.to_string(), None, None, source.worktree.as_ref().map(|_| source.id.clone()).or_else(|| source.worktree_source_session_id.clone()),
         )?
     } else {
         bail!("接手记录已删除，请恢复原会话");
@@ -1672,7 +1672,7 @@ mod tests {
         source.worktree = Some(crate::worktree::SessionWorktree {
             repo_root: fixture.root.display().to_string(),
             path: fixture.root.display().to_string(),
-            branch: "fixture-branch".into(),
+            branch: "fixture-branch".into(), binding: None,
         });
         let id = uuid::Uuid::new_v4().to_string();
         let create = || {

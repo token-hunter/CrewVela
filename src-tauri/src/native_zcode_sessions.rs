@@ -313,6 +313,14 @@ impl NativeZCodeSessions {
             .or_insert_with(|| Arc::new(Live::new()))
             .clone())
     }
+    pub(crate) fn has_worktree_runtime(&self, id: &str) -> Result<bool> {
+        let live = self.live.lock().map_err(|_| anyhow!("原生会话锁损坏"))?.get(id).cloned();
+        let Some(live) = live else { return Ok(false) };
+        if live.process_id.load(Ordering::Acquire) != 0 { return Ok(true); }
+        let worker = live.worker.lock().map_err(|_| anyhow!("原生进程锁损坏"))?;
+        Ok(worker.as_ref().is_some_and(|worker| !worker.is_finished()))
+    }
+
     pub fn snapshot(&self, id: &str) -> Result<ZCodeSnapshot> {
         let live = self.live(id)?;
         let view = live.view.lock().map_err(|_| anyhow!("ZCode Desktop 视图锁损坏"))?;
@@ -436,6 +444,8 @@ impl NativeZCodeSessions {
         sessions: &SessionManager,
         record: &SessionRecord,
     ) -> Result<ZCodeSnapshot> {
+        crate::worktree_management::verify_start(record, sessions)?;
+        sessions.claim_worktree_runtime(record)?;
         let _admission = app.try_state::<crate::runtime_admission::RuntimeAdmission>()
             .map(|admission| admission.admit()).transpose()?;
         if !is_standalone_zcode(record) || record.archived_at.is_some() {

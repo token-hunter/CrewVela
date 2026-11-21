@@ -41,6 +41,26 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
   const chatOrder = useRuntimeOrder(CHAT_AGENTS, NEW_SESSION_CHAT_ORDER_STORAGE_KEY);
   const submitting = useRef(false);
   const directory = selectedDirectory ? resolveSessionDirectory(selectedDirectory.path, projects) : null;
+  const [isolated, setIsolated] = useState(false);
+  const [baseRef, setBaseRef] = useState("HEAD");
+  const [fetchUpstream, setFetchUpstream] = useState(false);
+  const [branchAttempt, setBranchAttempt] = useState(0);
+  const [branchResult, setBranchResult] = useState<{ cwd: string; refs?: string[]; error?: string } | null>(null);
+  const cwd = directory?.path;
+  useEffect(() => {
+    let current = true;
+    setBaseRef("HEAD");
+    setFetchUpstream(false);
+    setBranchResult(null);
+    if (isolated && cwd) {
+      void invoke<string[]>("worktree_branches", { cwd }).then(refs => {
+        if (current) setBranchResult({ cwd, refs });
+      }).catch(reason => { if (current) setBranchResult({ cwd, error: String(reason) }); });
+    }
+    return () => { current = false; };
+  }, [isolated, cwd, branchAttempt]);
+  const branches = branchResult?.cwd === cwd ? branchResult : null;
+  const worktreeReady = !isolated || Boolean(branches?.refs);
   const cli = isCliRuntime(kind);
   const chatDependency = chatDependencies?.[kind];
   useEffect(() => {
@@ -76,10 +96,10 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
     <header><h2>新建会话</h2><button type="button" className="icon-button" aria-label="关闭启动设置" disabled={busy} onClick={close}><X size={19} /></button></header>
     <form onSubmit={async event => {
       event.preventDefault();
-      if (submitting.current || pickingRef.current || !directory || (cli && !choice) || !availability.ready || !availability.isRuntimeEnabled(kind)) return;
+      if (submitting.current || pickingRef.current || !directory || !worktreeReady || (cli && !choice) || !availability.ready || !availability.isRuntimeEnabled(kind)) return;
       submitting.current = true; setPending(true); setError(null);
       try {
-        const started = await onLaunch(kind, { mode, saveAsDefault: cli && saveAsDefault }, directory);
+        const started = await onLaunch(kind, { mode, saveAsDefault: cli && saveAsDefault, ...(isolated && { worktreeOptions: { baseRef, fetchUpstream } }) }, directory);
         if (!started && mounted.current) setError("尚未启动；选择已保留，可以调整后重试。");
       } catch (reason) { if (mounted.current) setError(`启动失败：${String(reason)}`); }
       finally { submitting.current = false; if (mounted.current) setPending(false); }
@@ -105,6 +125,19 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
         <p className="cli-launch-directory-path">{directory?.path ?? "尚未选择工作目录"}</p>
         <p className="cli-launch-directory-hint">{directory ? directory.id ? `会话归入「${directory.name}」项目` : "临时使用此目录，会话归入未分组" : "选择目录后即可启动；临时目录无需添加为项目。"}</p>
       </section>
+      <section className="cli-launch-directory" aria-label="工作树">
+        <label className="cli-launch-save"><input type="checkbox" checked={isolated} disabled={busy || !directory} onChange={event => setIsolated(event.target.checked)} /> 使用独立工作树</label>
+        {isolated && <>
+          <label htmlFor="worktree-base-ref">基准分支</label>
+          <select id="worktree-base-ref" value={baseRef} disabled={busy || !branches?.refs} onChange={event => setBaseRef(event.target.value)}>
+            <option value="HEAD">当前检出提交（HEAD）</option>
+            {branches?.refs?.map(ref => <option key={ref} value={ref}>{ref.replace(/^refs\/(heads|remotes)\//, "")}</option>)}
+          </select>
+          <label className="cli-launch-save"><input type="checkbox" checked={fetchUpstream} disabled={busy} onChange={event => setFetchUpstream(event.target.checked)} /> 创建前获取上游更新</label>
+          {!branches && <small role="status">正在读取 Git 分支…</small>}
+          {branches?.error && <div className="cli-launch-error" role="alert">{branches.error} <button type="button" className="btn secondary" onClick={() => setBranchAttempt(n => n + 1)}>重试</button></div>}
+        </>}
+      </section>
       {!cli && chatDependency?.needsSetup && <div className="cli-launch-chat-setup">
         <span>{chatDependency.label}</span>
         <button type="button" className="btn secondary" disabled={busy} onClick={() => setManaging(true)}>安装与版本</button>
@@ -121,7 +154,7 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
       <footer>
         {cli && <button type="button" className="cli-launch-manage" disabled={busy} onClick={() => setManaging(true)}>管理默认模式</button>}
         <button type="button" className="btn secondary" disabled={busy} onClick={close}>取消</button>
-        <button type="submit" className="btn" disabled={!directory || (cli && !choice) || !availability.ready || busy || !availability.isRuntimeEnabled(kind)}>{pending ? "正在启动…" : "启动"}</button>
+        <button type="submit" className="btn" disabled={!directory || !worktreeReady || (cli && !choice) || !availability.ready || busy || !availability.isRuntimeEnabled(kind)}>{pending ? "正在启动…" : "启动"}</button>
       </footer>
     </form>
     {managing && <RuntimeManagementDialog order={[...order.order, ...chatOrder.order]} orderError={order.error || chatOrder.error} initialInstaller={cli ? undefined : kind} onClose={() => { setChatDependencies(null); setManaging(false); }} onReorder={(kind, target, position) => {

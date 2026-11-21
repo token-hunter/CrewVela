@@ -1,0 +1,16 @@
+.worktree-settings { display: grid; gap: 24px; min-width: 0; }
+.worktree-settings > section { min-width: 0; }
+.worktree-settings h3 { margin: 0; font-size: 15px; }
+.worktree-settings p { margin: 7px 0; color: var(--text-dim); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.worktree-settings code { display: block; margin: 7px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; user-select: text; }
+.worktree-section-heading, .worktree-actions, .worktree-settings article strong { display: flex; align-items: center; gap: 8px; }
+.worktree-section-heading { justify-content: space-between; }
+.worktree-actions { flex-wrap: wrap; margin-top: 10px; }
+.worktree-actions button { display: inline-flex; align-items: center; gap: 5px; }
+.worktree-settings article { margin-top: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.worktree-settings article strong { overflow-wrap: anywhere; }
+.worktree-settings article > strong > svg { color: var(--accent); }
+.worktree-confirm { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 5px; }
+.worktree-settings .error-text { color: var(--danger); }
+.cli-launch-directory > .cli-launch-save { display: flex; align-items: center; gap: 8px; }
+.cli-launch-directory select + .cli-launch-save { margin-top: 9px; }

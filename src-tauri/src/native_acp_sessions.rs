@@ -354,6 +354,14 @@ impl NativeAcpSessions {
             .unwrap_or(false)
     }
 
+    pub(crate) fn has_worktree_runtime(&self, id: &str) -> Result<bool> {
+        let live = self.live.lock().map_err(|_| anyhow!("原生会话锁损坏"))?.get(id).cloned();
+        let Some(live) = live else { return Ok(false) };
+        if live.process_id.load(Ordering::Acquire) != 0 || live.connected.load(Ordering::Acquire) || live.busy.load(Ordering::Acquire) { return Ok(true); }
+        let connection = live.connection.try_lock().map_err(|_| anyhow!("原生连接仍在使用"))?;
+        Ok(connection.is_some())
+    }
+
     pub fn snapshot(&self, session_id: &str) -> Result<HarnessSessionSnapshot> {
         let live = self.live_session(session_id)?;
         let _publication = live.publication.lock().map_err(|_| anyhow!("{} 发布锁已损坏", self.flavor.label()))?;
@@ -395,6 +403,8 @@ impl NativeAcpSessions {
         sessions: &SessionManager,
         record: &SessionRecord,
     ) -> Result<HarnessSessionSnapshot> {
+        crate::worktree_management::verify_start(record, sessions)?;
+        sessions.claim_worktree_runtime(record)?;
         let _admission = app.try_state::<crate::runtime_admission::RuntimeAdmission>()
             .map(|gate| gate.admit()).transpose()?;
         self.ensure_record(record)?;

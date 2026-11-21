@@ -410,6 +410,8 @@ mod tests {
             codex_storage: Default::default(),
             project_id: None,
             worktree: None,
+            worktree_source_session_id: None,
+            worktree_runtime_owner: None,
             provider_id: "glm".into(),
             provider_name: "Z.AI GLM".into(),
             cwd: ".".into(),

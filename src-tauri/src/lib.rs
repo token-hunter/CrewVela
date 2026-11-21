@@ -72,6 +72,9 @@ mod windows_notification;
 mod workspace_files;
 mod workspace_trust;
 mod worktree;
+mod worktree_lifecycle;
+mod worktree_management;
+mod worktree_runtime;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -2705,6 +2708,7 @@ fn open_session(
     session_state: &SessionManager,
 ) -> Result<SessionRecord, String> {
     let _admission = pty_state.admit_start().map_err(to_err)?;
+    worktree_management::verify_start(record, session_state).map_err(to_err)?;
     runtime_preferences::ensure_session_available(record).map_err(to_err)?;
     session_switch::ensure_can_start(&record.id).map_err(to_err)?;
     if let Some(pty_id) = record.pty_id {
@@ -3358,6 +3362,7 @@ fn open_runtime_session_checked(
     _member_store: Option<&MultiAgentStore>,
 ) -> Result<SessionRecord, String> {
     let _admission = pty_state.admit_start().map_err(to_err)?;
+    worktree_management::verify_start(record, session_state).map_err(to_err)?;
     let yolo = session_switch::check_runtime_start(&record.id, yolo, switch_id).map_err(to_err)?;
     let kind = standalone_runtime_kind(record)?;
     kind.ensure_available().map_err(to_err)?;
@@ -3442,35 +3447,15 @@ fn launch_one_session(
     session_state: &SessionManager,
     action_queue: &SessionActionQueue,
 ) -> Result<SessionRecord, String> {
-    if use_worktree && !worktree::is_git_repo(std::path::Path::new(&cwd)) {
-        return Err(format!(
-            "目录 {cwd} 不在任何 Git 仓库内，无法创建独立 Worktree；请改选仓库目录或关闭 Worktree 隔离"
-        ));
-    }
-    let record = session_state
-        .create(NewSession {
-            provider_id: provider.id.clone(),
-            provider_name: provider.name.clone(),
-            cwd,
-            yolo,
-            auto_mode,
-            project_id,
-        })
-        .map_err(to_err)?;
-    let record = if use_worktree {
-        match worktree::create_session_worktree(std::path::Path::new(&record.cwd), &record.id) {
-            Ok(worktree) => session_state
-                .assign_worktree(&record.id, worktree)
-                .map_err(to_err)?,
-            Err(error) => {
-                let message = error.to_string();
-                let _ = session_state.mark_error(&record.id, message.clone());
-                return Err(message);
-            }
-        }
-    } else {
-        record
-    };
+    let cwd = if use_worktree && project_id.is_some() {
+        runtime_project_cwd(Some(cwd), project_id.as_deref(), |id| projects::get(id).map_err(to_err))?
+    } else { cwd };
+    let options = use_worktree.then(worktree::WorktreeOptions::default);
+    let record = worktree_management::create_session(session_state, &cwd, options.as_ref(),
+        |id, actual, tree| session_state.create_claude_in(NewSession {
+            provider_id: provider.id.clone(), provider_name: provider.name.clone(),
+            cwd: actual, yolo, auto_mode, project_id,
+        }, id, tree), |_| Ok(()))?;
     let lifecycle = session_state.lifecycle_lock(&record.id);
     let _guard = lifecycle.lock().unwrap();
     let record = session_state.get(&record.id).ok_or_else(|| "会话已删除".to_string())?;
@@ -3482,16 +3467,13 @@ fn launch_one_session(
             Ok(started)
         }
         Err(error) => {
-            if let Some(worktree) = &record.worktree {
-                let _ = worktree::force_remove_session_worktree(worktree);
-            }
             let _ = session_state.mark_error(&record.id, error.clone());
             Err(error)
         }
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn launch_multi(
     provider_id: String,
     cwds: Vec<String>,
@@ -3607,18 +3589,16 @@ fn launch_runtime_session(
     cwd: Option<String>,
     project_id: Option<String>,
     launch_mode: Option<String>,
+    worktree_options: Option<worktree::WorktreeOptions>,
     pty_state: State<'_, PtyManager>,
     session_state: State<'_, SessionManager>,
 ) -> Result<SessionRecord, String> {
     let mode = runtime_launch::resolve(&runtime_kind, launch_mode.as_deref(), &runtime_preferences::get().map_err(to_err)?.default_launch_modes).map_err(to_err)?;
     let cwd = runtime_project_cwd(cwd, project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
-    let record = session_state
-        .create_runtime_with_launch_mode(NewRuntimeSession {
-            runtime_kind,
-            cwd,
-            project_id,
-        }, &mode)
-        .map_err(to_err)?;
+    let record = worktree_management::create_session(&session_state, &cwd, worktree_options.as_ref(),
+        |id, actual, tree| session_state.create_runtime_in(NewRuntimeSession {
+            runtime_kind, cwd: actual, project_id,
+        }, id, Some(mode), tree, None), |_| Ok(()))?;
     let lifecycle = session_state.lifecycle_lock(&record.id);
     let _guard = lifecycle.lock().unwrap();
     let record = session_state.get(&record.id).ok_or_else(|| "会话已删除".to_string())?;
@@ -3632,14 +3612,11 @@ fn launch_runtime_session(
 }
 
 
-#[tauri::command]
-fn create_zcode_session(cwd: String, project_id: Option<String>, session_state: State<'_, SessionManager>, native_zcode: State<'_, NativeZCodeSessions>) -> Result<SessionRecord,String> {
+#[tauri::command(async)]
+fn create_zcode_session(cwd: String, project_id: Option<String>, worktree_options: Option<worktree::WorktreeOptions>, source_session_id: Option<String>, session_state: State<'_, SessionManager>, native_zcode: State<'_, NativeZCodeSessions>) -> Result<SessionRecord,String> {
     let _lease = runtime_preferences::acquire(AgentRuntimeKind::ZCode).map_err(to_err)?;
-    let cwd = acp::canonical_harness_directory(&cwd).map_err(to_err)?;
-    let cwd = runtime_project_cwd(Some(cwd), project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
-    let record = session_state.create_runtime(NewRuntimeSession { runtime_kind: "zcode".into(), cwd, project_id }).map_err(to_err)?;
-    if let Err(error) = native_zcode.register(&record.id,&record.cwd) { let _=session_state.delete(&record.id); return Err(to_err(error)); }
-    Ok(record)
+    worktree_management::create_chat(&session_state, "zcode", cwd, project_id, worktree_options, source_session_id,
+        |record| native_zcode.register(&record.id, &record.cwd))
 }
 #[tauri::command]
 fn zcode_snapshot(session_id:String,native_zcode:State<'_,NativeZCodeSessions>)->Result<ZCodeSnapshot,String> { native_zcode.snapshot(&session_id).map_err(to_err) }
@@ -3797,28 +3774,16 @@ fn answer_zcode_permission(session_id:String,request_id:String,allow:bool,native
 #[tauri::command]
 fn cancel_zcode_turn(session_id:String,native_zcode:State<'_,NativeZCodeSessions>)->Result<bool,String> {native_zcode.cancel(&session_id).map_err(to_err)}
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_deepseek_harness_session(
     cwd: String,
-    project_id: Option<String>,
+    project_id: Option<String>, worktree_options: Option<worktree::WorktreeOptions>, source_session_id: Option<String>,
     session_state: State<'_, SessionManager>,
     native_acp: State<'_, NativeAcpSessions>,
 ) -> Result<SessionRecord, String> {
     AgentRuntimeKind::DeepSeekHarness.ensure_available().map_err(to_err)?;
-    let cwd = acp::canonical_harness_directory(&cwd).map_err(to_err)?;
-    let cwd = runtime_project_cwd(Some(cwd), project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
-    let record = session_state
-        .create_runtime(NewRuntimeSession {
-            runtime_kind: "deepseek_harness".into(),
-            cwd,
-            project_id,
-        })
-        .map_err(to_err)?;
-    if let Err(error) = native_acp.register(&record.id, &record.cwd) {
-        let _ = session_state.delete(&record.id);
-        return Err(to_err(error));
-    }
-    Ok(record)
+    worktree_management::create_chat(&session_state, "deepseek_harness", cwd, project_id, worktree_options, source_session_id,
+        |record| native_acp.register(&record.id, &record.cwd))
 }
 
 #[tauri::command]
@@ -3913,28 +3878,16 @@ fn cancel_deepseek_harness_turn(
     native_acp.cancel_turn(&session_id).map_err(to_err)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_claude_chat_session(
     cwd: String,
-    project_id: Option<String>,
+    project_id: Option<String>, worktree_options: Option<worktree::WorktreeOptions>, source_session_id: Option<String>,
     session_state: State<'_, SessionManager>,
     native_claude: State<'_, NativeClaudeSessions>,
 ) -> Result<SessionRecord, String> {
     AgentRuntimeKind::ClaudeChat.ensure_available().map_err(to_err)?;
-    let cwd = acp::canonical_harness_directory(&cwd).map_err(to_err)?;
-    let cwd = runtime_project_cwd(Some(cwd), project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
-    let record = session_state
-        .create_runtime(NewRuntimeSession {
-            runtime_kind: "claude_chat".into(),
-            cwd,
-            project_id,
-        })
-        .map_err(to_err)?;
-    if let Err(error) = native_claude.0.register(&record.id, &record.cwd) {
-        let _ = session_state.delete(&record.id);
-        return Err(to_err(error));
-    }
-    Ok(record)
+    worktree_management::create_chat(&session_state, "claude_chat", cwd, project_id, worktree_options, source_session_id,
+        |record| native_claude.0.register(&record.id, &record.cwd))
 }
 
 #[tauri::command]
@@ -4021,29 +3974,17 @@ fn cancel_claude_chat_turn(
     native_claude.0.cancel_turn(&session_id).map_err(to_err)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_kimi_chat_session(
     cwd: String,
-    project_id: Option<String>,
+    project_id: Option<String>, worktree_options: Option<worktree::WorktreeOptions>, source_session_id: Option<String>,
     session_state: State<'_, SessionManager>,
     native_kimi: State<'_, NativeKimiSessions>,
 ) -> Result<SessionRecord, String> {
     // kimi_chat 原生聊天持独立启停开关；探测/升级仍复用 kimi_code CLI。
     AgentRuntimeKind::KimiChat.ensure_available().map_err(to_err)?;
-    let cwd = acp::canonical_harness_directory(&cwd).map_err(to_err)?;
-    let cwd = runtime_project_cwd(Some(cwd), project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
-    let record = session_state
-        .create_runtime(NewRuntimeSession {
-            runtime_kind: "kimi_chat".into(),
-            cwd,
-            project_id,
-        })
-        .map_err(to_err)?;
-    if let Err(error) = native_kimi.0.register(&record.id, &record.cwd) {
-        let _ = session_state.delete(&record.id);
-        return Err(to_err(error));
-    }
-    Ok(record)
+    worktree_management::create_chat(&session_state, "kimi_chat", cwd, project_id, worktree_options, source_session_id,
+        |record| native_kimi.0.register(&record.id, &record.cwd))
 }
 
 #[tauri::command]
@@ -4130,29 +4071,17 @@ fn cancel_kimi_chat_turn(
     native_kimi.0.cancel_turn(&session_id).map_err(to_err)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_opencode_chat_session(
     cwd: String,
-    project_id: Option<String>,
+    project_id: Option<String>, worktree_options: Option<worktree::WorktreeOptions>, source_session_id: Option<String>,
     session_state: State<'_, SessionManager>,
     native_opencode: State<'_, NativeOpenCodeChatSessions>,
 ) -> Result<SessionRecord, String> {
     // opencode_chat 原生聊天持独立启停开关；探测/升级仍复用 opencode CLI。
     AgentRuntimeKind::OpenCodeChat.ensure_available().map_err(to_err)?;
-    let cwd = acp::canonical_harness_directory(&cwd).map_err(to_err)?;
-    let cwd = runtime_project_cwd(Some(cwd), project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
-    let record = session_state
-        .create_runtime(NewRuntimeSession {
-            runtime_kind: "opencode_chat".into(),
-            cwd,
-            project_id,
-        })
-        .map_err(to_err)?;
-    if let Err(error) = native_opencode.0.register(&record.id, &record.cwd) {
-        let _ = session_state.delete(&record.id);
-        return Err(to_err(error));
-    }
-    Ok(record)
+    worktree_management::create_chat(&session_state, "opencode_chat", cwd, project_id, worktree_options, source_session_id,
+        |record| native_opencode.0.register(&record.id, &record.cwd))
 }
 
 #[tauri::command]
@@ -4239,29 +4168,17 @@ fn cancel_opencode_chat_turn(
     native_opencode.0.cancel_turn(&session_id).map_err(to_err)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_codex_chat_session(
     cwd: String,
-    project_id: Option<String>,
+    project_id: Option<String>, worktree_options: Option<worktree::WorktreeOptions>, source_session_id: Option<String>,
     session_state: State<'_, SessionManager>,
     native_codex: State<'_, NativeCodexChatSessions>,
 ) -> Result<SessionRecord, String> {
     // codex_chat 原生聊天持独立启停开关；适配器仍需本机 codex CLI 已登录。
     AgentRuntimeKind::CodexChat.ensure_available().map_err(to_err)?;
-    let cwd = acp::canonical_harness_directory(&cwd).map_err(to_err)?;
-    let cwd = runtime_project_cwd(Some(cwd), project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
-    let record = session_state
-        .create_runtime(NewRuntimeSession {
-            runtime_kind: "codex_chat".into(),
-            cwd,
-            project_id,
-        })
-        .map_err(to_err)?;
-    if let Err(error) = native_codex.0.register(&record.id, &record.cwd) {
-        let _ = session_state.delete(&record.id);
-        return Err(to_err(error));
-    }
-    Ok(record)
+    worktree_management::create_chat(&session_state, "codex_chat", cwd, project_id, worktree_options, source_session_id,
+        |record| native_codex.0.register(&record.id, &record.cwd))
 }
 
 #[tauri::command]
@@ -4362,29 +4279,17 @@ fn cancel_codex_chat_turn(
     native_codex.0.cancel_turn(&session_id).map_err(to_err)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_pi_chat_session(
     cwd: String,
-    project_id: Option<String>,
+    project_id: Option<String>, worktree_options: Option<worktree::WorktreeOptions>, source_session_id: Option<String>,
     session_state: State<'_, SessionManager>,
     native_pi: State<'_, NativePiSessions>,
 ) -> Result<SessionRecord, String> {
     // pi_chat 原生聊天持独立启停开关；探测/升级仍复用 pi CLI。
     AgentRuntimeKind::PiChat.ensure_available().map_err(to_err)?;
-    let cwd = acp::canonical_harness_directory(&cwd).map_err(to_err)?;
-    let cwd = runtime_project_cwd(Some(cwd), project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
-    let record = session_state
-        .create_runtime(NewRuntimeSession {
-            runtime_kind: "pi_chat".into(),
-            cwd,
-            project_id,
-        })
-        .map_err(to_err)?;
-    if let Err(error) = native_pi.register(&record.id, &record.cwd) {
-        let _ = session_state.delete(&record.id);
-        return Err(to_err(error));
-    }
-    Ok(record)
+    worktree_management::create_chat(&session_state, "pi_chat", cwd, project_id, worktree_options, source_session_id,
+        |record| native_pi.register(&record.id, &record.cwd))
 }
 
 #[tauri::command]
@@ -4762,7 +4667,7 @@ fn stop_session(
     session_state.mark_stopped(&session_id).map_err(to_err)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn archive_session(
     session_id: String,
     pty_state: State<'_, PtyManager>,
@@ -4779,6 +4684,7 @@ fn archive_session(
 ) -> Result<SessionRecord, String> {
     let lifecycle = session_state.lifecycle_lock(&session_id);
     let _lifecycle = lifecycle.lock().unwrap();
+    let archived = (|| -> Result<SessionRecord, String> {
     let record = detach_session_runtime(&session_id, &pty_state, &session_state, &action_queue)?;
     if sessions::is_standalone_zcode(&record) { native_zcode.stop(&session_id,&session_state,&app).map_err(to_err)?; return session_state.archive(&session_id).map_err(to_err); }
     if sessions::is_standalone_deepseek_harness(&record) {
@@ -4804,6 +4710,9 @@ fn archive_session(
         session_state.mark_stopped(&session_id).map_err(to_err)?;
     }
     session_state.archive(&session_id).map_err(to_err)
+    })()?;
+    worktree_management::after_archive(&app, &session_state, &archived)?;
+    Ok(archived)
 }
 
 #[tauri::command]
@@ -4811,10 +4720,12 @@ fn restore_archived_session(
     session_id: String,
     session_state: State<'_, SessionManager>,
 ) -> Result<SessionRecord, String> {
+    let lifecycle = session_state.lifecycle_lock(&session_id);
+    let _guard = lifecycle.lock().unwrap();
     session_state.restore(&session_id).map_err(to_err)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn archive_project_sessions(
     project_id: String,
     pty_state: State<'_, PtyManager>,
@@ -4850,9 +4761,18 @@ fn archive_project_sessions(
             session_state.mark_stopped(&session.id).map_err(to_err)?;
         }
     }
-    session_state
-        .archive_project_sessions(&project_id)
-        .map_err(to_err)
+    let count = session_state.archive_project_sessions(&project_id).map_err(to_err)?;
+    let mut retained = Vec::new();
+    for record in sessions.iter().filter(|record| record.worktree.is_some()) {
+        let lifecycle = session_state.lifecycle_lock(&record.id);
+        let _guard = lifecycle.lock().unwrap();
+        if let Some(archived) = session_state.get(&record.id).filter(|r| r.archived_at.is_some()) {
+            if let Err(reason) = worktree_management::after_archive(&app, &session_state, &archived) {
+                retained.push(format!("{}：{reason}", record.title));
+            }
+        }
+    }
+    if retained.is_empty() { Ok(count) } else { Err(retained.join("；")) }
 }
 
 fn detach_session_runtime(
@@ -4872,7 +4792,7 @@ fn detach_session_runtime(
     Ok(record)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_session(
     app: AppHandle,
     session_id: String,
@@ -4902,6 +4822,9 @@ fn delete_session_inner<R: tauri::Runtime>(
     let lifecycle = session_state.lifecycle_lock(&session_id);
     let _lifecycle = lifecycle.lock().unwrap();
     session_switch::protect_delete(&session_id, &session_state).map_err(to_err)?;
+    if let Some(record) = session_state.get(session_id) {
+        worktree_management::verify_process_owner(&record).map_err(to_err)?;
+    }
     let record = detach_session_runtime(&session_id, &pty_state, &session_state, &action_queue)?;
     if sessions::is_standalone_deepseek_harness(&record) {
         native_acp.stop(&session_id, &session_state, &app).map_err(to_err)?;
@@ -4914,7 +4837,15 @@ fn delete_session_inner<R: tauri::Runtime>(
     if sessions::is_standalone_zcode(&record) { native_zcode.stop(&session_id,&session_state,&app).map_err(to_err)?; }
     // Worktree 有未提交改动时拒绝删除会话，避免静默丢掉 Agent 写入的代码。
     if let Some(worktree) = &record.worktree {
-        worktree::cleanup_session_worktree(worktree).map_err(to_err)?;
+        let store = app.try_state::<MultiAgentStore>();
+        if std::path::Path::new(&worktree.path).try_exists().map_err(to_err)? {
+            worktree_management::clean_locked(session_state, &record, store.as_deref()).map_err(to_err)?;
+        } else {
+            session_state.with_worktree_records(|records| {
+                worktree_management::unshared(records, session_id, worktree)?;
+                worktree::forget_missing_checkout(worktree, session_id)
+            }).map_err(to_err)?;
+        }
     }
     if let Some(usage) = usage_state { usage.drop_session(session_id); }
     let deleted = if sessions::is_standalone_deepseek_harness(&record) {
@@ -4954,7 +4885,7 @@ fn delete_session_batch(
 }
 
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_all_sessions(
     pty_state: State<'_, PtyManager>,
     session_state: State<'_, SessionManager>,
@@ -6532,6 +6463,14 @@ pub fn run() {
             workspace_open_path,
             workspace_write_text,
             workspace_reveal_path,
+            worktree_management::worktree_branches,
+            worktree_management::worktree_overview,
+            worktree_management::worktree_set_root,
+            worktree_management::worktree_clean,
+            worktree_management::worktree_lifecycle_prepare,
+            worktree_management::worktree_lifecycle_restore,
+            worktree_lifecycle::worktree_lifecycle_get,
+            worktree_lifecycle::worktree_lifecycle_save,
             browser_control::browser_control_get,
             browser_control::browser_control_save,
             general_settings::general_settings_get,

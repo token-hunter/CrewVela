@@ -17,11 +17,24 @@ export const NATIVE_AGENT_CREATE_COMMANDS: Record<NativeAgentKind, string> = {
   opencode_chat: "create_opencode_chat_session", pi_chat: "create_pi_chat_session", zcode: "create_zcode_session",
 };
 
+type NativeAgentCreate = (command: string, args: {
+  cwd: string;
+  projectId: string | null;
+  sourceSessionId?: string;
+}) => Promise<SessionRecord>;
+
+function nativeAgentDirectory(source: SessionRecord) {
+  const directory = { cwd: source.cwd, projectId: source.projectId ?? null };
+  return source.worktree || source.worktreeSourceSessionId
+    ? { ...directory, sourceSessionId: source.id }
+    : directory;
+}
+
 /** 新建入口始终创建独立聊天，包括与来源相同的 Agent。 */
 export async function createNativeAgentConversation(source: SessionRecord, kind: NativeAgentKind,
-  create: (command: string, args: { cwd: string; projectId: string | null }) => Promise<SessionRecord>,
+  create: NativeAgentCreate,
   select: (session: SessionRecord) => void): Promise<void> {
-  const target = await create(NATIVE_AGENT_CREATE_COMMANDS[kind], { cwd: source.cwd, projectId: source.projectId ?? null });
+  const target = await create(NATIVE_AGENT_CREATE_COMMANDS[kind], nativeAgentDirectory(source));
   select(target);
 }
 
@@ -36,11 +49,11 @@ export function nativeChatTabSessions(sessions: SessionRecord[], slots: string[]
 /** 打开独立聊天，不收集交接资料，也不停止来源执行。 */
 export async function openNativeAgentConversation(sessions: SessionRecord[], source: SessionRecord, kind: NativeAgentKind,
   workspaceId: string, tabOf: (id: string) => string,
-  create: (command: string, args: { cwd: string; projectId: string | null }) => Promise<SessionRecord>,
+  create: NativeAgentCreate,
   select: (session: SessionRecord, created: boolean) => Promise<void>): Promise<void> {
   if (source.agentRuntimeKind === kind) return;
   const existing = nativeAgentCounterpart(sessions, source, kind, workspaceId, tabOf);
-  const target = existing ?? await create(NATIVE_AGENT_CREATE_COMMANDS[kind], { cwd: source.cwd, projectId: source.projectId ?? null });
+  const target = existing ?? await create(NATIVE_AGENT_CREATE_COMMANDS[kind], nativeAgentDirectory(source));
   await select(target, !existing);
 }
 

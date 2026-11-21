@@ -36,6 +36,7 @@ import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 import { AutomationIcon } from "./AutomationIcon";
 import { ArchivedSessionsPanel } from "./ArchivedSessionsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
+import { WorktreeSettingsPanel } from "./WorktreeSettingsPanel";
 import { SkillCenterPanel } from "./SkillCenterPanel";
 import { BrowserControlSettingsPanel } from "./BrowserControlSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
@@ -74,6 +75,7 @@ export type SettingsSection =
   | "automation"
   | "quickCommands"
   | "git"
+  | "worktrees"
   | "browserControl"
   | "skills"
   | "appearance"
@@ -138,6 +140,19 @@ export function SettingsDialog({
           label: "Git",
           keywords: "git 源代码控制 diff stage commit worktree",
           icon: <GitBranchIcon size={16} weight="regular" />,
+        },
+        {
+          id: "worktrees" as const,
+          label: "Worktrees",
+          keywords: "worktrees worktree 工作树 托管 环境准备 恢复",
+          icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 6.05v15.2M7.2 12.1l4.8 3.4 4.8-3.4" />
+              <circle cx="12" cy="4.25" r="1.8" />
+              <circle cx="5.75" cy="11" r="1.8" />
+              <circle cx="18.25" cy="11" r="1.8" />
+            </svg>
+          ),
         },
         {
           id: "notifications" as const,
@@ -267,6 +282,7 @@ export function SettingsDialog({
       description: "配置分支、比较基准、提交信息和安全同步策略。",
       note: "",
     },
+    worktrees: { eyebrow: "WORKTREES", title: "Worktrees", description: "管理独立会话和协作任务使用的 Git 工作树。", note: "" },
     browserControl: {
       eyebrow: "BROWSER CONTROL",
       title: "浏览器控制",
@@ -416,6 +432,8 @@ export function SettingsDialog({
               <GeneralSettingsPanel theme={resolveBaseTheme(resolvedAppearanceTheme)} />
             ) : activeSection === "git" ? (
               <GitSettingsPanel />
+            ) : activeSection === "worktrees" ? (
+              <WorktreeSettingsPanel />
             ) : activeSection === "browserControl" ? (
               <BrowserControlSettingsPanel />
             ) : activeSection === "skills" ? (
