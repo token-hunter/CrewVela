@@ -55,10 +55,6 @@
 .project-management-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; color: var(--text); text-align: left; white-space: nowrap; border: 0; border-radius: 5px; background: transparent; }
 .project-management-menu button:not(:disabled):hover { background: var(--bg-hover); }
 .project-management-service { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; margin-top: 14px; padding: 13px 0; border-block: 1px solid var(--border); }
-.project-management-service-text { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
-.project-management-service-text > span { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
-.project-management-service-text code { overflow-wrap: anywhere; }
-.project-management-cwd { color: var(--text-dim); }
 .project-management-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .project-management-status { display: inline-flex; gap: 6px; align-items: center; color: var(--text-dim); }
 .project-management-status[data-state="running"] { color: var(--success); }

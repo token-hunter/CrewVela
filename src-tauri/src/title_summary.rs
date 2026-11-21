@@ -76,21 +76,28 @@ pub fn summarize_runtime(kind: &str, prompt: &str, model: Option<&str>) -> Resul
         "claude_code" | "claude_chat" => AgentRuntimeKind::ClaudeCode,
         _ => return Err(anyhow!("{kind} 尚无安全临时摘要接口")),
     };
+    let raw = answer_without_tools(runtime, SYSTEM_PROMPT, prompt)?;
+    sanitize_title(&raw).context("独立标题摘要未返回有效标题")
+}
+
+pub(crate) fn answer_without_tools(runtime: crate::multi_agent::AgentRuntimeKind, instructions: &str, prompt: &str) -> Result<String> {
+    use crate::multi_agent::AgentRuntimeKind;
+    anyhow::ensure!(matches!(runtime, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Pi), "此 Agent 暂无独立文本接口");
     let _lease = crate::runtime_preferences::acquire(runtime)?;
     let path = if runtime == AgentRuntimeKind::ClaudeCode { resolve_claude()? }
         else { crate::multi_agent::resolve_runtime_executable(runtime).ok_or_else(|| anyhow!("摘要运行时未安装"))? };
     let mut command = summary_command(&path, runtime)?;
     if runtime == AgentRuntimeKind::Pi {
-        command.args(["--print", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-approve", "--system-prompt", SYSTEM_PROMPT, "--", prompt]);
+        command.args(["--print", "--no-session", "--no-tools", "--no-extensions", "--no-mcp", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-approve", "--system-prompt", instructions, "--", prompt]);
     } else {
-        command.args(["-p", "--output-format", "json", "--no-session-persistence", "--safe-mode", "--tools", "", "--permission-mode", "dontAsk", "--max-turns", "1", "--system-prompt", SYSTEM_PROMPT, "--", prompt]);
+        command.args(["-p", "--output-format", "json", "--no-session-persistence", "--safe-mode", "--tools", "", "--permission-mode", "dontAsk", "--max-turns", "1", "--system-prompt", instructions, "--", prompt]);
     }
     // 独立临时目录隔离项目上下文；运行时仍读取自己的账户配置。
     let directory = std::env::temp_dir().join(format!("cc-title-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&directory)?;
     command.current_dir(&directory).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)] { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
-    let result = run_runtime_summary(command, runtime == AgentRuntimeKind::Pi);
+    let result = run_runtime_text(command, runtime == AgentRuntimeKind::Pi);
     let _ = std::fs::remove_dir(&directory);
     result
 }
@@ -238,15 +245,15 @@ pub(crate) fn run_cli_until_cancelled(
     result
 }
 
-fn run_runtime_summary(command: Command, pi: bool) -> Result<String> {
+fn run_runtime_text(command: Command, pi: bool) -> Result<String> {
     let output = run_cli_with_timeout(command, None, SUMMARY_TIMEOUT, 64 * 1024, "独立标题摘要")?;
     if !output.status.success() {
         let detail: String = String::from_utf8_lossy(&output.stderr).chars().take(400).collect();
         return Err(anyhow!("独立标题摘要失败：{}（{detail}）", output.status));
     }
     let raw = String::from_utf8_lossy(&output.stdout);
-    if pi { sanitize_title(&raw) } else { parse_claude_title_response(&raw) }
-        .ok_or_else(|| anyhow!("独立标题摘要未返回有效标题"))
+    if pi { return Ok(raw.into_owned()); }
+    parse_claude_text_response(&raw).context("Agent 未返回有效文本")
 }
 
 /// 从模型输出提取单行标题：取首个非空行，去引号/书名号/结尾标点，限长。
@@ -287,6 +294,10 @@ pub fn sanitize_title(raw: &str) -> Option<String> {
 /// 命令行错误、空响应等场景 claude 可能仍输出合法 JSON 但 `num_turns=0`，
 /// 此时 `result` 字段塞的是 "Unknown command: /xxx" 之类的错误文本，必须丢弃。
 fn parse_claude_title_response(raw: &str) -> Option<String> {
+    parse_claude_text_response(raw).as_deref().and_then(sanitize_title)
+}
+
+fn parse_claude_text_response(raw: &str) -> Option<String> {
     let parsed: serde_json::Value = serde_json::from_str(raw).ok()?;
     let num_turns = parsed
         .get("num_turns")
@@ -295,8 +306,7 @@ fn parse_claude_title_response(raw: &str) -> Option<String> {
     if num_turns == 0 || parsed.get("is_error").and_then(serde_json::Value::as_bool) == Some(true) {
         return None;
     }
-    let result = parsed.get("result").and_then(|value| value.as_str())?;
-    sanitize_title(result)
+    parsed.get("result").and_then(|value| value.as_str()).map(str::to_owned)
 }
 
 #[cfg(all(test, windows))]

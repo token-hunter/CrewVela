@@ -2441,7 +2441,7 @@ export default function App() {
           void selectSession(session.id);
         }}
         projectServiceAction={project => {
-          if (!project.launch || projectServices.pending.has(project.id)) return;
+          if (projectServices.pending.has(project.id)) return;
           const status = projectServices.statuses[project.id];
           if (status?.state === "running" && status.url) {
             const url = status.url;

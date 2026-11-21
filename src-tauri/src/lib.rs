@@ -626,11 +626,12 @@ async fn edit_local_project(id: String, edit: projects::ProjectEdit, store: Stat
 }
 
 #[tauri::command]
-async fn local_project_service_start(id: String, app: AppHandle,
+async fn local_project_service_start(id: String, recheck: Option<bool>, app: AppHandle, store: State<'_, MultiAgentStore>,
     services: State<'_, multi_agent::project_preview::LocalProjectServices>) -> Result<multi_agent::project_preview::PreviewStatus, String> {
     let _admission = app.state::<runtime_admission::RuntimeAdmission>().admit().map_err(to_err)?;
     let services = services.inner().clone();
-    blocking_command(move || services.start(&id).map_err(to_err)).await
+    let store = store.inner().clone();
+    blocking_command(move || services.start(&store, &id, recheck.unwrap_or(false)).map_err(to_err)).await
 }
 
 #[tauri::command]

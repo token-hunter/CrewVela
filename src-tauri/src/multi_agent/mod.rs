@@ -9,6 +9,7 @@ mod managed_delivery;
 mod governance;
 pub(crate) mod project_git;
 pub(crate) mod project_preview;
+mod project_launch;
 mod plan_validation;
 mod runtime;
 mod store;

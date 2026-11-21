@@ -83,9 +83,12 @@ pub fn list() -> Result<Vec<Project>> {
 }
 
 pub fn get(id: &str) -> Result<Option<Project>> {
-    Ok(list()?.into_iter().find(|project| project.id == id))
+    get_at(&projects_path()?, id)
 }
 
+pub(crate) fn get_at(path: &Path, id: &str) -> Result<Option<Project>> {
+    Ok(load_from(path)?.projects.into_iter().find(|project| project.id == id))
+}
 /// 目录 basename 作为默认项目名；取不到（如盘符根目录）回退完整路径。
 fn default_name(path: &str) -> String {
     let trimmed = path.trim_end_matches(['/', '\\']);
@@ -182,7 +185,7 @@ pub fn update(id: &str, name: Option<&str>, badge_color: Option<&str>) -> Result
     update_at(&projects_path()?, id, name, badge_color)
 }
 
-fn edit_at(file_path: &Path, id: &str, edit: ProjectEdit) -> Result<Project> {
+pub(crate) fn edit_at(file_path: &Path, id: &str, edit: ProjectEdit) -> Result<Project> {
     let _guard = STORE_LOCK.lock().map_err(|_| anyhow!("项目配置锁不可用"))?;
     let mut file = load_from(file_path)?;
     let index = file.projects.iter().position(|project| project.id == id)

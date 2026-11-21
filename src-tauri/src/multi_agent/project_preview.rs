@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::{Component, Path, PathBuf};
@@ -28,14 +28,14 @@ pub(super) enum DeliveryDemo {
     Unavailable { error: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PreviewConfig {
-    program: String,
+    pub(super) program: String,
     #[serde(default)]
-    args: Vec<String>,
-    working_directory: String,
-    url: Option<String>,
+    pub(super) args: Vec<String>,
+    pub(super) working_directory: String,
+    pub(super) url: Option<String>,
 }
 
 impl PreviewConfig {
@@ -238,9 +238,9 @@ mod tests {
         let second = registered("media", "server");
         let services = LocalProjectServices::default();
         {
-            let mut values = services.0.lock().unwrap();
-            LocalProjectServices::start_locked(&mut values, &first).unwrap();
-            LocalProjectServices::start_locked(&mut values, &second).unwrap();
+            let mut values = services.instances.lock().unwrap();
+            LocalProjectServices::start_locked(&mut values, &first, false).unwrap();
+            LocalProjectServices::start_locked(&mut values, &second, false).unwrap();
         }
         let await_url = |id: &str| {
             let deadline = Instant::now() + Duration::from_secs(10);
@@ -433,6 +433,103 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn agent_manifest_starts_local_project_twice_without_changing_the_delivered_demo() {
+        if which::which("node").is_err() || which::which("git").is_err() { return; }
+        let root = std::env::temp_dir().join(format!("crewvela-local-manifest-{}", uuid::Uuid::new_v4()));
+        let checkout = root.join("checkout");
+        std::fs::create_dir_all(checkout.join("public")).unwrap();
+        let sample = std::env::var_os("CREWVELA_PREVIEW_TEST_CONVERTER").map(PathBuf::from);
+        if let Some(sample) = &sample {
+            for file in ["server.js", "public/index.html", MANIFEST] {
+                std::fs::copy(sample.join(file), checkout.join(file)).unwrap();
+            }
+        } else {
+            std::fs::write(checkout.join(MANIFEST), r#"{"program":"node","args":["server.js"],"workingDirectory":".","url":null}"#).unwrap();
+            std::fs::write(checkout.join("public/index.html"), "delivery version").unwrap();
+            std::fs::write(checkout.join("server.js"), r#"
+                const http = require('node:http'), fs = require('node:fs');
+                const server = http.createServer((q,r) => r.end(fs.readFileSync('public/index.html')));
+                server.listen(Number(process.env.PORT), '127.0.0.1', () => console.log('http://127.0.0.1:' + server.address().port));
+            "#).unwrap();
+        }
+        git(&checkout, &["init", "-b", "main"]).unwrap();
+        GitFixture::commit(&checkout, "Agent registers launch configuration");
+        let commit = git_head(&checkout).unwrap();
+        let stored_config = PreviewConfig::from_delivery(&checkout, &commit).unwrap().unwrap();
+        let marker = "CREWVELA_CURRENT_CHECKOUT_ONLY";
+        let html = checkout.join("public/index.html");
+        let current = std::fs::read_to_string(&html).unwrap() + marker;
+        std::fs::write(&html, current).unwrap();
+        let store = MultiAgentStore::open_at(root.join("team.db")).unwrap();
+        let team = store.create_project(super::super::CreateProjectInput { name: "Converter team".into(), goal: "deliver".into(),
+            root_path: checkout.display().to_string(), default_branch: "main".into() }).unwrap();
+        let mut delivery = ManagedDelivery::new(super::super::managed_delivery::ManagedTarget {
+            root: team.root_path.clone(), branch: "main".into(), base: commit.clone(),
+            planner: "fixture".into(), mode: Default::default(), members: Default::default(),
+        });
+        delivery.status = "completed".into();
+        delivery.commit = Some(commit);
+        delivery.preview = Some(stored_config.clone());
+        delivery.demo = Some(DeliveryDemo::Preparing);
+        let plan = super::super::ConversationExecutionPlan {
+            id: "plan".into(), project_id: team.id.clone(), round_id: "round".into(), message_id: "message".into(),
+            summary: String::new(), tasks: vec![], status: "applied".into(), task_ids: vec![], created_at: 1, managed: Some(delivery),
+        };
+        store.connection.lock().unwrap().execute("INSERT INTO ma_conversation_plans(id,project_id,round_id,data_json) VALUES(?1,?2,?3,?4)",
+            params![plan.id, team.id, plan.round_id, serde_json::to_string(&plan).unwrap()]).unwrap();
+        let previews = ProjectPreviews::default();
+        previews.start(&store, &team.id, &plan.id, None).unwrap();
+        let demo_url = wait_until(&previews, &team.id, "running").url.unwrap();
+        let projects_file = root.join("projects.json");
+        std::fs::write(&projects_file, serde_json::to_vec(&serde_json::json!({"version": 1, "projects": [{
+            "id": "converter", "name": "单位换算器", "path": checkout, "badgeColor": "", "createdAt": 0, "updatedAt": 0
+        }]})).unwrap()).unwrap();
+        let get_page = |url: &str| {
+            let url = local_url(url).unwrap();
+            let mut conn = TcpStream::connect(local_addresses(&url)[0]).unwrap();
+            conn.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let path = url.query().map_or_else(|| url.path().to_owned(), |query| format!("{}?{query}", url.path()));
+            write!(conn, "GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").unwrap();
+            let mut page = String::new();
+            conn.read_to_string(&mut page).unwrap();
+            page
+        };
+        let local = LocalProjectServices::default();
+        let mut previous_save = None;
+        for _ in 0..2 {
+            local.start_at(&store, &projects_file, "converter", false).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let local_url = loop {
+                let status = local.status("converter");
+                if status.state == "running" { break status.url.unwrap(); }
+                assert!(Instant::now() < deadline, "{:?} {:?}", status.error, status.logs);
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            let registered = crate::projects::get_at(&projects_file, "converter").unwrap().unwrap();
+            assert_eq!(registered.launch.as_ref(), Some(&stored_config));
+            if let Some(previous) = previous_save { assert_eq!(previous, registered.updated_at); }
+            previous_save = Some(registered.updated_at);
+            assert!(get_page(&local_url).contains(marker));
+            assert!(!get_page(&demo_url).contains(marker));
+            if sample.is_some() {
+                let api = format!("{local_url}api/convert?value=25&from=celsius&to=fahrenheit");
+                assert!(get_page(&api).contains(r#"{"ok":true,"result":77}"#));
+            }
+            assert_eq!(local.stop("converter").state, "idle");
+            assert!(readiness(&super::local_url(&local_url).unwrap()).is_none());
+            assert_eq!(readiness(&super::local_url(&demo_url).unwrap()), Some(200));
+        }
+        assert_eq!(previews.stop(&team.id, &plan.id).state, "idle");
+        let restart = previews.start(&store, &team.id, &plan.id, None).unwrap();
+        assert!(matches!(restart, PreviewStart::Status { .. }));
+        let restarted_demo = wait_until(&previews, &team.id, "running").url.unwrap();
+        assert!(!get_page(&restarted_demo).contains(marker));
+        previews.stop(&team.id, &plan.id);
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     struct GitFixture;
     impl GitFixture {
         fn commit(project: &Path, message: &str) {
@@ -551,10 +648,11 @@ struct Instance {
     started: Instant,
     last_http_status: Option<u16>,
     local: bool,
+    dynamic_port: bool,
 }
 
 impl Instance {
-    fn launch(config: &PreviewConfig, root: &Path, checkout: Option<PreviewCheckout>, local: bool) -> Result<Self> {
+    fn launch(config: &PreviewConfig, root: &Path, checkout: Option<PreviewCheckout>, local: bool, dynamic_port: bool) -> Result<Self> {
         let cwd = config.validate(checkout.as_ref().map_or(root, |checkout| checkout.project_path.as_path()))?;
         let fixed_url = config.url.as_deref().map(local_url).transpose()?;
         if let Some(url) = &fixed_url {
@@ -568,7 +666,7 @@ impl Instance {
         let mut command = super::command_for_path(&executable);
         command.args(&config.args).current_dir(external_command_path(&cwd))
             .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        if fixed_url.is_none() && !local {
+        if fixed_url.is_none() && dynamic_port {
             command.env("PORT", "0");
         }
         let (mut child, ownership) =
@@ -580,7 +678,7 @@ impl Instance {
             process: Some(PreviewProcess { child, _ownership: ownership, _checkout: checkout }),
             output, fixed_url,
             status: PreviewStatus { state: "starting", ..Default::default() },
-            started: Instant::now(), last_http_status: None, local,
+            started: Instant::now(), last_http_status: None, local, dynamic_port,
         })
     }
 
@@ -621,7 +719,7 @@ impl Instance {
             return false;
         }
         match process.child.try_wait() {
-            Ok(Some(exit)) if self.local && exit.success() => {
+            Ok(Some(exit)) if self.local && !self.dynamic_port && self.fixed_url.is_none() && exit.success() => {
                 self.finish(None);
                 if self.status.state == "idle" { self.status.state = "completed"; }
                 return false;
@@ -636,7 +734,7 @@ impl Instance {
             }
             Ok(None) => {}
         }
-        if self.local && self.fixed_url.is_none() {
+        if self.local && self.fixed_url.is_none() && !self.dynamic_port {
             self.status.state = "running";
             if self.status.url.is_none() {
                 let url = self.output.lock().unwrap().discovered_url.clone();
@@ -694,23 +792,53 @@ type PreviewInstances = HashMap<(String, String), Arc<Mutex<Instance>>>;
 pub(crate) struct ProjectPreviews(Arc<Mutex<PreviewInstances>>);
 
 #[derive(Clone, Default)]
-pub(crate) struct LocalProjectServices(Arc<Mutex<HashMap<String, Arc<Mutex<Instance>>>>>);
+pub(crate) struct LocalProjectServices {
+    instances: Arc<Mutex<HashMap<String, Arc<Mutex<Instance>>>>>,
+    preparing: Arc<Mutex<HashSet<String>>>,
+}
+
+struct PreparingProject<'a>(&'a Mutex<HashSet<String>>, &'a str);
+impl Drop for PreparingProject<'_> {
+    fn drop(&mut self) { self.0.lock().unwrap().remove(self.1); }
+}
 
 impl LocalProjectServices {
-    pub(crate) fn start(&self, id: &str) -> Result<PreviewStatus> {
-        let mut instances = self.0.lock().unwrap();
-        let project = crate::projects::get(id)?.context("找不到本地项目")?;
-        Self::start_locked(&mut instances, &project)
+    pub(crate) fn start(&self, store: &MultiAgentStore, id: &str, recheck: bool) -> Result<PreviewStatus> {
+        self.start_at(store, &crate::projects::projects_path()?, id, recheck)
     }
 
-    fn start_locked(instances: &mut HashMap<String, Arc<Mutex<Instance>>>, project: &crate::projects::Project) -> Result<PreviewStatus> {
+    fn start_at(&self, store: &MultiAgentStore, projects_file: &Path, id: &str, recheck: bool) -> Result<PreviewStatus> {
+        let reservation = {
+            let mut preparing = self.preparing.lock().unwrap();
+            let instances = self.instances.lock().unwrap();
+            if let Some(entry) = instances.get(id) {
+                let entry = entry.lock().unwrap();
+                if entry.process.is_some() { return Ok(entry.status(false)); }
+            }
+            ensure!(preparing.insert(id.into()), "正在识别本项目的启动方式");
+            PreparingProject(&self.preparing, id)
+        };
+        let mut project = crate::projects::get_at(projects_file, id)?.context("找不到本地项目")?;
+        ensure!(project.archived_at.is_none(), "请先恢复已归档的项目");
+        let (config, from_manifest) = super::project_launch::resolve(&project, recheck, store)?;
+        let mut instances = self.instances.lock().unwrap();
+        if project.launch.as_ref() != Some(&config) {
+            project = crate::projects::edit_at(projects_file, id, crate::projects::ProjectEdit::Launch { config: Some(config) })?;
+        }
+        let result = Self::start_locked(&mut instances, &project, from_manifest);
+        drop(instances);
+        drop(reservation);
+        result
+    }
+
+    fn start_locked(instances: &mut HashMap<String, Arc<Mutex<Instance>>>, project: &crate::projects::Project, dynamic_port: bool) -> Result<PreviewStatus> {
         ensure!(project.archived_at.is_none(), "请先恢复已归档的项目");
         if let Some(entry) = instances.get(&project.id) {
             let entry = entry.lock().unwrap();
             if entry.process.is_some() { return Ok(entry.status(false)); }
         }
         let config = project.launch.as_ref().context("请先保存启动配置")?;
-        let entry = Arc::new(Mutex::new(Instance::launch(config, Path::new(&project.path), None, true)?));
+        let entry = Arc::new(Mutex::new(Instance::launch(config, Path::new(&project.path), None, true, dynamic_port)?));
         let status = entry.lock().unwrap().status(false);
         let observer = Arc::downgrade(&entry);
         instances.insert(project.id.clone(), entry);
@@ -725,18 +853,18 @@ impl LocalProjectServices {
     }
 
     pub(crate) fn statuses(&self) -> HashMap<String, PreviewStatus> {
-        self.0.lock().unwrap().iter()
+        self.instances.lock().unwrap().iter()
             .map(|(id, entry)| (id.clone(), entry.lock().unwrap().status(false)))
             .collect()
     }
 
     pub(crate) fn status(&self, id: &str) -> PreviewStatus {
-        self.0.lock().unwrap().get(id)
+        self.instances.lock().unwrap().get(id)
             .map_or_else(PreviewStatus::default, |entry| entry.lock().unwrap().status(true))
     }
 
     pub(crate) fn stop(&self, id: &str) -> PreviewStatus {
-        self.0.lock().unwrap().get(id).map_or_else(PreviewStatus::default, |entry| {
+        self.instances.lock().unwrap().get(id).map_or_else(PreviewStatus::default, |entry| {
             let mut entry = entry.lock().unwrap();
             entry.finish(None);
             entry.status(false)
@@ -746,7 +874,9 @@ impl LocalProjectServices {
     pub(crate) fn edit(&self, id: &str, edit: crate::projects::ProjectEdit) -> Result<crate::projects::Project> {
         use crate::projects::ProjectEdit;
         let affects_launch = matches!(edit, ProjectEdit::Directory { .. } | ProjectEdit::Archive { .. } | ProjectEdit::Launch { .. });
-        let mut instances = self.0.lock().unwrap();
+        let preparing = self.preparing.lock().unwrap();
+        ensure!(!preparing.contains(id) || matches!(edit, ProjectEdit::Opened), "请等待本项目完成启动识别");
+        let mut instances = self.instances.lock().unwrap();
         if affects_launch {
             ensure!(instances.get(id).is_none_or(|entry| entry.lock().unwrap().process.is_none()),
                 "请先停止本项目的开发服务");
@@ -757,7 +887,9 @@ impl LocalProjectServices {
     }
 
     pub(crate) fn delete(&self, id: &str) -> Result<()> {
-        let mut instances = self.0.lock().unwrap();
+        let preparing = self.preparing.lock().unwrap();
+        ensure!(!preparing.contains(id), "请等待本项目完成启动识别");
+        let mut instances = self.instances.lock().unwrap();
         ensure!(instances.get(id).is_none_or(|entry| entry.lock().unwrap().process.is_none()),
             "请先停止本项目的开发服务");
         crate::projects::delete(id)?;
@@ -766,7 +898,7 @@ impl LocalProjectServices {
     }
 
     pub(crate) fn stop_all(&self) -> Result<()> {
-        for (id, entry) in self.0.lock().unwrap().iter() {
+        for (id, entry) in self.instances.lock().unwrap().iter() {
             let mut entry = entry.lock().unwrap();
             if entry.process.is_none() { continue; }
             entry.finish(None);
@@ -851,7 +983,7 @@ impl ProjectPreviews {
             }
             None
         };
-        let entry = Arc::new(Mutex::new(Instance::launch(&config, root, checkout, false)?));
+        let entry = Arc::new(Mutex::new(Instance::launch(&config, root, checkout, false, true)?));
         let status = entry.lock().unwrap().status(false);
         let observer = Arc::downgrade(&entry);
         instances.insert(key.clone(), entry);

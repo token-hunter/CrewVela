@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Archive, ArrowSquareOut, CaretDown, CaretRight, DotsThree, FileText, FolderSimple, LinkSimple, MagnifyingGlass, PencilSimple, Play, Plus, Stop, X } from "@phosphor-icons/react";
 import { projectServiceActive, type LocalProjectServices } from "../hooks/useLocalProjectServices";
-import type { MultiAgentProject, Project, ProjectPreviewConfig, LocalProjectServiceStatus } from "../types";
+import type { MultiAgentProject, Project, LocalProjectServiceStatus } from "../types";
 import { Modal } from "./ui/Modal";
 import "../styles/project-management.css";
 
@@ -18,25 +18,20 @@ interface Props {
   onBrowse?: (url: string) => void;
 }
 
-type EditKind = "rename" | "directory" | "archive" | "launch" | "collaboration";
+type EditKind = "rename" | "directory" | "archive" | "collaboration";
 const titles: Record<EditKind, string> = {
   rename: "重命名项目", directory: "修改项目目录", archive: "归档项目",
-  launch: "编辑启动配置", collaboration: "关联协作项目",
+  collaboration: "关联协作项目",
 };
 const labels: Record<LocalProjectServiceStatus["state"], string> = {
   idle: "未运行", starting: "正在启动", running: "运行中", completed: "已完成", failed: "启动失败", stopFailed: "停止待确认",
 };
-const formatCommand = (launch: ProjectPreviewConfig) => [launch.program, ...launch.args.map(arg => /\s/.test(arg) ? JSON.stringify(arg) : arg)].join(" ");
 
 function ProjectEditDialog({ project, kind, onSaved, onClose }: {
   project: Project; kind: EditKind; onSaved: (project: Project) => void; onClose: () => void;
 }) {
   const [name, setName] = useState(project.name);
   const [path, setPath] = useState(project.path);
-  const [program, setProgram] = useState(project.launch?.program ?? "");
-  const [args, setArgs] = useState(project.launch?.args.join("\n") ?? "");
-  const [directory, setDirectory] = useState(project.launch?.workingDirectory ?? ".");
-  const [url, setUrl] = useState(project.launch?.url ?? "");
   const [linked, setLinked] = useState(project.collaborationProjectIds ?? []);
   const [available, setAvailable] = useState<MultiAgentProject[] | null>(null);
   const [error, setError] = useState("");
@@ -65,8 +60,7 @@ function ProjectEditDialog({ project, kind, onSaved, onClose }: {
       }
       const edit = kind === "directory" ? { kind, path: path.trim() }
         : kind === "archive" ? { kind, archived: project.archivedAt == null }
-        : kind === "collaboration" ? { kind, ids: linked.filter(id => available?.some(item => item.id === id)) }
-        : { kind, config: { program: program.trim(), args: args.split(/\r?\n/).filter(line => line.trim()), workingDirectory: directory.trim() || ".", url: url.trim() || null } };
+        : { kind, ids: linked.filter(id => available?.some(item => item.id === id)) };
       onSaved(await invoke<Project>("edit_local_project", { id: project.id, edit }));
     } catch (reason) { setError(String(reason)); }
     finally { inFlight.current = false; setSaving(false); }
@@ -95,12 +89,6 @@ function ProjectEditDialog({ project, kind, onSaved, onClose }: {
         <p>新会话使用新目录，已有会话保留原工作目录。</p>
       </>}
       {kind === "archive" && <p>{project.archivedAt == null ? `归档「${project.name}」并从主界面项目列表收起。已有会话和项目文件会保留。` : `将「${project.name}」恢复到主界面项目列表。`}</p>}
-      {kind === "launch" && <>
-        <label>启动程序<input required disabled={saving} placeholder="npm" value={program} onChange={event => setProgram(event.target.value)} /></label>
-        <label>启动参数（每行一个）<textarea rows={3} disabled={saving} placeholder={"run\ndev"} value={args} onChange={event => setArgs(event.target.value)} /></label>
-        <label>工作目录<input disabled={saving} placeholder="." value={directory} onChange={event => setDirectory(event.target.value)} /></label>
-        <label>本机地址（可选）<input disabled={saving} placeholder="http://127.0.0.1:5173/" value={url} onChange={event => setUrl(event.target.value)} /></label>
-      </>}
       {kind === "collaboration" && <div className="project-management-links">
         {!available && !error && <p role="status">正在读取协作项目…</p>}
         {available?.length === 0 && <p>可以先在协作中心创建协作项目。</p>}
@@ -112,7 +100,7 @@ function ProjectEditDialog({ project, kind, onSaved, onClose }: {
       {error && <p className="project-management-error" role="alert">{error}</p>}
       <footer>
         <button ref={cancel} className="btn secondary" type="button" disabled={saving} onClick={onClose}>取消</button>
-        <button className="btn" type="submit" disabled={saving || (kind === "rename" && !name.trim()) || (kind === "directory" && !path.trim()) || (kind === "launch" && !program.trim()) || (kind === "collaboration" && !available)}>{saving ? "处理中…" : kind === "archive" ? title : "保存"}</button>
+        <button className="btn" type="submit" disabled={saving || (kind === "rename" && !name.trim()) || (kind === "directory" && !path.trim()) || (kind === "collaboration" && !available)}>{saving ? "处理中…" : kind === "archive" ? title : "保存"}</button>
       </footer>
     </form>
   </Modal>;
@@ -174,9 +162,9 @@ export function ProjectManagementPanel({ projects, activeProjectId, services, on
     try { await onOpen(project); } catch (reason) { setError(String(reason)); }
     finally { setOpening(null); }
   };
-  const changeService = async (id: string, action: "start" | "stop") => {
+  const changeService = async (id: string, action: "start" | "stop" | "recheck") => {
     setError("");
-    try { await services?.change(id, action); } catch (reason) { setError(String(reason)); }
+    try { await services?.change(id, action); } catch { /* The project-specific error is shown on its card. */ }
   };
   const renderProject = (project: Project) => {
     const isOpen = selected === project.id;
@@ -184,6 +172,7 @@ export function ProjectManagementPanel({ projects, activeProjectId, services, on
     const status = services?.statuses[project.id];
     const running = projectServiceActive(status);
     const working = services?.pending.has(project.id);
+    const serviceError = services?.startErrors[project.id] || status?.error;
     const details = `${listId}-${project.id}`;
     return <article key={project.id} className="project-management-card">
       <header>
@@ -214,20 +203,20 @@ export function ProjectManagementPanel({ projects, activeProjectId, services, on
       </header>
       <div id={details} hidden={!isOpen}>
         <div className="project-management-service">
-          <div className="project-management-service-text"><strong>本地开发服务</strong>
-            {project.launch && <span><code>{formatCommand(project.launch)}</code><span className="project-management-cwd">工作目录 <code>{project.launch.workingDirectory}</code></span></span>}
-          </div>
+          <strong>本地开发服务</strong>
           <div className="project-management-actions">
-            {project.launch && <span className="project-management-status" data-state={status?.state ?? "idle"}>{status?.state === "running" && <span className="project-management-dot" />}{labels[status?.state ?? "idle"]}</span>}
+            {!archived && <span className="project-management-status" data-state={status?.state ?? "idle"}>{status?.state === "running" && <span className="project-management-dot" />}{working && !running ? "正在准备启动" : labels[status?.state ?? "idle"]}</span>}
             {status?.state === "running" && status.url && onBrowse && <button type="button" className="btn secondary" onClick={() => { if (status.url) onBrowse(status.url); }}><ArrowSquareOut size={16} />打开页面</button>}
             {status && <button type="button" className="btn secondary" onClick={() => setLogs(project)}><FileText size={16} />日志</button>}
-            {!archived && project.launch && services && <button type="button" className="btn secondary project-management-primary" disabled={working} onClick={() => void changeService(project.id, running ? "stop" : "start")}>
-              {running ? <Stop size={16} /> : <Play size={16} />}{working ? "处理中…" : running ? "停止" : "启动"}
+            {!archived && services && <button type="button" className="btn secondary project-management-primary" disabled={working} onClick={() => void changeService(project.id, running ? "stop" : "start")}>
+              {running ? <Stop size={16} /> : <Play size={16} />}{running ? "停止项目" : "启动项目"}
             </button>}
-            <button type="button" className="btn secondary" disabled={running || working} title={running ? "停止开发服务后可修改配置" : undefined} onClick={() => setDialog({ project, kind: "launch" })}>{project.launch ? "编辑启动配置" : "添加启动配置"}</button>
           </div>
         </div>
-        {status?.error && <p className="project-management-error" role="alert">{status.error}</p>}
+        {serviceError && <div>
+          <p className="project-management-error" role="alert">{serviceError}</p>
+          {!archived && !running && services && <button className="btn secondary" type="button" disabled={working} onClick={() => void changeService(project.id, "recheck")}>重新识别启动方式</button>}
+        </div>}
         <div className="project-management-association">
           <button type="button" onClick={() => setDialog({ project, kind: "collaboration" })}><LinkSimple size={17} />关联协作<CaretRight size={14} /></button>
           {collaboration.filter(item => project.collaborationProjectIds?.includes(item.id)).map(item =>

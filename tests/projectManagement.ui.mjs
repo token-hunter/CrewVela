@@ -15,7 +15,7 @@ try {
     const invoke = mock.invoke.bind(mock);
     const projects = await invoke("list_projects", {});
     const states = {}, calls = [];
-    window.projectManagementMock = { projects, states, calls };
+    window.projectManagementMock = { projects, states, calls, failStart: "" };
     mock.cliLaunch.pickerValue = "F:\\project-fixture";
     mock.invoke = async (command, args = {}) => {
       if (command === "list_projects") return structuredClone(projects);
@@ -46,7 +46,11 @@ try {
         return structuredClone(project);
       }
       if (command === "local_project_service_statuses") return structuredClone(states);
-      if (command === "local_project_service_start") return (states[args.id] = { state: "running" });
+      if (command === "local_project_service_start") {
+        calls.push({ command, ...args });
+        if (window.projectManagementMock.failStart === args.id && !args.recheck) throw Error("未找到明确的启动入口");
+        return (states[args.id] = { state: "running" });
+      }
       if (command === "local_project_service_stop") return (states[args.id] = { state: "idle" });
       if (command === "local_project_service_logs") return { ...states[args.id], logs: `test log for ${args.id}` };
       return invoke(command, args);
@@ -87,20 +91,23 @@ try {
   await save("修改项目目录");
   await card("单位换算器").getByText("F:\\converter-moved", { exact: true }).waitFor();
 
-  const configure = async (name, program, args, dir) => {
+  const start = async name => {
     const entry = card(name);
     const title = entry.getByRole("button", { name, exact: true });
     if (await title.getAttribute("aria-expanded") !== "true") await title.click();
-    await entry.getByRole("button", { name: "添加启动配置" }).click();
-    await page.getByLabel("启动程序", { exact: true }).fill(program);
-    await page.getByLabel("启动参数（每行一个）", { exact: true }).fill(args);
-    await page.getByRole("dialog", { name: "编辑启动配置", exact: true }).getByRole("textbox", { name: "工作目录", exact: true }).fill(dir);
-    await save("编辑启动配置");
-    await entry.getByRole("button", { name: "启动", exact: true }).click();
+    assert.equal(await entry.getByRole("button", { name: /启动配置/ }).count(), 0);
+    await entry.getByRole("button", { name: "启动项目", exact: true }).click();
     await entry.getByText("运行中", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("dialog", { name: "编辑启动配置" }).count(), 0);
   };
-  await configure("单位换算器", "npm", "run\ndev", "apps/web");
-  await configure("Second project", "python", "app.py", "server");
+  await start("单位换算器");
+  await start("Second project");
+  await card("Second project").getByRole("button", { name: "停止项目", exact: true }).click();
+  await page.evaluate(() => { window.projectManagementMock.failStart = "second-project"; });
+  await card("Second project").getByRole("button", { name: "启动项目", exact: true }).click();
+  await card("Second project").getByRole("alert").filter({ hasText: "未找到明确的启动入口" }).waitFor();
+  await card("Second project").getByRole("button", { name: "重新识别启动方式", exact: true }).click();
+  await card("Second project").getByText("运行中", { exact: true }).waitFor();
   await card("单位换算器").getByRole("button", { name: "单位换算器", exact: true }).click();
   if (process.env.CREWVELA_PROJECT_SCREENSHOT) await page.screenshot({ path: process.env.CREWVELA_PROJECT_SCREENSHOT });
   await page.setViewportSize({ width: 820, height: 640 });
@@ -110,9 +117,13 @@ try {
   const logs = page.getByRole("dialog", { name: "单位换算器的开发服务日志" });
   await logs.getByText("test log for fixture-project").waitFor();
   await logs.getByRole("button", { name: "关闭日志" }).click();
-  await card("单位换算器").getByRole("button", { name: "停止", exact: true }).click();
+  await card("单位换算器").getByRole("button", { name: "停止项目", exact: true }).click();
   await card("单位换算器").getByText("未运行", { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => window.projectManagementMock.states["second-project"].state), "running");
+  await start("单位换算器");
+  assert.equal(await page.evaluate(() => window.projectManagementMock.calls.filter(call => call.command === "local_project_service_start" && call.id === "fixture-project").length), 2);
+  await card("单位换算器").getByRole("button", { name: "停止项目", exact: true }).click();
+  await card("单位换算器").getByText("未运行", { exact: true }).waitFor();
   await page.setViewportSize({ width: 820, height: 500 });
   const linkButton = card("单位换算器").getByRole("button", { name: "关联协作", exact: true });
   await linkButton.click();

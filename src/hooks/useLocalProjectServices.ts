@@ -10,6 +10,8 @@ export function useLocalProjectServices(enabled: boolean) {
   const [statuses, setStatuses] = useState<Record<string, LocalProjectServiceStatus>>({});
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const [readError, setReadError] = useState("");
+  const [startErrors, setStartErrors] = useState<Record<string, string>>({});
+  const [observing, setObserving] = useState(false);
   const actions = useRef(new Set<string>());
   const request = useRef(0);
   const refresh = useCallback(async () => {
@@ -23,29 +25,35 @@ export function useLocalProjectServices(enabled: boolean) {
     }
   }, []);
   useEffect(() => {
-    if (!enabled) { setStatuses({}); setReadError(""); return; }
+    if (!enabled && !observing) { setStatuses({}); setReadError(""); return; }
     void refresh();
     const timer = window.setInterval(() => void refresh(), 2000);
     return () => { request.current++; window.clearInterval(timer); };
-  }, [enabled, refresh]);
+  }, [enabled, observing, refresh]);
 
-  const change = useCallback(async (id: string, action: "start" | "stop") => {
+  const change = useCallback(async (id: string, action: "start" | "stop" | "recheck") => {
     if (actions.current.has(id)) return;
     actions.current.add(id);
     setPending(new Set(actions.current));
+    setStartErrors(current => ({ ...current, [id]: "" }));
     request.current++;
     try {
       const status = await invoke<LocalProjectServiceStatus>(
-        action === "start" ? "local_project_service_start" : "local_project_service_stop", { id },
+        action === "stop" ? "local_project_service_stop" : "local_project_service_start",
+        action === "recheck" ? { id, recheck: true } : { id },
       );
       request.current++;
       setStatuses(current => ({ ...current, [id]: status }));
+      if (action !== "stop") setObserving(true);
+    } catch (reason) {
+      setStartErrors(current => ({ ...current, [id]: String(reason) }));
+      throw reason;
     } finally {
       actions.current.delete(id);
       setPending(new Set(actions.current));
     }
   }, []);
-  return { statuses, pending, readError, change, refresh };
+  return { statuses, pending, readError, startErrors, change, refresh };
 }
 
 export type LocalProjectServices = ReturnType<typeof useLocalProjectServices>;
