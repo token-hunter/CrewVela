@@ -27,7 +27,17 @@ import type { NotificationSettings } from "../notificationSettings";
 import { CollaborationSettingsPanel } from "./CollaborationSettingsPanel";
 import { SharedMemorySettingsPanel } from "./SharedMemorySettingsPanel";
 import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
-import { resolveBaseTheme } from "../appearance";
+import {
+  resolveAutomationSettingsStyle,
+  resolveBaseTheme,
+  resolveGeneralSettingsStyle,
+  resolveGitSettingsStyle,
+  resolveNotificationSettingsStyle,
+  resolvePrivacySettingsStyle,
+  resolveProjectManagementStyle,
+  resolveWorktreeSettingsStyle,
+} from "../appearance";
+import { SettingsStyleMenu } from "./SettingsStyleMenu";
 import { QuickCommandCenter } from "./QuickCommandCenter";
 import type { QuickContext } from "../quickCommands";
 import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
@@ -52,7 +62,10 @@ interface Props {
   sessions: SessionRecord[];
   archivedSessions: SessionRecord[];
   projects: Project[];
-  projectManagement?: Omit<ComponentProps<typeof ProjectManagementPanel>, "projects">;
+  projectManagement?: Omit<
+    ComponentProps<typeof ProjectManagementPanel>,
+    "projects" | "viewStyle" | "onViewStyleChange" | "onOpenAppearanceSettings"
+  >;
   appearance: AppAppearance;
   resolvedAppearanceTheme: AppearanceTheme;
   petSettings: PetSettings;
@@ -399,6 +412,63 @@ export function SettingsDialog({
                   {!(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
                 </div>
               <div className="settings-heading-actions">
+                {activeSection === "generalSettings" && (
+                  <SettingsStyleMenu
+                    label="常规页面模式"
+                    value={resolveGeneralSettingsStyle(appearance)}
+                    options={[
+                      { id: "classic", label: "经典布局" },
+                      { id: "coffee", label: "防休眠咖啡桌" },
+                    ]}
+                    onChange={(style) =>
+                      onAppearanceChange((current) => ({ ...current, generalSettingsStyle: style }))
+                    }
+                    onOpenAppearanceSettings={() => setActiveSection("appearance")}
+                  />
+                )}
+                {activeSection === "worktrees" && (
+                  <SettingsStyleMenu
+                    label="Worktrees 页面模式"
+                    value={resolveWorktreeSettingsStyle(appearance)}
+                    options={[
+                      { id: "classic", label: "极简细线流" },
+                      { id: "greenhouse", label: "温室苗圃" },
+                    ]}
+                    onChange={(style) =>
+                      onAppearanceChange((current) => ({ ...current, worktreeSettingsStyle: style }))
+                    }
+                    onOpenAppearanceSettings={() => setActiveSection("appearance")}
+                  />
+                )}
+                {activeSection === "notifications" && (
+                  <SettingsStyleMenu
+                    label="通知页面模式"
+                    value={resolveNotificationSettingsStyle(appearance)}
+                    options={[
+                      { id: "classic", label: "经典列表" },
+                      { id: "mixer", label: "迷你调音台" },
+                      { id: "bellbox", label: "桌角铜铃" },
+                    ]}
+                    onChange={(style) =>
+                      onAppearanceChange((current) => ({ ...current, notificationSettingsStyle: style }))
+                    }
+                    onOpenAppearanceSettings={() => setActiveSection("appearance")}
+                  />
+                )}
+                {activeSection === "privacy" && (
+                  <SettingsStyleMenu
+                    label="隐私页面模式"
+                    value={resolvePrivacySettingsStyle(appearance)}
+                    options={[
+                      { id: "classic", label: "经典布局" },
+                      { id: "vault", label: "本机保险箱" },
+                    ]}
+                    onChange={(style) =>
+                      onAppearanceChange((current) => ({ ...current, privacySettingsStyle: style }))
+                    }
+                    onOpenAppearanceSettings={() => setActiveSection("appearance")}
+                  />
+                )}
                 {activeSection === "appearance" && (
                     <Switch
                       className="appearance-follow-system"
@@ -426,11 +496,25 @@ export function SettingsDialog({
             {sectionCopy.note && <p className="settings-page-note">{sectionCopy.note}</p>}
 
             {activeSection === "privacy" ? (
-              <PrivacySettingsPanel onNavigate={destination => { privacyNavigationTarget.current = destination; setNavQuery(""); setTaskRequest(undefined); setPrivacyCollaborationRequested(destination === "collaboration"); setActiveSection(destination); }} />
+              <PrivacySettingsPanel
+                viewStyle={resolvePrivacySettingsStyle(appearance)}
+                onNavigate={destination => { privacyNavigationTarget.current = destination; setNavQuery(""); setTaskRequest(undefined); setPrivacyCollaborationRequested(destination === "collaboration"); setActiveSection(destination); }}
+              />
             ) : activeSection === "collaboration" ? (
               <CollaborationSettingsPanel onClose={onClose} initialTab={privacyCollaborationRequested ? "records" : initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} taskRequest={taskRequest} />
             ) : activeSection === "projectManagement" ? (
-              <ProjectManagementPanel projects={projects} {...projectManagement} />
+              <ProjectManagementPanel
+                projects={projects}
+                {...projectManagement}
+                viewStyle={resolveProjectManagementStyle(appearance)}
+                onViewStyleChange={(style) =>
+                  onAppearanceChange((current) => ({
+                    ...current,
+                    projectManagementStyle: style,
+                  }))
+                }
+                onOpenAppearanceSettings={() => setActiveSection("appearance")}
+              />
             ) : activeSection === "sharedMemory" ? (
               <SharedMemorySettingsPanel />
             ) : activeSection === "quickCommands" ? (
@@ -441,13 +525,27 @@ export function SettingsDialog({
                 sessions={sessions}
                 providers={selectableProviders}
                 embedded
+                viewStyle={resolveAutomationSettingsStyle(appearance)}
+                onViewStyleChange={(style) =>
+                  onAppearanceChange((current) => ({ ...current, automationSettingsStyle: style }))
+                }
+                onOpenAppearanceSettings={() => setActiveSection("appearance")}
               />
             ) : activeSection === "generalSettings" ? (
-              <GeneralSettingsPanel theme={resolveBaseTheme(resolvedAppearanceTheme)} />
+              <GeneralSettingsPanel
+                theme={resolveBaseTheme(resolvedAppearanceTheme)}
+                viewStyle={resolveGeneralSettingsStyle(appearance)}
+              />
             ) : activeSection === "git" ? (
-              <GitSettingsPanel />
+              <GitSettingsPanel
+                viewStyle={resolveGitSettingsStyle(appearance)}
+                onViewStyleChange={(style) =>
+                  onAppearanceChange((current) => ({ ...current, gitSettingsStyle: style }))
+                }
+                onOpenAppearanceSettings={() => setActiveSection("appearance")}
+              />
             ) : activeSection === "worktrees" ? (
-              <WorktreeSettingsPanel />
+              <WorktreeSettingsPanel viewStyle={resolveWorktreeSettingsStyle(appearance)} />
             ) : activeSection === "browserControl" ? (
               <BrowserControlSettingsPanel />
             ) : activeSection === "skills" ? (
@@ -456,6 +554,7 @@ export function SettingsDialog({
               <NotificationSettingsPanel
                 settings={notificationSettings}
                 onChange={onNotificationSettingsChange}
+                viewStyle={resolveNotificationSettingsStyle(appearance)}
               />
             ) : activeSection === "archivedSessions" ? (
               <ArchivedSessionsPanel

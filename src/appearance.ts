@@ -4,13 +4,22 @@ import type {
   AppearanceBackground,
   AppearanceTheme,
   AppTheme,
+  AutomationSettingsStyle,
+  GeneralSettingsStyle,
+  GitSettingsStyle,
+  NotificationSettingsStyle,
+  PrivacySettingsStyle,
+  ProjectManagementStyle,
   RightSidebarStartStyle,
+  WorktreeSettingsStyle,
 } from "./types";
 
 export const APPEARANCE_STORAGE_KEY = "crewvela-appearance";
 export const LEGACY_THEME_STORAGE_KEY = "crewvela-theme";
 export const RIGHT_SIDEBAR_LAMP_STORAGE_KEY = "crewvela-right-sidebar-lamp-on";
 export const RIGHT_SIDEBAR_BREEZE_STORAGE_KEY = "crewvela-right-sidebar-breeze-on";
+export const PROJECT_GALLERY_DENSITY_STORAGE_KEY = "crewvela-project-gallery-density";
+export const PROJECT_PINBOARD_NEAT_STORAGE_KEY = "crewvela-project-pinboard-neat";
 
 export const DEFAULT_RIGHT_SIDEBAR_START_STYLE: RightSidebarStartStyle = "minimal";
 
@@ -20,6 +29,40 @@ export const RIGHT_SIDEBAR_START_STYLES: RightSidebarStartStyle[] = [
   "clothesline",
   "cassette",
 ];
+
+export const DEFAULT_PROJECT_MANAGEMENT_STYLE: ProjectManagementStyle = "classic";
+
+export const PROJECT_MANAGEMENT_STYLES: ProjectManagementStyle[] = [
+  "classic",
+  "gallery",
+  "vinyl",
+  "pinboard",
+  "studio",
+];
+
+export const DEFAULT_GENERAL_SETTINGS_STYLE: GeneralSettingsStyle = "classic";
+export const GENERAL_SETTINGS_STYLES: GeneralSettingsStyle[] = ["classic", "coffee"];
+
+export const DEFAULT_GIT_SETTINGS_STYLE: GitSettingsStyle = "classic";
+export const GIT_SETTINGS_STYLES: GitSettingsStyle[] = ["classic", "railway"];
+
+export const DEFAULT_WORKTREE_SETTINGS_STYLE: WorktreeSettingsStyle = "classic";
+export const WORKTREE_SETTINGS_STYLES: WorktreeSettingsStyle[] = ["classic", "greenhouse"];
+
+export const DEFAULT_NOTIFICATION_SETTINGS_STYLE: NotificationSettingsStyle = "classic";
+export const NOTIFICATION_SETTINGS_STYLES: NotificationSettingsStyle[] = [
+  "classic",
+  "mixer",
+  "bellbox",
+];
+
+export const DEFAULT_AUTOMATION_SETTINGS_STYLE: AutomationSettingsStyle = "classic";
+export const AUTOMATION_SETTINGS_STYLES: AutomationSettingsStyle[] = ["classic", "sundial"];
+
+export const DEFAULT_PRIVACY_SETTINGS_STYLE: PrivacySettingsStyle = "classic";
+export const PRIVACY_SETTINGS_STYLES: PrivacySettingsStyle[] = ["classic", "vault"];
+
+export type ProjectGalleryDensity = "large" | "medium" | "compact";
 
 export const DEFAULT_APPEARANCE: AppAppearance = {
   theme: "dark",
@@ -90,6 +133,27 @@ export function loadAppearance(): AppAppearance {
         ...(includesValue(RIGHT_SIDEBAR_START_STYLES, stored.rightSidebarStartStyle)
           ? { rightSidebarStartStyle: stored.rightSidebarStartStyle }
           : {}),
+        ...(includesValue(PROJECT_MANAGEMENT_STYLES, stored.projectManagementStyle)
+          ? { projectManagementStyle: stored.projectManagementStyle }
+          : {}),
+        ...(includesValue(GENERAL_SETTINGS_STYLES, stored.generalSettingsStyle)
+          ? { generalSettingsStyle: stored.generalSettingsStyle }
+          : {}),
+        ...(includesValue(GIT_SETTINGS_STYLES, stored.gitSettingsStyle)
+          ? { gitSettingsStyle: stored.gitSettingsStyle }
+          : {}),
+        ...(includesValue(WORKTREE_SETTINGS_STYLES, stored.worktreeSettingsStyle)
+          ? { worktreeSettingsStyle: stored.worktreeSettingsStyle }
+          : {}),
+        ...(includesValue(NOTIFICATION_SETTINGS_STYLES, stored.notificationSettingsStyle)
+          ? { notificationSettingsStyle: stored.notificationSettingsStyle }
+          : {}),
+        ...(includesValue(AUTOMATION_SETTINGS_STYLES, stored.automationSettingsStyle)
+          ? { automationSettingsStyle: stored.automationSettingsStyle }
+          : {}),
+        ...(includesValue(PRIVACY_SETTINGS_STYLES, stored.privacySettingsStyle)
+          ? { privacySettingsStyle: stored.privacySettingsStyle }
+          : {}),
       };
     }
     const legacyTheme = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
@@ -136,6 +200,95 @@ export function resolveRightSidebarStartStyle(
   return includesValue(RIGHT_SIDEBAR_START_STYLES, appearance.rightSidebarStartStyle)
     ? appearance.rightSidebarStartStyle
     : DEFAULT_RIGHT_SIDEBAR_START_STYLE;
+}
+
+export function resolveProjectManagementStyle(
+  appearance: AppAppearance,
+): ProjectManagementStyle {
+  return includesValue(PROJECT_MANAGEMENT_STYLES, appearance.projectManagementStyle)
+    ? appearance.projectManagementStyle
+    : DEFAULT_PROJECT_MANAGEMENT_STYLE;
+}
+
+export function resolveGeneralSettingsStyle(
+  appearance: AppAppearance,
+): GeneralSettingsStyle {
+  return includesValue(GENERAL_SETTINGS_STYLES, appearance.generalSettingsStyle)
+    ? appearance.generalSettingsStyle
+    : DEFAULT_GENERAL_SETTINGS_STYLE;
+}
+
+export function resolveGitSettingsStyle(
+  appearance: AppAppearance,
+): GitSettingsStyle {
+  return includesValue(GIT_SETTINGS_STYLES, appearance.gitSettingsStyle)
+    ? appearance.gitSettingsStyle
+    : DEFAULT_GIT_SETTINGS_STYLE;
+}
+
+export function resolveWorktreeSettingsStyle(
+  appearance: AppAppearance,
+): WorktreeSettingsStyle {
+  return includesValue(WORKTREE_SETTINGS_STYLES, appearance.worktreeSettingsStyle)
+    ? appearance.worktreeSettingsStyle
+    : DEFAULT_WORKTREE_SETTINGS_STYLE;
+}
+
+export function resolveNotificationSettingsStyle(
+  appearance: AppAppearance,
+): NotificationSettingsStyle {
+  return includesValue(NOTIFICATION_SETTINGS_STYLES, appearance.notificationSettingsStyle)
+    ? appearance.notificationSettingsStyle
+    : DEFAULT_NOTIFICATION_SETTINGS_STYLE;
+}
+
+export function resolveAutomationSettingsStyle(
+  appearance: AppAppearance,
+): AutomationSettingsStyle {
+  return includesValue(AUTOMATION_SETTINGS_STYLES, appearance.automationSettingsStyle)
+    ? appearance.automationSettingsStyle
+    : DEFAULT_AUTOMATION_SETTINGS_STYLE;
+}
+
+export function resolvePrivacySettingsStyle(
+  appearance: AppAppearance,
+): PrivacySettingsStyle {
+  return includesValue(PRIVACY_SETTINGS_STYLES, appearance.privacySettingsStyle)
+    ? appearance.privacySettingsStyle
+    : DEFAULT_PRIVACY_SETTINGS_STYLE;
+}
+
+export function loadProjectGalleryDensity(): ProjectGalleryDensity {
+  try {
+    const raw = window.localStorage.getItem(PROJECT_GALLERY_DENSITY_STORAGE_KEY);
+    return raw === "large" || raw === "compact" ? raw : "medium";
+  } catch {
+    return "medium";
+  }
+}
+
+export function saveProjectGalleryDensity(density: ProjectGalleryDensity): void {
+  try {
+    window.localStorage.setItem(PROJECT_GALLERY_DENSITY_STORAGE_KEY, density);
+  } catch {
+    // 持久化不可用时保留当前会话内状态。
+  }
+}
+
+export function loadProjectPinboardNeat(): boolean {
+  try {
+    return window.localStorage.getItem(PROJECT_PINBOARD_NEAT_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveProjectPinboardNeat(neat: boolean): void {
+  try {
+    window.localStorage.setItem(PROJECT_PINBOARD_NEAT_STORAGE_KEY, neat ? "1" : "0");
+  } catch {
+    // 持久化不可用时保留当前会话内状态。
+  }
 }
 
 export function loadRightSidebarLampOn(): boolean {

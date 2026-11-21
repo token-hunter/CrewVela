@@ -1,6 +1,8 @@
 import { activeRun, currentRun, matchesRunFilter, planState, runStage, RUN_LABELS, type RunFilter } from "../automationExecution";
 import "../styles/automation-execution.css";
 import "../styles/automation-design.css";
+import "../styles/settings-creative-modes.css";
+import { SettingsStyleMenu } from "./SettingsStyleMenu";
 import { buildAutomationAction, buildEditedAutomationAction, automationFormFromAction, eventAutomationTrigger, automationSessions, automationProjectRuntime, AUTOMATION_LABELS, type AutomationFormAction } from "../automationForm";
 import { TERMINAL_RUNTIMES } from "../runtimeTaxonomy";
 import { open as openDirectory } from "@tauri-apps/plugin-dialog";
@@ -24,6 +26,7 @@ import type {
   Automation,
   AutomationAction,
   AutomationRun,
+  AutomationSettingsStyle,
   AutomationTrigger,
   NewAutomation,
   ProviderConfig,
@@ -40,6 +43,43 @@ interface Props {
   onClose?: () => void;
   embedded?: boolean;
   onFormOpenChange?: (mode: "create" | "edit" | null) => void;
+  viewStyle?: AutomationSettingsStyle;
+  onViewStyleChange?: (next: AutomationSettingsStyle) => void;
+  onOpenAppearanceSettings?: () => void;
+}
+
+const AUTOMATION_STYLE_OPTIONS: ReadonlyArray<{ id: AutomationSettingsStyle; label: string }> = [
+  { id: "classic", label: "经典列表" },
+  { id: "sundial", label: "24 小时星盘" },
+];
+
+function sundialStarCoords(
+  item: Automation,
+  eventIndex: number,
+  eventTotal: number,
+): { x: number; y: number; isEvent: boolean } {
+  const cx = 122;
+  const cy = 122;
+  const toPoint = (angleDeg: number, radius: number) => {
+    const rad = ((angleDeg - 90) * Math.PI) / 180;
+    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
+  };
+  if (item.trigger.kind === "daily" || item.trigger.kind === "weekly") {
+    const hours = item.trigger.hour + item.trigger.minute / 60;
+    return { ...toPoint((hours / 24) * 360, 86), isEvent: false };
+  }
+  if (item.trigger.kind === "once") {
+    const dt = new Date(item.trigger.at);
+    const hours = dt.getHours() + dt.getMinutes() / 60;
+    return { ...toPoint((hours / 24) * 360, 86), isEvent: false };
+  }
+  if (typeof item.nextRunAt === "number" && Number.isFinite(item.nextRunAt)) {
+    const dt = new Date(item.nextRunAt);
+    const hours = dt.getHours() + dt.getMinutes() / 60;
+    return { ...toPoint((hours / 24) * 360, 86), isEvent: false };
+  }
+  const slotAngle = (eventIndex / Math.max(1, eventTotal)) * 360 + 30;
+  return { ...toPoint(slotAngle, 52), isEvent: true };
 }
 
 const pad = (value: number) => String(value).padStart(2, "0");
@@ -65,7 +105,16 @@ function truncate(value: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-export function AutomationPanel({ sessions, providers, onClose, embedded = false, onFormOpenChange }: Props) {
+export function AutomationPanel({
+  sessions,
+  providers,
+  onClose,
+  embedded = false,
+  onFormOpenChange,
+  viewStyle = "classic",
+  onViewStyleChange,
+  onOpenAppearanceSettings,
+}: Props) {
   const panelRoot = useRef<HTMLElement>(null);
   useEffect(() => {
     const dismissCardMenus = (event: PointerEvent) => {
@@ -453,6 +502,15 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
               <p>{formOpen ? "选择 Agent 与执行任务，按时间或指定事件派发；记录保存在本机。" : "按计划运行任务，或在需要时随时执行。"}</p>
             </div>
             <div className="settings-heading-actions">
+              {!formOpen && onViewStyleChange && (
+                <SettingsStyleMenu
+                  label="自动化页面模式"
+                  value={viewStyle}
+                  options={AUTOMATION_STYLE_OPTIONS}
+                  onChange={onViewStyleChange}
+                  onOpenAppearanceSettings={onOpenAppearanceSettings}
+                />
+              )}
               {!formOpen && <div className="automation-calendar"><span><CalendarBlank size={18} aria-hidden="true" /><time>{`${localToday.getFullYear()}-${pad(localToday.getMonth()+1)}-${pad(localToday.getDate())}`}</time></span><span title={nextPlan ? nextPlan.name : undefined}><ClockIcon size={18} aria-hidden="true" />{nextPlan ? `下次计划：${formatDateTime(nextPlan.nextRunAt!)}` : "暂无待触发计划"}</span></div>}
               {onClose && <button className="btn-icon" aria-label="关闭" title="关闭" disabled={busy} onClick={onClose}>
                 <XIcon size={15} />
@@ -628,6 +686,185 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                 {([["all", "全部"], ["active", "进行中"], ["completed", "已完成"], ["failed", "失败"], ["attention", "待处理"]] as const).map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}<span>{automations.filter(a => matchesRunFilter(a, key)).length}</span></button>)}
                 <button className="automation-refresh" aria-label="刷新自动化" title="刷新自动化" disabled={busy} onClick={() => void refresh()}><ArrowClockwise size={18} /></button>
               </nav>
+              {viewStyle === "sundial" ? (() => {
+                const filtered = automations.filter((a) => matchesRunFilter(a, filter));
+                const focused = filtered.find((a) => a.id === selectedHistory) ?? filtered[0] ?? null;
+                const eventItems = filtered.filter((a) =>
+                  a.trigger.kind !== "daily"
+                  && a.trigger.kind !== "weekly"
+                  && a.trigger.kind !== "once"
+                  && !(typeof a.nextRunAt === "number" && Number.isFinite(a.nextRunAt)),
+                );
+                const nowHours = localToday.getHours() + localToday.getMinutes() / 60;
+                const nowRad = (((nowHours / 24) * 360 - 90) * Math.PI) / 180;
+                const nowX = 122 + 74 * Math.cos(nowRad);
+                const nowY = 122 + 74 * Math.sin(nowRad);
+                const focusedRun = focused ? currentRun(focused) : undefined;
+                const focusedStage = runStage(focusedRun);
+                const focusedActive = focused ? focused.recentRuns.some(activeRun) : false;
+                const focusedTargetSession = focusedRun?.targets?.find((t) => sessions.some((s) => s.id === t.sessionId))?.sessionId;
+
+                return (
+                  <div className="auto-sundial-stage" aria-label="24 小时自动化星盘">
+                    <section className="auto-sundial-dial-card">
+                      <span className="general-coffee-kicker">24 小时任务星盘</span>
+                      <svg viewBox="0 0 244 244" width="224" height="224" role="img" aria-label="24 小时任务刻度环">
+                        <circle cx="122" cy="122" r="86" fill="none" stroke="var(--border-strong)" strokeWidth="1.5" />
+                        <circle cx="122" cy="122" r="52" fill="none" stroke="var(--border)" strokeDasharray="3 4" />
+                        {[0, 6, 12, 18].map((h) => {
+                          const rad = (((h / 24) * 360 - 90) * Math.PI) / 180;
+                          const x1 = 122 + 80 * Math.cos(rad);
+                          const y1 = 122 + 80 * Math.sin(rad);
+                          const x2 = 122 + 86 * Math.cos(rad);
+                          const y2 = 122 + 86 * Math.sin(rad);
+                          const tx = 122 + 104 * Math.cos(rad);
+                          const ty = 122 + 104 * Math.sin(rad) + 3.5;
+                          return (
+                            <g key={h}>
+                              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--text-dim)" strokeWidth="1.4" />
+                              <text x={tx} y={ty} textAnchor="middle" fill="var(--text-dim)" fontSize="10">{`${pad(h)}:00`}</text>
+                            </g>
+                          );
+                        })}
+                        <line x1="122" y1="122" x2={nowX} y2={nowY} stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" opacity="0.65" />
+                        <circle cx="122" cy="122" r="4.5" fill="var(--accent)" />
+                        {filtered.map((item) => {
+                          const eventIdx = Math.max(0, eventItems.findIndex((x) => x.id === item.id));
+                          const pt = sundialStarCoords(item, eventIdx, eventItems.length);
+                          const selected = focused?.id === item.id;
+                          const fill = !item.enabled ? "var(--text-dim)" : pt.isEvent ? "#6aa6f8" : "var(--accent)";
+                          return (
+                            <g
+                              key={item.id}
+                              style={{ cursor: "pointer" }}
+                              onClick={() => setSelectedHistory(item.id)}
+                            >
+                              <title>{`${item.name} · ${triggerText(item.trigger)}`}</title>
+                              {selected && <circle cx={pt.x} cy={pt.y} r="13" fill="color-mix(in srgb, var(--accent) 18%, transparent)" />}
+                              <circle cx={pt.x} cy={pt.y} r={selected ? 7.5 : 5.8} fill={fill} stroke="var(--bg-elev)" strokeWidth="2" />
+                            </g>
+                          );
+                        })}
+                      </svg>
+                      <div className="auto-sundial-legend">
+                        <span><i style={{ background: "var(--accent)" }} />外环定时</span>
+                        <span><i style={{ background: "#6aa6f8" }} />内环事件</span>
+                        <span><i style={{ background: "var(--text-dim)" }} />已暂停</span>
+                      </div>
+                    </section>
+
+                    <section className="auto-sundial-detail-card">
+                      {!focused ? (
+                        <div style={{ display: "grid", gap: "10px", padding: "12px 0" }}>
+                          <strong>{automations.length ? "此筛选下没有任务。" : "星盘还是空的"}</strong>
+                          <p className="auto-sundial-sub">
+                            {automations.length ? "切换到「全部」或调整筛选条件查看其他任务。" : "新建第一条定时或事件自动化，它会在星盘刻度上亮起一颗星点。"}
+                          </p>
+                          {!automations.length && (
+                            <div>
+                              <button type="button" className="btn automation-primary" disabled={busy} onClick={() => openCreate()}>
+                                <PlusIcon size={13} weight="bold" /> 新建自动化
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="auto-sundial-detail-head">
+                            <div>
+                              <h3>
+                                <span>{focused.name}</span>
+                                <span className="auto-sundial-time-chip">{triggerText(focused.trigger)}</span>
+                              </h3>
+                              <p className="auto-sundial-sub" title={actionText(focused.action)}>
+                                {compactAction(focused.action)} · 下次：{nextRunText(focused)}
+                              </p>
+                            </div>
+                            <Switch
+                              className="automation-toggle"
+                              label={`${focused.enabled ? "暂停后续计划" : "开启计划"} ${focused.name}`}
+                              checked={focused.enabled}
+                              disabled={busy}
+                              onChange={() => void toggle(focused)}
+                            />
+                          </div>
+
+                          <div className="auto-sundial-status-strip">
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: "11.5px", color: "var(--text-dim)" }}>
+                                当前状态 · <strong style={{ color: "var(--text)" }}>{displayStage(focusedStage)}</strong>
+                              </div>
+                              <div style={{ fontSize: "12.5px", marginTop: "2px" }} title={focusedRun?.detail}>
+                                {focusedRun ? focusedRun.detail : "到点后自动运行，也可随时上发条手动试跑一次。"}
+                              </div>
+                            </div>
+                            <div className="automation-card-buttons">
+                              {focusedActive && focusedTargetSession && (
+                                <button type="button" className="btn" onClick={() => openSession(focusedTargetSession)}>
+                                  <ArrowSquareOut size={15} /> 打开会话
+                                </button>
+                              )}
+                              {focusedActive && focusedRun?.id && focusedStage !== "unconfirmed" && (
+                                <button type="button" className="btn" disabled={busy || focusedStage === "dispatching"} onClick={() => void runAction(focused, focusedRun, true)}>
+                                  <Stop size={15} /> 停止本轮
+                                </button>
+                              )}
+                              {!focusedActive && (
+                                <button
+                                  type="button"
+                                  className="btn automation-primary"
+                                  disabled={busy}
+                                  onClick={() => void runAction(focused, focusedStage === "failed" || focusedStage === "cancelled" ? focusedRun : undefined)}
+                                >
+                                  {focusedStage === "failed" || focusedStage === "cancelled" ? <ArrowClockwise size={15} /> : <Play size={15} />}
+                                  <span>{focusedStage === "failed" || focusedStage === "cancelled" ? "失败重试" : "上发条运行"}</span>
+                                </button>
+                              )}
+                              <button type="button" className="btn" disabled={busy} onClick={() => void openEdit(focused)}>
+                                <PencilSimpleIcon size={14} /> 编辑
+                              </button>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={busy || focusedActive}
+                                aria-label={`删除 ${focused.name}`}
+                                onClick={() => setConfirmDeleteId(focused.id)}
+                              >
+                                <TrashIcon size={14} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {confirmDeleteId === focused.id && (
+                            <div className="automation-delete-confirm">
+                              <span>确认删除此计划及其记录？</span>
+                              <button type="button" className="btn danger-solid" disabled={busy || focusedActive} onClick={() => void remove(focused.id)}>确认删除</button>
+                              <button type="button" className="btn" onClick={() => setConfirmDeleteId(null)}>取消</button>
+                            </div>
+                          )}
+
+                          <div className="auto-sundial-mini-grid">
+                            {filtered.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className={`auto-sundial-mini-btn${item.id === focused.id ? " active" : ""}`}
+                                onClick={() => setSelectedHistory(item.id)}
+                              >
+                                <strong>
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
+                                  <span style={{ color: item.enabled ? "var(--success)" : "var(--text-dim)" }}>●</span>
+                                </strong>
+                                <small>{triggerText(item.trigger)} · {compactAction(item.action)}</small>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </section>
+                  </div>
+                );
+              })() : (
               <div className="automation-list">
                 {!automations.some(a => matchesRunFilter(a, filter)) && <p className="automation-empty">{automations.length ? "此筛选下没有任务。" : "还没有自动化任务。"}</p>}
                 {automations.filter(a => matchesRunFilter(a, filter)).map(item => {
@@ -668,6 +905,7 @@ export function AutomationPanel({ sessions, providers, onClose, embedded = false
                   </article>;
                 })}
               </div>
+              )}
               {!selectedHistory && <p className="automation-state-note"><Info size={16} aria-hidden="true" />暂停计划不停止当前执行；已入队不代表已完成。打开执行记录核对实际结果。</p>}
               {automations.filter(a => a.id === selectedHistory).map(item => <section className="automation-execution-history" key={item.id} aria-label={`执行记录 ${item.name}`}>
                 <header><h3>执行记录 · {item.name}</h3><p><Info size={16} aria-hidden="true" />暂停计划不停止当前执行；已入队不代表已完成。</p></header>

@@ -1,16 +1,623 @@
-.worktree-settings { display: grid; gap: 24px; min-width: 0; }
-.worktree-settings > section { min-width: 0; }
-.worktree-settings h3 { margin: 0; font-size: 15px; }
-.worktree-settings p { margin: 7px 0; color: var(--text-dim); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
-.worktree-settings code { display: block; margin: 7px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; user-select: text; }
-.worktree-section-heading, .worktree-actions, .worktree-settings article strong { display: flex; align-items: center; gap: 8px; }
-.worktree-section-heading { justify-content: space-between; }
-.worktree-actions { flex-wrap: wrap; margin-top: 10px; }
-.worktree-actions button { display: inline-flex; align-items: center; gap: 5px; }
-.worktree-settings article { margin-top: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
-.worktree-settings article strong { overflow-wrap: anywhere; }
-.worktree-settings article > strong > svg { color: var(--accent); }
-.worktree-confirm { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 5px; }
-.worktree-settings .error-text { color: var(--danger); }
+/* Worktrees 设置：Claude Cowork 极简细线流（无框线堆砌、路径去重与轻点复制） */
+.worktree-settings {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  container-type: inline-size;
+}
+
+.worktree-banner {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.worktree-settings .error-text {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+}
+
+.worktree-notice {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 26%, transparent);
+}
+
+.worktree-section {
+  min-width: 0;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.worktree-section:last-child {
+  padding-bottom: 4px;
+  border-bottom: 0;
+}
+
+.worktree-settings h3 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.worktree-section-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.worktree-section-copy p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.worktree-root-section {
+  display: grid;
+  gap: 8px;
+}
+
+.worktree-root-header,
+.worktree-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.worktree-section-heading {
+  align-items: center;
+}
+
+.worktree-list-heading-left {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  min-width: 0;
+}
+
+.worktree-filter-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.worktree-filter-tab {
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  background: transparent;
+  padding: 2px 0 4px;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+
+.worktree-filter-tab:hover {
+  color: var(--text-dim);
+}
+
+.worktree-filter-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--text);
+  font-weight: 600;
+}
+
+.worktree-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: none;
+}
+
+.worktree-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.worktree-settings .worktree-btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  min-height: 28px;
+  padding: 4px 9px;
+  box-shadow: none;
+}
+
+.worktree-settings .worktree-btn-quiet:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--text) 5.5%, transparent);
+  color: var(--text);
+}
+
+.worktree-settings .worktree-btn-quiet:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.worktree-settings .worktree-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
+  color: var(--danger);
+}
+
+.worktree-path-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.worktree-path-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 6px 2px 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-faint);
+  text-align: left;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, padding-left 140ms ease;
+}
+
+.worktree-path-copy:hover {
+  padding-left: 6px;
+  background: color-mix(in srgb, var(--text) 4.5%, transparent);
+  color: var(--text-dim);
+}
+
+.worktree-path-copy.copied {
+  padding-left: 6px;
+  color: var(--success);
+}
+
+.worktree-path-copy code {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono-font);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: inherit;
+  user-select: text;
+}
+
+.worktree-copy-hint {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.worktree-path-copy:hover .worktree-copy-hint,
+.worktree-path-copy:focus-visible .worktree-copy-hint,
+.worktree-path-copy.copied .worktree-copy-hint {
+  opacity: 1;
+}
+
+.worktree-subdir {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  flex: none;
+}
+
+.worktree-subdir code {
+  font-family: var(--mono-font);
+  font-size: 11px;
+  color: var(--text);
+}
+
+.worktree-empty {
+  margin: 14px 0 2px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.worktree-entries {
+  margin-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+/* 严格保持 article > strong > svg 直接父子结构，并用 CSS Grid 实现左文右操作 */
+.worktree-settings article.worktree-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title actions"
+    "body actions"
+    "confirm confirm";
+  column-gap: 16px;
+  row-gap: 3px;
+  min-width: 0;
+  margin: 0 -8px;
+  padding: 13px 8px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  transition: background-color 140ms ease;
+}
+
+.worktree-settings article.worktree-entry:hover {
+  background: color-mix(in srgb, var(--text) 3.2%, transparent);
+}
+
+.worktree-settings article.worktree-entry:last-child {
+  border-bottom: 0;
+}
+
+.worktree-settings article.worktree-entry.selected {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.worktree-settings article.worktree-entry.missing {
+  opacity: 0.72;
+}
+
+.worktree-settings article.worktree-entry > strong {
+  grid-area: title;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 550;
+  line-height: 1.45;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.worktree-settings article.worktree-entry > strong > svg {
+  flex: none;
+  color: var(--accent);
+  transition: color 160ms ease;
+}
+
+.worktree-settings article.worktree-entry > strong > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.worktree-entry-body {
+  grid-area: body;
+  min-width: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 2px;
+}
+
+.worktree-entry-meta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.worktree-entry-blocked {
+  margin: 1px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.worktree-entry-actions {
+  grid-area: actions;
+  align-self: start;
+  justify-content: flex-end;
+  padding-top: 1px;
+}
+
+.worktree-confirm {
+  grid-area: confirm;
+  margin: 10px 0 0 22px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.worktree-confirm p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.worktree-repo-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.worktree-inline-code {
+  display: inline;
+  margin: 0;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.worktree-repo-selected {
+  color: var(--text-dim);
+}
+
+/* ---- 仓库环境与恢复（WorktreeLifecycleControls 极简细线风） ---- */
+.worktree-lifecycle.git-settings-section {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+}
+
+.worktree-lifecycle-summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+  user-select: none;
+}
+
+.worktree-lifecycle-summary::-webkit-details-marker {
+  display: none;
+}
+
+.worktree-lifecycle-summary svg {
+  color: var(--text-dim);
+  transition: transform 150ms ease;
+}
+
+.worktree-lifecycle[open] > .worktree-lifecycle-summary svg {
+  transform: rotate(90deg);
+}
+
+.worktree-lifecycle-body {
+  margin-top: 8px;
+  padding-left: 19px;
+  display: grid;
+  gap: 0;
+}
+
+.worktree-lifecycle-status {
+  margin: 6px 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.worktree-lifecycle-notice {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--success);
+}
+
+.worktree-lifecycle-row {
+  padding: 12px 0;
+}
+
+.worktree-lifecycle-row-top {
+  align-items: start;
+}
+
+.worktree-lifecycle-row-top > span {
+  padding-top: 4px;
+}
+
+.worktree-lifecycle-input,
+.worktree-lifecycle-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: 12.5px var(--mono-font);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.worktree-lifecycle-input {
+  height: 34px;
+  padding: 0 10px;
+}
+
+.worktree-lifecycle-textarea {
+  padding: 8px 10px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.worktree-lifecycle-input:focus,
+.worktree-lifecycle-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.worktree-lifecycle-toggle-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* 保留原生 input[type="checkbox"]（role="checkbox" 测试兼容），视觉呈现极简拨片 */
+.worktree-toggle-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-sunken);
+  cursor: pointer;
+  flex: none;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.worktree-toggle-checkbox::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+
+.worktree-toggle-checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.worktree-toggle-checkbox:checked::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.worktree-toggle-checkbox:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.worktree-lifecycle-actions {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.worktree-lifecycle-dirty {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.worktree-sub-details {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+}
+
+.worktree-sub-details > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.worktree-sub-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.worktree-sub-details > summary svg {
+  transition: transform 150ms ease;
+}
+
+.worktree-sub-details[open] > summary svg {
+  transform: rotate(90deg);
+}
+
+.worktree-log-pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font: 11.5px/1.55 var(--mono-font);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 15rem;
+  overflow: auto;
+}
+
+.worktree-snapshots-list {
+  margin-top: 8px;
+  display: grid;
+}
+
+.worktree-snapshot-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px 0;
+}
+
+.worktree-snapshot-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.worktree-snapshot-ref {
+  font-family: var(--mono-font);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+@container (max-width: 660px) {
+  .worktree-settings article.worktree-entry {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "title"
+      "body"
+      "actions"
+      "confirm";
+    row-gap: 6px;
+  }
+
+  .worktree-entry-actions {
+    padding-left: 22px;
+    justify-content: flex-start;
+  }
+}
+
 .cli-launch-directory > .cli-launch-save { display: flex; align-items: center; gap: 8px; }
 .cli-launch-directory select + .cli-launch-save { margin-top: 9px; }

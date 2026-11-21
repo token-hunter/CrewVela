@@ -4,9 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { SettingsGroup, SettingSwitch, SettingsActions } from "./ui/RuntimeSettings";
+import { Switch } from "./ui/Switch";
 import { TerminalFontPicker } from "./TerminalFontPicker";
 import { TerminalFontPreview } from "./TerminalFontPreview";
-import type { AppTheme } from "../types";
+import { resolveFontFamily } from "../terminalAppearance";
+import type { AppTheme, GeneralSettingsStyle } from "../types";
+import "../styles/settings-creative-modes.css";
 
 import {
   DEFAULT_GENERAL_SETTINGS,
@@ -27,7 +30,21 @@ const UI_PREVIEW = new URLSearchParams(window.location.search).get("ui-preview")
 
 const FONT_SIZE_OPTIONS = Array.from({ length: MAX_TERMINAL_FONT_SIZE - MIN_TERMINAL_FONT_SIZE + 1 }, (_, i) => MIN_TERMINAL_FONT_SIZE + i);
 
-export function GeneralSettingsPanel({ theme = "dark" }: { theme?: AppTheme }) {
+const COFFEE_SAMPLES = {
+  code: "async function syncCrew(agent: string) {\n  return await dispatch({ agent, retry: 2 });\n}",
+  zh: "中文等宽排版测试：零壹贰叁 0123456789\n对齐标点：「」，。！？ () [] {} <> @ #",
+  log: "[15:08:04] INFO  worktree ready -> ./worktrees/ui-polish\n[15:08:05] OK    checks passed (420ms)",
+} as const;
+
+type CoffeeSampleKey = "terminal" | keyof typeof COFFEE_SAMPLES;
+
+export function GeneralSettingsPanel({
+  theme = "dark",
+  viewStyle = "classic",
+}: {
+  theme?: AppTheme;
+  viewStyle?: GeneralSettingsStyle;
+}) {
   const [status, setStatus] = useState<GeneralSettingsStatus | null>(
     UI_PREVIEW ? GENERAL_SETTINGS_PREVIEW : null,
   );
@@ -38,6 +55,7 @@ export function GeneralSettingsPanel({ theme = "dark" }: { theme?: AppTheme }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(!UI_PREVIEW);
   const [reload, setReload] = useState(0);
+  const [sampleTab, setSampleTab] = useState<CoffeeSampleKey>("terminal");
   const saveInFlight = useRef(false);
 
   useEffect(() => {
@@ -75,9 +93,202 @@ export function GeneralSettingsPanel({ theme = "dark" }: { theme?: AppTheme }) {
     }
   };
 
+  const awakeActive = !IS_MAC && draft.keepAwake;
+
   return (
     <div className="runtime-settings settings-workspace general-settings-panel">
-      <fieldset className="workspace-general-grid" disabled={busy || !status}>
+      {viewStyle === "coffee" ? (
+        <fieldset className="general-coffee-layout" disabled={busy || !status} style={{ border: 0, padding: 0, margin: 0 }}>
+          <section className="general-coffee-card general-coffee-cup-card" aria-label="防休眠咖啡杯与系统开关">
+            <span className="general-coffee-kicker">电源与防休眠</span>
+            <button
+              type="button"
+              className="general-coffee-cup-btn"
+              disabled={IS_MAC || busy || !status}
+              aria-pressed={awakeActive}
+              aria-label="保持电脑运行"
+              title={IS_MAC ? "macOS 暂不支持保持电脑运行" : awakeActive ? "点击盖上杯盖，允许休眠" : "点击掀盖冲泡，阻止系统休眠"}
+              onClick={() => setDraft((current) => ({ ...current, keepAwake: !current.keepAwake }))}
+            >
+              <svg viewBox="0 0 128 124" width="118" height="114" aria-hidden="true">
+                {awakeActive ? (
+                  <>
+                    <path d="M45 36 C41 26, 51 20, 46 10" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" className="general-coffee-steam-1" />
+                    <path d="M62 34 C58 24, 68 18, 63 8" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" className="general-coffee-steam-2" />
+                    <path d="M79 36 C75 26, 85 20, 80 10" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" className="general-coffee-steam-3" />
+                  </>
+                ) : (
+                  <path d="M68 14 A13 13 0 1 0 82 28 A10 10 0 1 1 68 14 Z" fill="#6aa6f8" opacity="0.82" />
+                )}
+                <rect x="28" y="46" width="66" height="52" rx="14" fill="var(--bg-sunken)" stroke={awakeActive ? "var(--accent)" : "var(--border-strong)"} strokeWidth="2" />
+                <path d="M94 57 C110 57, 110 85, 94 85" fill="none" stroke={awakeActive ? "var(--accent)" : "var(--border-strong)"} strokeWidth="3.2" strokeLinecap="round" />
+                {awakeActive ? (
+                  <ellipse cx="61" cy="53" rx="26" ry="5" fill="#7c4728" />
+                ) : (
+                  <rect x="24" y="42" width="74" height="8" rx="4" fill="var(--border-strong)" />
+                )}
+                <ellipse cx="61" cy="105" rx="42" ry="6" fill="var(--bg-sunken)" stroke="var(--border)" />
+              </svg>
+            </button>
+            <div className="general-coffee-cup-copy">
+              <strong>
+                {IS_MAC
+                  ? "macOS 暂不支持防休眠"
+                  : awakeActive
+                    ? "防休眠咖啡 · 温热在线"
+                    : "已盖上杯盖 · 允许休眠"}
+              </strong>
+              <p>{IS_MAC ? "此项仅在 Windows 平台生效。" : GENERAL_KEEP_AWAKE_DESCRIPTION}</p>
+            </div>
+            <div className="general-coffee-switches">
+              <div className="general-coffee-switch-row">
+                <div>
+                  <strong>关闭窗口时隐藏到托盘</strong>
+                  <small>{GENERAL_TRAY_DESCRIPTION}</small>
+                </div>
+                <Switch
+                  className="pet-switch"
+                  label="关闭窗口时隐藏到托盘"
+                  checked={draft.closeToTray}
+                  onChange={(closeToTray) => setDraft({ ...draft, closeToTray })}
+                />
+              </div>
+              <div className="general-coffee-switch-row">
+                <div>
+                  <strong>WebView2 硬件加速</strong>
+                  <small>{IS_MAC ? "仅适用于 Windows WebView2" : GENERAL_HW_ACCEL_DESCRIPTION}</small>
+                </div>
+                <Switch
+                  className="pet-switch"
+                  label="WebView2 硬件加速"
+                  disabled={IS_MAC}
+                  checked={!IS_MAC && draft.webview2HardwareAcceleration}
+                  onChange={(webview2HardwareAcceleration) =>
+                    setDraft({ ...draft, webview2HardwareAcceleration })
+                  }
+                />
+              </div>
+            </div>
+          </section>
+
+          <div className="general-coffee-right">
+            <section className="general-coffee-card" aria-label="终端活字试字台">
+              <div className="general-coffee-head">
+                <div>
+                  <strong>终端活字试字台</strong>
+                  <small>边滑字号边核对真实终端、代码与中文对齐，保存后即时生效。</small>
+                </div>
+                <div className="general-coffee-sample-tabs" role="tablist" aria-label="试字样张">
+                  {([
+                    ["terminal", "真实终端"],
+                    ["code", "代码样张"],
+                    ["zh", "中文对齐"],
+                    ["log", "任务日志"],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={sampleTab === key}
+                      className={sampleTab === key ? "active" : ""}
+                      onClick={() => setSampleTab(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="general-coffee-font-bar">
+                <TerminalFontPicker
+                  value={draft.terminalFontFamily}
+                  preview={UI_PREVIEW}
+                  onChange={(terminalFontFamily) =>
+                    setDraft((current) => ({ ...current, terminalFontFamily }))
+                  }
+                />
+                <label className="general-coffee-size-slider">
+                  <span>字号</span>
+                  <input
+                    type="range"
+                    aria-label="终端字号"
+                    min={MIN_TERMINAL_FONT_SIZE}
+                    max={MAX_TERMINAL_FONT_SIZE}
+                    value={draft.terminalFontSize}
+                    onChange={(event) =>
+                      setDraft({ ...draft, terminalFontSize: Number(event.target.value) })
+                    }
+                  />
+                  <code>{draft.terminalFontSize} px</code>
+                </label>
+              </div>
+
+              {sampleTab === "terminal" ? (
+                <TerminalFontPreview
+                  fontFamily={draft.terminalFontFamily}
+                  fontSize={draft.terminalFontSize}
+                  theme={theme}
+                />
+              ) : (
+                <pre
+                  className="general-coffee-specimen"
+                  style={{
+                    fontFamily: resolveFontFamily(draft.terminalFontFamily),
+                    fontSize: `${draft.terminalFontSize}px`,
+                  }}
+                >
+                  {COFFEE_SAMPLES[sampleTab]}
+                </pre>
+              )}
+            </section>
+
+            <section className="general-coffee-card" aria-label="网络代理">
+              <div className="general-coffee-head">
+                <div>
+                  <strong>网络代理</strong>
+                  <small>配置模型请求与 Agent 会话的网络出口。</small>
+                </div>
+                {status && (
+                  <span className={`general-status-badge${status.proxyEnvActive ? " active" : ""}`}>
+                    <i />
+                    {status.proxyEnvActive ? "已按配置覆盖" : "沿用系统环境"}
+                  </span>
+                )}
+              </div>
+              <div className="general-coffee-proxy-grid">
+                <label className="general-coffee-proxy-field">
+                  HTTP 代理
+                  <input
+                    id="general-http-proxy"
+                    value={draft.httpProxy}
+                    placeholder="http://127.0.0.1:7890"
+                    onChange={(e) => setDraft({ ...draft, httpProxy: e.target.value })}
+                  />
+                </label>
+                <label className="general-coffee-proxy-field">
+                  不使用代理的地址
+                  <input
+                    id="general-http-no-proxy"
+                    value={draft.httpNoProxy}
+                    placeholder="localhost, 127.0.0.1, .internal"
+                    onChange={(e) => setDraft({ ...draft, httpNoProxy: e.target.value })}
+                  />
+                </label>
+                <label className="general-coffee-proxy-field">
+                  CA 证书路径（PEM）
+                  <input
+                    id="general-http-ca-cert"
+                    value={draft.httpCaCertPath}
+                    placeholder="可选 · PEM 绝对路径"
+                    onChange={(e) => setDraft({ ...draft, httpCaCertPath: e.target.value })}
+                  />
+                </label>
+              </div>
+            </section>
+          </div>
+        </fieldset>
+      ) : (
+        <fieldset className="workspace-general-grid" disabled={busy || !status}>
         <div className="workspace-section workspace-network">
           <SettingsGroup title="网络代理" description="配置模型请求与 Agent 会话的网络出口。">
             {status && (
@@ -136,6 +347,7 @@ export function GeneralSettingsPanel({ theme = "dark" }: { theme?: AppTheme }) {
           </SettingsGroup>
         </div>
       </fieldset>
+      )}
       {status && <details className="runtime-details general-runtime-details">
         <summary>查看运行状态</summary>
         <dl><div><dt>代理出口</dt><dd>{status.proxyEnvActive ? "已按配置覆盖" : "沿用系统环境变量"}</dd></div>

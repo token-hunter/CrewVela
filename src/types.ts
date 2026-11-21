@@ -135,6 +135,20 @@ export type RightSidebarStartStyle =
   | "clothesline"
   | "cassette";
 
+export type ProjectManagementStyle =
+  | "classic"
+  | "gallery"
+  | "vinyl"
+  | "pinboard"
+  | "studio";
+
+export type GeneralSettingsStyle = "classic" | "coffee";
+export type GitSettingsStyle = "classic" | "railway";
+export type WorktreeSettingsStyle = "classic" | "greenhouse";
+export type NotificationSettingsStyle = "classic" | "mixer" | "bellbox";
+export type AutomationSettingsStyle = "classic" | "sundial";
+export type PrivacySettingsStyle = "classic" | "vault";
+
 export interface AppAppearance {
   theme: AppearanceTheme;
   background: AppearanceBackground;
@@ -144,6 +158,13 @@ export interface AppAppearance {
   terminalOpacity?: number;
   communicationMotion?: boolean;
   rightSidebarStartStyle?: RightSidebarStartStyle;
+  projectManagementStyle?: ProjectManagementStyle;
+  generalSettingsStyle?: GeneralSettingsStyle;
+  gitSettingsStyle?: GitSettingsStyle;
+  worktreeSettingsStyle?: WorktreeSettingsStyle;
+  notificationSettingsStyle?: NotificationSettingsStyle;
+  automationSettingsStyle?: AutomationSettingsStyle;
+  privacySettingsStyle?: PrivacySettingsStyle;
 }
 
 export type SessionStatus =

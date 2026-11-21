@@ -3,7 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Archive, ArrowSquareOut, CaretDown, CaretRight, DotsThree, FileText, FolderSimple, LinkSimple, MagnifyingGlass, PencilSimple, Play, Plus, Stop, X } from "@phosphor-icons/react";
 import { projectServiceActive, type LocalProjectServices } from "../hooks/useLocalProjectServices";
-import type { MultiAgentProject, Project, LocalProjectServiceStatus } from "../types";
+import type { MultiAgentProject, Project, LocalProjectServiceStatus, ProjectManagementStyle } from "../types";
+import {
+  ProjectManagementCreativeViews,
+  ProjectManagementStyleSwitcher,
+} from "./ProjectManagementCreativeViews";
 import { Modal } from "./ui/Modal";
 import "../styles/project-management.css";
 
@@ -16,6 +20,9 @@ interface Props {
   onOpen?: (project: Project) => Promise<void>;
   onOpenCollaboration?: (id: string) => void;
   onBrowse?: (url: string) => void;
+  viewStyle?: ProjectManagementStyle;
+  onViewStyleChange?: (style: ProjectManagementStyle) => void;
+  onOpenAppearanceSettings?: () => void;
 }
 
 type EditKind = "rename" | "directory" | "archive" | "collaboration";
@@ -132,7 +139,19 @@ function ServiceLog({ project, onClose }: { project: Project; onClose: () => voi
   </Modal>;
 }
 
-export function ProjectManagementPanel({ projects, activeProjectId, services, onAdd, onChanged, onOpen, onOpenCollaboration, onBrowse }: Props) {
+export function ProjectManagementPanel({
+  projects,
+  activeProjectId,
+  services,
+  onAdd,
+  onChanged,
+  onOpen,
+  onOpenCollaboration,
+  onBrowse,
+  viewStyle = "classic",
+  onViewStyleChange,
+  onOpenAppearanceSettings,
+}: Props) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null | undefined>(undefined);
   const [dialog, setDialog] = useState<{ project: Project; kind: EditKind } | null>(null);
@@ -231,18 +250,47 @@ export function ProjectManagementPanel({ projects, activeProjectId, services, on
       if (event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
     }
   }}>
-    <div className="project-management-toolbar">
+    <div className={`project-management-toolbar${onViewStyleChange ? " has-mode-switcher" : ""}`}>
       <label className="project-management-search"><MagnifyingGlass size={17} aria-hidden="true" />
         <input type="search" aria-label="搜索项目名或目录" placeholder="搜索项目名或目录" value={query} onChange={event => setQuery(event.target.value)} />
       </label>
+      {onViewStyleChange && (
+        <ProjectManagementStyleSwitcher
+          style={viewStyle}
+          onChange={onViewStyleChange}
+          onOpenAppearanceSettings={onOpenAppearanceSettings}
+        />
+      )}
       {onAdd && <button type="button" className="btn primary" onClick={onAdd}><Plus size={18} />添加项目</button>}
     </div>
     {(error || services?.readError) && <p className="project-management-error" role="alert">{error || `读取服务状态失败：${services?.readError}`}</p>}
     {!matches.length && <p className="project-management-empty">{search ? "没有匹配的项目。" : "添加本地目录后即可管理项目。"}</p>}
-    {active.map(renderProject)}
-    {archived.length > 0 && <details className="project-management-archived" open={search ? true : undefined}>
-      <summary>已归档</summary>{archived.map(renderProject)}
-    </details>}
+    {matches.length > 0 && viewStyle === "classic" && (
+      <>
+        {active.map(renderProject)}
+        {archived.length > 0 && <details className="project-management-archived" open={search ? true : undefined}>
+          <summary>已归档</summary>{archived.map(renderProject)}
+        </details>}
+      </>
+    )}
+    {matches.length > 0 && viewStyle !== "classic" && (
+      <ProjectManagementCreativeViews
+        style={viewStyle}
+        active={active}
+        archived={archived}
+        search={search}
+        activeProjectId={activeProjectId}
+        services={services}
+        collaboration={collaboration}
+        opening={opening}
+        onOpenProject={project => void openProject(project)}
+        onChangeService={(id, action) => void changeService(id, action)}
+        onBrowse={onBrowse}
+        onOpenLogs={project => setLogs(project)}
+        onOpenDialog={(project, kind) => setDialog({ project, kind })}
+        onOpenCollaboration={onOpenCollaboration}
+      />
+    )}
     {dialog && <ProjectEditDialog project={dialog.project} kind={dialog.kind} onClose={() => setDialog(null)} onSaved={project => {
       onChanged?.(project); void services?.refresh(); setDialog(null);
     }} />}

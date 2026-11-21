@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { EmptyState } from "./ui/EmptyState";
+import { SettingsStyleMenu } from "./SettingsStyleMenu";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import {
   ArrowLeft,
@@ -25,6 +26,7 @@ import type {
   GitCommittedEntry,
   GitFileEntry,
   GitSettings,
+  GitSettingsStyle,
   GitStatusSnapshot,
   MultiAgentProject,
   MultiAgentSnapshot,
@@ -1051,7 +1053,20 @@ function previewWorktreeBranch(rawPrefix: string): string {
   return trimmed ? `${trimmed}/task-fix-login` : "task-fix-login";
 }
 
-export function GitSettingsPanel() {
+const GIT_STYLE_OPTIONS: ReadonlyArray<{ id: GitSettingsStyle; label: string }> = [
+  { id: "classic", label: "经典布局" },
+  { id: "railway", label: "铁道道岔" },
+];
+
+export function GitSettingsPanel({
+  viewStyle = "classic",
+  onViewStyleChange,
+  onOpenAppearanceSettings,
+}: {
+  viewStyle?: GitSettingsStyle;
+  onViewStyleChange?: (next: GitSettingsStyle) => void;
+  onOpenAppearanceSettings?: () => void;
+} = {}) {
   const [settings, setSettings] = useState<GitSettings>(DEFAULT_SETTINGS);
   const [savedSnapshot, setSavedSnapshot] = useState<GitSettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1148,6 +1163,15 @@ export function GitSettingsPanel() {
           <p>配置分支、比较基准、提交信息和安全同步策略。</p>
         </div>
         <div className="settings-heading-actions git-settings-actions">
+          {onViewStyleChange && (
+            <SettingsStyleMenu
+              label="Git 页面模式"
+              value={viewStyle}
+              options={GIT_STYLE_OPTIONS}
+              onChange={onViewStyleChange}
+              onOpenAppearanceSettings={onOpenAppearanceSettings}
+            />
+          )}
           {!loading && !savedSnapshot && (
             <button type="button" className="btn" onClick={() => setReload((value) => value + 1)}>
               重新读取
@@ -1185,6 +1209,126 @@ export function GitSettingsPanel() {
         </div>
       )}
 
+      {viewStyle === "railway" ? (
+        <section className="git-railway-card" aria-label="分支道岔示意图">
+          <div className="git-railway-head">
+            <div>
+              <strong>微型分支道岔示意图</strong>
+              <small>实时映射 Pull 同步轨道与新建 Worktree 分支站牌。</small>
+            </div>
+            <div className="git-railway-sign">
+              <span>站牌预览</span>
+              <code>{previewWorktreeBranch(settings.branchPrefix)}</code>
+            </div>
+          </div>
+
+          <div className="git-railway-canvas" aria-hidden="true">
+            <svg viewBox="0 0 760 112" className="git-railway-svg">
+              <path d="M 28 38 L 732 38" stroke="var(--border-strong)" strokeWidth="3" fill="none" />
+              <path
+                d={
+                  settings.pullStrategy === "rebase"
+                    ? "M 220 38 C 280 38, 300 82, 360 82 L 460 82 C 520 82, 540 38, 600 38"
+                    : "M 220 38 L 620 38"
+                }
+                stroke={settings.pullStrategy === "rebase" ? "var(--accent)" : "var(--success)"}
+                strokeWidth="3.2"
+                fill="none"
+                className="git-railway-flow"
+              />
+              <circle cx="95" cy="38" r="6.5" fill="var(--text-dim)" />
+              <circle cx="220" cy="38" r="7.5" fill="var(--text)" />
+              <text x="95" y="20" textAnchor="middle" fill="var(--text-dim)" fontSize="10.5">
+                {settings.compareStrategy === "branch_upstream" ? "upstream" : "origin/main"}
+              </text>
+              <text x="220" y="20" textAnchor="middle" fill="var(--text-dim)" fontSize="10.5">
+                比较基准
+              </text>
+              {settings.pullStrategy === "rebase" ? (
+                <>
+                  <circle cx="385" cy="82" r="7" fill="var(--accent)" />
+                  <circle cx="455" cy="82" r="7" fill="var(--accent)" />
+                  <circle cx="620" cy="38" r="8" fill="var(--accent)" />
+                  <text x="420" y="103" textAnchor="middle" fill="var(--accent)" fontSize="11" fontWeight="600">
+                    本地提交变基重放 (--rebase) · 线性接入最新远端
+                  </text>
+                  <text x="620" y="20" textAnchor="middle" fill="var(--accent)" fontSize="10.5" fontWeight="600">
+                    HEAD (rebased)
+                  </text>
+                </>
+              ) : (
+                <>
+                  <circle cx="385" cy="38" r="7" fill="var(--success)" />
+                  <circle cx="520" cy="38" r="8" fill="var(--success)" />
+                  <text x="450" y="76" textAnchor="middle" fill="var(--success)" fontSize="11" fontWeight="600">
+                    仅允许直线快进 (--ff-only) · 遇到分叉自动安全停靠
+                  </text>
+                  <text x="520" y="20" textAnchor="middle" fill="var(--success)" fontSize="10.5" fontWeight="600">
+                    HEAD (fast-forward)
+                  </text>
+                </>
+              )}
+            </svg>
+          </div>
+
+          <div className="git-railway-controls">
+            <label className="git-railway-control">
+              Worktree 分支前缀
+              <input
+                disabled={controlsDisabled}
+                value={settings.branchPrefix}
+                onChange={(event) => updateSettings((current) => ({ ...current, branchPrefix: event.target.value }))}
+                placeholder="crewvela/"
+              />
+            </label>
+            <div className="git-railway-control">
+              <span>默认比较基准</span>
+              <div className="git-segmented" role="radiogroup" aria-label="默认比较基准">
+                {COMPARE_STRATEGY_OPTIONS.map((option) => {
+                  const active = settings.compareStrategy === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      className={`git-segmented-btn${active ? " active" : ""}`}
+                      disabled={controlsDisabled}
+                      onClick={() => updateSettings((current) => ({ ...current, compareStrategy: option.value }))}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="git-railway-control">
+              <span>Pull 道岔策略</span>
+              <div className="git-segmented" role="radiogroup" aria-label="Pull 策略">
+                {PULL_STRATEGY_OPTIONS.map((option) => {
+                  const active = settings.pullStrategy === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      aria-label={option.title}
+                      title={option.title}
+                      className={`git-segmented-btn${active ? " active" : ""}`}
+                      disabled={controlsDisabled}
+                      onClick={() => updateSettings((current) => ({ ...current, pullStrategy: option.value }))}
+                    >
+                      <span>{option.shortLabel}</span>
+                      <code>{option.flag}</code>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : (
       <section className="git-settings-section">
         <header className="git-settings-section-head">
           <span className="git-section-icon" aria-hidden="true"><GitBranch size={15} /></span>
@@ -1265,6 +1409,7 @@ export function GitSettingsPanel() {
           </div>
         </div>
       </section>
+      )}
 
       <section className="git-settings-section git-settings-commit-section">
         <header className="git-settings-section-head git-settings-section-head-stacked">
@@ -1309,6 +1454,14 @@ export function GitSettingsPanel() {
         </div>
       </section>
 
+      {viewStyle === "railway" ? (
+        <div className="git-railway-safety">
+          <span>
+            <strong>只读安全信号灯：</strong>强制推送须手动确认并始终使用 <code>--force-with-lease</code>；仅快进模式遇到分叉会自动停靠。
+          </span>
+          <span className="git-railway-signal">● 绿灯保护中</span>
+        </div>
+      ) : (
       <section className="git-settings-section git-settings-safety">
         <header className="git-settings-section-head">
           <span className="git-section-icon" aria-hidden="true"><Warning size={15} /></span>
@@ -1333,6 +1486,7 @@ export function GitSettingsPanel() {
           </li>
         </ul>
       </section>
+      )}
     </div>
   );
 }

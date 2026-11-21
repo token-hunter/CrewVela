@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { CaretRight, Copy, FolderOpen, Info, X } from "@phosphor-icons/react";
+import { CaretRight, Copy, FolderOpen, Info, Key, X } from "@phosphor-icons/react";
 import { Modal } from "./ui/Modal";
 import { SettingsSection } from "./ui/SettingsSection";
 import { PRIVACY_DATA_ROWS, PRIVACY_EXPLANATIONS, privacySections, type PrivacyDestination, type PrivacyExplanation } from "../privacySettings";
+import type { PrivacySettingsStyle } from "../types";
 import privacyPolicy from "../../docs/privacy.md?raw";
 import "../styles/privacy-settings.css";
+import "../styles/settings-creative-modes.css";
 
 function PrivacyDirectoryDialog({onClose}:{onClose:()=>void}) {
   const [directory,setDirectory]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false),[revision,setRevision]=useState(0);
@@ -42,11 +44,119 @@ function PrivacyDirectoryDialog({onClose}:{onClose:()=>void}) {
   </Modal>;
 }
 
-export function PrivacySettingsPanel({onNavigate}:{onNavigate:(destination:PrivacyDestination)=>void}) {
-  const [detail,setDetail]=useState<PrivacyExplanation|"directory"|null>(null);
-  const explanation=detail&&detail!=="directory"?PRIVACY_EXPLANATIONS[detail]:null;
-  const sections=explanation?privacySections(privacyPolicy,explanation.headings):[];
+const VAULT_LOCKS = [
+  {
+    id: "local",
+    angle: 0,
+    title: "本机优先存储",
+    description: "会话记录、协作快照、快捷指令与通知历史均持久化保存在本机磁盘，不上传中转云端。",
+  },
+  {
+    id: "cli",
+    angle: 120,
+    title: "CLI 独立鉴权",
+    description: "模型请求由各 Agent CLI 本地配置直连发起，CrewVela 不代管、不中转你的模型密钥。",
+  },
+  {
+    id: "boundary",
+    angle: 240,
+    title: "透明数据边界",
+    description: "应用层数据、CLI 原生历史与共享记忆彼此隔离，可按模块随时独立审阅与清理。",
+  },
+] as const;
+
+export function PrivacySettingsPanel({
+  onNavigate,
+  viewStyle = "classic",
+}: {
+  onNavigate: (destination: PrivacyDestination) => void;
+  viewStyle?: PrivacySettingsStyle;
+}) {
+  const [detail, setDetail] = useState<PrivacyExplanation | "directory" | null>(null);
+  const [activeLockId, setActiveLockId] = useState<(typeof VAULT_LOCKS)[number]["id"]>("local");
+  const explanation = detail && detail !== "directory" ? PRIVACY_EXPLANATIONS[detail] : null;
+  const sections = explanation ? privacySections(privacyPolicy, explanation.headings) : [];
+  const activeLock = VAULT_LOCKS.find((item) => item.id === activeLockId) ?? VAULT_LOCKS[0];
+
   return <section className="privacy-settings" aria-label="隐私设置">
+    {viewStyle === "vault" ? (
+      <>
+        <div className="privacy-vault-hero">
+          <div className="privacy-vault-dial-wrap">
+            <svg viewBox="0 0 180 180" width="160" height="160" aria-hidden="true">
+              <circle cx="90" cy="90" r="76" fill="var(--bg-sunken)" stroke="var(--border-strong)" strokeWidth="2" />
+              <circle cx="90" cy="90" r="61" fill="none" stroke="var(--border)" strokeDasharray="4 6" />
+              <g
+                style={{
+                  transformOrigin: "90px 90px",
+                  transform: `rotate(${activeLock.angle}deg)`,
+                  transition: "transform 420ms cubic-bezier(0.22, 1, 0.36, 1)",
+                }}
+              >
+                <circle cx="90" cy="90" r="42" fill="var(--bg-elev)" stroke="var(--accent)" strokeWidth="2.2" />
+                <line x1="90" y1="52" x2="90" y2="70" stroke="var(--accent)" strokeWidth="3.5" strokeLinecap="round" />
+                <circle cx="90" cy="90" r="10" fill="color-mix(in srgb, var(--accent) 16%, transparent)" stroke="var(--accent)" />
+              </g>
+            </svg>
+            <span className="privacy-vault-badge">● 100% 本地落盘守护</span>
+          </div>
+
+          <div className="privacy-vault-copy">
+            <div className="privacy-vault-locks" role="tablist" aria-label="本机隐私守护锁芯">
+              {VAULT_LOCKS.map((lock) => (
+                <button
+                  key={lock.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={lock.id === activeLock.id}
+                  className={`privacy-vault-lock-btn${lock.id === activeLock.id ? " active" : ""}`}
+                  onClick={() => setActiveLockId(lock.id)}
+                >
+                  {lock.title}
+                </button>
+              ))}
+            </div>
+            <div className="privacy-vault-explain">
+              <strong>{activeLock.title}</strong>
+              <p>{activeLock.description}</p>
+            </div>
+            <div className="privacy-vault-policy-links">
+              {(["storage", "services"] as const).map((id) => (
+                <button key={id} type="button" className="btn secondary" onClick={() => setDetail(id)}>
+                  <span>{PRIVACY_EXPLANATIONS[id].title}</span>
+                  <CaretRight size={14} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <SettingsSection className="privacy-group privacy-data-group" title="你的数据抽屉">
+          <div className="privacy-vault-drawers">
+            {PRIVACY_DATA_ROWS.map((row) => (
+              <article className="privacy-vault-drawer" key={row.title}>
+                <div>
+                  <div className="privacy-vault-drawer-head">
+                    <Key size={15} aria-hidden="true" />
+                    <span>{row.title}</span>
+                  </div>
+                  <p>{row.description}</p>
+                </div>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  aria-label={`${row.title}：${row.action}`}
+                  onClick={() => (row.destination ? onNavigate(row.destination) : setDetail("directory"))}
+                >
+                  {row.action}
+                </button>
+              </article>
+            ))}
+          </div>
+        </SettingsSection>
+      </>
+    ) : (
+      <>
     <div className="privacy-shield-pillars" aria-hidden="true">
       <div className="privacy-pillar-card">
         <strong>本机优先存储</strong>
@@ -71,6 +181,8 @@ export function PrivacySettingsPanel({onNavigate}:{onNavigate:(destination:Priva
         {PRIVACY_DATA_ROWS.map(row=><div className="privacy-data-row" key={row.title}><div><h4>{row.title}</h4><p>{row.description}</p></div><button className="btn" aria-label={`${row.title}：${row.action}`} onClick={()=>row.destination?onNavigate(row.destination):setDetail("directory")}>{row.action}</button></div>)}
       </div>
     </SettingsSection>
+      </>
+    )}
     <p className="privacy-boundary"><Info size={17} aria-hidden="true"/>应用记录、CLI 历史与外部服务数据需分别管理。</p>
     {detail==="directory"&&createPortal(<PrivacyDirectoryDialog onClose={()=>setDetail(null)}/>,document.body)}
     {explanation&&createPortal(<Modal className="privacy-dialog privacy-explanation" overlayClassName="dialog-overlay privacy-overlay" labelledBy="privacy-explanation-title" onClose={()=>setDetail(null)} closeOnOverlayClick>
