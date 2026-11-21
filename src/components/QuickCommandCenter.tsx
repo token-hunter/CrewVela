@@ -19,6 +19,7 @@ import {
   sessionRuntime, targetIdentity, type QuickAction, type QuickCommand, type QuickCommandSettings, type QuickContext, type QuickScope,
 } from "../quickCommands";
 import { applyDeliveryEvidence, executeQuickPlan, type QuickExecutionPlan, type QuickReceipt } from "../quickCommandExecution";
+import { resolveSessionDirectory } from "../sessionDirectory";
 
 export interface QuickCommandCenterProps {
   sessions: SessionRecord[];
@@ -173,7 +174,8 @@ export function QuickCommandCenter({ sessions, providers, context = {}, manage =
     finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   };
   const prepare = () => {
-    const plan: QuickExecutionPlan = { command: { ...draft }, targets: targets.map(s => ({ ...s })), cwd: cwd.trim(), count };
+    const directory = draft.action === "launch" ? resolveSessionDirectory(cwd.trim(), context.projects ?? [], context.projectId) : undefined;
+    const plan: QuickExecutionPlan = { command: { ...draft }, targets: targets.map(s => ({ ...s })), cwd: directory?.path ?? cwd.trim(), count, projectId: directory?.id };
     if (draft.action === "stop" || draft.action === "delete") setConfirmation(plan);
     else void run(plan);
   };

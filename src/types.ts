@@ -86,6 +86,10 @@ export interface Project {
   badgeColor: string;
   createdAt: number;
   updatedAt: number;
+  archivedAt?: number;
+  lastOpenedAt?: number;
+  launch?: ProjectPreviewConfig;
+  collaborationProjectIds?: string[];
 }
 
 /** 会话工作目录；临时目录不关联项目。 */
@@ -1063,6 +1067,13 @@ export interface ProjectPreviewConfig {
   args: string[];
   workingDirectory: string;
   url: string | null;
+}
+
+export interface LocalProjectServiceStatus {
+  state: "idle" | "starting" | "running" | "completed" | "failed" | "stopFailed";
+  url?: string | null;
+  error?: string | null;
+  logs?: string | null;
 }
 
 export type DeliveryDemo = { state: "preparing" | "ready" } | { state: "unavailable"; error: string };

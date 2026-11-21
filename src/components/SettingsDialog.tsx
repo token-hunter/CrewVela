@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Switch } from "./ui/Switch";
 import { Modal } from "./ui/Modal";
-import type { Dispatch, SetStateAction } from "react";
+import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
 import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
@@ -11,6 +11,7 @@ import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import { UsersIcon } from "@phosphor-icons/react/dist/csr/Users";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
+import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
@@ -37,6 +38,7 @@ import { AutomationIcon } from "./AutomationIcon";
 import { ArchivedSessionsPanel } from "./ArchivedSessionsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { WorktreeSettingsPanel } from "./WorktreeSettingsPanel";
+import { ProjectManagementPanel } from "./ProjectManagementPanel";
 import { SkillCenterPanel } from "./SkillCenterPanel";
 import { BrowserControlSettingsPanel } from "./BrowserControlSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
@@ -50,6 +52,7 @@ interface Props {
   sessions: SessionRecord[];
   archivedSessions: SessionRecord[];
   projects: Project[];
+  projectManagement?: Omit<ComponentProps<typeof ProjectManagementPanel>, "projects">;
   appearance: AppAppearance;
   resolvedAppearanceTheme: AppearanceTheme;
   petSettings: PetSettings;
@@ -71,6 +74,7 @@ interface Props {
 export type SettingsSection =
   | "generalSettings"
   | "collaboration"
+  | "projectManagement"
   | "sharedMemory"
   | "automation"
   | "quickCommands"
@@ -90,6 +94,7 @@ export function SettingsDialog({
   sessions,
   archivedSessions,
   projects,
+  projectManagement,
   appearance,
   resolvedAppearanceTheme,
   petSettings,
@@ -184,6 +189,12 @@ export function SettingsDialog({
           icon: <UsersIcon size={16} weight="regular" />,
         },
         {
+          id: "projectManagement" as const,
+          label: "项目管理",
+          keywords: "本地项目 工作目录 启动配置 归档 协作",
+          icon: <FolderSimpleIcon size={16} />,
+        },
+        {
           id: "sharedMemory" as const,
           label: "共享记忆",
           keywords: "共享 记忆 ai-memory handoff 交接 跨智能体",
@@ -245,6 +256,7 @@ export function SettingsDialog({
       description: "管理协作项目、Agent 团队和任务执行状态。",
       note: "",
     },
+    projectManagement: { eyebrow: "PROJECTS", title: "项目管理", description: "", note: "" },
     sharedMemory: {
       eyebrow: "设置 / 智能体",
       title: "共享记忆",
@@ -417,6 +429,8 @@ export function SettingsDialog({
               <PrivacySettingsPanel onNavigate={destination => { privacyNavigationTarget.current = destination; setNavQuery(""); setTaskRequest(undefined); setPrivacyCollaborationRequested(destination === "collaboration"); setActiveSection(destination); }} />
             ) : activeSection === "collaboration" ? (
               <CollaborationSettingsPanel onClose={onClose} initialTab={privacyCollaborationRequested ? "records" : initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} taskRequest={taskRequest} />
+            ) : activeSection === "projectManagement" ? (
+              <ProjectManagementPanel projects={projects} {...projectManagement} />
             ) : activeSection === "sharedMemory" ? (
               <SharedMemorySettingsPanel />
             ) : activeSection === "quickCommands" ? (

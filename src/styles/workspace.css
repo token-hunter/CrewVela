@@ -427,6 +427,17 @@
   color: var(--text);
 }
 
+.session-project-head .session-project-open {
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.session-project-head .session-project-open:hover { color: var(--accent); }
+
 .session-project-head-plain .session-project-name {
   color: var(--text-dim);
 }

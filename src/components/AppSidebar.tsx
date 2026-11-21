@@ -2,7 +2,7 @@ import { terminalShells, shellLabel } from "../platform";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
 import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
 import { BrainIcon } from "@phosphor-icons/react/dist/csr/Brain";
@@ -71,7 +71,7 @@ const SIDEBAR_SHORTCUT_ICONS: Record<string, () => ReactNode> = {
   archivedSessions: () => <ArchiveIcon size={17} />,
 };
 
-interface Props {
+interface Props extends Pick<ComponentProps<typeof SessionList>, "onOpenProject" | "onManageProjects" | "projectResumeIds" | "onContinueProject" | "projectServiceAction"> {
   workspaceId: string;
   workspaceName: string;
   sessions: SessionRecord[];
@@ -379,6 +379,11 @@ export function AppSidebar(props: Props) {
           onRelayDetails={props.onRelayDetails}
           logicalSessionId={props.logicalSessionId}
           onNewSessionInProject={props.onNewSessionInProject}
+          onOpenProject={props.onOpenProject}
+          onManageProjects={props.onManageProjects}
+          projectResumeIds={props.projectResumeIds}
+          onContinueProject={props.onContinueProject}
+          projectServiceAction={props.projectServiceAction}
           onRenameProject={props.onRenameProject}
           onDeleteProject={props.onDeleteProject}
           onArchiveProjectSessions={props.onArchiveProjectSessions}

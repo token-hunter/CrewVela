@@ -8,6 +8,7 @@ import { useRuntimeAvailability, setRuntimeLaunchDefault } from "./runtimeAvaila
 import { CliLaunchDialog } from "./components/CliLaunchDialog";
 import { isCliRuntime, type RuntimeLaunchSelection } from "./runtimeLaunch";
 import { resolveSessionDirectory } from "./sessionDirectory";
+import { projectServiceActive, useLocalProjectServices } from "./hooks/useLocalProjectServices";
 import { isRetiredRuntime } from "./runtimeTaxonomy";
 import { EmptyWorkspaceLauncher } from "./components/EmptyWorkspaceLauncher";
 import {
@@ -734,11 +735,16 @@ export default function App() {
   } | null>(null);
   const [workspace, setWorkspace] =
     useState<WorkspaceTabState>(loadWorkspaceTabs);
+  const activeProjects = useMemo(() => projects.filter(project => project.archivedAt == null), [projects]);
+  const workspaceProjectId = workspace.tabs.find(tab => tab.id === workspace.activeTabId)?.projectId;
+  const workspaceProject = activeProjects.find(project => project.id === workspaceProjectId);
+  const projectServices = useLocalProjectServices(!UI_PREVIEW && activeProjects.some(project => !!project.launch));
+  const projectOpenRequest = useRef(0);
   const [emptyDirectories, setEmptyDirectories] = useState<Record<string, SessionDirectory>>({});
   const selectedEmptyDirectory = emptyDirectories[workspace.activeTabId];
   const emptyDirectory = selectedEmptyDirectory?.id
-    ? projects.find(project => project.id === selectedEmptyDirectory.id) ?? projects[0] ?? null
-    : selectedEmptyDirectory ?? projects[0] ?? null;
+    ? activeProjects.find(project => project.id === selectedEmptyDirectory.id) ?? workspaceProject ?? activeProjects[0] ?? null
+    : selectedEmptyDirectory ?? workspaceProject ?? activeProjects[0] ?? null;
   const closingWorkspaceRef = useRef(false);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -806,7 +812,8 @@ export default function App() {
       for (const session of sessions) {
         if (!(session.id in assignments)) {
           const logicalId = switchSlotId(session.id, switchRecords);
-          assignments[session.id] = switchWorkspaceAssignment(logicalId, current.assignments, switchRecords, current.activeTabId);
+          const projectTab = session.projectId && current.tabs.find(tab => tab.projectId === session.projectId);
+          assignments[session.id] = switchWorkspaceAssignment(logicalId, current.assignments, switchRecords, projectTab ? projectTab.id : current.activeTabId);
           changed = true;
         }
       }
@@ -1114,6 +1121,8 @@ export default function App() {
   const handleLaunchPreset = useCallback(async (preset: LaunchPreset) => {
     if (!isRuntimeEnabled("claude_code")) { showError("Claude Code 未启用或配置尚未加载"); return; }
     try {
+      const directories = preset.cwds.map(path => resolveSessionDirectory(path, activeProjects, workspaceProject?.id));
+      const first = directories[0]?.id;
       const launched = await invoke<SessionRecord[]>("launch_multi", {
         providerId: preset.providerId,
         cwds: preset.cwds,
@@ -1122,7 +1131,7 @@ export default function App() {
         autoMode: preset.autoMode,
         useWorktree: preset.useWorktree,
         initialPrompt: preset.initialPrompt ?? null,
-        projectId: null,
+        projectId: first && directories.every(directory => directory.id === first) ? first : null,
       });
       await refreshSessions();
       setSelectedSessionId(launched.length === 1 ? launched[0].id : null);
@@ -1131,7 +1140,7 @@ export default function App() {
       showError(`按预设「${preset.name}」启动失败：${String(e)}`);
       await refreshSessions();
     }
-  }, [providers, refreshSessions, showError]);
+  }, [activeProjects, isRuntimeEnabled, refreshSessions, showError, workspaceProject?.id]);
 
   const handleDeletePreset = useCallback(async (preset: LaunchPreset) => {
     if (!window.confirm(`删除预设「${preset.name}」？`)) return;
@@ -1155,6 +1164,33 @@ export default function App() {
       showError(`添加项目失败：${String(error)}`);
       return null;
     }
+  };
+
+  const applyProjectEdit = useCallback((updated: Project) => {
+    setProjects(current => current.map(project => project.id === updated.id ? updated : project));
+    setWorkspace(current => {
+      if (!current.tabs.some(tab => tab.projectId === updated.id)) return current;
+      return { ...current, tabs: current.tabs.map(tab => tab.projectId === updated.id ? { ...tab, title: updated.name } : tab) };
+    });
+  }, []);
+
+  const openProjectWorkspace = async (project: Project) => {
+    const request = ++projectOpenRequest.current;
+    const updated = UI_PREVIEW ? project : await invoke<Project>("edit_local_project", { id: project.id, edit: { kind: "opened" } });
+    if (request !== projectOpenRequest.current) return;
+    applyProjectEdit(updated);
+    const current = workspaceRef.current;
+    const existing = current.tabs.find(tab => tab.projectId === project.id);
+    if (existing) {
+      setEmptyDirectories(value => ({ ...value, [existing.id]: updated }));
+      selectTab(existing.id);
+    } else {
+      const tab = { ...createWorkspaceTab(current.tabs), title: project.name, projectId: project.id };
+      setWorkspace(value => ({ ...value, tabs: [...value.tabs, tab], activeTabId: tab.id }));
+      setSelectedSessionId(null);
+    }
+    setMultiAgentWorkspaceProjectId(null);
+    setSettingsOpen(false);
   };
 
   const handleNewSessionInProject = useCallback((project: Project) => {
@@ -1447,13 +1483,15 @@ export default function App() {
       directory: true,
       multiple: false,
       title: `选择 ${shellLabel(shell)} 工作目录`,
-      defaultPath: current?.cwd,
+      defaultPath: workspaceProject?.path ?? current?.cwd,
     });
     if (typeof picked !== "string") return;
     try {
+      const directory = resolveSessionDirectory(picked, activeProjects, workspaceProject?.id);
       const launched = await invoke<SessionRecord>("launch_terminal", {
         shell,
         cwd: picked,
+        ...(directory.id && { projectId: directory.id }),
       });
       setSessions((items) => [
         launched,
@@ -1465,7 +1503,7 @@ export default function App() {
       showError(`启动终端失败：${String(error)}`);
       await refreshSessions();
     }
-  }, [refreshSessions, selectedSessionId, sessions, showError]);
+  }, [activeProjects, refreshSessions, selectedSessionId, sessions, showError, workspaceProject]);
 
   const launchRuntimeSession = useCallback(async (
     runtimeKind: Extract<
@@ -2155,8 +2193,23 @@ export default function App() {
   const activeWorkspaceRoot =
     selectedSession && tabOf(selectedSession.id) === workspace.activeTabId
       ? selectedSession.cwd
-      : (selectedEmptyDirectory ? emptyDirectory?.path : tabSessions[0]?.cwd) ?? emptyDirectory?.path ?? null;
+      : (selectedEmptyDirectory || workspaceProject ? emptyDirectory?.path : tabSessions[0]?.cwd) ?? emptyDirectory?.path ?? null;
   workspaceRootRef.current = activeWorkspaceRoot;
+  const activeProjectId = selectedSession && tabOf(selectedSession.id) === workspace.activeTabId
+    ? selectedSession.projectId ?? workspaceProjectId : workspaceProjectId;
+  const projectResumeSessions = useMemo(() => {
+    const latest = new Map<string, SessionRecord>();
+    for (const session of displaySessions) {
+      if (!session.projectId || session.archivedAt || session.retiredAgentRuntime) continue;
+      const previous = latest.get(session.projectId);
+      if (!previous || session.updatedAt > previous.updatedAt) latest.set(session.projectId, session);
+    }
+    return latest;
+  }, [displaySessions]);
+  const browseProjectService = (url: string) => {
+    setSettingsOpen(false);
+    window.dispatchEvent(new CustomEvent("crewvela:browse", { detail: { url } }));
+  };
   usePtyPolling(handleSessionSnapshot, openRightSidebarTabs.some(tab => tab.startsWith("terminal:")) && !UI_PREVIEW);
   const openSidebarTool = async (tool: SidebarTool) => {
     if (!isTerminalShell(tool)) {
@@ -2167,11 +2220,13 @@ export default function App() {
     if (sidebarTerminalLaunchRef.current) return;
     sidebarTerminalLaunchRef.current = true;
     try {
+      const directory = resolveSessionDirectory(activeWorkspaceRoot, activeProjects, activeProjectId);
       const launched = UI_PREVIEW
         ? { ...PREVIEW_SESSIONS[0], id: `preview-sidebar-${Date.now()}`, kind: "terminal" as const,
             shell: tool, agentRuntimeKind: null, providerName: shellLabel(tool),
             title: shellLabel(tool), cwd: activeWorkspaceRoot, ptyId: Date.now(), status: "running" as const }
-        : await invoke<SessionRecord>("launch_terminal", { shell: tool, cwd: activeWorkspaceRoot });
+        : await invoke<SessionRecord>("launch_terminal", { shell: tool, cwd: directory.path,
+          ...(directory.id && { projectId: directory.id }) });
       setSidebarTerminalIds(current => [...current, launched.id]);
       setSessions(current => [launched, ...current.filter(item => item.id !== launched.id)]);
       await selectRightSidebarTab(`terminal:${launched.id}`);
@@ -2340,7 +2395,7 @@ export default function App() {
         workspaceId={workspace.activeTabId}
         workspaceName={workspace.tabs.find(tab => tab.id === workspace.activeTabId)?.title ?? "当前工作区"}
         sessions={tabSessions}
-        projects={projects}
+        projects={activeProjects}
         usages={usages}
         selectedSessionId={selectedSessionId}
         loadingSessionId={loadingSessionId}
@@ -2376,6 +2431,26 @@ export default function App() {
         onLaunchPreset={launchPreset}
         onDeletePreset={deletePreset}
         onNewSessionInProject={handleNewSessionInProject}
+        onOpenProject={project => void openProjectWorkspace(project).catch(reason => showError(String(reason)))}
+        onManageProjects={() => openSettingsSection("projectManagement")}
+        projectResumeIds={new Set(projectResumeSessions.keys())}
+        onContinueProject={project => {
+          const session = projectResumeSessions.get(project.id);
+          if (!session) return;
+          selectTab(tabOf(session.id));
+          void selectSession(session.id);
+        }}
+        projectServiceAction={project => {
+          if (!project.launch || projectServices.pending.has(project.id)) return;
+          const status = projectServices.statuses[project.id];
+          if (status?.state === "running" && status.url) {
+            const url = status.url;
+            return { label: `打开「${project.name}」的页面`, opening: true, run: () => browseProjectService(url) };
+          }
+          if (projectServiceActive(status)) return;
+          return { label: `启动「${project.name}」的服务`, opening: false, run: () =>
+            void projectServices.change(project.id, "start").catch(reason => showError(String(reason))) };
+        }}
         onRenameProject={handleRenameProject}
         onDeleteProject={handleDeleteProject}
         onArchiveProjectSessions={archiveProjectSessions}
@@ -2525,7 +2600,7 @@ export default function App() {
                   !tabHasWorkspaceTerminal ? (
                   <EmptyWorkspaceLauncher
                     key={workspace.activeTabId}
-                    projects={projects}
+                    projects={activeProjects}
                     directory={emptyDirectory}
                     onDirectoryChange={(directory) => setEmptyDirectories(current => ({ ...current, [workspace.activeTabId]: directory }))}
                     onLaunch={(runtime, project) => {
@@ -2623,7 +2698,7 @@ export default function App() {
                         variant="docked"
                                         sessions={sessions}
                         defaultCwd={activeWorkspaceRoot}
-                        quickContext={{ workspaceSessionIds: tabSessions.map(s => s.id), projectId: selectedSession?.projectId ?? null, cwd: activeWorkspaceRoot }}
+                        quickContext={{ workspaceSessionIds: tabSessions.map(s => s.id), projectId: activeProjectId ?? null, cwd: activeWorkspaceRoot, projects: activeProjects }}
                         onOpenQuickSettings={() => openSettingsSection("quickCommands")}
                         onClose={closeRightSidebar}
                         onDetach={detachControl}
@@ -2677,8 +2752,8 @@ export default function App() {
             onPositionChange={updatePetPosition}
           />
           {cliLaunchRequest && <CliLaunchDialog initialRuntime={cliLaunchRequest.runtime}
-            projects={projects}
-            initialDirectory={cliLaunchRequest.project ?? (activeWorkspaceRoot ? resolveSessionDirectory(activeWorkspaceRoot, projects) : emptyDirectory)}
+            projects={activeProjects}
+            initialDirectory={cliLaunchRequest.project ?? workspaceProject ?? (activeWorkspaceRoot ? resolveSessionDirectory(activeWorkspaceRoot, activeProjects, activeProjectId) : emptyDirectory)}
             onClose={() => setCliLaunchRequest(null)} onLaunch={async (kind, selection, directory) => {
             const nativeLaunchers = { deepseek_harness: openDeepSeekHarness, zcode: openZCode, claude_chat: openClaudeChat, codex_chat: openCodexChat, kimi_chat: openKimiChat, opencode_chat: openOpenCodeChat, pi_chat: openPiChat };
             const started = isCliRuntime(kind)
@@ -2687,12 +2762,6 @@ export default function App() {
             if (started) setCliLaunchRequest(null);
             return started;
           }} />}
-          {addProjectOpen && (
-            <AddProjectDialog
-              onConfirm={handleAddProject}
-              onCancel={() => setAddProjectOpen(false)}
-            />
-          )}
           {switchFor && <SessionSwitchDialog source={switchFor} initialTarget={switchTarget} sourcePosition={Math.max(0, displaySessions.findIndex((session) => session.id === switchFor.id))} record={switchDraft} preview={UI_PREVIEW} onRecord={handleSwitchRecord} onClose={() => setSwitchFor(null)} />}
           {originalTranscript ? <TranscriptViewer key={originalTranscript.runId} original={originalTranscript} onClose={() => setOriginalTranscript(null)} /> : transcriptFor && (
             <TranscriptViewer
@@ -2704,11 +2773,20 @@ export default function App() {
           )}
           {settingsOpen && (
             <SettingsDialog
-              quickContext={{ workspaceSessionIds: tabSessions.map(s => s.id), projectId: selectedSession?.projectId ?? null, cwd: activeWorkspaceRoot }}
+              quickContext={{ workspaceSessionIds: tabSessions.map(s => s.id), projectId: activeProjectId ?? null, cwd: activeWorkspaceRoot, projects: activeProjects }}
               onSessionsChange={handleSessionSnapshot}
               sessions={sessions}
               archivedSessions={archivedSessions}
               projects={projects}
+              projectManagement={{
+                activeProjectId: activeProjectId ?? undefined,
+                services: projectServices,
+                onAdd: openAddProjectDialog,
+                onChanged: applyProjectEdit,
+                onOpen: openProjectWorkspace,
+                onBrowse: browseProjectService,
+                onOpenCollaboration: id => { setMultiAgentWorkspaceProjectId(id); setSettingsOpen(false); },
+              }}
               appearance={appearance}
               resolvedAppearanceTheme={resolvedAppearanceTheme}
               petSettings={petSettings}
@@ -2731,6 +2809,7 @@ export default function App() {
               onClose={() => setSettingsOpen(false)}
             />
           )}
+          {addProjectOpen && <AddProjectDialog onConfirm={handleAddProject} onCancel={() => setAddProjectOpen(false)} />}
           {countPromptFor && (
             <CountPrompt
               providerName={countPromptFor.name}

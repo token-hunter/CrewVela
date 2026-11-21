@@ -1,4 +1,4 @@
-import type { AgentRuntimeKind, ProviderConfig, RuntimeProbe, SessionRecord } from "./types";
+import type { AgentRuntimeKind, Project, ProviderConfig, RuntimeProbe, SessionRecord } from "./types";
 import { TERMINAL_RUNTIMES, CHAT_RUNTIMES } from "./runtimeTaxonomy.ts";
 
 export type QuickAction = "send" | "launch" | "stop" | "delete";
@@ -25,6 +25,7 @@ export interface QuickContext {
   workspaceSessionIds?: readonly string[];
   projectId?: string | null;
   cwd?: string | null;
+  projects?: readonly Project[];
 }
 export const QUICK_COMMAND_STORAGE_KEY = "crewvela-quick-commands-v1";
 export const QUICK_COMMAND_CHANGED = "crewvela-quick-commands-changed";

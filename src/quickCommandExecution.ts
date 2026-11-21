@@ -2,7 +2,7 @@ import type { SessionRecord } from "./types";
 import { isQuickAgentSession, isQuickSessionLive, sessionRuntime, targetIdentity, validateQuickCommand, type QuickCommand } from "./quickCommands.ts";
 
 export interface QuickReceipt { targetId: string; title: string; state: "queued" | "text_written" | "started" | "stopped" | "removed" | "failed"; detail?: string; requestId?: string }
-export interface QuickExecutionPlan { command: QuickCommand; targets: SessionRecord[]; cwd: string; count: number }
+export interface QuickExecutionPlan { command: QuickCommand; targets: SessionRecord[]; cwd: string; count: number; projectId?: string }
 export interface QuickExecutionDeps {
   invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
   enabled: (kind: NonNullable<SessionRecord["agentRuntimeKind"]>) => boolean;
@@ -24,8 +24,8 @@ export async function executeQuickPlan(plan: QuickExecutionPlan, deps: QuickExec
       try {
         if (!deps.enabled(command.runtimeKind!)) throw Error("目标 Runtime 已禁用");
         launched = command.providerId
-          ? (await deps.invoke<SessionRecord[]>("launch_multi", { providerId: command.providerId, cwds: [plan.cwd], count: 1, yolo: false, autoMode: false, useWorktree: false, initialPrompt: null, projectId: null }))[0]
-          : await deps.invoke<SessionRecord>("launch_runtime_session", { runtimeKind: command.runtimeKind, cwd: plan.cwd, projectId: null });
+          ? (await deps.invoke<SessionRecord[]>("launch_multi", { providerId: command.providerId, cwds: [plan.cwd], count: 1, yolo: false, autoMode: false, useWorktree: false, initialPrompt: null, projectId: plan.projectId ?? null }))[0]
+          : await deps.invoke<SessionRecord>("launch_runtime_session", { runtimeKind: command.runtimeKind, cwd: plan.cwd, projectId: plan.projectId ?? null });
         if (!launched) throw Error("启动接口未返回会话");
         if (command.body.trim()) {
           const requestId = deps.uuid();

@@ -40,7 +40,7 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
   const order = useRuntimeOrder(TERMINAL_AGENTS, NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY);
   const chatOrder = useRuntimeOrder(CHAT_AGENTS, NEW_SESSION_CHAT_ORDER_STORAGE_KEY);
   const submitting = useRef(false);
-  const directory = selectedDirectory ? resolveSessionDirectory(selectedDirectory.path, projects) : null;
+  const directory = selectedDirectory ? resolveSessionDirectory(selectedDirectory.path, projects, selectedDirectory.id) : null;
   const [isolated, setIsolated] = useState(false);
   const [baseRef, setBaseRef] = useState("HEAD");
   const [fetchUpstream, setFetchUpstream] = useState(false);
@@ -84,7 +84,7 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
     setPicking(true); setError(null);
     try {
       const path = await openDirectory({ directory: true, multiple: false, title: "选择工作目录", defaultPath: directory?.path });
-      if (mounted.current && typeof path === "string" && path.trim()) setSelectedDirectory(resolveSessionDirectory(path, projects));
+      if (mounted.current && typeof path === "string" && path.trim()) setSelectedDirectory(resolveSessionDirectory(path, projects, directory?.id));
     } catch (reason) {
       if (mounted.current) setError(`选择目录失败：${String(reason)}`);
     } finally {

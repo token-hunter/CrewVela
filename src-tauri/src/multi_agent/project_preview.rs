@@ -61,7 +61,7 @@ impl PreviewConfig {
         Ok(Some(config))
     }
 
-    fn validate(&self, root: &Path) -> Result<PathBuf> {
+    pub(crate) fn validate(&self, root: &Path) -> Result<PathBuf> {
         ensure!(
             !self.program.trim().is_empty()
                 && self.program.len() <= 512
@@ -86,14 +86,14 @@ impl PreviewConfig {
                 }),
             "工作目录应为项目内的相对目录"
         );
-        let root = root.canonicalize().context("交付目录不可访问")?;
+        let root = root.canonicalize().context("项目目录不可访问")?;
         let cwd = root
             .join(relative)
             .canonicalize()
             .context("启动工作目录不存在")?;
         ensure!(
             cwd.is_dir() && cwd.starts_with(&root),
-            "工作目录应位于交付目录内"
+            "工作目录应位于项目目录内"
         );
         if let Some(url) = &self.url {
             local_url(url)?;
@@ -215,6 +215,51 @@ mod tests {
             url: None,
         };
         assert!(config.validate(Path::new(".")).is_err());
+    }
+
+    #[test]
+    fn local_project_services_run_and_stop_independently() {
+        if which::which("node").is_err() { return; }
+        let root = std::env::temp_dir().join(format!("crewvela-local-services-{}", uuid::Uuid::new_v4()));
+        let script = r#"const response = require('node:fs').readFileSync('marker', 'utf8'); const s = require('node:http').createServer((q,r) => r.end(response)); s.listen(0, '127.0.0.1', () => console.log('http://127.0.0.1:' + s.address().port));"#;
+        let registered = |id: &str, cwd: &str| {
+            let dir = root.join(id);
+            std::fs::create_dir_all(dir.join(cwd)).unwrap();
+            std::fs::write(dir.join(cwd).join("marker"), id).unwrap();
+            crate::projects::Project {
+                id: id.into(), name: id.into(), path: dir.display().to_string(), badge_color: String::new(),
+                created_at: 0, updated_at: 0, archived_at: None, last_opened_at: None,
+                launch: Some(PreviewConfig { program: "node".into(), args: vec!["-e".into(), script.into()],
+                    working_directory: cwd.into(), url: None }),
+                collaboration_project_ids: Vec::new(),
+            }
+        };
+        let first = registered("converter", "apps/web");
+        let second = registered("media", "server");
+        let services = LocalProjectServices::default();
+        {
+            let mut values = services.0.lock().unwrap();
+            LocalProjectServices::start_locked(&mut values, &first).unwrap();
+            LocalProjectServices::start_locked(&mut values, &second).unwrap();
+        }
+        let await_url = |id: &str| {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let status = services.status(id);
+                if let Some(url) = status.url { break url; }
+                assert!(Instant::now() < deadline, "{id}: {:?} {:?}", status.error, status.logs);
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        };
+        let first_url = await_url(&first.id);
+        let second_url = await_url(&second.id);
+        assert_ne!(first_url, second_url);
+        assert_eq!(services.stop(&first.id).state, "idle");
+        assert_eq!(readiness(&local_url(&first_url).unwrap()), None);
+        assert_eq!(readiness(&local_url(&second_url).unwrap()), Some(200));
+        services.stop_all().unwrap();
+        assert_eq!(readiness(&local_url(&second_url).unwrap()), None);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[cfg(windows)]
@@ -505,9 +550,40 @@ struct Instance {
     status: PreviewStatus,
     started: Instant,
     last_http_status: Option<u16>,
+    local: bool,
 }
 
 impl Instance {
+    fn launch(config: &PreviewConfig, root: &Path, checkout: Option<PreviewCheckout>, local: bool) -> Result<Self> {
+        let cwd = config.validate(checkout.as_ref().map_or(root, |checkout| checkout.project_path.as_path()))?;
+        let fixed_url = config.url.as_deref().map(local_url).transpose()?;
+        if let Some(url) = &fixed_url {
+            ensure!(
+                !local_addresses(url).into_iter()
+                    .any(|addr| TcpStream::connect_timeout(&addr, PROBE_TIMEOUT).is_ok()),
+                "启动端口已被占用，请停止原服务或修改启动配置"
+            );
+        }
+        let executable = config.executable(&cwd)?;
+        let mut command = super::command_for_path(&executable);
+        command.args(&config.args).current_dir(external_command_path(&cwd))
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        if fixed_url.is_none() && !local {
+            command.env("PORT", "0");
+        }
+        let (mut child, ownership) =
+            crate::acp::spawn_owned_command(&mut command).context("启动项目失败")?;
+        let output = Arc::new(Mutex::new(Output::default()));
+        capture(child.stdout.take().expect("piped stdout"), output.clone(), fixed_url.is_none());
+        capture(child.stderr.take().expect("piped stderr"), output.clone(), false);
+        Ok(Self {
+            process: Some(PreviewProcess { child, _ownership: ownership, _checkout: checkout }),
+            output, fixed_url,
+            status: PreviewStatus { state: "starting", ..Default::default() },
+            started: Instant::now(), last_http_status: None, local,
+        })
+    }
+
     fn status(&self, logs: bool) -> PreviewStatus {
         let mut status = self.status.clone();
         if logs {
@@ -545,6 +621,11 @@ impl Instance {
             return false;
         }
         match process.child.try_wait() {
+            Ok(Some(exit)) if self.local && exit.success() => {
+                self.finish(None);
+                if self.status.state == "idle" { self.status.state = "completed"; }
+                return false;
+            }
             Ok(Some(exit)) => {
                 self.finish(Some(format!("项目进程已退出（{exit}）")));
                 return false;
@@ -554,6 +635,16 @@ impl Instance {
                 return false;
             }
             Ok(None) => {}
+        }
+        if self.local && self.fixed_url.is_none() {
+            self.status.state = "running";
+            if self.status.url.is_none() {
+                let url = self.output.lock().unwrap().discovered_url.clone();
+                if let Some(url) = url.filter(|url| readiness(url).is_some_and(|code| (200..400).contains(&code))) {
+                    self.status.url = Some(url.into());
+                }
+            }
+            return true;
         }
         if self.status.state == "running" {
             return true;
@@ -566,7 +657,7 @@ impl Instance {
             self.last_http_status = readiness(&url).or(self.last_http_status);
             if self
                 .last_http_status
-                .is_some_and(|code| (200..300).contains(&code))
+                .is_some_and(|code| (200..if self.local { 400 } else { 300 }).contains(&code))
             {
                 self.status = PreviewStatus {
                     state: "running",
@@ -601,6 +692,89 @@ type PreviewInstances = HashMap<(String, String), Arc<Mutex<Instance>>>;
 
 #[derive(Clone, Default)]
 pub(crate) struct ProjectPreviews(Arc<Mutex<PreviewInstances>>);
+
+#[derive(Clone, Default)]
+pub(crate) struct LocalProjectServices(Arc<Mutex<HashMap<String, Arc<Mutex<Instance>>>>>);
+
+impl LocalProjectServices {
+    pub(crate) fn start(&self, id: &str) -> Result<PreviewStatus> {
+        let mut instances = self.0.lock().unwrap();
+        let project = crate::projects::get(id)?.context("找不到本地项目")?;
+        Self::start_locked(&mut instances, &project)
+    }
+
+    fn start_locked(instances: &mut HashMap<String, Arc<Mutex<Instance>>>, project: &crate::projects::Project) -> Result<PreviewStatus> {
+        ensure!(project.archived_at.is_none(), "请先恢复已归档的项目");
+        if let Some(entry) = instances.get(&project.id) {
+            let entry = entry.lock().unwrap();
+            if entry.process.is_some() { return Ok(entry.status(false)); }
+        }
+        let config = project.launch.as_ref().context("请先保存启动配置")?;
+        let entry = Arc::new(Mutex::new(Instance::launch(config, Path::new(&project.path), None, true)?));
+        let status = entry.lock().unwrap().status(false);
+        let observer = Arc::downgrade(&entry);
+        instances.insert(project.id.clone(), entry);
+        std::thread::spawn(move || {
+            while let Some(entry) = observer.upgrade() {
+                if !entry.lock().unwrap().poll() { break; }
+                drop(entry);
+                std::thread::sleep(Duration::from_millis(300));
+            }
+        });
+        Ok(status)
+    }
+
+    pub(crate) fn statuses(&self) -> HashMap<String, PreviewStatus> {
+        self.0.lock().unwrap().iter()
+            .map(|(id, entry)| (id.clone(), entry.lock().unwrap().status(false)))
+            .collect()
+    }
+
+    pub(crate) fn status(&self, id: &str) -> PreviewStatus {
+        self.0.lock().unwrap().get(id)
+            .map_or_else(PreviewStatus::default, |entry| entry.lock().unwrap().status(true))
+    }
+
+    pub(crate) fn stop(&self, id: &str) -> PreviewStatus {
+        self.0.lock().unwrap().get(id).map_or_else(PreviewStatus::default, |entry| {
+            let mut entry = entry.lock().unwrap();
+            entry.finish(None);
+            entry.status(false)
+        })
+    }
+
+    pub(crate) fn edit(&self, id: &str, edit: crate::projects::ProjectEdit) -> Result<crate::projects::Project> {
+        use crate::projects::ProjectEdit;
+        let affects_launch = matches!(edit, ProjectEdit::Directory { .. } | ProjectEdit::Archive { .. } | ProjectEdit::Launch { .. });
+        let mut instances = self.0.lock().unwrap();
+        if affects_launch {
+            ensure!(instances.get(id).is_none_or(|entry| entry.lock().unwrap().process.is_none()),
+                "请先停止本项目的开发服务");
+        }
+        let result = crate::projects::edit(id, edit)?;
+        if affects_launch { instances.remove(id); }
+        Ok(result)
+    }
+
+    pub(crate) fn delete(&self, id: &str) -> Result<()> {
+        let mut instances = self.0.lock().unwrap();
+        ensure!(instances.get(id).is_none_or(|entry| entry.lock().unwrap().process.is_none()),
+            "请先停止本项目的开发服务");
+        crate::projects::delete(id)?;
+        instances.remove(id);
+        Ok(())
+    }
+
+    pub(crate) fn stop_all(&self) -> Result<()> {
+        for (id, entry) in self.0.lock().unwrap().iter() {
+            let mut entry = entry.lock().unwrap();
+            if entry.process.is_none() { continue; }
+            entry.finish(None);
+            ensure!(entry.process.is_none(), "项目 {id}：{}", entry.status.error.as_deref().unwrap_or("停止开发服务失败"));
+        }
+        Ok(())
+    }
+}
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -677,55 +851,7 @@ impl ProjectPreviews {
             }
             None
         };
-        let cwd = config.validate(checkout.as_ref().map_or(root, |checkout| checkout.project_path.as_path()))?;
-        let fixed_url = config.url.as_deref().map(local_url).transpose()?;
-        if let Some(url) = &fixed_url {
-            ensure!(
-                !local_addresses(url)
-                    .into_iter()
-                    .any(|addr| TcpStream::connect_timeout(&addr, PROBE_TIMEOUT).is_ok()),
-                "启动端口已被占用，请停止原服务或修改启动配置"
-            );
-        }
-        let executable = config.executable(&cwd)?;
-        let mut command = super::command_for_path(&executable);
-        command
-            .args(&config.args)
-            .current_dir(external_command_path(&cwd))
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if fixed_url.is_none() {
-            command.env("PORT", "0");
-        }
-        let (mut child, ownership) =
-            crate::acp::spawn_owned_command(&mut command).context("启动项目失败")?;
-        let output = Arc::new(Mutex::new(Output::default()));
-        capture(
-            child.stdout.take().expect("piped stdout"),
-            output.clone(),
-            fixed_url.is_none(),
-        );
-        capture(
-            child.stderr.take().expect("piped stderr"),
-            output.clone(),
-            false,
-        );
-        let entry = Arc::new(Mutex::new(Instance {
-            process: Some(PreviewProcess {
-                child,
-                _ownership: ownership,
-                _checkout: checkout,
-            }),
-            output,
-            fixed_url,
-            status: PreviewStatus {
-                state: "starting",
-                ..Default::default()
-            },
-            started: Instant::now(),
-            last_http_status: None,
-        }));
+        let entry = Arc::new(Mutex::new(Instance::launch(&config, root, checkout, false)?));
         let status = entry.lock().unwrap().status(false);
         let observer = Arc::downgrade(&entry);
         instances.insert(key.clone(), entry);

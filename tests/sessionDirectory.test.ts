@@ -14,6 +14,15 @@ test("临时目录不继承旧项目，子目录也不误关联父项目", () =>
   assert.deepEqual(resolveSessionDirectory("D:\\临时目录", [saved]), { name: "临时目录", path: "D:\\临时目录" });
   assert.equal(resolveSessionDirectory("F:\\project\\child", [saved]).id, undefined);
 });
+test("从项目内选择子目录时保留项目身份和实际目录，归档后不再作为启动目标", () => {
+  const parent = project("saved", "F:\\project");
+  const nested = project("nested", "F:\\project\\nested");
+  assert.deepEqual(resolveSessionDirectory("F:\\project\\app", [parent, nested], parent.id),
+    { id: parent.id, name: parent.name, path: "F:\\project\\app" });
+  assert.equal(resolveSessionDirectory(nested.path, [parent, nested], parent.id), nested);
+  assert.equal(resolveSessionDirectory(parent.path, [{ ...parent, archivedAt: 1 }], parent.id).id, undefined);
+  assert.equal(resolveSessionDirectory("F:\\project-other", [parent], parent.id).id, undefined);
+});
 test("UNC 共享路径忽略大小写；POSIX 路径保留大小写区别", () => {
   const unc = project("share", "\\\\server\\share\\repo");
   assert.equal(resolveSessionDirectory("\\\\SERVER\\SHARE\\REPO\\", [unc]), unc);

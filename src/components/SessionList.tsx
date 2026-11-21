@@ -17,6 +17,8 @@ import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGl
 import { PencilSimpleIcon } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { PushPinIcon } from "@phosphor-icons/react/dist/csr/PushPin";
+import { PlayIcon } from "@phosphor-icons/react/dist/csr/Play";
+import { ArrowSquareOutIcon } from "@phosphor-icons/react/dist/csr/ArrowSquareOut";
 import { StarIcon } from "@phosphor-icons/react/dist/csr/Star";
 import { StopIcon } from "@phosphor-icons/react/dist/csr/Stop";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
@@ -74,6 +76,11 @@ interface Props {
   onRelayDetails?: (session: SessionRecord) => void;
   logicalSessionId?: (id: string) => string;
   onNewSessionInProject?: (project: Project) => void;
+  onOpenProject?: (project: Project) => void;
+  onManageProjects?: () => void;
+  projectResumeIds?: ReadonlySet<string>;
+  onContinueProject?: (project: Project) => void;
+  projectServiceAction?: (project: Project) => { label: string; opening: boolean; run: () => void } | undefined;
   onAddProject?: () => void;
   onRenameProject?: (project: Project) => void;
   onDeleteProject?: (project: Project) => void;
@@ -135,6 +142,11 @@ export function SessionList({
   onRelayDetails,
   logicalSessionId = (id) => id,
   onNewSessionInProject,
+  onOpenProject,
+  onManageProjects,
+  projectResumeIds,
+  onContinueProject,
+  projectServiceAction,
   onAddProject,
   onRenameProject,
   onDeleteProject,
@@ -570,6 +582,7 @@ export function SessionList({
 
   const renderProjectGroup = (project: Project, groupSessions: SessionRecord[]) => {
     const collapsed = collapsedProjects.has(project.id);
+    const service = projectServiceAction?.(project);
     return (
       <div className="session-project-group" key={project.id}>
         <div className="session-project-head">
@@ -595,12 +608,17 @@ export function SessionList({
               />
             )}
           </button>
-          <span className="session-project-name" title={project.path}>
-            {project.name}
-          </span>
+          {onOpenProject ? <button className="session-project-name session-project-open" type="button" title={project.path}
+            onClick={() => onOpenProject(project)}>{project.name}</button> :
+            <span className="session-project-name" title={project.path}>{project.name}</span>}
           {pinnedProjects.has(project.id) && <PushPinIcon className="session-pin-mark" size={12} weight="fill" aria-label="已置顶项目" />}
           <span className="section-count">{groupSessions.length}</span>
           <div className="session-project-actions">
+            {onContinueProject && projectResumeIds?.has(project.id) && <button type="button" title={`继续「${project.name}」的会话`}
+              aria-label={`继续「${project.name}」的会话`} onClick={() => onContinueProject(project)}><CaretRightIcon size={14} /></button>}
+            {service && <button type="button" title={service.label} aria-label={service.label} onClick={service.run}>
+              {service.opening ? <ArrowSquareOutIcon size={14} /> : <PlayIcon size={14} />}
+            </button>}
             <button
               type="button"
               title={pinnedProjects.has(project.id) ? "取消置顶项目" : "置顶项目"}
@@ -879,6 +897,7 @@ export function SessionList({
       {groupByProject && (
         <div className="session-projects-toolbar">
           <span>项目</span>
+          {onManageProjects && <button type="button" aria-label="项目管理" title="项目管理" onClick={onManageProjects}><DotsThreeIcon size={16} /></button>}
           {onAddProject && (
             <button
               type="button"
@@ -899,15 +918,15 @@ export function SessionList({
             {filter === "favorites" ? "暂无收藏会话" : "暂无会话"}
           </div>
         )}
-        {visibleSessions.length === 0 && projects.length > 0 && query.trim() && (
-          <div className="session-empty">没有匹配「{query.trim()}」的会话</div>
+        {visibleSessions.length === 0 && projects.length > 0 && query.trim()
+          && (!groupByProject || !projects.some(project => `${project.name} ${project.path}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))) && (
+          <div className="session-empty">没有匹配「{query.trim()}」的项目或会话</div>
         )}
         {groupByProject && projectGroups ? (
           <>
             {orderedProjects.map((project) => {
               const groupSessions = projectGroups.byProject.get(project.id) ?? [];
-              // 搜索时隐藏空组，减少噪音。
-              if (query.trim() && groupSessions.length === 0) return null;
+              if (query.trim() && groupSessions.length === 0 && !`${project.name} ${project.path}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) return null;
               return renderProjectGroup(project, groupSessions);
             })}
             {projectGroups.ungrouped.length > 0 && (

@@ -602,10 +602,57 @@ fn update_project(
 
 /// 删除项目只解除分组：项目下的会话保留并回到未分组。
 #[tauri::command]
-fn delete_project(id: String, session_state: State<'_, SessionManager>) -> Result<(), String> {
-    projects::delete(&id).map_err(to_err)?;
+fn delete_project(id: String, session_state: State<'_, SessionManager>,
+    services: State<'_, multi_agent::project_preview::LocalProjectServices>) -> Result<(), String> {
+    services.delete(&id).map_err(to_err)?;
     session_state.clear_project(&id).map_err(to_err)?;
     Ok(())
+}
+
+#[tauri::command]
+async fn edit_local_project(id: String, edit: projects::ProjectEdit, store: State<'_, MultiAgentStore>,
+    services: State<'_, multi_agent::project_preview::LocalProjectServices>) -> Result<Project, String> {
+    let store = store.inner().clone();
+    let services = services.inner().clone();
+    blocking_command(move || {
+        if let projects::ProjectEdit::Collaboration { ids } = &edit {
+            let available = store.list_projects().map_err(to_err)?;
+            if ids.iter().any(|id| !available.iter().any(|project| &project.id == id)) {
+                return Err("协作项目已变化，请重新选择".into());
+            }
+        }
+        services.edit(&id, edit).map_err(to_err)
+    }).await
+}
+
+#[tauri::command]
+async fn local_project_service_start(id: String, app: AppHandle,
+    services: State<'_, multi_agent::project_preview::LocalProjectServices>) -> Result<multi_agent::project_preview::PreviewStatus, String> {
+    let _admission = app.state::<runtime_admission::RuntimeAdmission>().admit().map_err(to_err)?;
+    let services = services.inner().clone();
+    blocking_command(move || services.start(&id).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn local_project_service_stop(id: String,
+    services: State<'_, multi_agent::project_preview::LocalProjectServices>) -> Result<multi_agent::project_preview::PreviewStatus, String> {
+    let services = services.inner().clone();
+    blocking_command(move || Ok(services.stop(&id))).await
+}
+
+#[tauri::command]
+async fn local_project_service_logs(id: String,
+    services: State<'_, multi_agent::project_preview::LocalProjectServices>) -> Result<multi_agent::project_preview::PreviewStatus, String> {
+    let services = services.inner().clone();
+    blocking_command(move || Ok(services.status(&id))).await
+}
+
+#[tauri::command]
+async fn local_project_service_statuses(
+    services: State<'_, multi_agent::project_preview::LocalProjectServices>,
+) -> Result<std::collections::HashMap<String, multi_agent::project_preview::PreviewStatus>, String> {
+    let services = services.inner().clone();
+    blocking_command(move || Ok(services.statuses())).await
 }
 
 // ---- AI 创作工作台（独立于现有会话分组项目） ----
@@ -3447,7 +3494,7 @@ fn launch_one_session(
     session_state: &SessionManager,
     action_queue: &SessionActionQueue,
 ) -> Result<SessionRecord, String> {
-    let cwd = if use_worktree && project_id.is_some() {
+    let cwd = if project_id.is_some() {
         runtime_project_cwd(Some(cwd), project_id.as_deref(), |id| projects::get(id).map_err(to_err))?
     } else { cwd };
     let options = use_worktree.then(worktree::WorktreeOptions::default);
@@ -3537,18 +3584,16 @@ fn launch_multi(
 fn launch_terminal(
     shell: TerminalShell,
     cwd: Option<String>,
+    project_id: Option<String>,
     pty_state: State<'_, PtyManager>,
     session_state: State<'_, SessionManager>,
 ) -> Result<SessionRecord, String> {
-    let cwd = cwd
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| dirs::home_dir().map(|path| path.display().to_string()))
-        .unwrap_or_else(|| ".".to_string());
+    let cwd = runtime_project_cwd(cwd, project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
     let record = session_state
         .create_terminal(NewTerminalSession {
             shell,
             cwd,
-            project_id: None,
+            project_id,
         })
         .map_err(to_err)?;
     let lifecycle = session_state.lifecycle_lock(&record.id);
@@ -3574,8 +3619,8 @@ fn runtime_project_cwd(
         let cwd = cwd.unwrap_or_else(|| project.path.clone());
         let project_path = std::fs::canonicalize(&project.path).map_err(|error| format!("项目目录不可访问: {error}"))?;
         let cwd_path = std::fs::canonicalize(&cwd).map_err(|error| format!("工作目录不可访问: {error}"))?;
-        if !project_path.is_dir() || !cwd_path.is_dir() || project_path != cwd_path {
-            return Err("项目会话必须使用该项目的工作目录".into());
+        if !project_path.is_dir() || !cwd_path.is_dir() || !cwd_path.starts_with(&project_path) {
+            return Err("项目会话必须使用该项目目录或其子目录".into());
         }
         return Ok(cwd);
     }
@@ -6302,6 +6347,7 @@ pub fn run() {
             app.manage(UsageTracker::default());
             let engineering = MultiAgentSupervisor::default();
             app.manage(engineering.previews.clone());
+            app.manage(multi_agent::project_preview::LocalProjectServices::default());
             app.manage(engineering);
             app.manage(multi_agent::ConversationSupervisor::default());
             let session_manager = SessionManager::new()
@@ -6483,6 +6529,11 @@ pub fn run() {
             create_project,
             update_project,
             delete_project,
+            edit_local_project,
+            local_project_service_start,
+            local_project_service_stop,
+            local_project_service_logs,
+            local_project_service_statuses,
             list_launch_presets,
             create_launch_preset,
             delete_launch_preset,
@@ -6758,6 +6809,11 @@ fn shutdown_all_sessions<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
             Err(error) => return report_shutdown_failure(app, format!("等待会话启动结束失败，未退出应用：{error:#}")),
         }
     } else { None };
+    if let Some(services) = app.try_state::<multi_agent::project_preview::LocalProjectServices>() {
+        if let Err(error) = services.stop_all() {
+            return report_shutdown_failure(app, format!("开发服务停止未确认，未退出应用：{error:#}"));
+        }
+    }
     if let (Some(supervisor), Some(store)) = (app.try_state::<multi_agent::ConversationSupervisor>(), app.try_state::<MultiAgentStore>()) {
         if let Err(error) = supervisor.stop_all(&store) { return report_shutdown_failure(app, format!("讨论停止未确认，未退出应用：{error:#}")); }
     }
@@ -7638,7 +7694,9 @@ mod tests {
         let root = std::env::temp_dir().join(format!("crewvela-project-runtime-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join("project")).unwrap();
         std::fs::create_dir_all(root.join("other")).unwrap();
-        let project = projects::Project { id: "project".into(), name: "Project".into(), path: root.join("project").display().to_string(), badge_color: "blue".into(), created_at: 0, updated_at: 0 };
+        let project = projects::Project { id: "project".into(), name: "Project".into(),
+            path: root.join("project").display().to_string(), badge_color: "blue".into(), created_at: 0, updated_at: 0,
+            archived_at: None, last_opened_at: None, launch: None, collaboration_project_ids: Vec::new() };
         assert!(runtime_project_cwd(Some(project.path.clone()), Some("unknown"), |_| Ok(None)).is_err());
         assert!(runtime_project_cwd(Some(root.join("other").display().to_string()), Some("project"), |_| Ok(Some(project.clone()))).is_err());
         assert_eq!(runtime_project_cwd(None, Some("project"), |_| Ok(Some(project.clone()))).unwrap(), project.path);

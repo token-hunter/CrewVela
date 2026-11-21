@@ -1,6 +1,7 @@
 export interface WorkspaceTab {
   id: string;
   title: string;
+  projectId?: string;
 }
 
 export interface WorkspaceTabState {
@@ -37,7 +38,8 @@ export function loadWorkspaceTabs(): WorkspaceTabState {
     const tabs = Array.isArray(parsed.tabs)
       ? parsed.tabs.filter(
           (tab): tab is WorkspaceTab =>
-            typeof tab?.id === "string" && typeof tab?.title === "string",
+            typeof tab?.id === "string" && typeof tab?.title === "string"
+            && (tab.projectId === undefined || typeof tab.projectId === "string"),
         )
       : [];
     if (tabs.length === 0) return defaultState();

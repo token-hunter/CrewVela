@@ -1,8 +1,8 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 
 const PROJECTS_VERSION: u32 = 1;
@@ -13,9 +13,7 @@ pub const BADGE_PALETTE: [&str; 8] = [
     "#5b8def", "#9b6dd6", "#4caf7d", "#e0a458", "#e06c75", "#56b6c2", "#d65f9e", "#7c8cff",
 ];
 
-/// 项目 = 一个本地目录（参考 orca 的 Project 裁剪而来：砍掉 GitHub 集成、
-/// 多 host、worktree 管理，只保留「目录 + 名称 + 徽标色」）。
-/// 会话通过 SessionRecord.project_id 归属项目，侧栏按项目分组。
+/// Local directory registered for session grouping and project management.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -25,6 +23,24 @@ pub struct Project {
     pub badge_color: String,
     pub created_at: u64,
     pub updated_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_opened_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) launch: Option<crate::multi_agent::project_preview::PreviewConfig>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collaboration_project_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum ProjectEdit {
+    Directory { path: String },
+    Archive { archived: bool },
+    Launch { config: Option<crate::multi_agent::project_preview::PreviewConfig> },
+    Collaboration { ids: Vec<String> },
+    Opened,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -81,6 +97,22 @@ fn default_name(path: &str) -> String {
         .to_string()
 }
 
+fn checked_directory(value: &str) -> Result<PathBuf> {
+    let path = Path::new(value);
+    ensure!(path.is_absolute(), "请选择本地项目的绝对目录");
+    let resolved = path.canonicalize().with_context(|| format!("项目目录不可访问: {value}"))?;
+    ensure!(resolved.is_dir(), "项目目录不是文件夹: {value}");
+    Ok(resolved)
+}
+
+fn ensure_unique_directory(projects: &[Project], id: Option<&str>, path: &Path) -> Result<()> {
+    ensure!(!projects.iter().any(|project|
+        Some(project.id.as_str()) != id
+            && Path::new(&project.path).canonicalize().is_ok_and(|existing| existing == path)
+    ), "该目录已添加为项目");
+    Ok(())
+}
+
 fn create_at(path: &std::path::Path, name: Option<&str>, dir: &str) -> Result<Project> {
     let _guard = STORE_LOCK.lock().map_err(|_| anyhow!("项目配置锁不可用"))?;
     let dir = dir.trim();
@@ -98,9 +130,7 @@ fn create_at(path: &std::path::Path, name: Option<&str>, dir: &str) -> Result<Pr
         .unwrap_or_else(|| default_name(dir));
 
     let mut file = load_from(path)?;
-    if file.projects.iter().any(|project| project.path == dir) {
-        return Err(anyhow!("该目录已添加为项目: {dir}"));
-    }
+    ensure_unique_directory(&file.projects, None, &checked_directory(dir)?)?;
     let now = now_millis();
     let project = Project {
         id: uuid::Uuid::new_v4().to_string(),
@@ -109,6 +139,10 @@ fn create_at(path: &std::path::Path, name: Option<&str>, dir: &str) -> Result<Pr
         badge_color: BADGE_PALETTE[file.projects.len() % BADGE_PALETTE.len()].to_string(),
         created_at: now,
         updated_at: now,
+        archived_at: None,
+        last_opened_at: None,
+        launch: None,
+        collaboration_project_ids: Vec::new(),
     };
     file.projects.push(project.clone());
     save_to(path, &file)?;
@@ -146,6 +180,43 @@ fn update_at(
 
 pub fn update(id: &str, name: Option<&str>, badge_color: Option<&str>) -> Result<Project> {
     update_at(&projects_path()?, id, name, badge_color)
+}
+
+fn edit_at(file_path: &Path, id: &str, edit: ProjectEdit) -> Result<Project> {
+    let _guard = STORE_LOCK.lock().map_err(|_| anyhow!("项目配置锁不可用"))?;
+    let mut file = load_from(file_path)?;
+    let index = file.projects.iter().position(|project| project.id == id)
+        .with_context(|| format!("未找到项目: {id}"))?;
+    if let ProjectEdit::Directory { path } = &edit {
+        ensure_unique_directory(&file.projects, Some(id), &checked_directory(path.trim())?)?;
+    }
+    let project = &mut file.projects[index];
+    match edit {
+        ProjectEdit::Directory { path } => project.path = path.trim().to_owned(),
+        ProjectEdit::Archive { archived } => project.archived_at = archived.then(now_millis),
+        ProjectEdit::Launch { config } => {
+            if let Some(config) = &config { config.validate(Path::new(&project.path))?; }
+            project.launch = config;
+        }
+        ProjectEdit::Collaboration { mut ids } => {
+            ids.sort();
+            ids.dedup();
+            project.collaboration_project_ids = ids;
+        }
+        ProjectEdit::Opened => {
+            ensure!(project.archived_at.is_none(), "请先恢复已归档的项目");
+            checked_directory(&project.path)?;
+            project.last_opened_at = Some(now_millis());
+        }
+    }
+    project.updated_at = now_millis();
+    let updated = project.clone();
+    save_to(file_path, &file)?;
+    Ok(updated)
+}
+
+pub(crate) fn edit(id: &str, edit: ProjectEdit) -> Result<Project> {
+    edit_at(&projects_path()?, id, edit)
 }
 
 fn delete_at(path: &std::path::Path, id: &str) -> Result<()> {
@@ -274,6 +345,38 @@ mod tests {
         assert!(update_at(&store, "unknown-id", Some("x"), None).is_err());
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn project_management_persists_edits_under_the_original_id() {
+        let root = test_dir("management");
+        let store = root.join("projects.json");
+        let original = root.join("original");
+        let moved = root.join("moved");
+        fs::create_dir(&original).unwrap();
+        fs::create_dir_all(moved.join("apps/web")).unwrap();
+        let project = create_at(&store, Some("Demo"), original.to_str().unwrap()).unwrap();
+        let id = &project.id;
+        assert!(project.archived_at.is_none() && project.launch.is_none());
+        assert!(edit_at(&store, id, ProjectEdit::Directory { path: root.join("missing").display().to_string() }).is_err());
+        assert_eq!(load_from(&store).unwrap().projects[0].path, project.path);
+        edit_at(&store, id, ProjectEdit::Directory { path: moved.display().to_string() }).unwrap();
+        let config = serde_json::from_value(serde_json::json!({
+            "program": "npm", "args": ["run", "dev"], "workingDirectory": "apps/web", "url": "http://127.0.0.1:5173/"
+        })).unwrap();
+        edit_at(&store, id, ProjectEdit::Launch { config: Some(config) }).unwrap();
+        edit_at(&store, id, ProjectEdit::Collaboration { ids: vec!["one".into(), "two".into(), "one".into()] }).unwrap();
+        edit_at(&store, id, ProjectEdit::Archive { archived: true }).unwrap();
+        assert!(edit_at(&store, id, ProjectEdit::Opened).is_err());
+        edit_at(&store, id, ProjectEdit::Archive { archived: false }).unwrap();
+        edit_at(&store, id, ProjectEdit::Opened).unwrap();
+        let saved = load_from(&store).unwrap().projects.pop().unwrap();
+        assert_eq!(saved.id, *id);
+        assert_eq!(Path::new(&saved.path), moved);
+        assert_eq!(saved.collaboration_project_ids, ["one", "two"]);
+        assert!(saved.archived_at.is_none() && saved.last_opened_at.is_some() && saved.launch.is_some());
+        assert!(original.is_dir() && moved.is_dir());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
