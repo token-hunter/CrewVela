@@ -78,6 +78,7 @@ pub struct CollaborationConversation {
     pub id: String,
     pub project_id: String,
     pub created_at: i64,
+    pub title: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -171,6 +172,8 @@ pub struct ConversationSnapshot {
     pub activity_events: Vec<super::RuntimeEventRecord>,
     pub rounds: Vec<ConversationRound>,
     pub execution_plans: Vec<ConversationExecutionPlan>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub retained_execution_plans: Vec<ConversationExecutionPlan>,
     pub supported_discussion_runtimes: Vec<AgentRuntimeKind>,
     pub project_policy: ConversationPolicyEntry,
     pub member_policies: Vec<ConversationPolicyEntry>,
@@ -411,6 +414,7 @@ pub struct ConversationHistoryEntry {
     pub created_at: i64,
     pub last_message_at: Option<i64>,
     pub preview: Option<String>,
+    pub title: Option<String>,
     pub current: bool,
     pub legacy: bool,
 }
@@ -421,6 +425,14 @@ pub struct ConversationSwitchInput {
     pub project_id: String,
     pub expected_conversation_id: String,
     pub conversation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationRenameInput {
+    pub project_id: String,
+    pub conversation_id: String,
+    pub title: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Turn {
@@ -465,6 +477,10 @@ pub(super) fn migrate(connection: &Connection) -> Result<()> {
         id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES ma_projects(id) ON DELETE CASCADE,
         created_at INTEGER NOT NULL, disposition TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS ma_conversation_history_project ON ma_conversation_history(project_id);
+      CREATE TABLE IF NOT EXISTS ma_conversation_titles (
+        project_id TEXT NOT NULL REFERENCES ma_projects(id) ON DELETE CASCADE,
+        conversation_id TEXT NOT NULL, title TEXT NOT NULL,
+        PRIMARY KEY(project_id, conversation_id));
       CREATE INDEX IF NOT EXISTS ma_conversation_messages_thread ON ma_conversation_messages(
         project_id, json_extract(data_json,'$.conversationId'), created_at);
       INSERT OR IGNORE INTO ma_conversation_history(id,project_id,created_at,disposition)
@@ -515,13 +531,15 @@ fn conversation_with(
         params![project_id, id(), now()],
     )?;
     Ok(connection.query_row(
-        "SELECT id,created_at FROM ma_conversations WHERE project_id=?1",
+        "SELECT c.id,c.created_at,t.title FROM ma_conversations c LEFT JOIN ma_conversation_titles t
+         ON t.project_id=c.project_id AND t.conversation_id=c.id WHERE c.project_id=?1",
         [project_id],
         |r| {
             Ok(CollaborationConversation {
                 id: r.get(0)?,
                 project_id: project_id.into(),
                 created_at: r.get(1)?,
+                title: r.get(2)?,
             })
         },
     )?)
@@ -693,6 +711,11 @@ fn snapshot_with(connection: &Connection, project_id: &str) -> Result<Conversati
     Ok(ConversationSnapshot { conversation, delegations, messages, activity_events,
         rounds: rows(connection,"SELECT data_json FROM ma_conversation_rounds WHERE project_id=?1 AND json_extract(data_json,'$.conversationId')=(SELECT id FROM ma_conversations WHERE project_id=?1) ORDER BY created_at,rowid",project_id)?,
         execution_plans: rows(connection,"SELECT p.data_json FROM ma_conversation_plans p JOIN ma_conversation_rounds r ON r.id=p.round_id JOIN ma_conversations c ON c.project_id=r.project_id WHERE p.project_id=?1 AND json_extract(r.data_json,'$.conversationId')=c.id ORDER BY p.rowid",project_id)?,
+        retained_execution_plans: rows(connection,
+            "SELECT p.data_json FROM ma_conversation_plans p JOIN ma_conversation_rounds r ON r.id=p.round_id
+             JOIN ma_conversation_history h ON h.project_id=p.project_id AND h.id=json_extract(r.data_json,'$.conversationId')
+             WHERE p.project_id=?1 AND h.disposition='deleted' AND p.applied_request_id IS NOT NULL ORDER BY p.rowid",
+            project_id)?,
         supported_discussion_runtimes: runtime_capabilities.iter()
             .filter(|capability| capability.research && capability.reply_only)
             .map(|capability| capability.runtime_kind).collect(),
@@ -808,6 +831,11 @@ impl MultiAgentStore {
 
     pub fn conversation_attachment_path(&self, project: &str, conversation: &str, message: &str, id: &str) -> Result<std::path::PathBuf> {
         let connection = self.connection.lock().unwrap();
+        let deleted: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ma_conversation_history WHERE project_id=?1 AND id=?2 AND disposition='deleted')",
+            params![project, conversation], |row| row.get(0),
+        )?;
+        ensure!(!deleted, "该会话已删除");
         let message = message_with(&connection, message)?;
         ensure!(message.project_id == project && message.conversation_id == conversation
             && message.attachments.iter().any(|file| file.id == id), "附件不属于此消息");
@@ -905,6 +933,32 @@ impl MultiAgentStore {
         self.rotate_conversation(input, "新建会话", "saved")
     }
 
+    pub fn delete_conversation(&self, input: ConversationClearInput) -> Result<ConversationSnapshot> {
+        self.rotate_conversation(input, "删除会话", "deleted")
+    }
+
+    pub fn rename_conversation(&self, input: ConversationRenameInput) -> Result<ConversationSnapshot> {
+        let title = input.title.trim();
+        ensure!(!title.is_empty() && title.chars().count() <= 60 && !title.chars().any(char::is_control), "会话名称须为 1 到 60 个字符");
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ma_conversations WHERE project_id=?1 AND id=?2)
+                 OR EXISTS(SELECT 1 FROM ma_conversation_history WHERE project_id=?1 AND id=?2
+                    AND disposition NOT IN ('cleared','deleted'))",
+            params![input.project_id, input.conversation_id], |row| row.get(0),
+        )?;
+        ensure!(exists, "该会话已不可用");
+        tx.execute(
+            "INSERT INTO ma_conversation_titles(project_id,conversation_id,title) VALUES(?1,?2,?3)
+             ON CONFLICT(project_id,conversation_id) DO UPDATE SET title=excluded.title",
+            params![input.project_id, input.conversation_id, title],
+        )?;
+        let snapshot = snapshot_with(&tx, &input.project_id)?;
+        tx.commit()?;
+        Ok(snapshot)
+    }
+
     fn rotate_conversation(&self, input: ConversationClearInput, operation: &str, disposition: &str) -> Result<ConversationSnapshot> {
         let mut connection = self.connection.lock().unwrap();
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -915,6 +969,33 @@ impl MultiAgentStore {
         let actual: HashSet<_> = current.messages.iter().map(|message| &message.id).collect();
         if conversation.id != input.expected_conversation_id || expected != actual {
             bail!("讨论记录已变化，请刷新后重试{operation}");
+        }
+        if disposition == "deleted" {
+            let work_pending: bool = tx.query_row(
+                "WITH plans(id,data_json,start_state) AS (
+                    SELECT p.id,p.data_json,p.start_state FROM ma_conversation_plans p
+                    JOIN ma_conversation_rounds d ON d.id=p.round_id
+                    WHERE p.project_id=?1 AND json_extract(d.data_json,'$.conversationId')=?2
+                 ), related_tasks(id) AS (
+                    SELECT s.task_id FROM ma_conversation_task_scopes s JOIN plans p ON p.id=s.plan_id
+                    UNION SELECT t.task_id FROM ma_conversation_turns t JOIN ma_conversation_rounds d ON d.id=t.round_id
+                        WHERE d.project_id=?1 AND json_extract(d.data_json,'$.conversationId')=?2
+                 )
+                 SELECT EXISTS(SELECT 1 FROM plans WHERE start_state='starting'
+                     OR json_extract(data_json,'$.status')='pending'
+                     OR json_extract(data_json,'$.managed.status') IN ('planning','waiting_login','running'))
+                    OR EXISTS(SELECT 1 FROM related_tasks t JOIN ma_approvals a ON a.task_id=t.id WHERE a.status='pending')
+                    OR EXISTS(SELECT 1 FROM related_tasks t JOIN ma_runs r ON r.task_id=t.id
+                        WHERE r.status IN ('queued','starting','running','waiting_input','waiting_approval')
+                           OR r.session_locator_json LIKE '%\"stopUnverified\":true%')
+                    OR EXISTS(SELECT 1 FROM ma_conversation_task_scopes s JOIN plans p ON p.id=s.plan_id
+                        JOIN ma_tasks t ON t.id=s.task_id WHERE t.status NOT IN ('done','failed','cancelled'))",
+                params![input.project_id, conversation.id], |row| row.get(0),
+            )?;
+            ensure!(!work_pending, "会话还有待处理的分工、审批或任务，处理完成后才能删除");
+            tx.execute("DELETE FROM ma_conversation_titles WHERE project_id=?1 AND conversation_id=?2",
+                params![input.project_id, conversation.id])?;
+            // Keep task inputs and execution evidence available to project task history and retries.
         }
         remember_conversation(&tx, &conversation, disposition)?;
         tx.execute("UPDATE ma_conversations SET id=?2,created_at=?3 WHERE project_id=?1", params![input.project_id, id(), now()])?;
@@ -929,7 +1010,7 @@ impl MultiAgentStore {
         let mut statement = connection.prepare(
             "WITH sessions(id,created_at,disposition) AS (
                 SELECT id,created_at,disposition FROM ma_conversation_history
-                    WHERE project_id=?1 AND id<>?2 AND disposition<>'cleared'
+                    WHERE project_id=?1 AND id<>?2 AND disposition NOT IN ('cleared','deleted')
                 UNION ALL SELECT ?2,?3,'current'
              )
              SELECT s.id,s.created_at,s.disposition,
@@ -939,14 +1020,16 @@ impl MultiAgentStore {
                     FROM ma_conversation_messages m WHERE m.project_id=?1
                     AND json_extract(m.data_json,'$.conversationId')=s.id
                     AND json_extract(m.data_json,'$.senderType')='user'
-                    ORDER BY m.created_at,m.rowid LIMIT 1) AS preview
-             FROM sessions s ORDER BY COALESCE(last_message_at,s.created_at) DESC,s.created_at DESC,s.id",
+                    ORDER BY m.created_at,m.rowid LIMIT 1) AS preview,
+                t.title
+             FROM sessions s LEFT JOIN ma_conversation_titles t ON t.project_id=?1 AND t.conversation_id=s.id
+             ORDER BY COALESCE(last_message_at,s.created_at) DESC,s.created_at DESC,s.id",
         )?;
         let entries = statement.query_map(params![project_id, conversation.id, conversation.created_at], |row| {
             let disposition: String = row.get(2)?;
             Ok(ConversationHistoryEntry {
                 id: row.get(0)?, created_at: row.get(1)?, last_message_at: row.get(3)?, preview: row.get(4)?,
-                current: disposition == "current", legacy: disposition == "legacy",
+                title: row.get(5)?, current: disposition == "current", legacy: disposition == "legacy",
             })
         })?.collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(entries)
@@ -962,7 +1045,7 @@ impl MultiAgentStore {
             }
             ensure_conversation_can_change(&tx, &input.project_id, "切换会话")?;
             let created_at: i64 = tx.query_row(
-                "SELECT created_at FROM ma_conversation_history WHERE project_id=?1 AND id=?2 AND disposition<>'cleared'",
+                "SELECT created_at FROM ma_conversation_history WHERE project_id=?1 AND id=?2 AND disposition NOT IN ('cleared','deleted')",
                 params![input.project_id, input.conversation_id], |row| row.get(0),
             ).optional()?.context("该会话已不可用")?;
             remember_conversation(&tx, &current, "saved")?;

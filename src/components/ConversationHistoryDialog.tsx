@@ -3,6 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ConversationHistoryEntry } from "../types";
 import { Modal } from "./ui/Modal";
 
+export function conversationTitle(title?: string | null, preview?: string | null) {
+  return title || preview?.replace(/\s+/g, " ").trim() || "空白会话";
+}
+
 const date = new Intl.DateTimeFormat("zh-CN", {
   year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
 });
@@ -38,7 +42,7 @@ export function ConversationHistoryDialog({ projectId, conversationId, blocked, 
       const time = item.lastMessageAt ?? item.createdAt;
       return <li key={item.id}>
         <button type="button" disabled={blocked || current} aria-current={current ? "true" : undefined} onClick={() => onSwitch(item.id)}>
-          <strong>{item.preview?.replace(/\s+/g, " ").trim() || "空白会话"}</strong>
+          <strong>{conversationTitle(item.title, item.preview)}</strong>
           <span><time dateTime={new Date(time).toISOString()}>{date.format(time)}</time>{current && " · 当前会话"}</span>
         </button>
       </li>;

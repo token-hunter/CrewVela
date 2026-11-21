@@ -939,12 +939,14 @@ export interface CollaborationConversation {
   id: string;
   projectId: string;
   createdAt: number;
+  title?: string | null;
 }
 export interface ConversationHistoryEntry {
   id: string;
   createdAt: number;
   lastMessageAt: number | null;
   preview: string | null;
+  title?: string | null;
   current: boolean;
   legacy: boolean;
 }
@@ -1127,6 +1129,7 @@ export interface ConversationSnapshot {
   messages: ConversationMessage[];
   rounds: ConversationRound[];
   executionPlans: ConversationExecutionPlan[];
+  retainedExecutionPlans?: ConversationExecutionPlan[];
   supportedDiscussionRuntimes: AgentRuntimeKind[];
   projectPolicy?: ConversationPolicyEntry;
   memberPolicies?: ConversationPolicyEntry[];

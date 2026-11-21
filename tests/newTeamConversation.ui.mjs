@@ -34,8 +34,11 @@ try {
     await editor(page).fill('旧会话草稿');
     await page.getByRole('tab', { name: '任务执行', exact: true }).click();
     await trigger(page).click();
-    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['新建会话', '历史会话', '导出会话', '清空讨论记录']);
+    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['新建会话', '重命名会话', '历史会话', '导出会话', '清空讨论记录', '删除会话']);
+    assert.equal(await page.getByRole('separator').count(), 0);
     await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'menuitem' && document.activeElement?.textContent === '新建会话');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await page.getByRole('menuitem', { name: '重命名会话' }).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('ArrowDown');
     assert.equal(await historyItem(page).evaluate(el => el === document.activeElement), true);
     await page.keyboard.press('ArrowDown');
@@ -77,6 +80,76 @@ try {
     assert.equal(await page.locator('.conversation-message').count(), 0);
     assert.equal(await editor(page).inputValue(), '新会话草稿');
     assert.equal(await page.evaluate(() => window.conversationMock.calls.filter(c => c.command === 'ma_conversation_switch').length), 2);
+    await page.close();
+  }
+  for (const width of [320, 780]) {
+    const page = await fresh('', width);
+    const switcher = page.locator('.conversation-switch-trigger');
+    const rows = page.locator('.conversation-switch-row');
+    const operation = name => page.getByRole('menuitem', { name, exact: true });
+    const rename = async (title) => {
+      const dialog = page.getByRole('dialog', { name: '重命名会话', exact: true });
+      await dialog.getByLabel('会话名称').fill(title);
+      await dialog.getByRole('button', { name: '保存', exact: true }).click();
+      await dialog.waitFor({ state: 'hidden' });
+    };
+    const count = () => page.locator('.conversation-target').innerText();
+    await switcher.waitFor();
+    const currentId = await page.evaluate(() => window.conversationMock.chats.A.conversation.id);
+    await page.locator('.conversation-members-trigger').click();
+    await page.getByRole('checkbox', { name: 'Claude Code', exact: true }).uncheck();
+    await page.keyboard.press('Escape');
+    const firstCount = await count();
+    assert.match(firstCount, /已选/);
+    await page.reload();
+    await switcher.waitFor();
+    await page.waitForFunction(expected => document.querySelector('.conversation-target')?.innerText === expected, firstCount);
+    await trigger(page).click();
+    await operation('重命名会话').click();
+    await rename('界面讨论');
+    await create(page);
+    await page.waitForFunction(() => document.querySelector('.conversation-switch-trigger')?.textContent === '空白会话');
+    assert.notEqual(await count(), firstCount);
+    await page.locator('.conversation-target').click();
+    await page.getByRole('button', { name: '取消全选', exact: true }).click();
+    await page.keyboard.press('Escape');
+    assert.match(await count(), /已选 0 位/);
+    await switcher.click();
+    await rows.filter({ hasText: '界面讨论' }).waitFor();
+    assert.match(await rows.filter({ hasText: '空白会话' }).innerText(), /已选 0 位/);
+    await page.getByRole('button', { name: '界面讨论的会话操作' }).click();
+    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['重命名会话']);
+    await page.screenshot({ path: `${out}/switcher-${width}.png` });
+    await operation('重命名会话').click();
+    await rename('联调记录');
+    assert.match(await switcher.innerText(), /空白会话/);
+    assert.equal(await page.evaluate(() => window.conversationMock.calls.filter(c => c.command === 'ma_conversation_switch').length), 0);
+    await switcher.click();
+    await rows.filter({ hasText: '联调记录' }).click();
+    await page.getByRole('button', { name: '切换会话：联调记录' }).waitFor();
+    assert.equal(await count(), firstCount);
+    await switcher.click();
+    await rows.filter({ hasText: '空白会话' }).click();
+    await page.getByRole('button', { name: '切换会话：空白会话' }).waitFor();
+    assert.match(await count(), /已选 0 位/);
+    await trigger(page).click(); await operation('重命名会话').click(); await rename('待删除的会话');
+    const openDelete = async () => {
+      await trigger(page).click();
+      await operation('删除会话').click();
+      return page.getByRole('dialog', { name: '删除会话', exact: true });
+    };
+    const dialog = await openDelete();
+    assert.match(await dialog.innerText(), /待删除的会话/);
+    assert.equal(await dialog.getByRole('button', { name: '取消' }).evaluate(el => el === document.activeElement), true);
+    await dialog.getByRole('button', { name: '取消' }).click();
+    assert.equal(await page.evaluate(() => window.conversationMock.calls.filter(c => c.command === 'ma_conversation_delete').length), 0);
+    await (await openDelete()).getByRole('button', { name: '删除会话', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+    await switcher.click();
+    await rows.filter({ hasText: '联调记录' }).waitFor();
+    assert.equal(await rows.filter({ hasText: '待删除的会话' }).count(), 0);
+    const ids = await page.evaluate(() => window.conversationMock.archivedConversations.map(chat => chat.conversation.id));
+    assert.deepEqual(ids, [currentId]);
     await page.close();
   }
   for (const scenario of ['success', 'cancel', 'failure']) {
@@ -138,5 +211,5 @@ try {
   await held.waitForFunction(() => !document.querySelector('[aria-label="讨论记录操作"]').disabled);
   assert.equal(await editor(held).inputValue(), '请求期间的新草稿'); await held.close();
   assert.deepEqual(errors, []);
-  console.log('PASS new team conversation: menu order/keyboard, fresh context and retained history, mode/draft reset, empty/running/pending states, failure/retry, double-click protection and concurrent draft; dark/light/320px.');
+  console.log('PASS team conversation: switcher, independent selections after reload, both rename menus, confirmed deletion, fresh context, history/keyboard, busy guards, draft and failure recovery; dark/light/320px.');
 } finally { await browser.close(); }

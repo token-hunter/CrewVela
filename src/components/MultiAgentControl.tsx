@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ArrowClockwise, ArrowElbowDownLeft, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Paperclip, Pause, Plus, Robot, Stop, User, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowElbowDownLeft, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Paperclip, Pause, PencilSimple, Plus, Robot, Stop, Trash, User, WarningCircle, X } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConversationMentionHighlight } from "./ConversationMentionHighlight";
 import { ResizableConversationComposer } from "./ResizableConversationComposer";
@@ -14,7 +14,8 @@ import { ConversationApprovalRequests } from "./ConversationApprovalRequests";
 import { ConversationMemberActivity } from "./ConversationMemberActivity";
 import { conversationMemberActivity } from "../conversationActivity";
 import { ConversationPlanCard } from "./ConversationPlanCard";
-import { ConversationHistoryDialog } from "./ConversationHistoryDialog";
+import { ConversationHistoryDialog, conversationTitle } from "./ConversationHistoryDialog";
+import { ConversationSwitcher } from "./ConversationSwitcher";
 import { ConversationDelegationDetails } from "./ConversationDelegationDetails";
 import { ConversationTaskView } from "./ConversationTaskView";
 import { AgentMentionMenu, type AgentMentionOption } from "./AgentMentionMenu";
@@ -57,6 +58,13 @@ const DOCUMENT_EXTENSIONS = ["pdf", "docx", "txt", "md", "csv"];
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"];
 const VIDEO_EXTENSIONS = ["mp4", "mov", "webm"];
 const attachmentDraftKey = (projectId: string, conversationId: string) => `crewvela.team-attachment-draft.${projectId}.${conversationId}`;
+const memberSelectionKey = (projectId: string, conversationId: string) => `crewvela.team-member-selection.${projectId}.${conversationId}`;
+function storedMemberSelection(projectId: string, conversationId: string): string[] | null {
+  try {
+    const value: unknown = JSON.parse(stored(memberSelectionKey(projectId, conversationId)));
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : null;
+  } catch { return null; }
+}
 const fileName = (path: string) => path.split(/[\\/]/u).pop() || path;
 function storedAttachmentDraft(projectId: string, conversationId: string): string[] {
   try {
@@ -86,7 +94,7 @@ function projectFromStorage(): string | null { return stored(PROJECT_KEY) || nul
 
 /** One persisted project conversation. It deliberately has no general-command or global-broadcast route. */
 export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, onOpenSession, onOpenProjectSettings }: Props) {
-  const { ready: runtimeReady, error: runtimeError, prefs: runtimePrefs, isRuntimeEnabled, refresh: refreshAvailability } = useRuntimeAvailability();
+  const { ready: runtimeReady, error: runtimeError, isRuntimeEnabled, refresh: refreshAvailability } = useRuntimeAvailability();
   const [projects, setProjects] = useState<MultiAgentProject[]>([]);
   const [projectId, setProjectId] = useState<string | null>(focusedProjectId ?? projectFromStorage);
   const [snapshot, setSnapshot] = useState<MultiAgentSnapshot | null>(null);
@@ -101,7 +109,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const workViewId = useId();
-  const [selected, setSelected] = useState<string[]>([]);
+  const [memberSelection, setMemberSelection] = useState<string[] | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [healthy, setHealthy] = useState(false);
@@ -133,8 +141,6 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const loginContext = useRef(0);
   const planAfterLogin = useRef<(() => Promise<void>) | null>(null);
   const planForm = useRef("");
-  planForm.current = JSON.stringify([draft, draftFiles, selected, archivedRuleId, snapshot?.project.rootPath,
-    snapshot?.project.defaultBranch, conversation?.rounds.length]);
   const [blockedPlanId, setBlockedPlanId] = useState<string | null>(null);
   const [exportNotice, setExportNotice] = useState<{ conversationId: string; filename: string } | null>(null);
   const exporting = useRef(false);
@@ -143,6 +149,10 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [historySwitchError, setHistorySwitchError] = useState("");
   const [clearConfirmation, setClearConfirmation] = useState<{ projectId: string; projectName: string; expectedConversationId: string; expectedMessageIds: string[] } | null>(null);
   const [clearError, setClearError] = useState("");
+  const [sessionAction, setSessionAction] = useState<{ kind: "rename"; id: string; title: string }
+    | { kind: "delete"; id: string; label: string; messageIds: string[] } | null>(null);
+  const [sessionActionError, setSessionActionError] = useState("");
+  const cancelDelete = useRef<HTMLButtonElement>(null);
   const historyTrigger = useRef<HTMLButtonElement>(null);
   const historyMenu = useRef<HTMLDivElement>(null);
   const cancelClear = useRef<HTMLButtonElement>(null);
@@ -153,7 +163,6 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const operationError = useRef("");
   const currentProject = useRef(projectId); currentProject.current = projectId;
   const currentConversation = useRef<string | undefined>(undefined);
-  const initializedMembers = useRef<string | null>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
   const transcript = useRef<HTMLDivElement>(null);
   const followMessages = useRef(true);
@@ -178,6 +187,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       currentConversation.current = id;
       setDraft(stored(draftKey(projectId, id)));
       setDraftFiles(storedAttachmentDraft(projectId, id));
+      setMemberSelection(storedMemberSelection(projectId, id));
       setPending(storedPending(projectId, id));
       setShowOlder(false); setArchivedRuleId(""); setMembersOpen(null); setMentionOpen(false); setMentionSelection([]);
       setPlanIssues([]);
@@ -193,10 +203,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     setBlockedPlanId(null);
     setLoginRetryRound(null);
     setComposingMention(false);
-    request.current++; generation.current++; initializedMembers.current = null;
+    request.current++; generation.current++;
     currentProject.current = id; currentConversation.current = undefined; setProjectId(id); setSnapshot(null); setConversation(null); setHealthy(false); setLoading(false);
-    operationError.current = ""; setError(""); setSelected([]); setMembersOpen(null); setShowOlder(false); setMentionOpen(false);
+    operationError.current = ""; setError(""); setMemberSelection(null); setMembersOpen(null); setShowOlder(false); setMentionOpen(false);
     setHistoryMenuOpen(false); setHistoryOpen(false); setClearConfirmation(null); setClearError("");
+    setSessionAction(null); setSessionActionError("");
     setWorkView("chat"); setSelectedTaskId(null); setSelectedDeliveryId(null);
     setArchivedRuleId("");
     setPlanIssues([]);
@@ -253,8 +264,25 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const agents = useMemo(() => snapshot?.agents.filter(agent => agent.projectId === projectId && agent.enabled) ?? [], [snapshot, projectId]);
   const supported = conversation?.supportedDiscussionRuntimes ?? [];
   const manualMembers = useMemo(() => new Set(snapshot?.agentSessions.filter(session => session.projectId === projectId && session.controlMode === "manual").map(session => session.agentId) ?? []), [snapshot, projectId]);
-  const availableRecipients = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id)).map(agent => agent.id);
-  useEffect(() => { if (!active) { setMembersOpen(null); setHistoryMenuOpen(false); setHistoryOpen(false); setClearConfirmation(null); setMentionOpen(false); } }, [active]);
+  const eligibleMembers = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id);
+  const availableRecipients = eligibleMembers.filter(id => !manualMembers.has(id));
+  const selected = runtimeReady && !runtimeError
+    ? memberSelection?.filter(id => eligibleMembers.includes(id)) ?? availableRecipients
+    : [];
+  const selectionCount = (id: string) => {
+    if (id === conversation?.conversation.id) return selected.length;
+    return (projectId ? storedMemberSelection(projectId, id) : null)?.filter(member => eligibleMembers.includes(member)).length
+      ?? availableRecipients.length;
+  };
+  const setSelected = (next: string[] | ((current: string[]) => string[])) => {
+    if (!projectId || !conversation || !runtimeReady || runtimeError) return;
+    const ids = typeof next === "function" ? next(selected) : next;
+    save(memberSelectionKey(projectId, conversation.conversation.id), JSON.stringify(ids));
+    setMemberSelection(ids);
+  };
+  planForm.current = JSON.stringify([draft, draftFiles, selected, archivedRuleId, snapshot?.project.rootPath,
+    snapshot?.project.defaultBranch, conversation?.rounds.length]);
+  useEffect(() => { if (!active) { setMembersOpen(null); setHistoryMenuOpen(false); setHistoryOpen(false); setClearConfirmation(null); setMentionOpen(false); setSessionAction(null); } }, [active]);
   useEffect(() => {
     if (!historyMenuOpen) return;
     const frame = requestAnimationFrame(() => historyMenu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus());
@@ -315,12 +343,6 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     window.addEventListener("keydown", key, true);
     return () => { cancelAnimationFrame(frame); document.removeEventListener("pointerdown", outside, true); document.removeEventListener("focusin", outside); window.removeEventListener("keydown", key, true); };
   }, [membersOpen]);
-  useEffect(() => {
-    if (!conversation || !snapshot || !projectId || !runtimeReady || runtimeError) return;
-    const eligible = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id);
-    if (initializedMembers.current !== projectId) { initializedMembers.current = projectId; setSelected(eligible.filter(id => !manualMembers.has(id))); }
-    else setSelected(ids => ids.filter(id => eligible.includes(id)));
-  }, [agents, conversation, snapshot, projectId, runtimeReady, runtimeError, runtimePrefs, isRuntimeEnabled, manualMembers]);
   const round = conversation?.rounds.find(conversationIsActive) ?? latestConversationRound(conversation?.rounds ?? []);
   const latestDiscussion = latestConversationRound(conversation?.rounds.filter(item => item.mode === "discussion") ?? []);
   const planningRounds = conversation?.rounds.filter(item => item.mode === "execution_plan") ?? [];
@@ -346,11 +368,18 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   }, [snapshot?.runtimeEvents, conversation?.activityEvents]);
   const managedTaskIds = new Set(conversation?.executionPlans.flatMap(plan => plan.managed ? plan.taskIds : []) ?? []);
   const conversationMessages = orderedConversationMessages(conversation?.messages ?? [], projectId ?? "");
+  const currentTitle = conversationTitle(conversation?.conversation.title,
+    conversationMessages.find(message => message.senderType === "user")?.body.trim().slice(0, 80));
   const messages = conversationMessages.filter(message => !message.taskId || !managedTaskIds.has(message.taskId));
   const newConversationBlocked = busy || !!pending || !healthy || !active || !conversation || !!conversation.rounds.some(conversationIsActive);
   const clearBlocked = newConversationBlocked || !conversationMessages.length;
+  const deleteBlocked = newConversationBlocked || !!conversation?.executionPlans.some(plan => plan.status === "pending"
+    || ["planning", "waiting_login", "running"].includes(plan.managed?.status ?? ""));
   const exportBlocked = !active || !conversation || conversation.conversation.projectId !== projectId || !messages.some(message => message.body.trim() || message.attachments?.length);
   const clearChanged = !!clearConfirmation && (conversation?.conversation.id !== clearConfirmation.expectedConversationId || conversationMessages.length !== clearConfirmation.expectedMessageIds.length || conversationMessages.some(message => !clearConfirmation.expectedMessageIds.includes(message.id)));
+  const deleteChanged = sessionAction?.kind === "delete" && (conversation?.conversation.id !== sessionAction.id
+    || conversationMessages.length !== sessionAction.messageIds.length
+    || conversationMessages.some(message => !sessionAction.messageIds.includes(message.id)));
   useEffect(() => {
     if (!pending || !conversation || conversation.conversation.projectId !== pending.projectId || projectId !== pending.projectId) return;
     if (!conversation.messages.some(message => message.clientMessageId === pending.clientMessageId)) return;
@@ -611,15 +640,43 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     } catch { /* The failed action remains visible; the previous draft and conversation are retained. */ }
   };
   const switchConversation = async (conversationId: string) => {
-    if (newConversationBlocked || !projectId || !conversation || conversationId === conversation.conversation.id) return;
+    if (newConversationBlocked || !projectId || !conversation || conversationId === conversation.conversation.id) return false;
     const id = projectId, epoch = generation.current;
     setHistorySwitchError("");
     try {
       const result = await mutationCall("ma_conversation_switch", { input: { projectId: id, expectedConversationId: conversation.conversation.id, conversationId } });
-      if (!result || currentProject.current !== id || generation.current !== epoch) return;
+      if (!result || currentProject.current !== id || generation.current !== epoch) return false;
       setHistoryOpen(false); setWorkView("chat");
+      return true;
     } catch (reason) {
       if (currentProject.current === id && generation.current === epoch) setHistorySwitchError(String(reason));
+      return false;
+    }
+  };
+  const startRename = (id: string, label: string) => {
+    setSessionActionError("");
+    const title = label === "空白会话" ? "" : Array.from(label).slice(0, 60).join("");
+    setSessionAction({ kind: "rename", id, title });
+  };
+  const confirmSessionAction = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!sessionAction || !projectId || busy) return;
+    const target = sessionAction, epoch = generation.current;
+    if (target.kind === "rename" ? !target.title.trim() : deleteBlocked || deleteChanged) return;
+    setSessionActionError("");
+    try {
+      const result = target.kind === "rename"
+        ? await mutationCall("ma_conversation_rename", { input: { projectId, conversationId: target.id, title: target.title.trim() } })
+        : await mutationCall("ma_conversation_delete", { input: { projectId, expectedConversationId: target.id, expectedMessageIds: target.messageIds } });
+      if (!result) return;
+      if (target.kind === "delete") {
+        for (const key of [draftKey, pendingKey, attachmentDraftKey, memberSelectionKey]) save(key(projectId, target.id), "");
+      }
+      if (!mounted.current || currentProject.current !== projectId || generation.current !== epoch) return;
+      if (target.kind === "delete") setWorkView("chat");
+      setSessionAction(null);
+    } catch (reason) {
+      if (mounted.current && currentProject.current === projectId && generation.current === epoch) setSessionActionError(String(reason));
     }
   };
   const confirmClear = async () => {
@@ -633,6 +690,9 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const keptDraft = stored(draftKey(target.projectId, target.expectedConversationId));
         save(draftKey(target.projectId, result.conversation.id), keptDraft);
         save(draftKey(target.projectId, target.expectedConversationId), "");
+        const keptSelection = stored(memberSelectionKey(target.projectId, target.expectedConversationId));
+        save(memberSelectionKey(target.projectId, result.conversation.id), keptSelection);
+        setMemberSelection(storedMemberSelection(target.projectId, result.conversation.id));
         setDraft(keptDraft); setClearConfirmation(null); setShowOlder(false);
       }
     } catch (reason) { if (mounted.current && currentProject.current === target.projectId && generation.current === epoch) setClearError(String(reason)); }
@@ -834,15 +894,27 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         <div className="conversation-history-actions"><button ref={historyTrigger} type="button" className="conversation-icon" aria-label="讨论记录操作" aria-haspopup="menu" aria-expanded={historyMenuOpen} aria-controls={historyMenuOpen ? historyMenuId : undefined} disabled={!projectId || busy || !active} onClick={() => { setMembersOpen(null); setHistoryMenuOpen(value => !value); }}><DotsThree size={21} /></button>
           {historyMenuOpen && <div ref={historyMenu} id={historyMenuId} className="conversation-history-menu" role="menu" aria-label="讨论记录操作">
           <button type="button" role="menuitem" disabled={newConversationBlocked} title={conversation?.rounds.some(conversationIsActive) ? "团队正在回复，结束后可新建会话" : pending ? "请先核对未确认的发送" : "开始新的团队会话"} onClick={() => void startNewConversation()}><Plus size={17} />新建会话</button>
+          <button type="button" role="menuitem" disabled={!conversation} onClick={() => {
+            if (!conversation) return;
+            historyTrigger.current?.focus(); setHistoryMenuOpen(false); startRename(conversation.conversation.id, currentTitle);
+          }}><PencilSimple size={17} />重命名会话</button>
           <button type="button" role="menuitem" disabled={!conversation} onClick={() => { historyTrigger.current?.focus(); setHistoryMenuOpen(false); setHistorySwitchError(""); setHistoryOpen(true); }}><ClockCounterClockwise size={17} />历史会话</button>
           <button type="button" role="menuitem" disabled={exportBlocked || exporting.current} title={exportBlocked ? "暂无可导出的消息" : "将当前团队会话保存为 Markdown"} onClick={() => void exportConversation()}><FileArrowDown size={17} />导出会话</button>
           <button type="button" role="menuitem" disabled={clearBlocked} title={conversation?.rounds.some(conversationIsActive) ? "讨论进行中，结束后可清空" : pending ? "请先核对未确认的发送" : !messages.length ? "暂无讨论记录" : undefined} onClick={() => {
             if (clearBlocked || !projectId || !conversation) return;
             historyTrigger.current?.focus(); setHistoryMenuOpen(false); setClearError("");
             setClearConfirmation({ projectId, projectName: projects.find(project => project.id === projectId)?.name ?? "当前项目", expectedConversationId: conversation.conversation.id, expectedMessageIds: conversationMessages.map(message => message.id) });
-          }}><Broom size={17} />清空讨论记录</button>{discussing && <><button type="button" role="menuitem" disabled={busy || round?.status === "stopping"} onClick={()=>void control("pause")}><Pause size={17}/>暂停讨论</button><button type="button" role="menuitem" disabled={busy || round?.status === "stopping"} onClick={()=>void control("cancel")}><Stop size={17}/>结束本轮</button></>}</div>}
+          }}><Broom size={17} />清空讨论记录</button>
+          <button type="button" role="menuitem" className="conversation-delete-action" disabled={deleteBlocked} title={deleteBlocked ? "请先处理本会话的讨论、分工或托管" : undefined} onClick={() => {
+            if (deleteBlocked || !conversation) return;
+            historyTrigger.current?.focus(); setHistoryMenuOpen(false); setSessionActionError("");
+            setSessionAction({ kind: "delete", id: conversation.conversation.id, label: currentTitle, messageIds: conversationMessages.map(message => message.id) });
+          }}><Trash size={17} />删除会话</button>{discussing && <><button type="button" role="menuitem" disabled={busy || round?.status === "stopping"} onClick={()=>void control("pause")}><Pause size={17}/>暂停讨论</button><button type="button" role="menuitem" disabled={busy || round?.status === "stopping"} onClick={()=>void control("cancel")}><Stop size={17}/>结束本轮</button></>}</div>}
         </div>
       </div>
+      {active && workView === "chat" && projectId && conversation && <ConversationSwitcher key={projectId}
+        projectId={projectId} currentId={conversation.conversation.id} currentTitle={currentTitle} blocked={newConversationBlocked} busy={busy}
+        memberCount={selectionCount} onSwitch={switchConversation} onRename={startRename} />}
     </header>
     {membersOpen === "header" && createPortal(<div id={membersId} ref={membersMenu} className="conversation-member-menu" role="group" aria-label="选择参与成员" style={membersPosition}><header>参与成员</header>{agents.map(agent => {
       const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id);
@@ -1057,7 +1129,14 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           </header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || (manualMembers.has(agent.id) && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? " · 用户接管中" : ""}</small></span></label>)}</div>}
       </ResizableConversationComposer>
     </footer></div>
-    {workView === "tasks" && <div id={`${workViewId}-tasks-panel`} className="team-tasks-panel" role="tabpanel" aria-labelledby={`${workViewId}-tasks-tab`}><ConversationTaskView snapshot={snapshot} tasks={tasks} plans={conversation?.executionPlans ?? []} deliveryPlan={conversation?.executionPlans.find(plan => plan.id === selectedDeliveryId)} discussion={latestDiscussion} selectedId={selectedTaskId} initialRecordTaskId={requestedView === "taskRecords" ? selectedTaskId : null} blocked={busy || !healthy || !active} onSelect={setSelectedTaskId} onExecution={action => void updateExecution(action)} onChat={returnToChat} onFullRecords={onOpenProjectSettings ? openProjectTasks : undefined} onOpenRun={onOpenSession ? (run, task) => void openManagedRunRecord(run, task) : undefined} onRefresh={refresh} /></div>}
+    {workView === "tasks" && <div id={`${workViewId}-tasks-panel`} className="team-tasks-panel" role="tabpanel" aria-labelledby={`${workViewId}-tasks-tab`}><ConversationTaskView
+      snapshot={snapshot} tasks={tasks} plans={conversation?.executionPlans ?? []}
+      retainedPlans={conversation?.retainedExecutionPlans ?? []} renderRetainedDelivery={renderPlan}
+      deliveryPlan={[...(conversation?.executionPlans ?? []), ...(conversation?.retainedExecutionPlans ?? [])].find(plan => plan.id === selectedDeliveryId)}
+      discussion={latestDiscussion} selectedId={selectedTaskId} initialRecordTaskId={requestedView === "taskRecords" ? selectedTaskId : null}
+      blocked={busy || !healthy || !active} onSelect={setSelectedTaskId} onExecution={action => void updateExecution(action)}
+      onChat={returnToChat} onFullRecords={onOpenProjectSettings ? openProjectTasks : undefined}
+      onOpenRun={onOpenSession ? (run, task) => void openManagedRunRecord(run, task) : undefined} onRefresh={refresh} /></div>}
 
     {creatingProject && <CollaborationProjectDialog onClose={() => setCreatingProject(false)} onCreate={async (input, gitSetup) => {
       const project = await invoke<MultiAgentProject>("ma_create_project", { input: { ...input, defaultBranch: "main" }, gitSetup });
@@ -1066,6 +1145,27 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     {historyOpen && active && projectId && conversation && createPortal(<ConversationHistoryDialog projectId={projectId} conversationId={conversation.conversation.id}
       blocked={newConversationBlocked} busy={busy} switchError={historySwitchError} onSwitch={id => void switchConversation(id)}
       onClose={() => { if (!mutation.current) setHistoryOpen(false); }} />, document.body)}
+    {sessionAction && active && createPortal(<Modal className="conversation-clear-dialog conversation-session-dialog"
+      ariaLabel={sessionAction.kind === "rename" ? "重命名会话" : "删除会话"}
+      initialFocusRef={sessionAction.kind === "delete" ? cancelDelete : undefined}
+      onClose={() => { if (!mutation.current) setSessionAction(null); }}>
+      <h2>{sessionAction.kind === "rename" ? "重命名会话" : "删除会话？"}</h2>
+      <form onSubmit={event => void confirmSessionAction(event)}>
+        {sessionAction.kind === "rename"
+          ? <label>会话名称<input value={sessionAction.title} maxLength={60} required disabled={busy}
+            onFocus={event => event.currentTarget.select()}
+            onChange={event => { const title = event.currentTarget.value; setSessionAction(current => current?.kind === "rename" ? { ...current, title } : current); }} /></label>
+          : <p>确认删除「{sessionAction.label}」？删除后将进入空白会话。项目任务、审批、交付记录和 Agent 原会话会保留。</p>}
+        {deleteChanged && <p role="alert">讨论记录已变化，请取消后重新确认。</p>}
+        {sessionActionError && <p className="conversation-clear-error" role="alert">{sessionActionError}</p>}
+        <div className="conversation-session-dialog-actions">
+          <button ref={sessionAction.kind === "delete" ? cancelDelete : undefined} type="button" disabled={busy} onClick={() => setSessionAction(null)}>取消</button>
+          {sessionAction.kind === "rename"
+            ? <button type="submit" className="conversation-clear-confirm" disabled={busy || !sessionAction.title.trim()}>{busy ? "正在保存…" : "保存"}</button>
+            : <button type="submit" className="conversation-delete-confirm" disabled={deleteBlocked || deleteChanged}>{busy ? "正在删除…" : "删除会话"}</button>}
+        </div>
+      </form>
+    </Modal>, document.body)}
     {clearConfirmation && active && createPortal(<Modal className="conversation-clear-dialog" ariaLabel="清空讨论记录" initialFocusRef={cancelClear} onClose={() => { if (!mutation.current) setClearConfirmation(null); }}>
       <h2>清空讨论记录？</h2>
       <p>将清空「{clearConfirmation.projectName}」当前会话的讨论记录。项目、成员、任务、执行日志和 Agent 原会话保留。</p>

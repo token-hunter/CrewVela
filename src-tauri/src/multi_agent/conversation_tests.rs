@@ -657,6 +657,70 @@ fn new_conversation_allows_empty_sessions_and_rejects_stale_or_active_requests()
 }
 
 #[test]
+fn conversation_sessions_rename_history_and_delete_current_durably() {
+    let fixture = Fixture::new();
+    let previous = fixture.run(&Replies::default());
+    let current = fixture.store.new_conversation(clear_input(&previous)).unwrap();
+    let rename = |id: &str, title: &str| ConversationRenameInput {
+        project_id: fixture.project.clone(), conversation_id: id.into(), title: title.into(),
+    };
+    assert!(fixture.store.rename_conversation(rename(&previous.conversation.id, " ")).is_err());
+    let renamed = fixture.store.rename_conversation(rename(&previous.conversation.id, " 界面讨论 ")).unwrap();
+    assert_eq!(renamed.conversation.id, current.conversation.id);
+    let renamed = fixture.store.rename_conversation(rename(&current.conversation.id, "发布准备")).unwrap();
+    assert_eq!(renamed.conversation.title.as_deref(), Some("发布准备"));
+    assert!(fixture.store.delete_conversation(clear_input(&previous)).is_err());
+    let next = fixture.store.delete_conversation(clear_input(&current)).unwrap();
+    assert_ne!(next.conversation.id, current.conversation.id);
+    assert!(next.conversation.title.is_none() && next.messages.is_empty());
+
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    let entries = reopened.conversation_history(&fixture.project).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().any(|entry| entry.id == previous.conversation.id && entry.title.as_deref() == Some("界面讨论")));
+    assert!(entries.iter().all(|entry| entry.id != current.conversation.id));
+    let switch = |id: &str| ConversationSwitchInput {
+        project_id: fixture.project.clone(), expected_conversation_id: next.conversation.id.clone(), conversation_id: id.into(),
+    };
+    assert!(reopened.switch_conversation(switch(&current.conversation.id)).is_err());
+    assert!(reopened.rename_conversation(rename(&current.conversation.id, "恢复")).is_err());
+    let restored = reopened.switch_conversation(switch(&previous.conversation.id)).unwrap();
+    assert_eq!(restored.conversation.title.as_deref(), Some("界面讨论"));
+    assert_eq!(restored.messages.len(), previous.messages.len());
+}
+
+#[test]
+fn conversation_sessions_delete_protects_pending_work_and_preserves_applied_plan() {
+    let fixture = Fixture::new();
+    fixture.git();
+    let initial = fixture.run(&Replies::default());
+    let draft = fixture.draft();
+    let plan = fixture.store.save_conversation_plan(&initial.rounds[0].id,
+        &initial.messages.last().unwrap().id, &json!({"summary":draft.summary,"tasks":draft.tasks}).to_string()).unwrap();
+    let current = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    assert!(fixture.store.delete_conversation(clear_input(&current)).unwrap_err().to_string().contains("待处理"));
+
+    let tasks = fixture.store.apply_conversation_plan(&ConversationExecutePlanInput {
+        project_id: fixture.project.clone(), plan_id: plan.id.clone(), client_request_id: "delete-session-test".into(),
+    }).unwrap();
+    let current = fixture.store.conversation_snapshot(&fixture.project).unwrap();
+    assert!(fixture.store.delete_conversation(clear_input(&current)).unwrap_err().to_string().contains("待处理"));
+
+    // Fully finished engineering evidence remains reachable after the transcript is removed.
+    let connection = fixture.store.connection.lock().unwrap();
+    for task in &tasks {
+        connection.execute("UPDATE ma_tasks SET status='done' WHERE id=?1", [task]).unwrap();
+    }
+    drop(connection);
+    let before = fixture.store.snapshot(&fixture.project).unwrap();
+    let next = fixture.store.delete_conversation(clear_input(&current)).unwrap();
+    assert!(next.messages.is_empty() && next.execution_plans.is_empty());
+    assert!(next.retained_execution_plans.iter().any(|retained| retained.id == plan.id && retained.task_ids == tasks));
+    assert_eq!(serde_json::to_value(before).unwrap(), serde_json::to_value(fixture.store.snapshot(&fixture.project).unwrap()).unwrap());
+    assert!(fixture.store.conversation_history(&fixture.project).unwrap().iter().all(|entry| entry.id != current.conversation.id));
+}
+
+#[test]
 fn clear_history_is_durable_project_scoped_and_preserves_execution_evidence() {
     let fixture = Fixture::new();
     fixture.git();

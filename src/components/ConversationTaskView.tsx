@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowBendUpLeft, CheckCircle, Circle, ClockCounterClockwise, FileText, LinkSimple, Pause, Play, PlayCircle, Target, User, WarningCircle } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ManagedDeliveryMembers } from "./ManagedDeliveryMembers";
@@ -12,10 +12,12 @@ import type { AgentRun, ConversationExecutionPlan, ConversationRound, MultiAgent
 const running = (task: MultiAgentTask) => ["claimed", "running"].includes(task.status);
 const statusLabel = (task: MultiAgentTask, pendingDependency: boolean) => ["draft", "ready"].includes(task.status) ? "待执行" : task.status === "blocked" ? pendingDependency ? "等待依赖" : "等待处理" : TASK_STATUS[task.status] ?? task.status;
 
-export function ConversationTaskView({ snapshot, tasks, plans, deliveryPlan, discussion, selectedId, initialRecordTaskId, blocked, onSelect, onExecution, onChat, onFullRecords, onOpenRun, onRefresh }: {
+export function ConversationTaskView({ snapshot, tasks, plans, retainedPlans, renderRetainedDelivery, deliveryPlan, discussion, selectedId, initialRecordTaskId, blocked, onSelect, onExecution, onChat, onFullRecords, onOpenRun, onRefresh }: {
   snapshot: MultiAgentSnapshot | null;
   tasks: MultiAgentTask[];
   plans: ConversationExecutionPlan[];
+  retainedPlans: ConversationExecutionPlan[];
+  renderRetainedDelivery: (plan: ConversationExecutionPlan) => ReactNode;
   deliveryPlan?: ConversationExecutionPlan;
   discussion?: ConversationRound;
   selectedId: string | null;
@@ -41,8 +43,10 @@ export function ConversationTaskView({ snapshot, tasks, plans, deliveryPlan, dis
   const delivery = deliveryPlan?.managed?.status === "completed" && deliveryPlan.projectId === snapshot?.project.id ? deliveryPlan.managed : undefined;
   const agents = snapshot?.agents ?? [];
   const label = (item: MultiAgentTask) => statusLabel(item, (snapshot?.dependencies ?? []).some(dependency => dependency.taskId === item.id && snapshot?.tasks.find(other => other.id === dependency.dependsOnTaskId)?.status !== "done"));
-  const planForTask = (id: string) => plans.find(plan => plan.taskIds.includes(id));
+  const planForTask = (id: string) => plans.find(plan => plan.taskIds.includes(id)) ?? retainedPlans.find(plan => plan.taskIds.includes(id));
+  const retainedPlan = task && retainedPlans.find(plan => plan.taskIds.includes(task.id));
   const plan = task && planForTask(task.id);
+  const relatedMessage = retainedPlan ? undefined : plan?.messageId;
   const assignee = taskMember(agents, task?.assigneeAgentId, plan);
   const runs = orderedTaskRuns(snapshot, task?.id);
   const dependencies = (snapshot?.dependencies ?? []).filter(item => item.taskId === task?.id).map(item => snapshot?.tasks.find(other => other.id === item.dependsOnTaskId)?.title ?? "历史前置任务");
@@ -98,9 +102,10 @@ export function ConversationTaskView({ snapshot, tasks, plans, deliveryPlan, dis
           <TaskRunRecords key={task.id} runs={runs} onOpenRun={plan?.managed && onOpenRun ? run => onOpenRun(run, task) : undefined} />
           {onFullRecords && <button type="button" className="conversation-text-button" onClick={onFullRecords}>查看完整项目记录</button>}
         </section>}
+        {retainedPlan?.managed?.status === "completed" && renderRetainedDelivery(retainedPlan)}
         <footer className="team-task-actions">{schedulingControl}
           <button type="button" className="conversation-text-button team-record-button" aria-expanded={recordTask === task.id} onClick={() => setRecordTask(value => value === task.id ? null : task.id)}><FileText size={18} />查看记录</button>
-          <button type="button" className="conversation-text-button team-related-chat" onClick={() => onChat(plan?.messageId)}><ArrowBendUpLeft size={17} />{plan ? "回到相关聊天" : "返回团队聊天"}</button>
+          <button type="button" className="conversation-text-button team-related-chat" onClick={() => onChat(relatedMessage)}><ArrowBendUpLeft size={17} />{relatedMessage ? "回到相关聊天" : "返回团队聊天"}</button>
         </footer>
       </article> : <footer className="team-task-actions"><span>选择任务查看详情</span>{schedulingControl}</footer>}
     </>}

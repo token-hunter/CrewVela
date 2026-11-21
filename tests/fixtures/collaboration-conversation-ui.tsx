@@ -276,13 +276,32 @@ const mock = {
       chats[input.projectId] = target;
       return structuredClone(target);
     }
+    if (command === "ma_conversation_rename") {
+      const input = args.input, chat = chats[input.projectId];
+      const target = chat.conversation.id === input.conversationId ? chat : mock.archivedConversations.find(item =>
+        item.conversation.projectId === input.projectId && item.conversation.id === input.conversationId);
+      if (!target) throw Error("该会话已不可用");
+      target.conversation.title = input.title;
+      return structuredClone(chat);
+    }
+    if (command === "ma_conversation_delete") {
+      const input = args.input, chat = chats[input.projectId];
+      if (input.expectedConversationId !== chat.conversation.id
+        || JSON.stringify([...input.expectedMessageIds].sort()) !== JSON.stringify(chat.messages.map((message: any) => message.id).sort())) throw Error("讨论记录已变化");
+      chats[input.projectId] = {
+        ...chat, conversation: { ...chat.conversation, title: null, id: crypto.randomUUID(), createdAt: Date.now() },
+        messages: [], rounds: [], executionPlans: [],
+        retainedExecutionPlans: [...(chat.retainedExecutionPlans ?? []), ...chat.executionPlans.filter((plan: any) => plan.status === "applied")],
+      };
+      return structuredClone(chats[input.projectId]);
+    }
     if (command === "ma_conversation_new") {
       if (mock.failNew) throw Error("隔离测试：新建会话失败，原记录保留");
       const input = args.input, chat = chats[input.projectId];
       if (chat.rounds.some((round: any) => ["queued","running","waiting_approval","stopping","unconfirmed"].includes(round.status))) throw Error("讨论正在进行，暂不能新建会话");
       if (input.expectedConversationId !== chat.conversation.id || JSON.stringify([...input.expectedMessageIds].sort()) !== JSON.stringify(chat.messages.map((message: any) => message.id).sort())) throw Error("讨论记录已变化，请刷新后重试新建会话");
       mock.archivedConversations.push(structuredClone(chat));
-      chat.conversation = { ...chat.conversation, id: crypto.randomUUID(), createdAt: Date.now() };
+      chat.conversation = { ...chat.conversation, title: null, id: crypto.randomUUID(), createdAt: Date.now() };
       chat.messages = []; chat.rounds = []; chat.executionPlans = [];
       return structuredClone(chat);
     }
@@ -291,7 +310,7 @@ const mock = {
       const input = args.input, chat = chats[input.projectId];
       if (chat.rounds.some((round: any) => ["queued","running","waiting_approval","stopping","unconfirmed"].includes(round.status))) throw Error("讨论正在进行，暂不能清空记录");
       if (input.expectedConversationId !== chat.conversation.id || JSON.stringify([...input.expectedMessageIds].sort()) !== JSON.stringify(chat.messages.map((message: any) => message.id).sort())) throw Error("讨论记录已变化，请刷新后重新确认清空");
-      chats[input.projectId] = { ...chat, conversation: { ...chat.conversation, id: crypto.randomUUID() }, messages: [], rounds: [], executionPlans: [] };
+      chats[input.projectId] = { ...chat, conversation: { ...chat.conversation, title: null, id: crypto.randomUUID() }, messages: [], rounds: [], executionPlans: [] };
       return structuredClone(chats[input.projectId]);
     }
     if (command === "ma_conversation_stage_attachments") {

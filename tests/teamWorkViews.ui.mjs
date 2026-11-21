@@ -509,6 +509,7 @@ try {
  const integrationDetail = managed.getByRole('article',{name:'任务详情 联调 Demo',exact:true});
  await integrationDetail.getByText('Pi（历史成员）',{exact:true}).waitFor();
  assert.match(await runRecords.innerText(),/managed-run-t-delivery/);
+ const completedChat = await managed.evaluate(() => structuredClone(window.conversationMock.chats.A));
  await tab(managed,'团队聊天').click();
  await managed.evaluate(() => {
    const mock = window.conversationMock;
@@ -557,6 +558,25 @@ try {
  await clearManaged.waitFor({state:'detached'});
  const clearCall=(await calls(managed,'ma_conversation_clear')).at(-1);
  assert.deepEqual([...clearCall.args.input.expectedMessageIds].sort(),expectedManagedIds,'clear uses the same snapshot');
+ await managed.evaluate(chat => {
+   window.conversationMock.chats.A = chat;
+   window.conversationMock.snapshot('A').tasks.find(task => task.id === 't-delivery').status = 'done';
+ }, completedChat);
+ await outcome.getByRole('button', { name:'打开 Demo', exact:true }).waitFor();
+ await recordsMenu.click();
+ await managed.getByRole('menuitem',{name:'删除会话',exact:true}).click();
+ const deleteManaged = managed.getByRole('dialog',{name:'删除会话',exact:true});
+ await deleteManaged.getByRole('button',{name:'删除会话',exact:true}).click();
+ await deleteManaged.waitFor({state:'detached'});
+ await outcome.waitFor({state:'detached'});
+ await tab(managed, '任务执行').click();
+ await managed.locator('.team-task-row').filter({hasText:'联调 Demo'}).click();
+ const retainedDemo = integrationDetail.getByRole('button',{name:'打开 Demo',exact:true});
+ const browsedBeforeDeleteDemo = await managed.evaluate(() => window.conversationMock.previewBrowsed.length);
+ await retainedDemo.click();
+ await managed.waitForFunction(count => window.conversationMock.previewBrowsed.length === count + 1
+   && window.conversationMock.previewBrowsed.at(-1) === 'http://127.0.0.1:49203/', browsedBeforeDeleteDemo);
+ assert.equal(await integrationDetail.getByRole('button',{name:'回到相关聊天',exact:true}).count(),0);
  const history=await fresh('evidence=1&logs-only=1&launch-mode=1');
  await history.evaluate(()=>{
    const mock=window.conversationMock;

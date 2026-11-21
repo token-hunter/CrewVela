@@ -1218,6 +1218,18 @@ async fn ma_conversation_switch(input: multi_agent::conversation::ConversationSw
 }
 
 #[tauri::command]
+async fn ma_conversation_rename(input: multi_agent::conversation::ConversationRenameInput, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.rename_conversation(input).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_conversation_delete(input: multi_agent::ConversationClearInput, state: State<'_, MultiAgentStore>) -> Result<multi_agent::ConversationSnapshot, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.delete_conversation(input).map_err(to_err)).await
+}
+
+#[tauri::command]
 async fn ma_conversation_plan_preflight(
     input: multi_agent::ConversationSendInput, state: State<'_, MultiAgentStore>,
 ) -> Result<Vec<multi_agent::conversation::ConversationPlanIssue>, String> {
@@ -6615,6 +6627,8 @@ pub fn run() {
             ma_conversation_new,
             ma_conversation_history,
             ma_conversation_switch,
+            ma_conversation_rename,
+            ma_conversation_delete,
             ma_conversation_send,
             ma_conversation_plan_preflight,
             ma_conversation_codex_login,

@@ -156,7 +156,7 @@
 @container (min-width:1000px) {
   .team-work-views .conversation-transcript { scrollbar-gutter:stable both-edges; }
   .team-work-views .conversation-transcript-inner { display:flow-root; }
-  .team-work-views .conversation-header > :is(.conversation-heading, .conversation-context-row, .conversation-tabs-row),
+  .team-work-views .conversation-header > :is(.conversation-heading, .conversation-context-row, .conversation-tabs-row, .conversation-switcher),
   .team-work-views > :is(.conversation-error, .conversation-export-status),
   .team-work-views .conversation-transcript-inner,
   .team-work-views .conversation-footer > * {
@@ -198,3 +198,10 @@
 :root:not([data-theme="light"]):is([data-appearance-accent="clay"],:not([data-appearance-accent])) .team-work-views .team-plan-actions .conversation-primary { color:#fff; }
 .team-task-row > .team-task-status:not(.running):not(.claimed) { justify-self:end; padding:2px 8px; border-radius:7px; background:var(--bg-hover); }
 @container(max-width:500px) { .team-task-row > .team-task-status:not(.running):not(.claimed) { justify-self:start; } }
+@media (max-height: 500px) {
+  .team-work-views:has(.conversation-switcher) .conversation-header { padding-top: 8px; }
+  .team-work-views:has(.conversation-switcher) .conversation-modes button { min-height: 38px; padding-block: 4px; }
+  .team-work-views:has(.conversation-switcher) .conversation-transcript { padding-block: 6px; }
+  .team-work-views:has(.conversation-switcher) .conversation-footer { padding-block: 4px 6px; }
+  .team-work-views:has(.conversation-switcher) .conversation-composer.multi-agent-composer { padding-block: 8px; }
+}
