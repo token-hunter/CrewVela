@@ -961,15 +961,140 @@
 }
 
 .auto-sundial-status-strip {
-  border-radius: 10px;
+  border-radius: 11px;
   border: 1px solid var(--border);
   background: var(--bg-sunken);
-  padding: 11px 13px;
+  overflow: hidden;
+  display: grid;
+}
+
+.auto-sundial-status-top {
+  padding: 12px 14px 11px;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.auto-sundial-status-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.auto-sundial-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.auto-sundial-stage-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.auto-sundial-stage-pill.tone-completed,
+.auto-sundial-stage-pill.tone-running {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  border-color: color-mix(in srgb, var(--success) 26%, transparent);
+  color: var(--success);
+}
+
+.auto-sundial-stage-pill.tone-failed {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+  color: var(--danger);
+}
+
+.auto-sundial-stage-pill.tone-waiting,
+.auto-sundial-stage-pill.tone-unconfirmed {
+  background: color-mix(in srgb, var(--warn, #e5a94c) 15%, transparent);
+  border-color: color-mix(in srgb, var(--warn, #e5a94c) 28%, transparent);
+  color: var(--warn, #e5a94c);
+}
+
+.auto-sundial-run-meta {
+  font: 11px var(--mono-font);
+  color: var(--text-dim);
+  opacity: 0.82;
+}
+
+.auto-sundial-status-detail {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.auto-sundial-status-bar {
+  padding: 9px 12px 9px 14px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.auto-sundial-bar-primary,
+.auto-sundial-bar-secondary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.auto-sundial-bar-primary .btn {
+  height: 31px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  border-radius: 8px;
+}
+
+.auto-sundial-ghost-btn {
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 130ms ease, color 130ms ease;
+}
+
+.auto-sundial-ghost-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.auto-sundial-ghost-btn.is-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+  color: var(--danger);
+}
+
+.auto-sundial-ghost-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .auto-sundial-mini-grid {

@@ -790,48 +790,65 @@ export function AutomationPanel({
                           </div>
 
                           <div className="auto-sundial-status-strip">
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: "11.5px", color: "var(--text-dim)" }}>
-                                当前状态 · <strong style={{ color: "var(--text)" }}>{displayStage(focusedStage)}</strong>
+                            <div className="auto-sundial-status-top">
+                              <div className="auto-sundial-status-meta">
+                                <span className={`auto-sundial-stage-pill tone-${focusedStage}`}>
+                                  <i aria-hidden="true" />
+                                  <span>{displayStage(focusedStage)}</span>
+                                </span>
+                                {focusedRun && (
+                                  <span className="auto-sundial-run-meta" title={focusedRun.id ?? undefined}>
+                                    最近执行 {shortId(focusedRun)} · {formatDateTime(focusedRun.at)}
+                                  </span>
+                                )}
                               </div>
-                              <div style={{ fontSize: "12.5px", marginTop: "2px" }} title={focusedRun?.detail}>
+                              <p className="auto-sundial-status-detail" title={focusedRun?.detail}>
                                 {focusedRun ? focusedRun.detail : "到点后自动运行，也可随时上发条手动试跑一次。"}
-                              </div>
+                              </p>
                             </div>
-                            <div className="automation-card-buttons">
-                              {focusedActive && focusedTargetSession && (
-                                <button type="button" className="btn" onClick={() => openSession(focusedTargetSession)}>
-                                  <ArrowSquareOut size={15} /> 打开会话
+
+                            <div className="auto-sundial-status-bar">
+                              <div className="auto-sundial-bar-primary">
+                                {focusedActive && focusedTargetSession && (
+                                  <button type="button" className="btn automation-primary" onClick={() => openSession(focusedTargetSession)}>
+                                    <ArrowSquareOut size={15} /> 打开会话
+                                  </button>
+                                )}
+                                {focusedActive && focusedRun?.id && focusedStage !== "unconfirmed" && (
+                                  <button type="button" className="btn" disabled={busy || focusedStage === "dispatching"} onClick={() => void runAction(focused, focusedRun, true)}>
+                                    <Stop size={15} /> 停止本轮
+                                  </button>
+                                )}
+                                {!focusedActive && (
+                                  <button
+                                    type="button"
+                                    className="btn automation-primary"
+                                    disabled={busy}
+                                    onClick={() => void runAction(focused, focusedStage === "failed" || focusedStage === "cancelled" ? focusedRun : undefined)}
+                                  >
+                                    {focusedStage === "failed" || focusedStage === "cancelled" ? <ArrowClockwise size={15} /> : <Play size={15} />}
+                                    <span>{focusedStage === "failed" || focusedStage === "cancelled" ? "失败重试" : "上发条运行"}</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="auto-sundial-bar-secondary">
+                                <button type="button" className="auto-sundial-ghost-btn" disabled={busy} onClick={() => void openEdit(focused)}>
+                                  <PencilSimpleIcon size={14} aria-hidden="true" />
+                                  <span>编辑</span>
                                 </button>
-                              )}
-                              {focusedActive && focusedRun?.id && focusedStage !== "unconfirmed" && (
-                                <button type="button" className="btn" disabled={busy || focusedStage === "dispatching"} onClick={() => void runAction(focused, focusedRun, true)}>
-                                  <Stop size={15} /> 停止本轮
-                                </button>
-                              )}
-                              {!focusedActive && (
                                 <button
                                   type="button"
-                                  className="btn automation-primary"
-                                  disabled={busy}
-                                  onClick={() => void runAction(focused, focusedStage === "failed" || focusedStage === "cancelled" ? focusedRun : undefined)}
+                                  className="auto-sundial-ghost-btn is-danger"
+                                  disabled={busy || focusedActive}
+                                  title={focusedActive ? "请先停止本轮执行" : "删除计划"}
+                                  aria-label={`删除 ${focused.name}`}
+                                  onClick={() => setConfirmDeleteId(focused.id)}
                                 >
-                                  {focusedStage === "failed" || focusedStage === "cancelled" ? <ArrowClockwise size={15} /> : <Play size={15} />}
-                                  <span>{focusedStage === "failed" || focusedStage === "cancelled" ? "失败重试" : "上发条运行"}</span>
+                                  <TrashIcon size={14} aria-hidden="true" />
+                                  <span>删除</span>
                                 </button>
-                              )}
-                              <button type="button" className="btn" disabled={busy} onClick={() => void openEdit(focused)}>
-                                <PencilSimpleIcon size={14} /> 编辑
-                              </button>
-                              <button
-                                type="button"
-                                className="btn"
-                                disabled={busy || focusedActive}
-                                aria-label={`删除 ${focused.name}`}
-                                onClick={() => setConfirmDeleteId(focused.id)}
-                              >
-                                <TrashIcon size={14} />
-                              </button>
+                              </div>
                             </div>
                           </div>
 
