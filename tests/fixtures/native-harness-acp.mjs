@@ -7,6 +7,7 @@ const send = (frame) => process.stdout.write(JSON.stringify({jsonrpc:'2.0', ...f
 let model = 'model-a';
 let thinking = 'low';
 const teamModels = process.argv.includes('--team-models');
+const catalogOnly = process.argv.includes('--catalog-only');
 const options = () => [{id:'model',type:'select',currentValue:model,options:[{name:'模型 A',value:'model-a'},{name:'模型 B',value:'model-b'}]},
   ...(teamModels ? [{id:'provider-effort',category:'thought_level',type:'select',currentValue:thinking,
     options:[{name:'低',value:'low'},{name:'高',value:'high'},{name:'最高',value:'max'}]}] : [])];
@@ -60,7 +61,11 @@ for await (const line of readline.createInterface({input:process.stdin})) {
   } else if(frame.method==='initialize') {
     reply({protocolVersion:1,agentCapabilities:{sessionCapabilities:{resume:{},close:{}}},agentInfo:{name:'native-fake',version:'1'}});
   } else if(['session/new','session/resume'].includes(frame.method)) {
-    if(process.env.DSH_PERMISSION_MODE!=='workspace-write' || frame.params.mcpServers.some(server=>server.type==='http')) throw Error('incorrect standalone boundary');
+    if (catalogOnly) {
+      if (frame.method !== 'session/new' || process.env.DSH_PERMISSION_MODE !== 'read-only' || frame.params.mcpServers.length) throw Error('incorrect catalog-only boundary');
+    } else if (process.env.DSH_PERMISSION_MODE !== 'workspace-write' || frame.params.mcpServers.some(server => server.type === 'http')) {
+      throw Error('incorrect standalone boundary');
+    }
     // Match Harness's parent-marker traversal without making any model request.
     // realpath.native on a verbatim drive root fails with EISDIR on Windows.
     if(process.platform==='win32' && frame.params.cwd.startsWith('\\\\?\\')) throw Error('verbatim ACP cwd');
@@ -74,6 +79,7 @@ for await (const line of readline.createInterface({input:process.stdin})) {
     if(teamModels && frame.params.configId==='provider-effort' && frame.params.value!=='max') thinking=frame.params.value;
     reply({configOptions:options()});
   } else if(frame.method==='session/prompt') {
+    if (catalogOnly) throw Error('catalog lookup must not send a prompt');
     promptId=frame.id;permissionId=frame.id;messageText='';
     const text=frame.params.prompt[0].text;
     if(text.startsWith('/demo-skill')) {

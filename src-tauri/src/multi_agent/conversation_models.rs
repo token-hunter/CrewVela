@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::{AgentRuntimeKind, MultiAgentStore};
+use crate::acp::ManagedAcpKind;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,9 +47,15 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn supported(runtime: AgentRuntimeKind) -> bool {
-    matches!(runtime, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex | AgentRuntimeKind::Pi
-        | AgentRuntimeKind::KimiCode | AgentRuntimeKind::OpenCode | AgentRuntimeKind::DeepSeekHarness)
+fn acp_kind(runtime: AgentRuntimeKind) -> Option<ManagedAcpKind> {
+    match runtime {
+        AgentRuntimeKind::ClaudeCode => Some(ManagedAcpKind::ClaudeCode),
+        AgentRuntimeKind::Codex => Some(ManagedAcpKind::Codex),
+        AgentRuntimeKind::KimiCode => Some(ManagedAcpKind::Kimi),
+        AgentRuntimeKind::OpenCode => Some(ManagedAcpKind::OpenCode),
+        AgentRuntimeKind::DeepSeekHarness => Some(ManagedAcpKind::DeepSeekHarness),
+        _ => None,
+    }
 }
 
 fn runtime_at(conn: &Connection, project: &str, agent: &str) -> Result<AgentRuntimeKind> {
@@ -95,7 +102,7 @@ fn saved(conn: &Connection, project: &str, agent: &str, runtime: AgentRuntimeKin
 fn response(runtime: AgentRuntimeKind, saved: Option<(Vec<Value>, Selection)>) -> MemberOptions {
     let observed = saved.is_some();
     let (catalog, selection) = saved.unwrap_or_default();
-    MemberOptions { supported:supported(runtime), observed, selection, model:choices(option(&catalog,true)), reasoning:choices(option(&catalog,false)) }
+    MemberOptions { supported:runtime == AgentRuntimeKind::Pi || acp_kind(runtime).is_some(), observed, selection, model:choices(option(&catalog,true)), reasoning:choices(option(&catalog,false)) }
 }
 
 impl MultiAgentStore {
@@ -105,14 +112,24 @@ impl MultiAgentStore {
         Ok(response(runtime, saved(&conn, project, agent, runtime)?))
     }
 
-    pub(crate) fn refresh_pi_member_models(&self, project: &str, agent: &str) -> Result<MemberOptions> {
+    pub(crate) fn load_conversation_member_models(&self, project: &str, agent: &str, refresh: bool) -> Result<MemberOptions> {
+        self.load_member_models_with(project, agent, refresh, discover_model_options)
+    }
+
+    pub(super) fn load_member_models_with(&self, project: &str, agent: &str, refresh: bool,
+        discover: impl FnOnce(AgentRuntimeKind, Option<&str>) -> Result<Vec<Value>>,
+    ) -> Result<MemberOptions> {
         let profile = self.agent_profile(agent)?;
-        ensure!(profile.project_id == project && profile.runtime_kind == AgentRuntimeKind::Pi && profile.enabled, "此成员不可读取 Pi 配置");
-        let _lease = crate::runtime_preferences::acquire(AgentRuntimeKind::Pi)?;
-        let saved = self.conversation_member_models(project, agent)?.selection;
-        let cwd = self.project(project)?.root_path;
-        let catalog = crate::native_pi_sessions::conversation_config_options(&cwd, saved.model.as_deref(), None)?;
-        self.observe_conversation_models(project, agent, AgentRuntimeKind::Pi, &catalog)?;
+        ensure!(profile.project_id == project, "该成员不属于当前项目");
+        let runtime = profile.runtime_kind;
+        let options = self.conversation_member_models(project, agent)?;
+        if !options.supported || (!refresh && (!options.model.is_empty() || !options.reasoning.is_empty())) {
+            return Ok(options);
+        }
+        ensure!(profile.enabled, "请先启用该成员再读取可用选项");
+        let _lease = crate::runtime_preferences::acquire(runtime)?;
+        let catalog = discover(runtime, options.selection.model.as_deref())?;
+        self.observe_conversation_models(project, agent, runtime, &catalog)?;
         self.conversation_member_models(project, agent)
     }
 
@@ -151,6 +168,21 @@ impl MultiAgentStore {
     }
 }
 
+fn discover_model_options(runtime: AgentRuntimeKind, saved_model: Option<&str>) -> Result<Vec<Value>> {
+    // Do not load project-local hooks, extensions or scripts for a menu read.
+    let directory = std::env::temp_dir().join(format!("crewvela-model-catalog-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&directory).context("无法创建模型目录读取所需的临时目录")?;
+    let cwd = directory.to_string_lossy();
+    let result = if runtime == AgentRuntimeKind::Pi {
+        crate::native_pi_sessions::conversation_config_options(&cwd, saved_model, None)
+    } else {
+        crate::acp::conversation_model_catalog(acp_kind(runtime).context("此 Runtime 未提供模型选项")?, &cwd)
+    };
+    // The scratch directory does not own provider home data.
+    let _ = std::fs::remove_dir(directory);
+    result
+}
+
 pub(super) fn snapshot_round(conn: &Connection, round: &str, project: &str) -> Result<()> {
     conn.execute("INSERT INTO ma_round_member_models(round_id,agent_id,runtime,selection_json)
         SELECT ?1,m.agent_id,m.runtime,m.selection_json FROM ma_member_model_options m
@@ -177,6 +209,16 @@ mod tests {
     use super::*;
     use crate::acp::AcpConnection;
     use std::{path::Path, process::Command, sync::{Arc, atomic::AtomicU32}};
+
+    #[test]
+    #[ignore = "Requires locally installed Claude Code ACP. Reads catalog only, sends no prompt."]
+    fn installed_claude_catalog_before_chat() {
+        let catalog = discover_model_options(AgentRuntimeKind::ClaudeCode, None).unwrap();
+        let models = choices(option(&catalog, true));
+        let reasoning = choices(option(&catalog, false));
+        eprintln!("Claude Code catalog: {} models, {} reasoning levels", models.len(), reasoning.len());
+        assert!(!models.is_empty(), "The installed Claude adapter must expose selectable models");
+    }
 
     #[test]
     fn member_model_protocol_requires_confirmation_from_adapter() {

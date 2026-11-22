@@ -46,7 +46,14 @@ fn member_model_settings_are_project_scoped_and_dispatched_round_keeps_its_selec
         {"group":"Provider","options":[{"value":"model-a","name":"A"},{"value":"model-b","name":"B"}]}]}),
         json!({"id":"effort","type":"select","options":[{"value":"high","name":"High"}]}),
         json!({"id":"mode","type":"select","options":[{"value":"full-access","name":"Full"}]})];
-    store.observe_conversation_models(&fixture.project, member, kind, &catalog).unwrap();
+    let loaded = store.load_member_models_with(&fixture.project, member, false, |runtime, saved| {
+        assert_eq!(runtime, kind);
+        assert_eq!(saved, None);
+        Ok(catalog.to_vec())
+    }).unwrap();
+    assert_eq!(serde_json::to_value(loaded).unwrap()["model"][1]["value"], "model-b");
+    assert!(store.conversation_snapshot(&fixture.project).unwrap().rounds.is_empty());
+    store.load_member_models_with(&fixture.project, member, false, |_, _| panic!("cached catalog should not start an adapter")).unwrap();
     let selected = Selection {model:Some("model-b".into()), reasoning:Some("high".into())};
     assert!(store.set_conversation_member_models("unrelated-project", member, selected.clone()).is_err());
     assert!(store.set_conversation_member_models(&fixture.project, member, Selection {

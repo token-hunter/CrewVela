@@ -25,12 +25,12 @@ export function ConversationMemberModels({ projectId, member, compact, onBack }:
   const heading = useRef<HTMLElement>(null);
   const generation = useRef(0);
   const key = { projectId, agentId: member.id };
-  const load = async (refreshPi = false) => {
+  const load = async (refresh = false) => {
     const ticket = ++generation.current;
     setBusy(true);
     setError("");
     try {
-      const result = await invoke<MemberModels>("ma_conversation_member_models", { ...key, refreshPi });
+      const result = await invoke<MemberModels>("ma_conversation_member_models", { ...key, refresh });
       if (generation.current === ticket) setData(result);
     } catch (error) {
       if (generation.current === ticket) setError(String(error));
@@ -86,8 +86,8 @@ export function ConversationMemberModels({ projectId, member, compact, onBack }:
         <span>{label[item]}</span><span className="conversation-model-value">{data[item].find(choice => choice.value === active?.[item])?.label ?? active?.[item] ?? (data[item].length ? "跟随 CLI" : "未提供")}</span><CaretRight size={14} />
       </button>)}
       <footer><button type="button" disabled={busy || (!active?.model && !active?.reasoning)} onClick={() => void save()}><LinkSimple size={15} />跟随 CLI</button><small role="status">{saved ? "已保存 · 下一轮生效" : "下一轮生效"}</small></footer>
-    </> : data ? <p>{!data.supported ? "此 Runtime 使用 CLI 配置。" : member.runtimeKind === "pi" ? "从本机 Pi 读取可用选项。" : "与该成员完成一次普通聊天后，即可查看可用选项。"}</p> : !error && <p>正在读取配置…</p>}
-    {data?.supported && member.runtimeKind === "pi" && !field && <button type="button" className="conversation-model-refresh" disabled={busy} onClick={() => void load(true)}>{data.observed ? "刷新可用选项" : "读取可用选项"}</button>}
-    {error && <p role="alert">{error}{!data && <button type="button" disabled={busy} onClick={() => void load()}>重试</button>}</p>}
+    </> : data && !data.supported ? <p>此 Runtime 使用 CLI 配置。</p> : !error && <p role="status">正在读取可用选项…</p>}
+    {data?.supported && !field && (!data.model.length || !data.reasoning.length) && <button type="button" className="conversation-model-refresh" disabled={busy} onClick={() => void load(true)}>刷新可用选项</button>}
+    {error && <p role="alert">{error}{!data && <button type="button" disabled={busy} onClick={() => void load(true)}>重试</button>}</p>}
   </section>;
 }

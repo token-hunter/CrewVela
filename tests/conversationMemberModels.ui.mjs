@@ -20,6 +20,8 @@ try {
     await trigger.click();
     const editor = settingsPage.getByRole('region', {name:'Codex的模型与推理设置'});
     await editor.getByRole('button', {name:/^模型/}).click();
+    assert.deepEqual((await calls(settingsPage, 'ma_conversation_member_models'))[0].args, {projectId:'A', agentId:'codex', refresh:false});
+    assert.equal((await calls(settingsPage, 'ma_conversation_send')).length, 0);
     const modelBounds = await editor.boundingBox();
     assert.ok(modelBounds.x >= 0 && modelBounds.x + modelBounds.width <= width);
     if (width === 1122) assert.ok(modelBounds.x + modelBounds.width < firstBounds.x);

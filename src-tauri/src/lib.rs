@@ -1188,11 +1188,9 @@ fn ma_conversation_snapshot(project_id: String, state: State<'_, MultiAgentStore
 }
 
 #[tauri::command]
-async fn ma_conversation_member_models(project_id: String, agent_id: String, refresh_pi: Option<bool>, state: State<'_, MultiAgentStore>) -> Result<multi_agent::conversation_models::MemberOptions, String> {
+async fn ma_conversation_member_models(project_id: String, agent_id: String, refresh: Option<bool>, state: State<'_, MultiAgentStore>) -> Result<multi_agent::conversation_models::MemberOptions, String> {
     let store = state.inner().clone();
-    blocking_command(move || if refresh_pi.unwrap_or(false) {
-        store.refresh_pi_member_models(&project_id, &agent_id).map_err(to_err)
-    } else { store.conversation_member_models(&project_id, &agent_id).map_err(to_err) }).await
+    blocking_command(move || store.load_conversation_member_models(&project_id, &agent_id, refresh.unwrap_or(false)).map_err(to_err)).await
 }
 
 #[tauri::command]

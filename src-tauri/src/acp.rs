@@ -1846,6 +1846,15 @@ fn research_provider_env(settings: &Value) -> Result<HashMap<String, String>> {
 mod conversation_policy_tests {
     use super::*;
     #[test]
+    fn model_catalog_handshake_without_prompt_or_project_tools() {
+        let cwd = env!("CARGO_MANIFEST_DIR");
+        let mut command = Command::new(which::which("node").unwrap());
+        command.arg(Path::new(cwd).join("../tests/fixtures/native-harness-acp.mjs")).arg("--team-models").arg("--catalog-only");
+        let catalog = catalog_from_adapter(ManagedAcpKind::DeepSeekHarness, cwd, command).unwrap();
+        assert_eq!(catalog[0]["id"], "model");
+        assert_eq!(catalog[1]["category"], "thought_level");
+    }
+    #[test]
     fn native_group_approval_selects_allow_once_and_never_persists_permissions() {
         let root=std::env::temp_dir().join(format!("crewvela-once-{}",uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
@@ -1952,6 +1961,36 @@ pub(crate) struct ManagedCodexThread {
 }
 
 pub(crate) type ConversationConfigurator = Box<dyn FnOnce(&mut AcpConnection) -> Result<()> + Send>;
+
+/// Discover values with a fresh, message-free handshake. Never resume a
+/// member's live session or attach collaboration tools just to open settings.
+pub(crate) fn conversation_model_catalog(kind: ManagedAcpKind, cwd: &str) -> Result<Vec<Value>> {
+    if matches!(kind, ManagedAcpKind::ClaudeCode | ManagedAcpKind::Codex) {
+        anyhow::ensure!(chat_adapter_installed(kind), "{} 的 ACP 适配器尚未就绪，请先在运行时管理中检查", kind.label());
+    }
+    let mut command = adapter_command(kind)?;
+    if kind == ManagedAcpKind::Codex {
+        let storage = crate::codex_storage::CodexStorage::CrewVela;
+        storage.prepare()?;
+        storage.configure(&mut command, true)?;
+    }
+    catalog_from_adapter(kind, cwd, command)
+}
+
+fn catalog_from_adapter(kind: ManagedAcpKind, cwd: &str, command: Command) -> Result<Vec<Value>> {
+    let claude = (kind == ManagedAcpKind::ClaudeCode).then_some(ManagedResearchPolicy { tools_enabled: false });
+    let modes: &[&str] = if kind == ManagedAcpKind::DeepSeekHarness { &["read-only"] } else { &[] };
+    let mut connection = AcpConnection::spawn_for_with_cli_identity_policy(
+        kind, cwd, None, Vec::new(), modes, false, false,
+        Arc::new(AtomicU32::new(0)), None, Some(command), None, claude, false,
+    )?;
+    let catalog = connection.config_options().to_vec();
+    if let Err(error) = connection.stop_checked() {
+        quarantine_acp_connection(connection);
+        return Err(error);
+    }
+    Ok(catalog)
+}
 
 pub(crate) fn execute_managed_acp(
     kind: ManagedAcpKind,
