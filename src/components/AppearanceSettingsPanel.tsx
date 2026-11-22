@@ -157,6 +157,40 @@ function ProjectStylePreview({ style }: { style: ProjectManagementStyle }) {
   );
 }
 
+function StartStylePillSwatch({ style }: { style: RightSidebarStartStyle }) {
+  if (style === "minimal") {
+    return (
+      <span className="appearance-pm-swatch is-classic" aria-hidden="true">
+        <i />
+        <i className="short" />
+      </span>
+    );
+  }
+  if (style === "lamp") {
+    return (
+      <span className="appearance-pm-swatch is-start-lamp" aria-hidden="true">
+        <i className="shade" />
+        <i className="beam" />
+      </span>
+    );
+  }
+  if (style === "clothesline") {
+    return (
+      <span className="appearance-pm-swatch is-start-line" aria-hidden="true">
+        <i className="wire" />
+        <b />
+        <b className="accent" />
+      </span>
+    );
+  }
+  return (
+    <span className="appearance-pm-swatch is-start-tape" aria-hidden="true">
+      <i className="reel" />
+      <i className="reel" />
+    </span>
+  );
+}
+
 function ProjectStylePillSwatch({ style }: { style: ProjectManagementStyle }) {
   if (style === "classic") {
     return (
@@ -408,12 +442,17 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
   const activeArchivedSessionsStyle = resolveArchivedSessionsSettingsStyle(appearance);
   const activePrivacyStyle = resolvePrivacySettingsStyle(appearance);
 
+  const currentStartStyleOption =
+    START_STYLE_OPTIONS.find((item) => item.id === activeStartStyle) ?? START_STYLE_OPTIONS[0];
+  const isStartStyleCreative = activeStartStyle !== "minimal";
+
   const currentProjectStyleOption =
     PROJECT_STYLE_OPTIONS.find((item) => item.id === activeProjectStyle) ??
     PROJECT_STYLE_OPTIONS[0];
   const isProjectStyleCreative = activeProjectStyle !== "classic";
 
   const extraCreativeCount = [
+    isStartStyleCreative,
     isProjectStyleCreative,
     activeGeneralStyle !== "classic",
     activeGitStyle !== "classic",
@@ -424,7 +463,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
     activeArchivedSessionsStyle !== "classic",
     activePrivacyStyle !== "classic",
   ].filter(Boolean).length;
-  const totalStyleModules = 9;
+  const totalStyleModules = 10;
 
   const extraStyleModules: Array<{
     id: ExtraStyleModuleId;
@@ -730,52 +769,9 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
       </section>
 
       <SettingsSection
-        className="appearance-settings-section appearance-start-style-section"
-        title="工作区开始页"
-        description="自定义右侧栏「开始」页的展示模式与交互玩法，切换后即时生效。"
-      >
-        <div className="appearance-start-style-grid" role="group" aria-label="工作区开始页模式">
-          {START_STYLE_OPTIONS.map((option) => {
-            const selected = activeStartStyle === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                className={`appearance-start-style-option${selected ? " selected" : ""}`}
-                aria-label={option.label}
-                aria-pressed={selected}
-                onClick={() =>
-                  onChange((current) => ({
-                    ...current,
-                    rightSidebarStartStyle: option.id,
-                  }))
-                }
-              >
-                <span className="appearance-start-style-stage">
-                  <StartStylePreview style={option.id} />
-                  {selected && (
-                    <span className="appearance-option-check">
-                      <CheckIcon size={13} weight="bold" />
-                    </span>
-                  )}
-                </span>
-                <span className="appearance-start-style-meta">
-                  <strong>
-                    {option.label}
-                    <em>{option.tag}</em>
-                  </strong>
-                  <small>{option.hint}</small>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
         className="appearance-settings-section appearance-more-styles-section"
         title="更多页面风格"
-        description="为项目管理、常规、Git、Worktrees、通知、自动化、浏览器控制、归档会话与隐私开启可选创意模式，默认均保持现有设计。"
+        description="为工作区开始页、项目管理、常规、Git、Worktrees、通知、自动化、浏览器控制、归档会话与隐私开启可选创意模式，默认均保持现有设计。"
       >
         <div className="appearance-more-styles-bar">
           <span className="appearance-more-styles-summary">
@@ -789,6 +785,10 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
               onClick={() =>
                 onChange((current) => ({
                   ...current,
+                  rightSidebarStartStyle:
+                    resolveRightSidebarStartStyle(current) === "minimal"
+                      ? "lamp"
+                      : resolveRightSidebarStartStyle(current),
                   projectManagementStyle:
                     resolveProjectManagementStyle(current) === "classic"
                       ? "vinyl"
@@ -813,6 +813,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
               onClick={() =>
                 onChange((current) => ({
                   ...current,
+                  rightSidebarStartStyle: "minimal",
                   projectManagementStyle: "classic",
                   generalSettingsStyle: "classic",
                   gitSettingsStyle: "classic",
@@ -831,6 +832,50 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
         </div>
 
         <div className="appearance-more-styles-grid">
+          <article
+            className={`appearance-more-style-card is-featured${isStartStyleCreative ? " is-creative" : ""}`}
+          >
+            <div className="appearance-more-style-top">
+              <span className="appearance-more-preview is-featured-pm" aria-hidden="true">
+                <StartStylePreview style={activeStartStyle} />
+              </span>
+              <div className="appearance-more-style-copy">
+                <strong>
+                  工作区开始页
+                  {isStartStyleCreative && <em>创意中</em>}
+                </strong>
+                <small>{currentStartStyleOption.hint}</small>
+              </div>
+              <div className="appearance-more-style-top-end">
+                <span className="appearance-more-mode-tag">
+                  {currentStartStyleOption.label} · {currentStartStyleOption.tag}
+                </span>
+              </div>
+            </div>
+            <div className="appearance-pm-pills is-four-cols" role="group" aria-label="工作区开始页模式">
+              {START_STYLE_OPTIONS.map((option) => {
+                const selected = activeStartStyle === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`appearance-pm-pill-btn${selected ? " selected" : ""}`}
+                    aria-pressed={selected}
+                    onClick={() =>
+                      onChange((current) => ({
+                        ...current,
+                        rightSidebarStartStyle: option.id,
+                      }))
+                    }
+                  >
+                    <StartStylePillSwatch style={option.id} />
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </article>
+
           <article
             className={`appearance-more-style-card is-featured${isProjectStyleCreative ? " is-creative" : ""}`}
           >

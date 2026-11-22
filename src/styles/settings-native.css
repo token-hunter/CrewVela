@@ -444,74 +444,7 @@
 }
 .settings-native .appearance-opacity-controls { display: grid; gap: 10px; min-width: 0; }
 
-/* Workspace Start Page DIY Style Picker inside Appearance Settings */
-.settings-native .appearance-start-style-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-.settings-native .appearance-start-style-option {
-  padding: 8px;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  background: var(--settings-canvas);
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  transition: border-color 140ms ease, background-color 140ms ease;
-}
-.settings-native .appearance-start-style-option:hover {
-  border-color: var(--border-strong);
-}
-.settings-native .appearance-start-style-option.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, var(--settings-canvas));
-}
-.settings-native .appearance-start-style-stage {
-  position: relative;
-  height: 76px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.settings-native .appearance-start-style-meta {
-  display: grid;
-  gap: 2px;
-  padding: 0 2px;
-  min-width: 0;
-}
-.settings-native .appearance-start-style-meta strong {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-}
-.settings-native .appearance-start-style-meta em {
-  flex: none;
-  font-style: normal;
-  font-size: 10.5px;
-  font-weight: 500;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--bg-sunken);
-  color: var(--text-dim);
-}
-.settings-native .appearance-start-style-meta small {
-  font-size: 11.5px;
-  color: var(--text-dim);
-  line-height: 1.4;
-}
+/* Workspace Start Page Live Preview Artwork (used inside 更多页面风格 featured card) */
 .settings-native .appearance-start-preview {
   position: relative;
   width: 100%;
@@ -863,6 +796,9 @@
   background: var(--bg-sunken);
   border: 1px solid var(--border);
 }
+.settings-native .appearance-pm-pills.is-four-cols {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .settings-native .appearance-pm-pill-btn {
   min-width: 0;
   height: 31px;
@@ -986,7 +922,132 @@
 .settings-native .appearance-pm-swatch.is-studio i.on {
   background: var(--accent);
 }
-/* Compact scaling when ProjectStylePreview sits inside 108x56 featured preview */
+.settings-native .appearance-pm-swatch.is-start-lamp {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  flex-direction: column;
+  justify-content: flex-start;
+  padding-top: 2px;
+}
+.settings-native .appearance-pm-swatch.is-start-lamp .shade {
+  display: block;
+  width: 9px;
+  height: 4px;
+  border-radius: 5px 5px 1px 1px;
+  background: var(--text-dim);
+}
+.settings-native .appearance-pm-swatch.is-start-lamp .beam {
+  display: block;
+  width: 12px;
+  height: 7px;
+  background: radial-gradient(ellipse at 50% 0%, var(--accent), transparent 85%);
+  opacity: 0.72;
+}
+.settings-native .appearance-pm-swatch.is-start-line {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  gap: 2px;
+  padding-top: 3px;
+}
+.settings-native .appearance-pm-swatch.is-start-line .wire {
+  position: absolute;
+  top: 3.5px;
+  left: 2px;
+  right: 2px;
+  height: 1px;
+  background: var(--border-strong);
+}
+.settings-native .appearance-pm-swatch.is-start-line b {
+  display: block;
+  width: 5px;
+  height: 6px;
+  border-radius: 1.5px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+}
+.settings-native .appearance-pm-swatch.is-start-line b.accent {
+  border-color: var(--accent);
+}
+.settings-native .appearance-pm-swatch.is-start-tape {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  gap: 3px;
+}
+.settings-native .appearance-pm-swatch.is-start-tape .reel {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  border: 1.1px solid var(--text-dim);
+}
+/* Compact scaling when StartStylePreview or ProjectStylePreview sits inside 108x56 featured preview */
+.settings-native .appearance-more-preview.is-featured-pm .asp-minimal-list {
+  width: 72%;
+  gap: 4px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-minimal-list i {
+  height: 4px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-lamp-wire {
+  height: 6px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-lamp-shade {
+  width: 22px;
+  height: 9px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-lamp-beam {
+  top: 15px;
+  width: 66px;
+  height: 40px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-lamp-cord {
+  top: 15px;
+  left: calc(50% + 9px);
+  height: 14px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-lamp-lines {
+  width: 58%;
+  margin-top: 8px;
+  gap: 3.5px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-lamp-lines i {
+  height: 3.5px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .appearance-start-preview.clothesline {
+  gap: 5px;
+  padding: 0 9px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-tags {
+  gap: 4px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-tags i {
+  width: 15px;
+  height: 14px;
+  border-radius: 3px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .appearance-start-preview.cassette {
+  gap: 3px;
+  padding: 5px 10px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-tapes {
+  gap: 2px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-tapes i {
+  height: 7px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-deck {
+  height: 12px;
+  padding: 0 5px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-deck i {
+  width: 5.5px;
+  height: 5.5px;
+}
+.settings-native .appearance-more-preview.is-featured-pm .asp-deck b {
+  width: 16px;
+  height: 2.5px;
+}
 .settings-native .appearance-more-preview.is-featured-pm .appearance-project-preview.classic {
   padding: 7px 9px;
   gap: 4px;
@@ -1380,9 +1441,9 @@
   .settings-native .collab-agent-card-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
   .settings-native :is(.general-dual-cards-row, .appearance-dual-sections, .appearance-terminal-opacity, .pet-showcase-banner, .git-settings-guarantees) { grid-template-columns: minmax(0, 1fr); }
   .settings-native .pet-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .settings-native .appearance-start-style-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-native .appearance-more-styles-grid { grid-template-columns: minmax(0, 1fr); }
   .settings-native .appearance-pm-pills { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .settings-native .appearance-pm-pills.is-four-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
   .settings-native-overlay { padding: 8px; }
@@ -1394,8 +1455,8 @@
   .settings-native .settings-nav-group + .settings-nav-group { margin-top: 12px; }
   .settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner { padding: 20px 16px; }
   .settings-native .settings-workspace .runtime-field, .settings-native .git-settings-row, .settings-native .general-runtime-details dl { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .settings-native .appearance-start-style-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .settings-native .appearance-pm-pills { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-native .appearance-pm-pills,
+  .settings-native .appearance-pm-pills.is-four-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-native .appearance-more-style-top-end { display: none; }
   .settings-native .archived-settings-toolbar, .settings-native .notification-controls { grid-template-columns: minmax(0, 1fr); }
   .settings-native .settings-window-header { padding-left: 16px; }
