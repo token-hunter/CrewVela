@@ -154,11 +154,12 @@
 .team-related-chat { margin-left:auto; font-size:13px; }
 .team-tasks-empty { color:var(--text-dim); padding:40px 0; }
 @container (min-width:1000px) {
-  .team-work-views .conversation-transcript { scrollbar-gutter:stable both-edges; }
+  .team-work-views :is(.conversation-transcript, .team-tasks-panel) { scrollbar-gutter:stable both-edges; }
   .team-work-views .conversation-transcript-inner { display:flow-root; }
   .team-work-views .conversation-header > :is(.conversation-heading, .conversation-context-row, .conversation-tabs-row, .conversation-switcher),
   .team-work-views > :is(.conversation-error, .conversation-export-status),
   .team-work-views .conversation-transcript-inner,
+  .team-work-views .conversation-task-view,
   .team-work-views .conversation-footer > * {
     box-sizing:border-box;
     inline-size:100%;
