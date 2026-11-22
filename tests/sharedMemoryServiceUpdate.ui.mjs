@@ -12,6 +12,11 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   await page.clock.install();
   await page.goto(`${base}/tests/fixtures/shared-memory-quick-setup.html`);
+  const openLegacy = async () => {
+    await page.getByRole("button", { name: "更多选项", exact: true }).click();
+    await page.getByRole("menuitem", { name: "旧版共享记忆", exact: true }).click();
+  };
+  await openLegacy();
   // No project, no installed Agent CLI: a managed service can still be upgraded.
   await page.evaluate(() => Object.assign(window.__quickInfo, {
     installedVersion: "2.6.0", managed: true,
@@ -71,6 +76,7 @@ try {
   }
   // A minor update needs neither the migration checkbox nor an Agent selection.
   await page.reload();
+  await openLegacy();
   await page.evaluate(() => Object.assign(window.__quickInfo, { installedVersion: "3.4.0", managed: true, agents: [] }));
   await page.getByRole("button", { name: "检查更新", exact: true }).click();
   assert.equal(await page.getByRole("checkbox", { name: /确认跨大版本迁移/ }).count(), 0);

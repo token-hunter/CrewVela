@@ -16,5 +16,6 @@ Copyright (c) 2020 Phosphor Icons
 
 - 配额适配器：[来源说明](THIRD_PARTY_NOTICES/provider-quota.md)及 [CC Switch 许可证](THIRD_PARTY_NOTICES/cc-switch-LICENSE)。
 - portable-pty：[随源码保留的许可证](src-tauri/vendor/portable-pty/LICENSE.md)。
+- 内置共享记忆使用 [ai-memory 3.5.1](https://github.com/akitaonrails/ai-memory/releases/tag/v3.5.1)，Copyright (c) 2026 Fabio Akita，MIT 许可证。官方安装包和其中的 LICENSE 随支持平台的发布构建内置。
 
 依赖各自附带的许可证继续适用。上述文件也通过 Tauri 资源配置随新构建的安装包分发；直接分发未捆绑 EXE 时，应同时提供这些许可文件。

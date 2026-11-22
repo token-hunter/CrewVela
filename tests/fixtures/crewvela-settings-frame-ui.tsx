@@ -132,7 +132,7 @@ function Fixture() {
       onEdit={() => {}} onNew={() => {}} onDelete={() => {}} onSetHidden={() => {}}
       onRestoreDefault={() => {}} onReorder={async () => {}} onRestoreArchivedSession={() => {}}
       onDeleteArchivedSession={() => {}} onViewArchivedTranscript={() => {}} onClose={() => setOpen(false)}
-      initialSection={params.get("section") === "privacy" ? "privacy" : params.get("section") === "mcp" ? ("mcp" as any) : params.get("section") === "automation" ? "automation" : params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : params.get("section") === "skills" ? "skills" : "generalSettings"} />}
+      initialSection={params.get("section") === "sharedMemory" ? "sharedMemory" : params.get("section") === "privacy" ? "privacy" : params.get("section") === "mcp" ? ("mcp" as any) : params.get("section") === "automation" ? "automation" : params.get("section") === "collaboration" ? "collaboration" : params.get("section") === "browserControl" ? "browserControl" : params.get("section") === "skills" ? "skills" : "generalSettings"} />}
   </>;
 }
 

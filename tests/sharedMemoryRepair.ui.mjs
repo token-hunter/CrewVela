@@ -30,6 +30,8 @@ try {
     }};
   });
   await page.goto(new URL("/tests/fixtures/shared-memory-repair.html", base).href);
+  await page.getByRole("button", { name: "更多选项", exact: true }).click();
+  await page.getByRole("menuitem", { name: "旧版共享记忆", exact: true }).click();
   await page.getByText("记忆服务认证失败（HTTP 401）", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "启动服务", exact: true }).count(), 0);
   await page.evaluate(() => { window.__qaHealthy = true; });

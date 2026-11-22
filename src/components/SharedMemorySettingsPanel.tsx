@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ArrowRightIcon, ArrowUpRightIcon, CheckIcon, CopyIcon, CubeIcon, ChatCircleIcon, DotsThreeIcon, FileTextIcon, FolderIcon, LinkIcon, MagnifyingGlassIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon, CaretRightIcon, CheckIcon, CopyIcon, CubeIcon, ChatCircleIcon, DotsThreeIcon, FileTextIcon, FolderIcon, InfoIcon, LinkIcon, MagnifyingGlassIcon, StackIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { AdditionalProjectAccess, ZcodeFinalize } from "./SharedMemoryProjectControls";
 import { SharedMemoryQuickSetup } from "./SharedMemoryQuickSetup";
+import { EmbeddedMemoryToggle, useEmbeddedMemory } from "./EmbeddedMemoryToggle";
 import { sharedMemoryCommands } from "../lib/sharedMemoryCommands";
 import { pushModal, removeModal } from "./ui/modalStack";
 import "../styles/shared-memory-settings.css";
@@ -77,9 +78,13 @@ interface SetupOverflowMenuProps {
   onToggleOutput: () => void;
 }
 
-function SetupOverflowMenu({ label, canCopy, hasOutput, commandVisible, outputVisible, onCopy, onToggleCommand, onToggleOutput }: SetupOverflowMenuProps) {
+function MemoryOptionsMenu({ label, menuLabel, text, items }: {
+  label: string; menuLabel: string; text?: string;
+  items: Array<{ label: string; icon?: ReactNode; disabled?: boolean; action: () => void }>;
+}) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -126,20 +131,67 @@ function SetupOverflowMenu({ label, canCopy, hasOutput, commandVisible, outputVi
     if (event.key === "Tab") setOpen(false);
   };
 
-  return <div className="sm-overflow" ref={rootRef}>
-    <button type="button" className="sm-overflow-trigger" aria-label={`${label}更多操作`} title="更多操作" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(current => !current)}>
+  return <div className={text ? "sm-overflow sm-home-options" : "sm-overflow"} ref={rootRef}>
+    <button type="button" className="sm-overflow-trigger" aria-label={label} title={text ?? "更多操作"} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} onClick={() => setOpen(current => !current)}>
       <DotsThreeIcon size={21} weight="bold" aria-hidden="true" />
+      {text}
     </button>
-    {open && <div className="sm-overflow-menu" role="menu" aria-label={`${label}操作`} onKeyDown={handleMenuKeyDown}>
-      <button type="button" role="menuitem" disabled={!canCopy} onClick={() => closeAndRun(onCopy)}>复制命令</button>
-      <button type="button" role="menuitem" disabled={!canCopy} onClick={() => closeAndRun(onToggleCommand)}>{commandVisible ? "隐藏命令" : "查看命令"}</button>
-      <button type="button" role="menuitem" disabled={!hasOutput} onClick={() => closeAndRun(onToggleOutput)}>{outputVisible ? "隐藏执行输出" : "查看执行输出"}</button>
+    {open && <div className="sm-overflow-menu" id={menuId} role="menu" aria-label={menuLabel} onKeyDown={handleMenuKeyDown}>
+      {items.map(item => <button key={item.label} type="button" role="menuitem" disabled={item.disabled} onClick={() => closeAndRun(item.action)}>
+        {item.icon}{item.label}{text && <CaretRightIcon size={14} aria-hidden="true" />}
+      </button>)}
     </div>}
   </div>;
 }
 
-/** 服务运行与智能体接入分别展示；注册配置不等于会话捕获已验证。 */
+function SetupOverflowMenu({ label, canCopy, hasOutput, commandVisible, outputVisible, onCopy, onToggleCommand, onToggleOutput }: SetupOverflowMenuProps) {
+  return <MemoryOptionsMenu label={`${label}更多操作`} menuLabel={`${label}操作`} items={[
+    { label: "复制命令", disabled: !canCopy, action: onCopy },
+    { label: commandVisible ? "隐藏命令" : "查看命令", disabled: !canCopy, action: onToggleCommand },
+    { label: outputVisible ? "隐藏执行输出" : "查看执行输出", disabled: !hasOutput, action: onToggleOutput },
+  ]} />;
+}
+
 export function SharedMemorySettingsPanel() {
+  const [page, setPage] = useState<"home" | "legacy" | "diagnostics">("home");
+  const [legacyOpened, setLegacyOpened] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const previousPage = useRef(page);
+  const memory = useEmbeddedMemory(PREVIEW);
+  useEffect(() => {
+    if (previousPage.current === page) return;
+    previousPage.current = page;
+    headingRef.current?.focus();
+  }, [page]);
+
+  return <div className="sm-page sm-shell">
+    <header className="settings-heading sm-shell-header" data-memory-page={page}>
+      <div className="sm-shell-title">
+        {page !== "home" && <button type="button" className="sm-icon-button" aria-label="返回共享记忆" title="返回共享记忆" onClick={() => setPage("home")}><ArrowLeftIcon size={17} aria-hidden="true" /></button>}
+        <h2 id="settings-title" ref={headingRef} tabIndex={-1}>{page === "legacy" ? "旧版共享记忆" : page === "diagnostics" ? "诊断信息" : "共享记忆"}</h2>
+      </div>
+      {page === "home" && <MemoryOptionsMenu label="更多选项" menuLabel="共享记忆更多选项" text="更多选项" items={[
+        { label: "旧版共享记忆", icon: <StackIcon size={17} aria-hidden="true" />, action: () => { setLegacyOpened(true); setPage("legacy"); } },
+        { label: "诊断信息", icon: <InfoIcon size={17} aria-hidden="true" />, action: () => setPage("diagnostics") },
+      ]} />}
+    </header>
+    {page === "home" && <EmbeddedMemoryToggle memory={memory} />}
+    {page === "diagnostics" && <section className="sm-card sm-advanced" aria-label="内置共享记忆诊断">
+      <header className="sm-card-header"><h3>内置共享记忆</h3>
+        <button className="sm-button" type="button" disabled={memory.busy || memory.checking} onClick={memory.refresh}>重新检测</button>
+      </header>
+      <dl>
+        <div><dt>内置引擎</dt><dd>{memory.status ? memory.status.available ? "可用" : "当前构建未内置" : "未知"}</dd></div>
+        <div><dt>服务状态</dt><dd role="status">{memory.statusText}</dd></div>
+      </dl>
+      {memory.error && <p role="alert" className="sm-error">{memory.error}</p>}
+    </section>}
+    {legacyOpened && <div hidden={page !== "legacy"}><LegacySharedMemorySettingsPanel active={page === "legacy"} /></div>}
+  </div>;
+}
+
+/** 服务运行与智能体接入分别展示；注册配置不等于会话捕获已验证。 */
+export function LegacySharedMemorySettingsPanel({ active = true }: { active?: boolean }) {
   const [status, setStatus] = useState<AiMemoryStatus | null>(PREVIEW ? PREVIEW_STATUS : null);
   const statusRef = useRef<AiMemoryStatus | null>(PREVIEW ? PREVIEW_STATUS : null);
   const [statusFresh, setStatusFresh] = useState(PREVIEW);
@@ -316,9 +368,9 @@ export function SharedMemorySettingsPanel() {
       operationRevision.current += 1;
     };
   }, []);
-  useEffect(() => { void refreshStatus(); }, [refreshStatus]);
+  useEffect(() => { if (active) void refreshStatus(); }, [active, refreshStatus]);
   useEffect(() => {
-    if (view !== "setup") return;
+    if (!active || view !== "setup") return;
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void refreshStatus();
     };
@@ -331,7 +383,7 @@ export function SharedMemorySettingsPanel() {
       window.removeEventListener("focus", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [view, refreshStatus]);
+  }, [active, view, refreshStatus]);
   const run = async (action: ServiceAction, label: string) => {
     if (pending.current) return;
     operationRevision.current += 1;

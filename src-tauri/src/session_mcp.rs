@@ -90,7 +90,21 @@ fn emit(writer: &mut impl Write, value: &Value) -> Result<()> {
     Ok(())
 }
 
-fn serve(mut reader: impl BufRead, mut writer: impl Write, endpoint: &Endpoint) -> Result<()> {
+fn serve(reader: impl BufRead, writer: impl Write, endpoint: &Endpoint) -> Result<()> {
+    serve_tools(reader, writer, "crewvela-sessions",
+        "通过 sessions/send 给用户已打开的原会话通信，发送方身份固定；不要通过 shell 写队列，不要请求扩大项目沙箱，排队不等于对方回复。",
+        tools(), |name, arguments| endpoint.call(name, arguments), "send")
+}
+
+pub(crate) fn serve_tools(
+    mut reader: impl BufRead,
+    mut writer: impl Write,
+    server_name: &str,
+    instructions: &str,
+    tools: Value,
+    call: impl Fn(&str, &Value) -> Result<Value>,
+    write_tool: &str,
+) -> Result<()> {
     let (mut initialized, mut ready) = (false, false);
     // A retried send request must never create a second message in this process.
     let mut sent: VecDeque<(Value, Value, Value)> = VecDeque::new();
@@ -99,7 +113,7 @@ fn serve(mut reader: impl BufRead, mut writer: impl Write, endpoint: &Endpoint) 
         if (&mut reader).take(FRAME_LIMIT + 1).read_until(b'\n', &mut frame)? == 0 { return Ok(()); }
         if frame.len() as u64 > FRAME_LIMIT {
             emit(&mut writer, &rpc_error(Value::Null, -32600, "会话通信请求超过大小限制"))?;
-            bail!("会话通信请求超过大小限制");
+            bail!("本机会话工具请求超过大小限制");
         }
         if frame.iter().all(u8::is_ascii_whitespace) { continue; }
         let request: Value = match serde_json::from_slice(&frame) {
@@ -121,12 +135,12 @@ fn serve(mut reader: impl BufRead, mut writer: impl Write, endpoint: &Endpoint) 
                 initialized = true;
                 let version = request["params"]["protocolVersion"].as_str().unwrap_or("2024-11-05");
                 let version = if matches!(version, "2024-11-05" | "2025-03-26" | "2025-06-18" | "2025-11-25") { version } else { "2024-11-05" };
-                json!({"jsonrpc":"2.0","id":id,"result":{"protocolVersion":version,"capabilities":{"tools":{}},"serverInfo":{"name":"crewvela-sessions","version":"1.0.0"},
-                    "instructions":"通过 sessions/send 给用户已打开的原会话通信，发送方身份固定；不要通过 shell 写队列，不要请求扩大项目沙箱，排队不等于对方回复。"}})
+                json!({"jsonrpc":"2.0","id":id,"result":{"protocolVersion":version,"capabilities":{"tools":{}},"serverInfo":{"name":server_name,"version":"1.0.0"},
+                    "instructions":instructions}})
             }
             "ping" => json!({"jsonrpc":"2.0","id":id,"result":{}}),
             _ if !ready => rpc_error(id, -32002, "请先完成 initialize 握手"),
-            "tools/list" => json!({"jsonrpc":"2.0","id":id,"result":tools()}),
+            "tools/list" => json!({"jsonrpc":"2.0","id":id,"result":tools}),
             "tools/call" => {
                 let params = &request["params"];
                 if let Some((_, previous, response)) = sent.iter().find(|(previous, _, _)| previous == &id) {
@@ -135,10 +149,10 @@ fn serve(mut reader: impl BufRead, mut writer: impl Write, endpoint: &Endpoint) 
                     continue;
                 }
                 let name = params["name"].as_str().unwrap_or("");
-                let result = endpoint.call(name, params.get("arguments").unwrap_or(&json!({})))
+                let result = call(name, params.get("arguments").unwrap_or(&json!({})))
                     .unwrap_or_else(|error| json!({"content":[{"type":"text","text":format!("{error:#}")}],"isError":true}));
                 let response = json!({"jsonrpc":"2.0","id":id,"result":result});
-                if name == "send" {
+                if name == write_tool {
                     if sent.len() == 32 { sent.pop_front(); }
                     sent.push_back((id, params.clone(), response.clone()));
                 }

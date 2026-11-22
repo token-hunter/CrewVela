@@ -395,13 +395,19 @@ impl PtyManager {
             cmd.arg(arg);
         }
 
+        let mut settings_servers = mcp_servers.cloned();
+        if let Some(server) = settings_servers.as_mut().and_then(|servers| servers.remove("crewvela_memory")) {
+            cmd.arg("--mcp-config");
+            cmd.arg(serde_json::json!({"mcpServers":{"crewvela_memory":server}}).to_string());
+        }
+
         // Add communication identity/hooks only. Native account, model and provider settings remain inherited.
         let settings_json = build_interactive_settings_json(
             &env,
             hook_command,
             status_line_command,
             &serde_json::Map::new(),
-            mcp_servers,
+            settings_servers.as_ref(),
         );
         cmd.arg("--settings");
         cmd.arg(&settings_json);

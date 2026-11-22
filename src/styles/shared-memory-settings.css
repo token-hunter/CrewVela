@@ -33,6 +33,29 @@
 .sm-page .sm-tabs button.active, .sm-page .sm-agent-tabs button.active { color: var(--sm-accent); border-bottom-color: var(--sm-accent); font-weight: 600; }
 .sm-page .sm-tabs button:hover, .sm-page .sm-agent-tabs button:hover { color: var(--text); }
 .sm-page .sm-card { border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--text) 2.5%, var(--bg-elev)); min-width: 0; }
+.sm-page.sm-shell { --sm-accent: var(--accent); display: block; color: var(--text); font-size: 14px; line-height: 1.5; }
+.sm-shell .sm-shell-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.sm-shell .sm-shell-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sm-shell-title h2:focus { outline: none; }
+.sm-shell .sm-shell-header[data-memory-page="home"],
+.settings-dialog.settings-native .settings-content .sm-shell .sm-shell-header[data-memory-page="home"] {
+  margin-bottom: clamp(56px, 6vh, 64px);
+}
+.sm-shell .sm-embedded-card { padding: 16px 20px; }
+.sm-shell .sm-embedded-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.sm-shell .sm-embedded-row p { margin-top: 4px; font-size: 13px; }
+.sm-shell .sm-embedded-switch:has(input:focus-visible) i { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sm-shell .sm-embedded-switch:has(input:disabled) { opacity: .6; }
+.sm-shell .sm-embedded-switch input:disabled { cursor: not-allowed; }
+.sm-shell .sm-embedded-card > :is(.sm-error, .sm-muted, .sm-embedded-recovery) { margin-top: 8px; }
+.sm-shell .sm-home-options .sm-overflow-trigger {
+  gap: 6px; width: auto; height: 34px; padding: 0 9px; flex: none;
+  background: var(--bg-hover); color: var(--text); font-size: 13px; white-space: nowrap;
+}
+.sm-shell .sm-home-options .sm-overflow-menu { width: min(216px, calc(100vw - 32px)); }
+.sm-shell .sm-home-options .sm-overflow-menu button { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.sm-shell .sm-home-options .sm-overflow-menu button svg { flex: none; }
+.sm-shell .sm-home-options .sm-overflow-menu button svg:last-child { margin-left: auto; }
 .sm-page .sm-service, .sm-page .sm-setup, .sm-page .sm-advanced { padding: 18px 20px; }
 .sm-page .sm-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
 .sm-page .sm-card-header h3 + p { margin-top: 4px; }

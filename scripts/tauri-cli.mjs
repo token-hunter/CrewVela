@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { prepareEmbeddedMemory } from './embedded-memory.mjs';
 
 // Keep the public npm build command while removing machine-specific compiler
 // source paths. Unit separators preserve paths containing spaces on all hosts.
@@ -39,6 +40,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const releaseEnv = releaseBuildEnvironment(process.env, root, homedir());
     process.env.CARGO_ENCODED_RUSTFLAGS = releaseEnv.CARGO_ENCODED_RUSTFLAGS;
     process.env.CARGO_PROFILE_RELEASE_STRIP = releaseEnv.CARGO_PROFILE_RELEASE_STRIP;
+    const archive = await prepareEmbeddedMemory(root, args);
+    if (archive) process.env.CREWVELA_MEMORY_ARCHIVE = archive;
   }
   const require = createRequire(import.meta.url);
   const cli = require('@tauri-apps/cli');

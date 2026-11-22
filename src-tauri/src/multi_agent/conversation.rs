@@ -1224,6 +1224,17 @@ impl MultiAgentStore {
         round_with(&self.connection.lock().unwrap(), round_id)
     }
 
+    pub(super) fn conversation_user_prompt(&self, project: &str, task: &str) -> Result<String> {
+        let conn = self.connection.lock().unwrap();
+        let round_id: String = conn.query_row(
+            "SELECT t.round_id FROM ma_conversation_turns t JOIN ma_conversation_rounds r ON r.id=t.round_id
+             WHERE r.project_id=?1 AND t.task_id=?2",
+            params![project, task], |row| row.get(0),
+        )?;
+        let round = round_with(&conn, &round_id)?;
+        Ok(message_with(&conn, &round.user_message_id)?.body)
+    }
+
     pub(crate) fn request_conversation_stop(
         &self,
         project: &str,
@@ -1614,10 +1625,12 @@ impl ConversationSupervisor {
         engineering: super::MultiAgentSupervisor,
     ) -> Result<()> {
         let mut active = self.active.lock().unwrap();
+        let request_body = input.body.clone();
         let (round, created) = store.begin_conversation(input)?;
         if !created {
             return Ok(());
         }
+        crate::ai_memory::embedded::capture_team_prompt(&round.project_id, &round.id, &request_body);
         let flag = Arc::new(AtomicBool::new(false));
         active.insert(round.project_id.clone(), flag.clone());
         self.spawn_round(store, round, flag, host, bridge, Some(engineering), None);

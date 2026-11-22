@@ -24,6 +24,8 @@ mod installation;
 mod releases;
 #[path = "ai_memory_auth.rs"]
 mod auth;
+#[path = "ai_memory_embedded.rs"]
+pub(crate) mod embedded;
 #[path = "ai_memory_update.rs"]
 mod updates;
 #[cfg(windows)]
@@ -333,12 +335,17 @@ async fn admin_status_at(client: &reqwest::Client, base: &str) -> std::result::R
 }
 
 async fn managed_status_for_data(client: &reqwest::Client, base: &str, data: &Path) -> std::result::Result<Value, ServiceHealthError> {
+    managed_status_for_mode(client, base, data, false).await
+}
+
+async fn managed_status_for_mode(client: &reqwest::Client, base: &str, data: &Path, local_only: bool) -> std::result::Result<Value, ServiceHealthError> {
     if managed_listener_is_unbound(base).map_err(|_| ServiceHealthError {state:"configuration_error",message:"无法检查本地记忆监听地址".into()})? {
         return Err(ServiceHealthError {state:"offline",message:"本地记忆服务未启动".into()});
     }
-    let headers = auth::headers(data, base).map_err(|_| ServiceHealthError {state:"authentication_error",message:"本地记忆认证配置无法读取".into()})?;
+    let token = if local_only { auth::local_token(data, base) } else { auth::token(data, base) }
+        .map_err(|_| ServiceHealthError {state:"authentication_error",message:"本地记忆认证配置无法读取".into()})?;
     let mut request = client.get(format!("{}/admin/status", base.trim_end_matches('/'))).timeout(Duration::from_secs(2));
-    for (key,value) in headers { request = request.header(key,value); }
+    if let Some(token) = token { request = request.bearer_auth(token); }
     let value = service_json(request).await?;
     if value.get("version").and_then(Value::as_str).is_none_or(str::is_empty) || !value.get("counts").is_some_and(Value::is_object) {
         return Err(ServiceHealthError {state:"invalid_response",message:"记忆服务状态响应缺少 version 或 counts".into()});
@@ -623,18 +630,27 @@ async fn serve() -> Result<AiMemoryStatus> {
 
 /// Shared by manual startup and the first-use workflow; callers hold the lifecycle lock.
 async fn start_service_at(executable: &Path, data: &Path, base: &str) -> Result<()> {
+    start_owned_service(executable, data, base, managed_service, false).await
+}
+
+async fn start_owned_service(
+    executable: &Path, data: &Path, base: &str,
+    service: fn() -> Result<std::sync::MutexGuard<'static, ManagedService>>,
+    local_only: bool,
+) -> Result<()> {
     let client = service_client(base)?;
-    match managed_status_for_data(&client, base, data).await {
+    match managed_status_for_mode(&client, base, data, local_only).await {
         Ok(_) => return Ok(()),
         Err(error) if error.state == "offline" => {},
         Err(error) => return Err(error).context("记忆服务地址异常，未替换现有监听服务"),
     }
-    if managed_service()?.is_running()? { bail!("已有托管进程未就绪，未启动替代进程"); }
+    if service()?.is_running()? { bail!("已有托管进程未就绪，未启动替代进程"); }
     std::fs::create_dir_all(&data)
         .with_context(|| format!("创建数据目录失败: {}", data.display()))?;
     // init 幂等：仅补齐目录布局与默认配置，不触碰已有数据。current_dir
     // 固定在数据目录，默认 config.toml 就落在那里（2.6.0 写到相对路径）。
     let mut init = Command::new(&executable);
+    if local_only { embedded::clear_memory_environment(&mut init); }
     init
         .arg("--data-dir")
         .arg(&data)
@@ -643,6 +659,7 @@ async fn start_service_at(executable: &Path, data: &Path, base: &str) -> Result<
         .creation_flags_no_window();
     run_memory_init(init, Duration::from_secs(10))?;
     let mut command = Command::new(&executable);
+    if local_only { embedded::clear_memory_environment(&mut command); }
     command
         .arg("--data-dir")
         .arg(&data)
@@ -675,14 +692,14 @@ async fn start_service_at(executable: &Path, data: &Path, base: &str) -> Result<
         .spawn()
         .with_context(|| format!("启动 ai-memory 服务失败: {}", executable.display()))?;
     let pid = child.id();
-    managed_service()?.child = Some(child);
+    service()?.child = Some(child);
     // 就绪阶段总预算15s，包含每次HTTP请求与轮询间隔；不含此前init/排队。
     wait_for_service_startup(
         Duration::from_secs(15),
-        || managed_service()?.is_running(),
-        || managed_status_for_data(&client, base, data),
+        || service()?.is_running(),
+        || managed_status_for_mode(&client, base, data, local_only),
         || {
-            let mut service = managed_service()?;
+            let mut service = service()?;
             if service.is_running()? { service.stop()?; }
             Ok(())
         },

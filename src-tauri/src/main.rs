@@ -18,6 +18,22 @@ fn main() {
         first=None;
     }
     match first.as_deref() {
+        Some("--project-memory-mcp") => {
+            let result = (|| -> anyhow::Result<()> {
+                let identity = args.next().ok_or_else(|| anyhow::anyhow!("共享记忆工具缺少会话身份"))?;
+                let token = args.next().ok_or_else(|| anyhow::anyhow!("共享记忆工具缺少会话授权"))?;
+                if let Some(root) = args.next() {
+                    if args.next().is_some() { anyhow::bail!("共享记忆工具参数无效"); }
+                    crewvela_lib::test_profile::initialize(std::path::Path::new(&root))?;
+                }
+                crewvela_lib::run_project_memory_mcp(&identity, &token)
+            })();
+            if let Err(error) = result {
+                eprintln!("{error:#}");
+                std::process::exit(1);
+            }
+            return;
+        }
         Some("--session-message-mcp") => {
             let Some(identity) = args.next().filter(|_| args.next().is_none()) else {
                 eprintln!("会话通信 MCP 需要唯一的原会话身份");

@@ -2543,6 +2543,16 @@ impl SessionManager {
                 );
             }
             remove_ingested_event(&path)?;
+            if let Ok(Some(record)) = &outcome {
+                let prompt = match event_name {
+                    "UserPromptSubmit" => event["prompt"].as_str(),
+                    "AgentTurnComplete" => event["input_prompt"].as_str(),
+                    _ => None,
+                };
+                if let Some(prompt) = prompt {
+                    crate::ai_memory::embedded::capture_prompt(record, prompt);
+                }
+            }
             ingested += 1;
         }
         Ok(ingested)

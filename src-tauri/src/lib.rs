@@ -164,6 +164,7 @@ pub use messaging::{parse_send_args, run_send_command, run_sessions_command};
 #[tauri::command]
 fn test_profile_info() -> Option<test_profile::Profile> { test_profile::current().cloned() }
 pub use session_mcp::run_stdio as run_session_message_mcp;
+pub use ai_memory::embedded::run_stdio as run_project_memory_mcp;
 
 fn to_err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
@@ -2789,10 +2790,13 @@ fn open_session(
     // 全新启动：同一 session id，等价于把会话重新拉起来。
     let resume = resume && crate::usage::transcript_path(record).is_some_and(|path| path.exists());
     // 保留配置中启用的 MCP server 注入本次会话；配置读取失败不阻塞会话启动。
-    let mcp_servers = crate::mcp::enabled_claude_map().unwrap_or_else(|error| {
+    let mut mcp_servers = crate::mcp::enabled_claude_map().unwrap_or_else(|error| {
         eprintln!("[crewvela] 读取 MCP 配置失败：{error:#}");
         serde_json::Map::new()
     });
+    if let Some((name, server)) = ai_memory::embedded::claude_server(record) {
+        mcp_servers.insert(name, server);
+    }
     let _starting = session_state
         .begin_runtime_start(&record.id)
         .map_err(to_err)?;
@@ -3386,6 +3390,7 @@ fn configure_runtime_communication(
         }
         session_mcp::configure_codex(command, &record.id).map_err(to_err)?;
     }
+    ai_memory::embedded::configure_cli(command, record, kind).map_err(to_err)?;
     if kind == AgentRuntimeKind::Pi {
         session_state
             .configure_pi_readiness(command, &record.id)
@@ -6322,6 +6327,11 @@ pub fn run() {
                     return Ok(());
                 }
             }
+            tauri::async_runtime::spawn(async {
+                if let Err(error) = ai_memory::embedded::restore().await {
+                    eprintln!("[crewvela] 内置共享记忆恢复失败：{error:#}");
+                }
+            });
             #[cfg(target_os = "windows")]
             if !test_profile::active() { if let Err(error) = windows_notification::initialize() {
                 eprintln!("[crewvela] 初始化 Windows 通知身份失败：{error:#}");
@@ -6611,6 +6621,8 @@ pub fn run() {
             collaboration_support::collaboration_handoff_confirm,
             collaboration_support::collaboration_handoff_cancel,
             ai_memory::ai_memory_status,
+            ai_memory::embedded::ai_memory_embedded_status,
+            ai_memory::embedded::ai_memory_embedded_set_enabled,
             ai_memory_access::ai_memory_project_access,
             ai_memory::zcode::ai_memory_zcode_sessions,
             ai_memory::ai_memory_install,
@@ -6939,6 +6951,7 @@ fn shutdown_all_sessions<R: tauri::Runtime>(app: &AppHandle<R>) -> bool {
     }
     if let Some(guard) = shutdown_guard { guard.commit(); }
     if let Some(guard) = runtime_shutdown { guard.commit(); }
+    ai_memory::embedded::stop_at_exit();
     app.exit(0);
     true
 }

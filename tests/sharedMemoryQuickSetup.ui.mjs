@@ -12,6 +12,11 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   await page.clock.install();
   await page.goto(`${base}/tests/fixtures/shared-memory-quick-setup.html`);
+  const openLegacy = async () => {
+    await page.getByRole("button", { name: "更多选项", exact: true }).click();
+    await page.getByRole("menuitem", { name: "旧版共享记忆", exact: true }).click();
+  };
+  await openLegacy();
   await page.getByRole("button", { name: "开始配置", exact: true }).waitFor();
   assert.equal(await page.evaluate(() => window.__quickCalls.filter(x => x.command.startsWith("ai_memory_quick")).length), 0);
   await page.getByRole("button", { name: "开始配置", exact: true }).click();
@@ -57,6 +62,7 @@ try {
   await page.locator(".sm-setup-v2").getByText("C:/projects/demo", { exact: true }).waitFor();
   assert(await page.getByRole("button", { name: "检查接入", exact: true }).isEnabled());
   await page.reload();
+  await openLegacy();
   await page.evaluate(() => { window.__quickInfo.agents[1].installed = false; });
   await page.getByRole("button", { name: "开始配置", exact: true }).click();
   assert(await page.getByRole("checkbox", { name: /Codex/ }).isDisabled());
@@ -69,10 +75,12 @@ try {
   await page.clock.runFor(5000);
   assert.equal(await page.evaluate(() => window.__quickCalls.length), calls);
   await page.reload();
+  await openLegacy();
   await page.evaluate(() => { window.__quickJob = { id: "restored", projectDir: "C:/old", agents: ["codex"], state: "failed", steps: [{ id: "install", label: "安装兼容版本并校验", state: "failed", detail: "上次运行中断" }] }; });
   await page.getByRole("button", { name: "开始配置", exact: true }).click();
   await page.getByText("上次运行中断", { exact: true }).waitFor();
   await page.reload();
+  await openLegacy();
   await page.evaluate(() => { window.__quickInfo.supported = false; });
   await page.getByRole("button", { name: "开始配置", exact: true }).click();
   await page.getByText("当前平台暂不支持快速启用，请使用接入配置中的手动操作。", { exact: true }).waitFor();
@@ -80,6 +88,7 @@ try {
   // Platform information comes from the native package selector, never user-agent guesses.
   for (const [platform, arch] of [["macOS Apple Silicon", "aarch64"], ["macOS Intel", "x86_64"]]) {
     await page.reload();
+    await openLegacy();
     await page.evaluate(({platform,arch}) => {
       window.__quickInfo.package = {platform,asset:`ai-memory-macos-${arch}.tar.gz`,extensions:["gz"]};
     }, {platform,arch});
@@ -108,6 +117,7 @@ try {
   }
   // Dynamic update discovery never silently upgrades or overwrites external installs.
   await page.reload();
+  await openLegacy();
   await page.evaluate(() => { Object.assign(window.__quickInfo,{installedVersion:"2.6.0",managed:true}); });
   await page.getByRole("button",{name:"检查更新",exact:true}).click();
   assert(await page.getByRole("button",{name:"安装更新",exact:true}).isDisabled());
@@ -129,11 +139,13 @@ try {
   await page.waitForFunction(()=>window.__quickCalls.some(x=>x.command==="ai_memory_recover_update"));
   assert.deepEqual(await page.evaluate(()=>window.__quickCalls.find(x=>x.command==="ai_memory_recover_update").args),{confirmed:true});
   await page.reload();
+  await openLegacy();
   await page.evaluate(()=>Object.assign(window.__quickInfo,{installedVersion:"3.4.0",managed:false}));
   await page.getByRole("button",{name:"开始配置",exact:true}).click();
   assert.equal(await page.getByRole("button",{name:"安装更新",exact:true}).count(),0);
   await page.getByText(/检测到外部安装/).waitFor();
   await page.reload();
+  await openLegacy();
   await page.evaluate(()=>Object.assign(window.__quickInfo,{installedVersion:"3.4.0",managed:true,version:null,updateError:"模拟 GitHub 离线"}));
   await page.getByRole("button",{name:"开始配置",exact:true}).click();
   await page.getByRole("button",{name:"选择启用项目"}).click();
@@ -142,6 +154,7 @@ try {
   await page.waitForFunction(()=>window.__quickJob);
   assert.equal(await page.evaluate(()=>window.__quickCalls.find(x=>x.command==="ai_memory_quick_start").args.request.targetVersion),null);
   await page.reload();
+  await openLegacy();
   await page.evaluate(()=>Object.assign(window.__quickInfo,{version:"4.0.0",updateError:"ai-memory 4.0.0 尚未适配"}));
   await page.getByRole("button",{name:"开始配置",exact:true}).click();
   await page.getByRole("button",{name:"选择启用项目"}).click();

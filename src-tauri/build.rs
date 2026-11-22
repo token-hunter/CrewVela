@@ -1,4 +1,13 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=CREWVELA_MEMORY_ARCHIVE");
+    println!("cargo:rustc-check-cfg=cfg(crewvela_embedded_memory)");
+    if let Some(archive) = std::env::var_os("CREWVELA_MEMORY_ARCHIVE") {
+        let archive = std::path::PathBuf::from(archive);
+        assert!(archive.is_absolute() && archive.is_file(), "内置共享记忆安装包不可读");
+        println!("cargo:rerun-if-changed={}", archive.display());
+        println!("cargo:rustc-env=CREWVELA_MEMORY_ARCHIVE={}", archive.display());
+        println!("cargo:rustc-cfg=crewvela_embedded_memory");
+    }
     // A release profile alone does not enable Tauri's embedded asset protocol.
     // Refuse binaries that would still navigate to the Vite dev server.
     if std::env::var("PROFILE").as_deref() == Ok("release") && tauri_build::is_dev() {

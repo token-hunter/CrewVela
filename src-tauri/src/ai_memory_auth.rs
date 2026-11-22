@@ -10,7 +10,7 @@ pub(super) fn token(data: &Path, endpoint: &str) -> Result<Option<String>> {
     local_token(data, endpoint)
 }
 
-fn local_token(data: &Path, endpoint: &str) -> Result<Option<String>> {
+pub(super) fn local_token(data: &Path, endpoint: &str) -> Result<Option<String>> {
     if loopback_socket_address(endpoint).is_none() {
         return Ok(None);
     }

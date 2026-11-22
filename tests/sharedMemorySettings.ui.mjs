@@ -1,5 +1,6 @@
 // Run against Vite: CREWVELA_UI_URL=http://127.0.0.1:1420 node tests/sharedMemorySettings.ui.mjs
 import { chromium } from 'playwright';
+import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const baseUrl = process.env.CREWVELA_UI_URL || 'http://127.0.0.1:1420';
@@ -8,11 +9,74 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1100}});page.setDefaultTimeout(10000);
 page.on('pageerror',e=>errors.push(e.message));
 await page.route('**/__memory-qa',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><html><head><style>body{margin:0;padding:32px;background:#1e1e1e;color:#ddd}#root{max-width:1120px;margin:auto}</style></head><body><div id="root"></div><script type="module">import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module">import '/@vite/client';import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import {SharedMemorySettingsPanel} from '/src/components/SharedMemorySettingsPanel.tsx';import '/src/styles.css';(window.__qaRoot=ReactDOM.createRoot(document.getElementById('root'))).render(React.createElement(SharedMemorySettingsPanel));</script></body></html>`}));
-await page.addInitScript(()=>{window.__qaStatus={installed:true,executable:'C:/ai-memory.exe',dataDir:'C:/memory-data',serverUrl:'http://127.0.0.1:49374',serverRunning:false};window.__qaCalls=[];window.__TAURI_INTERNALS__={invoke:async(cmd,args)=>{window.__qaCalls.push({cmd,args});if(cmd==='ai_memory_status'){if(window.__qaHold){const snapshot={...window.__qaStatus};await new Promise(resolve=>window.__qaResolve=resolve);return snapshot;}if(window.__qaStatusError)throw new Error('mock status unavailable');return {...window.__qaStatus};}if(cmd==='ai_memory_serve'){if(window.__qaStartError)throw new Error('mock start failed');window.__qaStatus.serverRunning=true;return {...window.__qaStatus};}if(cmd==='plugin:dialog|open')return 'C:/example/crewvela';if(cmd==='ai_memory_setup')return {success:true,exitCode:0,timedOut:false,stdout:'mock',stderr:'',outputTruncated:false};throw new Error('Unexpected '+cmd);}};});
+await page.addInitScript(() => {
+  window.__qaStatus={installed:true,executable:'C:/ai-memory.exe',dataDir:'C:/memory-data',serverUrl:'http://127.0.0.1:49374',webUrl:'http://127.0.0.1:49374/web',serverRunning:false};
+  window.__qaEmbedded={available:true,enabled:false,running:false};
+  window.__qaCalls=[];
+  window.addEventListener('crewvela:browse', event => { window.__qaWiki = event.detail.url; });
+  window.__TAURI_INTERNALS__={invoke:async(cmd,args)=>{
+    window.__qaCalls.push({cmd,args});
+    if(cmd==='ai_memory_embedded_status')return {...window.__qaEmbedded};
+    if(cmd==='ai_memory_embedded_set_enabled'){
+      if(window.__qaEmbeddedError)throw new Error('mock embedded start failed');
+      Object.assign(window.__qaEmbedded,{enabled:args.value,running:args.value});
+      return {...window.__qaEmbedded};
+    }
+    if(cmd==='ai_memory_status'){if(window.__qaHold){const snapshot={...window.__qaStatus};await new Promise(resolve=>window.__qaResolve=resolve);return snapshot;}if(window.__qaStatusError)throw new Error('mock status unavailable');return {...window.__qaStatus};}
+    if(cmd==='ai_memory_serve'){if(window.__qaStartError)throw new Error('mock start failed');window.__qaStatus.serverRunning=true;return {...window.__qaStatus};}
+    if(cmd==='plugin:dialog|open')return 'C:/example/crewvela';
+    if(cmd==='ai_memory_setup')return {success:true,exitCode:0,timedOut:false,stdout:'mock',stderr:'',outputTruncated:false};
+    throw new Error('Unexpected '+cmd);
+  }};
+});
 await page.clock.install();
-try{await page.goto(new URL('/__memory-qa',baseUrl).href);await page.getByRole('button',{name:'接入配置',exact:true}).click();if (!(await page.getByRole('button',{name:'安装钩子',exact:true}).isDisabled())) throw new Error('stopped service must disable setup'); if (!(await page.getByRole('button',{name:'启动服务',exact:true}).count())) throw new Error('REGRESSION: 接入页没有启动服务入口'); console.log('PASS: stopped service exposes recovery');
+try {
+await page.goto(new URL('/__memory-qa',baseUrl).href, {waitUntil:'domcontentloaded'});
+const toggle = page.getByRole('switch', {name:'内置共享记忆', exact:true});
+const more = page.getByRole('button', {name:'更多选项', exact:true});
+const back = page.getByRole('button', {name:'返回共享记忆', exact:true});
+await toggle.waitFor();
+assert.equal(await page.getByRole('navigation', {name:'共享记忆视图'}).count(), 0);
+assert.equal(await page.evaluate(() => window.__qaCalls.some(x=>x.cmd==='ai_memory_status')), false);
+await page.evaluate(() => { window.__qaEmbeddedError = true; });
+await toggle.click();
+await page.getByRole('alert').filter({hasText:'mock embedded start failed'}).waitFor();
+assert.equal(await toggle.isChecked(), false);
+await page.evaluate(() => { window.__qaEmbeddedError = false; });
+await toggle.check();
+assert.equal(await toggle.isChecked(), true);
+await more.click();
+await page.keyboard.press('ArrowDown');
+await page.keyboard.press('Enter');
+await page.getByRole('region', {name:'内置共享记忆诊断'}).getByText('内置服务已就绪', {exact:true}).waitFor();
+await page.getByRole('button', {name:'重新检测', exact:true}).click();
+await back.click();
+await page.setViewportSize({width:600,height:1100});
+await more.click();
+const popup = await page.getByRole('menu', {name:'共享记忆更多选项'}).boundingBox();
+const switchBox = await toggle.boundingBox();
+assert.ok(popup.y + popup.height <= switchBox.y, 'options menu must clear the switch');
+await page.keyboard.press('Escape');
+assert.equal(await more.getAttribute('aria-expanded'), 'false');
+await toggle.uncheck();
+await page.setViewportSize({width:1440,height:1100});
+await more.click();
+await page.getByRole('menuitem', {name:'旧版共享记忆', exact:true}).click();
+await page.getByRole('button', {name:'高级设置', exact:true}).click();
+await page.getByText('C:/memory-data', {exact:true}).waitFor();
+await page.getByRole('button', {name:'接入配置', exact:true}).click();
+if (!(await page.getByRole('button',{name:'安装钩子',exact:true}).isDisabled())) throw new Error('stopped service must disable setup'); if (!(await page.getByRole('button',{name:'启动服务',exact:true}).count())) throw new Error('REGRESSION: 接入页没有启动服务入口'); console.log('PASS: stopped service exposes recovery');
 await page.getByRole('button',{name:'启动服务',exact:true}).click();
 await page.waitForFunction(()=>!document.querySelector('.sm-config-action')?.disabled);
+await page.getByRole('button', {name:'概览', exact:true}).click();
+await page.getByRole('button', {name:/^打开 Wiki/}).click();
+assert.equal(await page.evaluate(() => window.__qaWiki), 'http://127.0.0.1:49374/web');
+await page.getByRole('button', {name:'接入配置', exact:true}).click();
+await back.click();
+await more.click();
+await page.getByRole('menuitem', {name:'旧版共享记忆', exact:true}).click();
+assert.equal(await page.getByRole('button',{name:'接入配置',exact:true}).getAttribute('aria-current'), 'page');
+console.log('PASS: home switch and diagnostics, old Wiki, retained legacy section');
 await page.getByRole('button',{name:'安装钩子',exact:true}).click();
 await page.waitForFunction(()=>window.__qaCalls.some(x=>x.cmd==='ai_memory_setup'));
 console.log('PASS: start service then install dispatch');

@@ -393,7 +393,7 @@ fn extract_tar(bytes: &[u8], stage: &Path) -> Result<()> {
     Ok(())
 }
 
-fn publish(
+pub(super) fn publish(
     target: &Path,
     bytes: &[u8],
     package: Package,

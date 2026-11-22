@@ -273,7 +273,7 @@ export function SettingsDialog({
     sharedMemory: {
       eyebrow: "设置 / 智能体",
       title: "共享记忆",
-      description: "跨智能体共享项目上下文，让下一次会话接着做。",
+      description: "",
       note: "",
     },
     quickCommands: { eyebrow: "设置 / 智能体", title: "快捷指令", description: "常用操作，选定目标后执行。", note: "" },
@@ -406,7 +406,7 @@ export function SettingsDialog({
             className="settings-content-inner"
             data-settings-section={activeSection}
           >
-            {activeSection !== "skills" && activeSection !== "git" && activeSection !== "companionship" && (activeSection !== "automation" || automationEditing) && <div className="dialog-heading settings-heading">
+            {activeSection !== "skills" && activeSection !== "git" && activeSection !== "companionship" && activeSection !== "sharedMemory" && (activeSection !== "automation" || automationEditing) && <div className="dialog-heading settings-heading">
                 <div>
                   <h2 id="settings-title">{activeSection === "automation" && automationEditing ? automationEditing === "edit" ? "编辑定时任务" : "创建自动化" : sectionCopy.title}</h2>
                   {!(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}

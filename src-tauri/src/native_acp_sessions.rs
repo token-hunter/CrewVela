@@ -484,10 +484,14 @@ impl NativeAcpSessions {
         }).or(command_override);
         // 原生聊天统一注入启用的 stdio MCP（浏览器控制等）；http/sse 条目
         // 需要 agent 侧能力协商，暂不进入原生聊天。读取失败不阻塞会话启动。
-        let mcp_servers = crate::mcp::enabled_native_chat_servers().unwrap_or_else(|error| {
+        let mut mcp_servers = crate::mcp::enabled_native_chat_servers().unwrap_or_else(|error| {
             eprintln!("[crewvela] 读取原生聊天 MCP 配置失败：{error:#}");
             Vec::new()
         });
+        if let Some(server) = crate::ai_memory::embedded::acp_server(record) {
+            mcp_servers.retain(|existing| existing["name"] != server["name"]);
+            mcp_servers.push(server);
+        }
         // 更新桥接脚本即可；只有实际浏览器工具调用才激活面板。
         if mcp_servers
             .iter()
@@ -1235,6 +1239,9 @@ impl NativeAcpSessions {
         let live_for_worker = Arc::clone(&live);
         let plugins = plugins.to_vec();
         self.emit_unlocked(&app, &live, &session_id, "user_message", json!({"id": turn_id, "text": message}), None);
+        if let Some(record) = sessions.get(&session_id) {
+            crate::ai_memory::embedded::capture_prompt(&record, &message);
+        }
         live.prompt_inflight.store(true, Ordering::Release);
         std::thread::spawn(move || {
             let mut result = {

@@ -5887,7 +5887,15 @@ fn session_cli_prompt(project_id: &str) -> String {
 }
 
 fn render_task_prompt(request: &RuntimeRequest) -> String {
-    if super::conversation::is_conversation_task(&request.task.id) { return request.task.description.clone(); }
+    if super::conversation::is_conversation_task(&request.task.id) {
+        let mut prompt = request.task.description.clone();
+        if let Some(context) = crate::ai_memory::embedded::team_context(&request.project.id, || {
+            request.store.conversation_user_prompt(&request.project.id, &request.task.id)
+        }) {
+            prompt.push_str(&context);
+        }
+        return prompt;
+    }
     if is_design_task(&request.task.id) {
         return format!(
             "为 CrewVela 的前置设计委派交付方案。可只读查看当前目录中的原任务检查点，不修改项目文件。\n工作目录：{}\n任务：{}\n{}\n验收标准：{}\n使用 cc_design_submit 提交 Markdown 文件名、完整设计正文及逐项验收依据。提交后用一到两句话向团队说明结论并结束本轮。",
