@@ -1008,7 +1008,7 @@ fn run_git(root: &Path, args: &[&str]) -> Result<Output> {
     }
 }
 
-fn run_git_allow_failure(root: &Path, args: &[&str]) -> Result<Output> {
+pub(crate) fn run_git_allow_failure(root: &Path, args: &[&str]) -> Result<Output> {
     let mut command = git_command(root);
     command
         .args(args)
@@ -1017,7 +1017,7 @@ fn run_git_allow_failure(root: &Path, args: &[&str]) -> Result<Output> {
     run_with_timeout(command, GIT_TIMEOUT, &format!("git {}", args.join(" ")))
 }
 
-fn run_git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
+pub(crate) fn run_git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     Ok(run_git(root, args)?.stdout)
 }
 

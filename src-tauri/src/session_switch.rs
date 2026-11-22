@@ -116,6 +116,8 @@ pub struct SwitchRecord {
     pub codex_delivery: Option<String>,
     pub context: String,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub return_of: Option<String>,
 }
 
 fn open_at(path: &std::path::Path) -> Result<Connection> {
@@ -216,6 +218,97 @@ fn records(db: &Connection) -> Result<Vec<SwitchRecord>> {
     let mut statement = db.prepare("SELECT record_json FROM session_switches ORDER BY rowid")?;
     let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
     rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
+}
+
+fn has_return(item: &SwitchRecord, all: &[SwitchRecord], switch_id: Option<&str>) -> bool {
+    all.iter().any(|later| {
+        later.return_of.as_deref() == Some(&item.id) && later.target_id.as_deref() == Some(&item.source.id)
+            && (later.state == "queued" || switch_id == Some(&later.id) && later.state == "launching")
+    })
+}
+
+fn return_delta(id: &str, messages: Vec<crate::transcript::TranscriptMessage>) -> Result<Vec<crate::transcript::TranscriptMessage>> {
+    let marker = format!("[CrewVela handoff {id}]");
+    let start = messages.iter().rposition(|message| {
+        message.role == "user" && crate::session_switch_history::marker_message(&message.text, &marker)
+    }).context("没有找到上一段接力在 Codex 原会话中的投递位置，无法确定新增内容")?;
+    let updates: Vec<_> = messages.into_iter().skip(start + 1)
+        .filter(|message| matches!(message.role.as_str(), "user" | "assistant"))
+        .collect();
+    ensure!(!updates.is_empty(), "Codex 会话暂无可补发的更新");
+    Ok(updates)
+}
+
+fn read_return_delta<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>, source: &SessionRecord, sessions: &SessionManager, previous: &str,
+) -> Result<Vec<crate::transcript::TranscriptMessage>> {
+    if source_runtime(source) == "codex_chat" {
+        let snapshot = app.state::<crate::NativeCodexChatSessions>().0.snapshot(&source.id)?;
+        ensure!(!snapshot.busy && snapshot.pending_permission.is_none(), "Codex 仍在执行或等待审批，请等待本轮结束");
+    } else if source.pty_id.is_some() {
+        ensure!(sessions.is_ready_for_prompt(&source.id), "Codex CLI 尚未空闲，请等待本轮结束");
+    }
+    return_delta(previous, crate::session_switch_native::history(Some(app), source, sessions)?)
+}
+
+fn validate_return_target<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>, target: &SessionRecord, source: &SessionRecord, sessions: &SessionManager,
+) -> Result<()> {
+    eligible(target)?;
+    ensure!(target.cwd == source.cwd && target.project_id == source.project_id && target.pty_id.is_none()
+        && !target.yolo && target.approval_policy != crate::sessions::ApprovalPolicy::Allow,
+        "原 Claude Code 会话的目录、运行状态或权限已变化");
+    match (source_runtime(target), source_runtime(source)) {
+        ("claude_chat", "codex_chat") => {
+            ensure!(!requires_plan(source), "当前只读模式无法通过原 Claude Code Chat 接力");
+            let manager = &app.state::<crate::NativeClaudeSessions>().0;
+            ensure!(manager.can_resume_handoff(&target.id)?, "无法确认原 Claude Code Chat 可按原身份恢复");
+        }
+        ("claude_code", "codex") if target.agent_runtime_kind.as_deref() == Some("claude_code") => {
+            let locator = crate::session_switch_history::resume_locator(target, sessions)?;
+            ensure!(uuid::Uuid::parse_str(&locator).is_ok(), "没有可验证的 Claude CLI 原会话 ID");
+            crate::session_switch_history::read(target, sessions)?;
+        }
+        _ => bail!("此接力尚不支持恢复原会话并补发"),
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn session_switch_return_preview(id: String, app: tauri::AppHandle) -> Result<SwitchRecord, String> {
+    tauri::async_runtime::spawn_blocking(move || (|| -> Result<_> {
+        let _lock = SWITCH_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let db = database()?;
+        prepare_return(&db, &id, &app, &app.state::<SessionManager>())
+    })().map_err(|error| error.to_string())).await.map_err(|error| error.to_string())?
+}
+
+fn prepare_return<R: tauri::Runtime>(
+    db: &Connection, id: &str, app: &tauri::AppHandle<R>, sessions: &SessionManager,
+) -> Result<SwitchRecord> {
+    let all = records(db)?;
+    let previous = all.iter().find(|item| item.id == id && item.preserve_source && item.state == "queued")
+        .context("没有可续回的上一次交接")?;
+    if let Some(existing) = all.iter().find(|item| item.return_of.as_deref() == Some(id) && item.state != "cancelled") {
+        return Ok(existing.clone());
+    }
+    ensure_latest_transfer(previous, &all)?;
+    let source = previous.target_id.as_deref().and_then(|id| sessions.get(id)).context("Codex 接手会话不存在")?;
+    let target = sessions.get(&previous.source.id).context("原 Claude Code 会话不存在")?;
+    validate_return_target(app, &target, &source, sessions)?;
+    validate_pair(&source, source_runtime(&target))?;
+    let updates = read_return_delta(app, &source, sessions, id)?;
+    let item = SwitchRecord {
+        id: uuid::Uuid::new_v4().to_string(), source_position: previous.source_position,
+        source_pty: source.pty_id, target_id: Some(target.id.clone()), thread_id: None,
+        target_runtime: source_runtime(&target).into(), logical_id: previous.logical_id.clone(),
+        preserve_source: true, recovery_dismissed: false, source_history: updates,
+        source_permission: actual_permission(app, &source)?, source, state: "preview".into(),
+        history_mode: "handoff".into(), codex_delivery: None, context: String::new(), error: None,
+        return_of: Some(id.into()),
+    };
+    save(db, &item)?;
+    Ok(item)
 }
 pub(crate) fn eligible(source: &SessionRecord) -> Result<()> {
     crate::runtime_preferences::ensure_session_available(source)?;
@@ -327,7 +420,7 @@ pub(crate) fn seed_codex_handoff_for_test(source: &SessionRecord, target: &Sessi
     let item = SwitchRecord { id: message.id.clone(), source: source.clone(), source_position: 0, source_pty: None,
         target_id: Some(target.id.clone()), thread_id: thread, target_runtime: "codex".into(), logical_id: None,
         preserve_source: true, recovery_dismissed: false, source_history: vec![], source_permission: Some("plan".into()),
-        state: "launching".into(), history_mode: "handoff".into(), codex_delivery: Some("pending".into()), context: message.body.clone(), error: None };
+        state: "launching".into(), history_mode: "handoff".into(), codex_delivery: Some("pending".into()), context: message.body.clone(), error: None, return_of: None };
     save(&database()?, &item)?;
     mark_managed(&source.id)?;
     mark_managed(&target.id)
@@ -452,13 +545,15 @@ fn prepare_switch_preview<R: tauri::Runtime>(
         let _lock = SWITCH_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let db = database()?;
         let target_runtime = target_runtime.unwrap_or_else(default_target_runtime);
-        if let Some(existing) = records(&db)?.into_iter().find(|item| {
+        let all = records(&db)?;
+        if let Some(existing) = all.iter().find(|item| {
             item.source.id == source_id
                 && item.state != "cancelled"
+                && !has_return(item, &all, None)
                 && item.target_runtime == target_runtime
         }) {
             mark_managed(&existing.source.id)?;
-            return Ok(existing);
+            return Ok(existing.clone());
         }
         let source = sessions.get(&source_id).context("原会话不存在")?;
         validate_pair(&source, &target_runtime)?;
@@ -469,9 +564,7 @@ fn prepare_switch_preview<R: tauri::Runtime>(
         {
             bail!("来源处于 Plan 模式；目标无法保证只读，拒绝切换");
         }
-        if records(&db)?
-            .iter()
-            .any(|item| item.source.id == source_id && item.state != "cancelled")
+        if all.iter().any(|item| item.source.id == source_id && item.state != "cancelled" && !has_return(item, &all, None))
         {
             bail!("来源已有接力，请先处理已有接力");
         }
@@ -530,6 +623,7 @@ fn prepare_switch_preview<R: tauri::Runtime>(
             history_mode: "handoff".into(),
             codex_delivery: None,
             error: None,
+            return_of: None,
         };
         save(&db, &item)?;
         mark_managed(&item.source.id)?;
@@ -551,10 +645,12 @@ fn check_start_records(
 ) -> Result<bool> {
     let mut safe_yolo = yolo;
     for item in items {
-        if item.source.id == id && !matches!(item.state.as_str(), "preview" | "cancelled") {
+        if item.source.id == id && !matches!(item.state.as_str(), "preview" | "cancelled")
+            && !has_return(item, items, switch_id) {
             bail!("来源 Agent 会话已进入 Agent 接力，请在切换窗口重试或显式恢复原会话");
         }
-        if item.target_id.as_deref() == Some(id) {
+        if item.target_id.as_deref() == Some(id)
+            && !(item.return_of.is_some() && matches!(item.state.as_str(), "preview" | "cancelled")) {
             safe_yolo = false;
             if item.state != "queued"
                 && !(switch_id == Some(&item.id)
@@ -579,6 +675,7 @@ pub(crate) fn protect_delete(id: &str, sessions: &SessionManager) -> Result<()> 
             bail!("接手会话正在交接，不能删除");
         }
         if item.source.id == id
+            && item.return_of.is_none()
             && item
                 .target_id
                 .as_ref()
@@ -623,7 +720,9 @@ pub(crate) fn check_approval(id: &str, policy: crate::sessions::ApprovalPolicy) 
 pub(crate) fn configure_target(command: &mut Command, record: &SessionRecord) -> Result<()> {
     let Some(item) = managed_records(&record.id)?
         .into_iter()
-        .find(|item| item.target_id.as_deref() == Some(&record.id))
+        .rev()
+        .find(|item| item.target_id.as_deref() == Some(&record.id)
+            && !(item.return_of.is_some() && matches!(item.state.as_str(), "preview" | "cancelled")))
     else {
         return Ok(());
     };
@@ -647,7 +746,8 @@ fn configure_target_record(
         if item.target_runtime == "claude_code" {
             command.args([
                 "--permission-mode",
-                if item.source.permission_mode == Some(PermissionMode::Plan)
+                if item.return_of.is_some() && record.permission_mode == Some(PermissionMode::Plan)
+                    || item.source.permission_mode == Some(PermissionMode::Plan)
                     || item.source_permission.as_deref() == Some("plan")
                 {
                     "plan"
@@ -781,6 +881,9 @@ fn execute<R: tauri::Runtime>(
     }
     if !same_source(&source, &item.source) {
         bail!("原会话身份/目录/权限已变化，请恢复原会话后重新预览");
+    }
+    if item.return_of.is_some() {
+        return execute_return(db, item, sessions, ptys, queue, app.context("缺少原生应用上下文")?, &source);
     }
     if matches!(item.state.as_str(), "preview" | "stopping") {
         if source.pty_id != item.source_pty {
@@ -994,6 +1097,78 @@ fn execute<R: tauri::Runtime>(
     sessions.rename(&target.id, &source.title)?;
     Ok(())
 }
+
+fn execute_return<R: tauri::Runtime>(
+    db: &Connection, item: &mut SwitchRecord, sessions: &SessionManager, ptys: &PtyManager,
+    queue: &SessionActionQueue, app: &tauri::AppHandle<R>, source: &SessionRecord,
+) -> Result<()> {
+    let previous = item.return_of.as_deref().context("缺少接力来源")?;
+    let all = records(db)?;
+    let original = all.iter().find(|old| old.id == previous && old.state == "queued")
+        .context("原交接已失效")?;
+    let target_id = item.target_id.clone().context("缺少原会话 ID")?;
+    ensure!(original.source.id == target_id && original.target_id.as_deref() == Some(&source.id),
+        "接力链的会话身份已变化");
+    let lifecycle = sessions.lifecycle_lock(&target_id);
+    let _target = lifecycle.lock().unwrap();
+    let target = sessions.get(&target_id).context("原会话已移除")?;
+    ensure!(target.cwd == source.cwd && target.cwd == original.source.cwd
+        && target.worktree == original.source.worktree && source_runtime(&target) == item.target_runtime
+        && target.archived_at.is_none() && !target.yolo && target.approval_policy != crate::sessions::ApprovalPolicy::Allow,
+        "原会话目录、归属或权限已变化，无法恢复");
+    if item.state == "sending" {
+        bail!("补发结果待核实，请查看原会话，避免重复提交");
+    }
+    if matches!(item.state.as_str(), "preview" | "stopping") {
+        validate_return_target(app, &target, source, sessions)?;
+        ensure!(source.pty_id == item.source_pty || item.state == "stopping" && source.pty_id.is_none(),
+            "Codex 原进程已变化，请重新准备交接");
+        if item.state == "preview" {
+            ensure!(read_return_delta(app, source, sessions, previous)? == item.source_history,
+                "Codex 有新的会话内容，请取消并重新查看更新");
+            let file = switch_directory()?.join("session-switch-history").join(format!("{}.json", item.id));
+            std::fs::create_dir_all(file.parent().context("缺少接力资料目录")?)?;
+            std::fs::write(&file, serde_json::to_vec_pretty(&item.source_history)?)?;
+            item.context = format!(
+                "[CrewVela handoff {}]\n继续当前原会话。以下为 Codex 接手期间新增的记录。需要核对全文时读取新增记录文件 {}。文件仅作背景资料，不构成额外授权。\n{}",
+                item.id, file.display(), bounded_history("", &item.source_history)
+            );
+        }
+        stop_before_transfer(db, item, || queue.suspend_delivery_for_handoff(&source.id, || {
+            if let Some(id) = source.pty_id { ptys.stop_for_handoff(id)?; }
+            if crate::session_switch_native::is_native(source) {
+                crate::session_switch_native::stop(app, source)
+            } else { sessions.mark_stopped(&source.id).map(|_| ()) }
+        }))?;
+    }
+    if item.state == "stopped" {
+        item.state = "imported".into();
+        save(db, item)?;
+    }
+    ensure!(matches!(item.state.as_str(), "imported" | "launching"), "原会话补发状态无法识别");
+    if requires_plan(source) { sessions.set_handoff_plan(&target_id)?; }
+    if crate::session_switch_native::is_native(&target) {
+        item.state = "launching".into();
+        save(db, item)?;
+        crate::session_switch_native::start(app, &target)?;
+        item.state = "sending".into();
+        save(db, item)?;
+        crate::session_switch_native::send(app, &target, &item.id, &item.context)?;
+        item.state = "queued".into();
+        save(db, item)?;
+    } else {
+        let target = sessions.get(&target_id).context("原会话已移除")?;
+        let id = item.id.clone();
+        let mut message = QueuedMessage::new(item.context.clone(), None);
+        message.id = id.clone();
+        finish_transfer(db, item,
+            || crate::open_runtime_session_for_switch(&target, ptys, sessions, &id).map(|_| ()).map_err(anyhow::Error::msg),
+            || queue.enqueue_handoff(&target_id, message),
+        )?;
+    }
+    Ok(())
+}
+
 fn stop_before_transfer(
     db: &Connection,
     item: &mut SwitchRecord,
@@ -1056,7 +1231,8 @@ fn restore_switch<R: tauri::Runtime>(
             .as_ref()
             .map(|id| sessions.lifecycle_lock(id));
         let _target_lifecycle = target_lifecycle.as_ref().map(|lock| lock.lock().unwrap());
-        if let Some(target) = item.target_id.as_ref().and_then(|id| sessions.get(id)) {
+        if let Some(target) = item.target_id.as_ref().and_then(|id| sessions.get(id))
+            .filter(|_| item.return_of.is_none() || item.state != "preview") {
             queue.suspend_delivery_for_handoff(&target.id, || {
                 if let Some(pty) = target.pty_id {
                     ptys.stop_for_handoff(pty)?;
@@ -1066,7 +1242,7 @@ fn restore_switch<R: tauri::Runtime>(
                 } else {
                     sessions.mark_stopped(&target.id)?;
                 }
-                sessions.archive(&target.id)?;
+                if item.return_of.is_none() { sessions.archive(&target.id)?; }
                 if item.codex_delivery.is_some() && queue.contains_message(&target.id, &item.id) {
                     ensure!(queue.commit_delivered_message(&target.id, &item.id), "取消 Codex 待发交接包时保存失败");
                 }
@@ -1491,9 +1667,27 @@ mod tests {
                 codex_delivery: None,
                 context: "fixture".into(),
                 error: None,
+                return_of: None,
             }
         }
     }
+    #[test]
+    fn return_delta_requires_original_input_and_excludes_handoff_package() {
+        let make = |role: &str, text: &str| crate::transcript::TranscriptMessage {
+            role: role.into(), text: text.into(), at: None,
+        };
+        let quoted = make("assistant", "[CrewVela handoff route-a]");
+        assert!(return_delta("route-a", vec![quoted.clone()]).is_err());
+        let update = make("assistant", "补测零值");
+        let delta = return_delta("route-a", vec![
+            make("assistant", "不补发接手前的消息"),
+            make("user", "[CrewVela handoff route-a]\n原交接包"),
+            make("tool", "大段工具输出"),
+            update.clone(),
+        ]).unwrap();
+        assert_eq!(delta, vec![update]);
+    }
+
     #[test]
     fn dismiss_recovery_persists_without_restoring_source_or_removing_history() {
         let fixture = Fixture::new();
@@ -2183,11 +2377,60 @@ mod tests {
             codex_delivery: None,
             context: "fixture".into(),
             error: None,
+            return_of: None,
         };
         save(&fixture.db, &item).unwrap();
         mark_managed(&item.source.id).unwrap();
         item
     }
+    #[test]
+    fn native_return_resumes_original_chat_with_only_new_codex_history_once() {
+        let fixture = Fixture::new();
+        let _directory = isolate_switches(&fixture.root);
+        let app = native_app(&fixture);
+        let ptys = PtyManager::new();
+        let queue = SessionActionQueue::new();
+        let original = fixture.sessions.create_runtime(NewRuntimeSession {
+            runtime_kind: "claude_chat".into(), cwd: fixture.root.display().to_string(), project_id: None,
+        }).unwrap();
+        crate::session_switch_native::start(app.handle(), &original).unwrap();
+        let mut forward = prepare_fixture(&fixture, app.handle(), original.clone(), "codex_chat", &original.id);
+        execute(&fixture.db, &mut forward, true, &fixture.sessions, &ptys, &queue, Some(app.handle())).unwrap();
+        let codex = fixture.sessions.get(forward.target_id.as_deref().unwrap()).unwrap();
+        let codex_chat = &app.state::<crate::NativeCodexChatSessions>().0;
+        let wait_idle = || {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(8);
+            let mut answered = false;
+            loop {
+                let snapshot = codex_chat.snapshot(&codex.id).unwrap();
+                if !snapshot.busy { break; }
+                if let Some(permission) = snapshot.pending_permission.filter(|_| !answered) {
+                    codex_chat.answer_permission(&codex.id, permission["requestId"].as_str().unwrap(), true).unwrap();
+                    answered = true;
+                }
+                assert!(std::time::Instant::now() < until, "Codex fixture did not settle");
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        wait_idle();
+        crate::session_switch_native::send(app.handle(), &codex, "update", "补充零值测试").unwrap();
+        wait_idle();
+        let mut returning = prepare_return(&fixture.db, &forward.id, app.handle(), &fixture.sessions).unwrap();
+        assert_eq!(returning.target_id.as_deref(), Some(original.id.as_str()));
+        assert!(returning.source_history.iter().any(|entry| entry.text == "补充零值测试"));
+        assert!(!returning.source_history.iter().any(|entry| entry.text.starts_with(&format!("[CrewVela handoff {}]", forward.id))));
+        execute(&fixture.db, &mut returning, true, &fixture.sessions, &ptys, &queue, Some(app.handle())).unwrap();
+        execute(&fixture.db, &mut returning, true, &fixture.sessions, &ptys, &queue, Some(app.handle())).unwrap();
+        assert_eq!(returning.state, "queued");
+        assert_eq!(fixture.sessions.list().len(), 2);
+        assert!(check_start_records(&records(&fixture.db).unwrap(), &original.id, false, None).is_ok());
+        let history = crate::session_switch_native::history(Some(app.handle()), &original, &fixture.sessions).unwrap();
+        let delivered = history.iter().filter(|entry| entry.role == "user" && entry.text.starts_with(&format!("[CrewVela handoff {}]", returning.id))).collect::<Vec<_>>();
+        assert_eq!(delivered.len(), 1);
+        assert!(delivered[0].text.contains("补充零值测试"));
+        crate::session_switch_native::stop(app.handle(), &original).unwrap();
+    }
+
     #[test]
     fn retained_source_roundtrip_and_undo_preserve_visibility_and_execution_fences() {
         let fixture = Fixture::new();

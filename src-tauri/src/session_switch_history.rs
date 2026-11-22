@@ -545,7 +545,7 @@ fn same_cwd(cwd: &str, record: &SessionRecord) -> bool {
         _ => false,
     }
 }
-fn marker_message(content: &str, marker: &str) -> bool {
+pub(crate) fn marker_message(content: &str, marker: &str) -> bool {
     // A later Agent can quote the entire handoff. Match only the actual input
     // prefix, never a marker embedded inside a later conversation's background.
     let content = content.trim_start();

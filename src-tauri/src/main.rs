@@ -1,7 +1,7 @@
 // Prevents an additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-const CLI_USAGE: &str = "CrewVela — 多Agent协作工作台\n会话通信\n用法：CrewVela sessions\n      CrewVela send --to <会话ID> --body <消息>\n新用户隔离测试：CrewVela --test-data-dir <独立测试目录绝对路径>\n无参数仅用于从桌面启动应用。";
+const CLI_USAGE: &str = "CrewVela — 多Agent协作工作台\n会话通信\n用法：CrewVela sessions\n      CrewVela send --to <会话ID> --body <消息> [--request-id <UUID>] [--reply-to <消息ID>]\n      CrewVela message-status <消息ID>\n新用户隔离测试：CrewVela --test-data-dir <独立测试目录绝对路径>\n无参数仅用于从桌面启动应用。";
 
 fn may_start_gui(first: Option<&str>, agent_identity: bool) -> bool {
     first.is_none() && !agent_identity
@@ -97,11 +97,19 @@ fn main() {
             return;
         }
         Some("send") => {
-            let parsed =
-                crewvela_lib::parse_send_args(args).map_err(|error| anyhow::anyhow!(error));
-            let result =
-                parsed.and_then(|(to, body)| crewvela_lib::run_send_command(&to, &body));
-            if let Err(error) = result {
+            if let Err(error) = crewvela_lib::run_send_args(args) {
+                eprintln!("{error:#}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        Some("message-status") => {
+            let Some(id) = args.next() else {
+                eprintln!("用法: crewvela message-status <消息 ID>");
+                std::process::exit(2);
+            };
+            if args.next().is_some() { eprintln!("message-status 只接受一个消息 ID"); std::process::exit(2); }
+            if let Err(error) = crewvela_lib::run_message_status(&id) {
                 eprintln!("{error:#}");
                 std::process::exit(1);
             }

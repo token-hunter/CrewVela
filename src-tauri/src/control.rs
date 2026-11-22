@@ -306,6 +306,7 @@ pub(crate) struct CommunicationDelivery {
 pub struct SessionActionQueue {
     /// After restart, uncertain automation mail must never be replayed automatically.
     held_automation_messages: Mutex<HashSet<String>>,
+    held_communication_messages: Mutex<HashSet<String>>,
     delivery_lock: Mutex<()>,
     persistence_lock: Mutex<()>,
     items: Mutex<HashMap<String, VecDeque<QueuedMessage>>>,
@@ -396,6 +397,7 @@ impl SessionActionQueue {
     pub fn new() -> Self {
         Self {
             held_automation_messages: Mutex::new(HashSet::new()),
+            held_communication_messages: Mutex::new(HashSet::new()),
             delivery_lock: Mutex::new(()),
             persistence_lock: Mutex::new(()),
             items: Mutex::new(HashMap::new()),
@@ -439,8 +441,20 @@ impl SessionActionQueue {
                     .with_context(|| format!("读取消息队列失败: {}", mailbox_path.display()))
             }
         };
+        let mut held_communication = HashSet::new();
+        for message in file.items.values().flatten() {
+            match crate::message_receipts::unsure_after_restart(&outbox_dir, &message.id) {
+                Ok(false) => {}
+                Ok(true) => { held_communication.insert(message.id.clone()); }
+                Err(error) => {
+                    eprintln!("[crewvela] 无法核对持久消息回执，暂缓投递 {}：{error:#}", message.id);
+                    held_communication.insert(message.id.clone());
+                }
+            }
+        }
         Ok(Self {
             held_automation_messages: Mutex::new(file.items.values().flatten().filter(|m| m.id.starts_with("automation-")).map(|m| m.id.clone()).collect()),
+            held_communication_messages: Mutex::new(held_communication),
             delivery_lock: Mutex::new(()),
             persistence_lock: Mutex::new(()),
             items: Mutex::new(file.items),
@@ -588,12 +602,13 @@ impl SessionActionQueue {
     pub(crate) fn peek_deliverable(&self, session_id: &str) -> Option<QueuedMessage> {
         let muted = self.activity(session_id) == AgentActivity::Muted;
         let held = self.held_automation_messages.lock().unwrap().clone();
+        let communication = self.held_communication_messages.lock().unwrap().clone();
         self.items
             .lock()
             .unwrap()
             .get(session_id)?
             .iter()
-            .find(|message| !held.contains(&message.id) && (!muted || message.kind != MessageKind::Chat || message.from.is_none()))
+            .find(|message| !held.contains(&message.id) && !communication.contains(&message.id) && (!muted || message.kind != MessageKind::Chat || message.from.is_none()))
             .filter(|message| message.codex_handoff.is_none())
             .cloned()
     }
@@ -826,6 +841,10 @@ impl SessionActionQueue {
     }
 
     fn acknowledge_submitted_message(&self, session_id: &str, message_id: &str) -> bool {
+        if let Err(error) = self.record_receipt_stage(message_id, "submitted") {
+            self.delivery_errors.lock().unwrap().insert(session_id.into(), format!("保存消息回执失败：{error:#}"));
+            return false;
+        }
         match self.try_commit_delivered_message(session_id, message_id) {
             Ok(committed) => {
                 self.update_delivery_stage(session_id, "submit_sent", None);
@@ -986,6 +1005,7 @@ impl SessionActionQueue {
                 let raw = std::fs::read_to_string(&path)?;
                 let message: OutboxMessage = serde_json::from_str(&raw)?;
                 let Some(target) = session_state.get(&message.to) else {
+                    self.record_receipt_stage(&message_id, "rejected")?;
                     eprintln!("[crewvela] 丢弃目标不存在的会话消息 to={}", message.to);
                     return Ok(false);
                 };
@@ -996,6 +1016,7 @@ impl SessionActionQueue {
                             .is_some_and(|sender| sender.retired_agent_runtime)
                     })
                 {
+                    self.record_receipt_stage(&message_id, "rejected")?;
                     self.record_runtime_switch_failure(
                         &message.to,
                         QueuedMessage::new(message.body.clone(), message.from.clone()),
@@ -1017,6 +1038,7 @@ impl SessionActionQueue {
                         &message.to,
                         Instant::now(),
                     ) {
+                        self.record_receipt_stage(&message_id, "rejected")?;
                         self.enqueue_agent_limit_notice(
                             &origin.session_id,
                             &message.to,
@@ -1456,6 +1478,10 @@ impl SessionActionQueue {
             if matches!(session.agent_runtime_kind.as_deref(), Some("pi")) {
                 if let Some(message) = self.peek_deliverable(&session.id) {
                     if session_state.runtime_message_accepted(&session.id, &message.id) {
+                        if let Err(error) = self.record_receipt_stage(&message.id, "received") {
+                            self.delivery_errors.lock().unwrap().insert(session.id.clone(), format!("保存接收回执失败：{error:#}"));
+                            continue;
+                        }
                         if !self.commit_delivered_message(&session.id, &message.id) { continue; }
                         if message.kind != MessageKind::InitialPrompt {
                             self.record_delivery(&session.id, &message);
@@ -1487,8 +1513,21 @@ impl SessionActionQueue {
                 continue;
             }
             // 只写文本不带 \r；提交回车由 flush_pending_submits 延迟补发（见 SUBMIT_DELAY）。
-            let payload = render_delivery(&message);
-            if matches!(session.agent_runtime_kind.as_deref(), Some("pi")) {
+            let is_pi = matches!(session.agent_runtime_kind.as_deref(), Some("pi"));
+            let tracked = match self.record_receipt_stage(&message.id, if is_pi { "queued" } else { "attempting" }) {
+                Ok(tracked) => tracked,
+                Err(error) => {
+                    self.delivery_errors.lock().unwrap().insert(session.id.clone(), format!("保存投递状态失败：{error:#}"));
+                    continue;
+                }
+            };
+            let mut payload = render_delivery(&message);
+            if tracked || is_pi && self.outbox_dir.as_ref().zip(message.from.as_ref()).is_some_and(|(dir, sender)| {
+                crate::message_receipts::lookup(dir, &sender.session_id, &message.id).is_ok()
+            }) {
+                payload.push_str(&format!("\n回复可在上述 send 指令末尾加 --reply-to {}，使用 crewvela_sessions.send 时传 replyTo。", message.id));
+            }
+            if is_pi {
                 match session_state.queue_runtime_delivery(&session.id, &message.id, &payload) {
                     Ok(true) => session_state.mark_prompt_dispatched(&session.id),
                     Ok(false) => {}
@@ -1524,8 +1563,10 @@ impl SessionActionQueue {
                     session_state.mark_prompt_dispatched(&session.id);
                     dispatched.push(session.id);
                 }
-                // 写失败：消息留在队首，下一轮 poll 重试，不丢不重排。
+                // A tracked write failure can be partial. Preserve the receipt
+                // and hold that message for inspection. Legacy mail can retry.
                 Err(error) => {
+                    if tracked { self.held_communication_messages.lock().unwrap().insert(message.id.clone()); }
                     self.delivery_errors
                         .lock()
                         .unwrap()
@@ -1536,6 +1577,12 @@ impl SessionActionQueue {
         dispatched
     }
 
+    fn record_receipt_stage(&self, id: &str, stage: &str) -> Result<bool> {
+        match &self.outbox_dir {
+            Some(dir) => crate::message_receipts::advance(dir, id, stage),
+            None => Ok(false),
+        }
+    }
     /// 记录一条成功投递（环形缓冲，满则挤出最旧）。body 截断防长消息撑爆内存。
     fn record_delivery(&self, to_session_id: &str, message: &QueuedMessage) {
         self.delivery_errors.lock().unwrap().remove(to_session_id);
@@ -1734,6 +1781,15 @@ impl SessionActionQueue {
                 if now < pending.due { return true; }
                 let pty_id = record.and_then(|record| record.pty_id);
                 if pty_id != Some(pending.pty_id) {
+                    let held = match &self.outbox_dir {
+                        Some(dir) => crate::message_receipts::unsure_after_restart(dir, &pending.message_id).unwrap_or(true),
+                        None => false,
+                    };
+                    if held {
+                        self.held_communication_messages.lock().unwrap().insert(pending.message_id.clone());
+                        self.update_delivery_stage(session_id, "text_written", Some("目标进程已更换，投递待核实".into()));
+                        return false;
+                    }
                     self.update_delivery_stage(session_id, "queued", Some("目标进程已退出或更换，消息已保留等待恢复后重新发送".into()));
                     return false;
                 }
@@ -1771,7 +1827,7 @@ impl SessionActionQueue {
     }
 }
 
-fn outbox_message_id(path: &Path) -> Result<String> {
+pub(crate) fn outbox_message_id(path: &Path) -> Result<String> {
     use sha2::{Digest, Sha256};
     let name = path.file_name().context("outbox 消息缺少文件名")?;
     Ok(format!("outbox-{:x}", Sha256::digest(name.as_encoded_bytes())))
@@ -3333,6 +3389,36 @@ mod tests {
         assert_eq!(queue.flush_ready_with_writer_at(&sessions, now, |id, _| { assert_eq!(id, 2); Ok(()) }), vec![record.id.clone()]);
         queue.flush_pending_submits_with_writer_at(&sessions, now + SUBMIT_DELAY, |id, bytes| { assert_eq!(id, 2); assert_eq!(bytes, b"\r"); Ok(()) });
         assert!(queue.peek_next(&record.id).is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recorded_communication_does_not_repaste_after_process_loss() {
+        let (root, sessions, target, queue) = durable_delivery_fixture("receipt-process-loss");
+        let sender = sessions.create(NewSession {
+            provider_id: "other".into(), provider_name: "Sender".into(), cwd: ".".into(),
+            yolo: false, auto_mode: false, project_id: None,
+        }).unwrap();
+        ready_fixture_session(&sessions, &target, 1);
+        let outbox = root.join("outbox");
+        let id = crate::message_receipts::publish(&outbox, &OutboxMessage {
+            to: target.id.clone(), body: "check the result".into(),
+            from: Some(MessageOrigin { session_id: sender.id.clone(), label: "Sender".into() }),
+        }, None, None).unwrap();
+        assert_eq!(queue.ingest_outbox(&sessions, |_| Ok(())).unwrap(), 1);
+        let now = Instant::now();
+        assert_eq!(queue.flush_ready_with_writer_at(&sessions, now, |_, text| {
+            assert!(String::from_utf8_lossy(text).contains(&id)); Ok(())
+        }), vec![target.id.clone()]);
+        assert_eq!(crate::message_receipts::lookup(&outbox, &sender.id, &id).unwrap().stage, "attempting");
+        sessions.mark_stopped(&target.id).unwrap();
+        queue.flush_pending_submits_with_writer_at(&sessions, now + SUBMIT_DELAY, |_, _| panic!("old process"));
+        ready_fixture_session(&sessions, &target, 2);
+        assert!(queue.flush_ready_with_writer_at(&sessions, now, |_, _| panic!("uncertain message was pasted again")).is_empty());
+        drop(queue);
+        let reopened = SessionActionQueue::open_at(root.join("mailbox.json"), outbox).unwrap();
+        assert!(reopened.peek_deliverable(&target.id).is_none());
+        assert_eq!(reopened.peek_next(&target.id).unwrap().id, id);
         std::fs::remove_dir_all(root).unwrap();
     }
 

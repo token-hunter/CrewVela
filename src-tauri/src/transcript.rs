@@ -16,7 +16,7 @@ const MAX_MESSAGE_CHARS: usize = 4_000;
 /// 工具调用/结果摘要行上限。
 const MAX_TOOL_SUMMARY_CHARS: usize = 120;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptMessage {
     /// user / assistant / tool

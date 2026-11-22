@@ -8,13 +8,22 @@ use crate::sessions::{self, SessionRecord};
 
 /// 解析 `send` 子命令参数：--to <会话 id 前缀> --body <内容>。
 pub fn parse_send_args<I: Iterator<Item = String>>(args: I) -> Result<(String, String), String> {
+    let (to, body, _, _) = parse_receipt_send_args(args)?;
+    Ok((to, body))
+}
+
+fn parse_receipt_send_args<I: Iterator<Item = String>>(args: I) -> Result<(String, String, Option<String>, Option<String>), String> {
     let mut to = None;
     let mut body = None;
+    let mut request = None;
+    let mut reply_to = None;
     let mut args = args;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--to" => to = Some(args.next().ok_or("send 缺少 --to 的值")?),
             "--body" => body = Some(args.next().ok_or("send 缺少 --body 的值")?),
+            "--request-id" => request = Some(args.next().ok_or("send 缺少 --request-id 的值")?),
+            "--reply-to" => reply_to = Some(args.next().ok_or("send 缺少 --reply-to 的值")?),
             other => return Err(format!("send 无法识别的参数: {other}")),
         }
     }
@@ -24,7 +33,7 @@ pub fn parse_send_args<I: Iterator<Item = String>>(args: I) -> Result<(String, S
     if to.trim().is_empty() || body.trim().is_empty() {
         return Err("send 的 --to 与 --body 不能为空".to_string());
     }
-    Ok((to, body))
+    Ok((to, body, request, reply_to))
 }
 
 fn sessions_path() -> Result<PathBuf> {
@@ -74,9 +83,34 @@ pub(crate) fn session_view_at(path: &Path) -> Result<Vec<serde_json::Value>> {
 /// `crewvela send --to <前缀> --body <内容>`：把消息写入 outbox，
 /// 由运行中的 app 在下一轮轮询摄取并投递（会话就绪时写入其终端）。
 pub fn run_send_command(to: &str, body: &str) -> Result<()> {
+    send_command(to, body, None, None)
+}
+
+pub fn run_send_args(args: impl Iterator<Item = String>) -> Result<()> {
+    let (to, body, request, reply_to) = parse_receipt_send_args(args).map_err(anyhow::Error::msg)?;
+    send_command(&to, &body, request.as_deref(), reply_to.as_deref())
+}
+
+fn send_command(to: &str, body: &str, request: Option<&str>, reply_to: Option<&str>) -> Result<()> {
     let identity = std::env::var("CREWVELA_SESSION_ID").ok();
-    let receipt = send_at(&sessions_path()?, &outbox_dir()?, to, body, identity.as_deref(), crate::runtime_preferences::ensure_session_available)?;
-    println!("{receipt}");
+    let tracked = identity.as_deref().is_some_and(|id| !id.is_empty());
+    anyhow::ensure!(tracked || (request.is_none() && reply_to.is_none()), "持久回执需要在 CrewVela 来源会话内使用");
+    let outbox = outbox_dir()?;
+    let (receipt, id) = send_with_receipt_at(&sessions_path()?, &outbox, to, body, identity.as_deref(), request, reply_to, tracked, crate::runtime_preferences::ensure_session_available)?;
+    match (identity, id) {
+        (Some(sender), Some(id)) => {
+            let status = crate::message_receipts::lookup(&outbox, &sender, &id)?.stage;
+            if matches!(status.as_str(), "publishing" | "rejected") { println!("消息投递待核实；消息 ID：{id}"); }
+            else { println!("{receipt}；消息 ID：{id}"); }
+        }
+        _ => println!("{receipt}"),
+    }
+    Ok(())
+}
+
+pub fn run_message_status(id: &str) -> Result<()> {
+    let sender = std::env::var("CREWVELA_SESSION_ID").context("请在通信参与者的原会话中查询")?;
+    println!("{}", serde_json::to_string_pretty(&crate::message_receipts::lookup(&outbox_dir()?, &sender, id)?)?);
     Ok(())
 }
 
@@ -88,6 +122,15 @@ pub(crate) fn send_at(
     identity: Option<&str>,
     ensure_available: impl Fn(&SessionRecord) -> Result<()>,
 ) -> Result<String> {
+    send_with_receipt_at(session_file, outbox, to, body, identity, None, None, false, ensure_available)
+        .map(|(receipt, _)| receipt)
+}
+
+pub(crate) fn send_with_receipt_at(
+    session_file: &Path, outbox: &Path, to: &str, body: &str,
+    identity: Option<&str>, request_id: Option<&str>, reply_to: Option<&str>,
+    tracked: bool, ensure_available: impl Fn(&SessionRecord) -> Result<()>,
+) -> Result<(String, Option<String>)> {
     if to.trim().is_empty() || body.trim().is_empty() {
         return Err(anyhow!("消息目标和内容不能为空"));
     }
@@ -96,6 +139,8 @@ pub(crate) fn send_at(
     }
     let records = sessions::load_records(session_file)?;
     let target = resolve_session(&records, to)?;
+    let tracked = tracked && !target.runtime_command_host;
+    anyhow::ensure!(tracked || (request_id.is_none() && reply_to.is_none()), "任务宿主沿用项目调度记录；消息回执参数只支持原交互会话");
     ensure_available(&target)?;
     if let Some(sender_id) = identity {
         if let Some(sender) = records
@@ -111,15 +156,18 @@ pub(crate) fn send_at(
     if from.as_ref().is_some_and(|sender| sender.session_id == target.id) {
         return Err(anyhow!("不能向自己发送会话消息；请重新查询 sessions 并选择另一位参与者的完整会话 ID"));
     }
-    write_outbox(
-        outbox,
-        &OutboxMessage {
+    let message = OutboxMessage {
             to: target.id.clone(),
             from,
             body: body.to_string(),
-        },
-    )?;
-    Ok(send_receipt(&records, &target))
+        };
+    let id = if tracked {
+        Some(crate::message_receipts::publish(outbox, &message, request_id, reply_to)?)
+    } else {
+        write_outbox(outbox, &message)?;
+        None
+    };
+    Ok((send_receipt(&records, &target), id))
 }
 
 fn send_receipt(records: &[SessionRecord], target: &SessionRecord) -> String {
@@ -288,16 +336,23 @@ fn resolve_session(records: &[SessionRecord], target: &str) -> Result<SessionRec
 
 /// outbox 原子写入（temp + rename），文件名带纳秒前缀保证摄取顺序。
 pub(crate) fn write_outbox(dir: &Path, message: &OutboxMessage) -> Result<()> {
-    std::fs::create_dir_all(dir)
-        .with_context(|| format!("创建消息 outbox 目录失败: {}", dir.display()))?;
+    write_named_outbox(dir, &new_outbox_name(), message)
+}
+
+pub(crate) fn new_outbox_name() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos()
         .min(u64::MAX as u128) as u64;
-    let id = uuid::Uuid::new_v4();
-    let temp_path = dir.join(format!("{nanos:020}-{id}.tmp"));
-    let message_path = dir.join(format!("{nanos:020}-{id}.json"));
+    format!("{nanos:020}-{}.json", uuid::Uuid::new_v4())
+}
+
+pub(crate) fn write_named_outbox(dir: &Path, name: &str, message: &OutboxMessage) -> Result<()> {
+    std::fs::create_dir_all(dir)
+        .with_context(|| format!("创建消息 outbox 目录失败: {}", dir.display()))?;
+    let temp_path = dir.join(name).with_extension("tmp");
+    let message_path = dir.join(name);
     std::fs::write(&temp_path, serde_json::to_vec(message)?)
         .with_context(|| format!("写入会话消息失败: {}", temp_path.display()))?;
     std::fs::rename(&temp_path, &message_path)

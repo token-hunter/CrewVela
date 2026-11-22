@@ -518,6 +518,7 @@ export interface HarnessChatMessage {
 }
 
 export interface HarnessSessionSnapshot {
+  turnChanges?: Array<[string, ChatTurnChanges]>;
   codexGoal?: { objective: string; status: "active" | "paused" | "blocked" | "complete" | "limited"; tokenBudget?: number | null; tokensUsed: number; timeUsedSeconds: number; createdAt: number; updatedAt: number } | null;
   codexGoalSupported?: boolean;
   codexGoalAction?: string | null;
@@ -539,6 +540,12 @@ export interface HarnessSessionSnapshot {
     agentStatus?: string;
     execution?: { commandId: string; result: { kind: "success" | "error"; text?: string } } | null;
   };
+}
+
+export interface ChatTurnChanges {
+  files: { path: string; patch: string }[];
+  checks: { command: string; exitCode: number | null }[];
+  limited: boolean;
 }
 
 export interface AcpPromptResult {

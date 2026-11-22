@@ -6,6 +6,7 @@ import { communicationExample, communicationGuideSeen, communicationMembers, COM
 import type { AgentProfile, MultiAgentProject, MultiAgentSnapshot } from "../types";
 import { RUNTIME_LOGOS } from "../runtimeLogos";
 import "../styles/communication-guide.css";
+import { SessionMessageReceipts } from "./ConversationReceiptPopover";
 
 export function CommunicationDiscoveryHint({ suppressed = false, projectId }: { suppressed?: boolean; projectId?: string }) {
   const [seen, setSeen] = useState(communicationGuideSeen);
@@ -38,8 +39,10 @@ interface Props {
   sessions: CommunicationParticipant[]; selectedSessionId?: string | null; preview?: boolean; hidden?: boolean;
   onClose: () => void; onDiagnostics: (projectId: string | undefined, scope: CommunicationScope) => void;
   onOpenCollaboration?: (projectId: string | undefined) => void;
+  onOpenSession?: (sessionId: string) => void;
+  sessionName?: (sessionId: string) => string | undefined;
 }
-export function CommunicationGuide({ initialScope, initialProjectId, sessions, selectedSessionId, preview = false, hidden = false, onClose, onDiagnostics, onOpenCollaboration }: Props) {
+export function CommunicationGuide({ initialScope, initialProjectId, sessions, selectedSessionId, preview = false, hidden = false, onClose, onDiagnostics, onOpenCollaboration, onOpenSession, sessionName }: Props) {
   const [scope, setScope] = useState(initialScope);
   const [projects, setProjects] = useState<MultiAgentProject[]>([]);
   const [projectId, setProjectId] = useState(initialProjectId ?? "");
@@ -128,6 +131,9 @@ export function CommunicationGuide({ initialScope, initialProjectId, sessions, s
         <button type="button" className="communication-copy" disabled={!example || copyBusy || loading || Boolean(error)} onClick={() => void copy()}><CopyIcon size={17} />{copyBusy ? "复制中…" : "复制示例"}</button>
         {copyState && <p role={copyState.startsWith("复制失败") ? "alert" : "status"} className="communication-copy-state">{copyState}</p>}
       </section>
+      {scope === "sessions" && !preview && selectedSessionId && !hidden && <SessionMessageReceipts
+        sessionId={selectedSessionId} sessionName={id => sessionName?.(id) ?? sessions.find(item => item.id === id)?.name}
+        onOpenSession={onOpenSession} />}
       {scope === 'project' && <button type="button" className="communication-project-link" onClick={() => { const id = projects.some(project => project.id === projectId) ? projectId : undefined; if (onOpenCollaboration) onOpenCollaboration(id); else onDiagnostics(id, 'project'); }}>打开协作中心</button>}
       <details className="communication-help"><summary>使用说明</summary>
         <ol>{(scope === "project" ? ["在同一项目中启用两位成员", "在发送方成员会话中粘贴示例", "在项目消息中查看往来"] : ["在 CrewVela 中打开两个 Agent 会话", "在发送方会话中粘贴示例", "到接收方会话查看消息和回复"]).map(step => <li key={step}>{step}</li>)}</ol>

@@ -18,6 +18,8 @@ export interface SessionSwitchRecord {
   context: string;
   error: string | null;
   recoveryDismissed?: boolean;
+  returnOf?: string | null;
+  sourceHistory?: Array<{ role: string; text: string; at: string | null }>;
 }
 
 export function switchDeliveryText(record: SessionSwitchRecord): string {
@@ -90,7 +92,9 @@ export function projectSwitchSessions(sessions: SessionRecord[], records: Sessio
 }
 
 export function retainedSwitchSource(id: string, records: SessionSwitchRecord[]): SessionSwitchRecord | null {
-  return [...records].reverse().find(item => item.preserveSource && item.source.id === id && !["preview", "cancelled"].includes(item.state)) ?? null;
+  return [...records].reverse().find(item => item.preserveSource && item.source.id === id
+    && !["preview", "cancelled"].includes(item.state)
+    && !records.some(next => next.returnOf === item.id && next.targetId === id && next.state === "queued")) ?? null;
 }
 export function isStructuredZCodeCli(session: SessionRecord, records: SessionSwitchRecord[]): boolean {
   return session.agentRuntimeKind === "zcode_cli" && records.some(item => item.targetId === session.id && item.targetRuntime === "zcode_cli");

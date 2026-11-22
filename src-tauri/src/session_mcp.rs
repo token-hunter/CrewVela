@@ -53,14 +53,25 @@ impl Endpoint {
                 json!({"sessions":crate::messaging::session_view_at(&self.sessions)?})
             }
             "send" => {
-                if args.len() != 2 || !args.contains_key("to") || !args.contains_key("body") {
-                    bail!("send 仅接受 to 和 body；发送方由原会话绑定");
+                if args.keys().any(|key| !matches!(key.as_str(), "to" | "body" | "requestId" | "replyTo")) {
+                    bail!("send 包含未知参数；发送方由原会话绑定");
                 }
                 let to = args["to"].as_str().context("to 必须是字符串")?;
                 let body = args["body"].as_str().context("body 必须是字符串")?;
-                let receipt = crate::messaging::send_at(&self.sessions, &self.outbox, to, body,
-                    Some(&self.sender), crate::runtime_preferences::ensure_session_available)?;
-                json!({"queued":true,"receipt":receipt})
+                let request = args.get("requestId").map(|value| value.as_str().context("requestId 必须是字符串")).transpose()?;
+                let reply_to = args.get("replyTo").map(|value| value.as_str().context("replyTo 必须是字符串")).transpose()?;
+                let (receipt, id) = crate::messaging::send_with_receipt_at(&self.sessions, &self.outbox, to, body,
+                    Some(&self.sender), request, reply_to, true, crate::runtime_preferences::ensure_session_available)?;
+                if let Some(id) = id {
+                    let status = crate::message_receipts::lookup(&self.outbox, &self.sender, &id)?.stage;
+                    let queued = !matches!(status.as_str(), "publishing" | "rejected");
+                    json!({"queued":queued,"messageId":id,"stage":status,"receipt":if queued { receipt } else { "消息投递待核实，请查询回执；相同请求不会重复发送。".into() }})
+                } else { json!({"queued":true,"receipt":receipt}) }
+            }
+            "message_status" => {
+                if args.len() != 1 { bail!("message_status 仅接受 messageId"); }
+                let id = args["messageId"].as_str().context("messageId 必须是字符串")?;
+                serde_json::to_value(crate::message_receipts::lookup(&self.outbox, &self.sender, id)?)?
             }
             _ => bail!("未知会话通信工具"),
         };
@@ -73,9 +84,12 @@ fn tools() -> Value {
         {"name":"sessions","description":"列出 CrewVela 会话。给已打开的 Agent 发消息前先刷新列表，选择 preferredForRuntime=true 的原交互会话。",
          "inputSchema":{"type":"object","properties":{},"additionalProperties":false},
          "annotations":{"readOnlyHint":true,"openWorldHint":false}},
-        {"name":"send","description":"以当前绑定会话身份给目标原会话发送消息。成功只表示已持久化排队，不表示已送达或收到回复；不得编造对话。无需 shell 或项目写权限。",
-         "inputSchema":{"type":"object","properties":{"to":{"type":"string","minLength":1},"body":{"type":"string","minLength":1,"maxLength":32000}},"required":["to","body"],"additionalProperties":false},
-         "annotations":{"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false}}
+        {"name":"send","description":"给目标原会话发送消息。排队不等于对方收到。重试可使用同一 requestId，回复传入入站消息附带的 replyTo。",
+         "inputSchema":{"type":"object","properties":{"to":{"type":"string","minLength":1},"body":{"type":"string","minLength":1,"maxLength":32000},"requestId":{"type":"string","format":"uuid"},"replyTo":{"type":"string"}},"required":["to","body"],"additionalProperties":false},
+         "annotations":{"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false}},
+        {"name":"message_status","description":"查询当前会话参与的单条消息持久回执。submitted 只确认提交输入，received 表示原生会话接收。",
+         "inputSchema":{"type":"object","properties":{"messageId":{"type":"string"}},"required":["messageId"],"additionalProperties":false},
+         "annotations":{"readOnlyHint":true,"openWorldHint":false}}
     ]})
 }
 
@@ -249,7 +263,9 @@ mod tests {
         assert_eq!(replies.len(), 6);
         assert_eq!(replies[0]["error"]["code"], -32002);
         assert_eq!(replies[1]["result"]["protocolVersion"], "2025-06-18");
-        assert_eq!(replies[2]["result"]["tools"].as_array().unwrap().len(), 2);
+        let names = replies[2]["result"]["tools"].as_array().unwrap().iter()
+            .map(|tool| tool["name"].as_str().unwrap()).collect::<Vec<_>>();
+        assert_eq!(names, ["sessions", "send", "message_status"]);
         assert_eq!(replies[3], replies[4]);
         assert_eq!(replies[5]["error"]["code"], -32600);
         let queue = SessionActionQueue::open_at(root.join("mailbox.json"), root.join("outbox")).unwrap();

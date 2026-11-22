@@ -34,6 +34,8 @@ mod control;
 pub mod general_settings;
 mod terminal_fonts;
 mod git_source_control;
+mod chat_turn_changes;
+mod message_receipts;
 mod keep_awake;
 mod kimi_title_summary;
 mod launcher;
@@ -159,7 +161,7 @@ pub fn run_session_statusline(events_dir: &str, app_session_id: &str) -> anyhow:
     telemetry::store_claude_statusline(std::path::Path::new(events_dir), app_session_id, &payload)
 }
 
-pub use messaging::{parse_send_args, run_send_command, run_sessions_command};
+pub use messaging::{parse_send_args, run_message_status, run_send_args, run_send_command, run_sessions_command};
 
 #[tauri::command]
 fn test_profile_info() -> Option<test_profile::Profile> { test_profile::current().cloned() }
@@ -6761,6 +6763,7 @@ pub fn run() {
             session_switch::session_switch_preview,
             session_switch::session_switch_confirm,
             session_switch::session_switch_restore,
+            session_switch::session_switch_return_preview,
             session_switch::session_switch_dismiss_recovery,
             resume_session,
             rename_session,
@@ -6782,6 +6785,7 @@ pub fn run() {
             send_session_message,
             list_delivery_records,
             list_communication_evidence,
+            message_receipts::list_session_message_receipts,
             list_automations,
             run_automation_now,
             stop_automation_run,

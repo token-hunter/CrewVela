@@ -8,6 +8,7 @@ import { CodexContextUsage } from "./CodexContextUsage";
 import { CodexGoalPanel } from "./CodexGoalPanel";
 import { CodexPluginPicker } from "./CodexPluginPicker";
 import "../styles/codex-composer.css";
+import { ChatTurnChangesCard } from "./ChatTurnChangesCard";
 import type { CodexPlugin } from "../codexPlugins";
 import type { NativeAgentSwitchProps } from "../nativeAgentSwitch";
 import type { HarnessChatMessage, HarnessSessionSnapshot, SessionRecord } from "../types";
@@ -125,6 +126,8 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
   const messagesEnd = useRef<HTMLDivElement>(null);
   const composerInput = useRef<HTMLTextAreaElement>(null);
   const messages = snapshot?.history ?? [];
+  const turnChanges = new Map(snapshot?.turnChanges ?? []);
+  const replies = new Set(messages.filter(message => message.role === "assistant").map(message => message.id));
   const goalActive = snapshot?.codexGoal?.status === "active";
   const empty = messages.length === 0 && toolCalls.length === 0 && !permission;
   const commands = snapshot?.commands ?? [];
@@ -167,6 +170,7 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
     sequence.current = event.sequence;
     revision.current += 1;
     if (event.record) onSessionRecord(event.record);
+    if (event.kind === "turn_changes_unavailable") setError(String(event.data.message ?? "无法记录本轮改动"));
     if (event.snapshot) {
       applySnapshot(event.snapshot);
       if (event.kind === "error" || event.kind === "codex_goal_error") setError(String(event.data.message ?? "Codex Chat 执行失败"));
@@ -434,6 +438,13 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
           {(message.text || !message.reasoning) && <p>{message.text || "…"}</p>}
           {message.streamStatus && message.streamStatus !== "completed" && <small className="harness-stream-status">{({ streaming: "生成中…", interrupted: "已取消，显示部分内容", failed: "本次尝试失败", abandoned: "本次尝试未完成" } as Record<string, string>)[message.streamStatus]}</small>}
           {(message.attachments ?? []).map((file) => <div className="harness-attachment" key={file.uri} title={file.path}><Paperclip size={14} /> {file.name}</div>)}
+          {(message.role === "assistant" || !replies.has(message.id)) && turnChanges.has(message.id) && (
+            <ChatTurnChangesCard changes={turnChanges.get(message.id)!} onQuote={(quote) => {
+              setDraft(current => current ? `${current.trimEnd()}\n\n${quote}` : quote);
+              setCommandMenu(false);
+              requestAnimationFrame(() => composerInput.current?.focus());
+            }} />
+          )}
         </article>)}
         {toolCalls.length > 0 && <div className="harness-tool-list">
           {toolCalls.map((tool) => <article className="harness-tool" key={tool.toolCallId}>

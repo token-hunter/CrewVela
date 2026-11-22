@@ -432,6 +432,7 @@ impl NativePiSessions {
             codex_goal: None,
             codex_goal_supported: false,
             codex_goal_action: None,
+            turn_changes: Vec::new(),
         })
     }
 

@@ -2526,7 +2526,7 @@ export default function App() {
                   onHandoff={selectedSession && isNativeChatSession(selectedSession) && !selectedRelaySource ? () => openSwitch(selectedSession) : undefined} />}
                 {!multiAgentWorkspaceProjectId && selectedSession && selectedRelaySource && <div className="native-agent-view"><HandoffSourceView
                   session={selectedSession} record={selectedRelaySource} target={sessions.find(item => item.id === selectedRelaySource.targetId)} preview={UI_PREVIEW}
-                  onSelectTarget={() => { if (selectedRelaySource.targetId) void selectSession(selectedRelaySource.targetId); }} onDetails={() => openRelayDetails(selectedSession)}
+                  onSelectTarget={() => { if (selectedRelaySource.targetId) void selectSession(selectedRelaySource.targetId); }} onDetails={() => openRelayDetails(selectedSession)} onRecord={handleSwitchRecord}
                 /></div>}
                 {!multiAgentWorkspaceProjectId && sessionsReady && switchRecordsReady && switchRecords.filter(item => switchRecoveryInWorkspace(item, workspace.assignments, switchRecords, workspace.activeTabId)).map(item => {
                   const kind = switchRecoveryKind(item, sessions, [...sessions, ...archivedSessions]);
@@ -2574,6 +2574,7 @@ export default function App() {
                       onSwitchAgent={openSwitch}
                       onViewSourceHistory={setTranscriptFor}
                       onRelayDetails={openRelayDetails}
+                      onSwitchRecord={handleSwitchRecord}
                     />
                   </div>
                 )}
@@ -2612,6 +2613,8 @@ export default function App() {
               </div>
               {guideRequest && <CommunicationGuide key={guideRequest.nonce} initialScope={guideRequest.scope} initialProjectId={guideRequest.projectId}
                 sessions={communicationSessions(sessions)} selectedSessionId={selectedSessionId} preview={UI_PREVIEW} hidden={settingsOpen}
+                sessionName={(id) => displaySessions.find(item => item.id === id)?.title}
+                onOpenSession={(id) => { setGuideRequest(null); void selectSession(id); }}
                 onOpenCollaboration={(projectId) => {
                   setCollaborationInitialProjectId(projectId); setCollaborationTasksRequest(undefined);
                   setCollaborationInitialTab("overview"); setCollaborationDiagnosticGlobal(false); setSettingsTarget("collaboration"); setSettingsOpen(true);

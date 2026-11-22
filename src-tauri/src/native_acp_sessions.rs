@@ -145,6 +145,8 @@ struct SessionLocator {
     context_usage: Option<crate::acp::AcpContextUsage>,
     #[serde(default)]
     codex_goal: Option<crate::acp::CodexGoal>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    turn_changes: Vec<(String, crate::chat_turn_changes::TurnChanges)>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -170,6 +172,8 @@ pub struct HarnessSessionSnapshot {
     pub codex_goal: Option<crate::acp::CodexGoal>,
     pub codex_goal_supported: bool,
     pub codex_goal_action: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) turn_changes: Vec<(String, crate::chat_turn_changes::TurnChanges)>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -341,6 +345,7 @@ impl NativeAcpSessions {
                     commands: Vec::new(),
                     context_usage: None,
                     codex_goal: None,
+                    turn_changes: Vec::new(),
                 },
             );
             Ok(())
@@ -352,6 +357,10 @@ impl NativeAcpSessions {
             .lock()
             .map(|store| store.sessions.contains_key(session_id))
             .unwrap_or(false)
+    }
+
+    pub(crate) fn can_resume_handoff(&self, id: &str) -> Result<bool> {
+        Ok(self.locator(id)?.acp_session_id.is_some() && !self.has_worktree_runtime(id)?)
     }
 
     pub(crate) fn has_worktree_runtime(&self, id: &str) -> Result<bool> {
@@ -386,6 +395,7 @@ impl NativeAcpSessions {
             codex_goal: locator.codex_goal,
             codex_goal_supported: view.goal_supported,
             codex_goal_action: view.goal_action.clone(),
+            turn_changes: locator.turn_changes,
         })
     }
 
@@ -1238,12 +1248,21 @@ impl NativeAcpSessions {
         let session_id = session_id.to_string();
         let live_for_worker = Arc::clone(&live);
         let plugins = plugins.to_vec();
+        let turn_worktree = sessions.get(&session_id).and_then(|record| {
+            if self.flavor != NativeChatFlavor::CodexChat || record.multi_agent_project_id.is_some() {
+                return None;
+            }
+            let worktree = record.worktree?;
+            let root = std::path::PathBuf::from(worktree.path);
+            if crate::chat_turn_changes::is_exclusive(&root, &session_id, sessions) { Some(root) } else { None }
+        });
         self.emit_unlocked(&app, &live, &session_id, "user_message", json!({"id": turn_id, "text": message}), None);
         if let Some(record) = sessions.get(&session_id) {
             crate::ai_memory::embedded::capture_prompt(&record, &message);
         }
         live.prompt_inflight.store(true, Ordering::Release);
         std::thread::spawn(move || {
+            let baseline = turn_worktree.as_deref().map(crate::chat_turn_changes::WorktreeSnapshot::capture);
             let mut result = {
                 if live_for_worker.generation.load(Ordering::Acquire) != generation { return; }
                 let mut slot = match live_for_worker.connection.lock() {
@@ -1328,6 +1347,19 @@ impl NativeAcpSessions {
                             SessionStatus::Stopped
                         } else if persistence_error.is_some() { SessionStatus::Error }
                         else { SessionStatus::Completed };
+                        if outcome == SessionStatus::Completed {
+                            if let (Some(root), Some(baseline)) = (turn_worktree.as_deref(), baseline) {
+                                let changes = if crate::chat_turn_changes::is_exclusive(root, &session_id, &sessions_for_worker) {
+                                    let calls = live_for_worker.view.lock().map(|view| view.tool_calls.clone()).unwrap_or_default();
+                                    baseline.and_then(|before| before.finish(crate::chat_turn_changes::test_checks(calls.into_values())))
+                                } else { Err(anyhow!("会话的工作树已被共用")) };
+                                match changes.and_then(|changes| manager.record_turn_changes(&session_id, &turn_id, changes)) {
+                                    Ok(()) => {},
+                                    Err(error) => manager.emit(&app_for_worker, &live_for_worker, &session_id, "turn_changes_unavailable",
+                                        json!({"message": format!("本轮改动无法记录：{error:#}"), "id": turn_id}), None),
+                                }
+                            }
+                        }
                         if let Err(error) = sessions_for_worker.record_native_turn_outcome(&session_id, &turn_id, outcome) {
                             manager.emit(&app_for_worker, &live_for_worker, &session_id, "error", json!({"message": format!("记录轮次事件失败：{error:#}")}), None);
                         }
@@ -1811,6 +1843,18 @@ impl NativeAcpSessions {
                     attachments: Vec::new(), reasoning: String::new(), stream_status: String::new(),
                 });
             }
+            Ok(())
+        })
+    }
+
+    fn record_turn_changes(&self, session_id: &str, turn_id: &str, changes: crate::chat_turn_changes::TurnChanges) -> Result<()> {
+        if changes.files.is_empty() && changes.checks.is_empty() && !changes.limited { return Ok(()); }
+        self.mutate_store(|store| {
+            let locator = store.sessions.get_mut(session_id).context("会话定位不存在")?;
+            locator.turn_changes.retain(|(id, _)| id != turn_id);
+            locator.turn_changes.push((turn_id.into(), changes));
+            let excess = locator.turn_changes.len().saturating_sub(16);
+            locator.turn_changes.drain(..excess);
             Ok(())
         })
     }

@@ -25,6 +25,7 @@ interface Props {
   onSwitchAgent?: (session: SessionRecord) => void;
   onViewSourceHistory?: (session: SessionRecord) => void;
   onRelayDetails?: (session: SessionRecord) => void;
+  onSwitchRecord?: (record: SessionSwitchRecord) => void;
 }
 
 /** N → 网格列数：cols = ceil(sqrt(N))，rows = ceil(N/cols) 由 CSS 自动换行 */
@@ -48,6 +49,7 @@ export function MultiTerminal({
   onSwitchAgent,
   onViewSourceHistory,
   onRelayDetails,
+  onSwitchRecord,
 }: Props) {
   const [slotIds, setSlotIds] = useState<string[]>([]);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -114,7 +116,7 @@ export function MultiTerminal({
         const relay = session && retainedSwitchSource(session.id, switchRecords);
         if (session && relay) return <div key={id} className={`pane${hidden ? " pane-hidden" : ""}`}><HandoffSourceView
           session={session} record={relay} target={sessions.find(item => item.id === relay.targetId)} preview={preview}
-          onSelectTarget={() => { if (relay.targetId) onToggleMaximize(relay.targetId); }} onDetails={() => onRelayDetails?.(session)}
+          onSelectTarget={() => { if (relay.targetId) onToggleMaximize(relay.targetId); }} onDetails={() => onRelayDetails?.(session)} onRecord={onSwitchRecord}
         /></div>;
         if (!session || !isPtySession(session) || session.ptyId === null) {
           return <div key={id} className={`pane pane-vacant${hidden ? " pane-hidden" : ""}`} />;
