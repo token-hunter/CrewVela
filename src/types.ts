@@ -1176,6 +1176,7 @@ export interface ConversationMigrationPreview {
   createdAt: number;
 }
 export interface ConversationSnapshot {
+  memberModelSummaries?: Record<string, ConversationMemberModelSummary>;
   delegations?: ConversationDesignDelegation[];
   /** Safe per-run metadata; never raw reasoning or tool results. */
   activityEvents?: RuntimeEventRecord[];
@@ -1189,6 +1190,10 @@ export interface ConversationSnapshot {
   memberPolicies?: ConversationPolicyEntry[];
   runtimeCapabilities?: ConversationRuntimeCapability[];
   archivedTaskRules?: ConversationArchivedRule[];
+}
+export interface ConversationMemberModelSummary {
+  model: string | null;
+  reasoning: string | null;
 }
 export interface ConversationSendInput {
   nativeCapabilities?: boolean;

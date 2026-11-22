@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { CaretLeft, CaretRight, Check, LinkSimple } from "@phosphor-icons/react";
-import type { AgentProfile } from "../types";
+import { LinkSimple, X } from "@phosphor-icons/react";
+import type { AgentProfile, ConversationMemberModelSummary } from "../types";
+import { AgentAvatar } from "./AgentAvatar";
 
 type Field = "model" | "reasoning";
 interface Choice { value: string; label: string }
@@ -14,15 +15,30 @@ interface MemberModels {
 }
 const label: Record<Field, string> = { model: "模型", reasoning: "推理级别" };
 
-export function ConversationMemberModels({ projectId, member, compact, onBack }: {
-  projectId: string; member: AgentProfile; compact: boolean; onBack: () => void;
+function summary(data: MemberModels): ConversationMemberModelSummary | null {
+  const display = (field: Field) => {
+    const value = data.selection[field];
+    return data[field].find(choice => choice.value === value)?.label ?? value;
+  };
+  const model = display("model");
+  const reasoning = display("reasoning");
+  return model || reasoning ? { model, reasoning } : null;
+}
+
+export function ConversationMemberModels({ id, projectId, member, members, onSelectMember, onClose, onSaved }: {
+  id: string;
+  projectId: string;
+  member: AgentProfile;
+  members: AgentProfile[];
+  onSelectMember: (id: string) => void;
+  onClose: () => void;
+  onSaved: (agentId: string, value: ConversationMemberModelSummary | null) => void;
 }) {
   const [data, setData] = useState<MemberModels>();
-  const [field, setField] = useState<Field>();
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
-  const heading = useRef<HTMLElement>(null);
+  const memberSelect = useRef<HTMLSelectElement>(null);
   const generation = useRef(0);
   const key = { projectId, agentId: member.id };
   const load = async (refresh = false) => {
@@ -39,14 +55,10 @@ export function ConversationMemberModels({ projectId, member, compact, onBack }:
     }
   };
   useEffect(() => {
-    heading.current?.focus();
+    memberSelect.current?.focus();
     void load();
     return () => { generation.current++; };
   }, [projectId, member.id]);
-  useEffect(() => {
-    if (field) heading.current?.focus();
-  }, [field]);
-
   const save = async (next?: { field: Field; value: string | null }) => {
     if (!data || busy) return;
     const ticket = ++generation.current;
@@ -59,9 +71,8 @@ export function ConversationMemberModels({ projectId, member, compact, onBack }:
       const result = await invoke<MemberModels>("ma_set_conversation_member_models", { ...key, selection });
       if (generation.current === ticket) {
         setData(result);
-        setField(undefined);
         setSaved(true);
-        heading.current?.focus();
+        onSaved(member.id, summary(result));
       }
     } catch (error) {
       if (generation.current === ticket) setError(String(error));
@@ -71,23 +82,35 @@ export function ConversationMemberModels({ projectId, member, compact, onBack }:
   };
 
   const active = data?.selection;
-  return <section className="conversation-member-models" aria-label={`${member.name}的模型与推理设置`} aria-busy={busy}>
-    <header ref={heading} tabIndex={-1}>
-      {(compact || field) && <button type="button" aria-label={field ? "返回模型与推理" : "返回成员列表"} onClick={() => field ? setField(undefined) : onBack()}><CaretLeft size={16} /></button>}
-      <strong>{field ? label[field] : "模型与推理"}</strong>
-      <small title={member.name}>{member.name}</small>
-    </header>
-    {data?.supported && field ? <div className="conversation-model-values">
-      {[{ value: null, label: "跟随 CLI" }, ...data[field]].map(choice => <button type="button" key={choice.value ?? ""} disabled={busy} aria-pressed={active?.[field] === choice.value} onClick={() => void save({ field, value:choice.value })}>
-        <span>{choice.label}</span>{active?.[field] === choice.value && <Check size={15} />}
-      </button>)}
-    </div> : data?.supported && data.observed ? <>
-      {(Object.keys(label) as Field[]).map(item => <button type="button" key={item} className="conversation-model-row" disabled={busy || !data[item].length} onClick={() => setField(item)}>
-        <span>{label[item]}</span><span className="conversation-model-value">{data[item].find(choice => choice.value === active?.[item])?.label ?? active?.[item] ?? (data[item].length ? "跟随 CLI" : "未提供")}</span><CaretRight size={14} />
-      </button>)}
-      <footer><button type="button" disabled={busy || (!active?.model && !active?.reasoning)} onClick={() => void save()}><LinkSimple size={15} />跟随 CLI</button><small role="status">{saved ? "已保存 · 下一轮生效" : "下一轮生效"}</small></footer>
-    </> : data && !data.supported ? <p>此 Runtime 使用 CLI 配置。</p> : !error && <p role="status">正在读取可用选项…</p>}
-    {data?.supported && !field && (!data.model.length || !data.reasoning.length) && <button type="button" className="conversation-model-refresh" disabled={busy} onClick={() => void load(true)}>刷新可用选项</button>}
-    {error && <p role="alert">{error}{!data && <button type="button" disabled={busy} onClick={() => void load(true)}>重试</button>}</p>}
+  return <section id={id} className="conversation-member-models" aria-label={`${member.name}的模型与推理设置`} aria-busy={busy}>
+    <div className="conversation-model-bar">
+      <label className="conversation-model-member">
+        <AgentAvatar avatarId={member.avatarId} runtimeKind={member.runtimeKind} decorative />
+        <select ref={memberSelect} aria-label="配置成员" value={member.id} title={member.name} onChange={event => onSelectMember(event.target.value)}>
+          {members.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </label>
+      {(Object.keys(label) as Field[]).map(field => {
+        const choices = data?.[field] ?? [];
+        const value = active?.[field] ?? "";
+        return <label className="conversation-model-field" key={field}>
+          <span>{label[field]}</span>
+          <select value={value} disabled={busy || !choices.length} onChange={event => void save({ field, value: event.target.value || null })}>
+            <option value="">{!data && busy ? "读取中…" : data?.supported && !choices.length ? "未提供" : "跟随 CLI"}</option>
+            {value && !choices.some(choice => choice.value === value) && <option value={value} disabled>{value} · 已不可用</option>}
+            {choices.map(choice => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
+          </select>
+        </label>;
+      })}
+      <div className="conversation-model-actions">
+        {(active?.model || active?.reasoning) && <button type="button" className="conversation-model-reset" aria-label="跟随 CLI" title="模型和推理级别都跟随 CLI" disabled={busy} onClick={() => void save()}><LinkSimple size={14} /><span>跟随 CLI</span></button>}
+        <small role="status">{busy ? data ? "正在处理…" : "正在读取可用选项…" : saved ? "已保存 · 下一轮聊天生效" : "下一轮聊天生效"}</small>
+        <button type="button" className="conversation-model-close" aria-label="收起模型与推理" onClick={onClose}><X size={16} /></button>
+      </div>
+    </div>
+    {((data?.supported && (!data.model.length || !data.reasoning.length)) || error) && <div className="conversation-model-feedback">
+      {error && <span role="alert">{error}</span>}
+      <button type="button" className="conversation-text-button" disabled={busy} onClick={() => void load(true)}>{error && !data ? "重试" : "刷新可用选项"}</button>
+    </div>}
   </section>;
 }

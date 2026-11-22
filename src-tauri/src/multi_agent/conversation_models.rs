@@ -3,6 +3,7 @@ use anyhow::{ensure, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 
 use super::{AgentRuntimeKind, MultiAgentStore};
 use crate::acp::ManagedAcpKind;
@@ -32,6 +33,13 @@ pub(crate) struct MemberOptions {
 struct Choice {
     value: String,
     label: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MemberModelSummary {
+    model: Option<String>,
+    reasoning: Option<String>,
 }
 
 pub(super) fn migrate(conn: &Connection) -> Result<()> {
@@ -103,6 +111,31 @@ fn response(runtime: AgentRuntimeKind, saved: Option<(Vec<Value>, Selection)>) -
     let observed = saved.is_some();
     let (catalog, selection) = saved.unwrap_or_default();
     MemberOptions { supported:runtime == AgentRuntimeKind::Pi || acp_kind(runtime).is_some(), observed, selection, model:choices(option(&catalog,true)), reasoning:choices(option(&catalog,false)) }
+}
+
+pub(super) fn member_model_summaries(conn: &Connection, project: &str) -> Result<BTreeMap<String, MemberModelSummary>> {
+    let mut statement = conn.prepare(
+        "SELECT m.agent_id,m.options_json,m.selection_json FROM ma_member_model_options m
+         JOIN ma_agents a ON a.id=m.agent_id AND a.project_id=m.project_id AND a.runtime_kind=m.runtime
+         WHERE m.project_id=?1",
+    )?;
+    let rows = statement.query_map([project], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)))?;
+    let mut summaries = BTreeMap::new();
+    for row in rows {
+        let (id, catalog, selection) = row?;
+        let Ok(selection) = serde_json::from_str::<Selection>(&selection) else { continue; };
+        if !selection.is_custom() { continue; }
+        let catalog: Vec<Value> = serde_json::from_str(&catalog).unwrap_or_default();
+        let label = |value: Option<String>, is_model: bool| value.map(|value| {
+            choices(option(&catalog, is_model)).into_iter()
+                .find(|choice| choice.value == value).map(|choice| choice.label).unwrap_or(value)
+        });
+        summaries.insert(id, MemberModelSummary {
+            model: label(selection.model, true),
+            reasoning: label(selection.reasoning, false),
+        });
+    }
+    Ok(summaries)
 }
 
 impl MultiAgentStore {
@@ -234,5 +267,36 @@ mod tests {
         assert_eq!(option(connection.config_options(), false).unwrap()["currentValue"], "high");
         assert!(apply_acp(&mut connection, &Selection {model:None, reasoning:Some("max".into())})
             .unwrap_err().to_string().contains("未确认"));
+    }
+
+    #[test]
+    fn member_model_summaries_are_scoped_and_use_saved_choice_labels() -> Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("CREATE TABLE ma_projects (id TEXT PRIMARY KEY);
+            CREATE TABLE ma_agents (id TEXT PRIMARY KEY, project_id TEXT, runtime_kind TEXT);
+            INSERT INTO ma_projects VALUES ('a'), ('b');
+            INSERT INTO ma_agents VALUES ('a-codex','a','codex'), ('a-pi','a','pi'),
+                ('a-default','a','codex'), ('b-codex','b','codex');")?;
+        migrate(&conn)?;
+        let catalog = json!([
+            {"id":"model","type":"select","options":[{"value":"terra","name":"6.1 Terra"}]},
+            {"id":"effort","type":"select","options":[{"value":"medium","name":"Medium"}]}
+        ]).to_string();
+        for (project, agent, model, reasoning) in [
+            ("a","a-codex",Some("terra"),Some("medium")),
+            ("a","a-pi",Some("stale"),None),
+            ("a","a-default",None,None),
+            ("b","b-codex",Some("different"),None),
+        ] {
+            conn.execute("INSERT INTO ma_member_model_options VALUES (?1,?2,'codex',?3,?4)",
+                params![project, agent, catalog, serde_json::to_string(&Selection {
+                    model: model.map(str::to_owned), reasoning: reasoning.map(str::to_owned),
+                })?])?;
+        }
+        let summaries = member_model_summaries(&conn, "a")?;
+        assert_eq!(serde_json::to_value(summaries)?, json!({
+            "a-codex":{"model":"6.1 Terra","reasoning":"Medium"}
+        }));
+        Ok(())
     }
 }

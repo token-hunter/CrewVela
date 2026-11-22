@@ -179,6 +179,8 @@ pub struct ConversationSnapshot {
     pub member_policies: Vec<ConversationPolicyEntry>,
     pub runtime_capabilities: Vec<ConversationRuntimeCapability>,
     pub archived_task_rules: Vec<ConversationArchivedRule>,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub(crate) member_model_summaries: std::collections::BTreeMap<String, super::conversation_models::MemberModelSummary>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -723,7 +725,8 @@ fn snapshot_with(connection: &Connection, project_id: &str) -> Result<Conversati
         project_policy: policy::policy_entry(connection, project_id, None)?,
         member_policies: policy::member_policies(connection, project_id)?,
         runtime_capabilities,
-        archived_task_rules: policy::archived_rules(connection, project_id)? })
+        archived_task_rules: policy::archived_rules(connection, project_id)?,
+        member_model_summaries: super::conversation_models::member_model_summaries(connection, project_id)? })
 }
 fn bounded_text(value: &str, label: &str) -> Result<String> {
     let value = value.trim();

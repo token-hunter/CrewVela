@@ -240,7 +240,15 @@ const mock = {
     if (command === "ma_run_log_history") {
       return structuredClone(runLogs.filter(log => log.projectId === args.projectId && log.runId === args.runId).slice(-args.limit));
     }
-    if (command === "ma_conversation_snapshot") return structuredClone(chats[args.projectId]);
+    if (command === "ma_conversation_snapshot") {
+      const modelSummaries = Object.fromEntries([...memberModelSettings]
+        .filter(([key, selection]) => key.startsWith(`${args.projectId}:`) && (selection.model || selection.reasoning))
+        .map(([key, selection]) => [key.split(":")[1], {
+          model: selection.model === "fixture-a" ? "测试模型 A" : selection.model,
+          reasoning: selection.reasoning === "high" ? "高" : selection.reasoning,
+        }]));
+      return structuredClone({ ...chats[args.projectId], memberModelSummaries: modelSummaries });
+    }
     if (["ma_conversation_member_models", "ma_set_conversation_member_models"].includes(command)) {
       const key = `${args.projectId}:${args.agentId}`;
       if (command === "ma_set_conversation_member_models") memberModelSettings.set(key, args.selection);
