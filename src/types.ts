@@ -147,6 +147,8 @@ export type GitSettingsStyle = "classic" | "railway";
 export type WorktreeSettingsStyle = "classic" | "greenhouse";
 export type NotificationSettingsStyle = "classic" | "mixer" | "bellbox";
 export type AutomationSettingsStyle = "classic" | "sundial";
+export type BrowserControlSettingsStyle = "classic" | "patchbay";
+export type ArchivedSessionsSettingsStyle = "classic" | "tea";
 export type PrivacySettingsStyle = "classic" | "vault";
 
 export interface AppAppearance {
@@ -164,6 +166,8 @@ export interface AppAppearance {
   worktreeSettingsStyle?: WorktreeSettingsStyle;
   notificationSettingsStyle?: NotificationSettingsStyle;
   automationSettingsStyle?: AutomationSettingsStyle;
+  browserControlSettingsStyle?: BrowserControlSettingsStyle;
+  archivedSessionsSettingsStyle?: ArchivedSessionsSettingsStyle;
   privacySettingsStyle?: PrivacySettingsStyle;
 }
 

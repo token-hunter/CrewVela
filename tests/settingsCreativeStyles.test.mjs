@@ -2,14 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_APPEARANCE,
+  DEFAULT_ARCHIVED_SESSIONS_SETTINGS_STYLE,
   DEFAULT_AUTOMATION_SETTINGS_STYLE,
+  DEFAULT_BROWSER_CONTROL_SETTINGS_STYLE,
   DEFAULT_GENERAL_SETTINGS_STYLE,
   DEFAULT_GIT_SETTINGS_STYLE,
   DEFAULT_NOTIFICATION_SETTINGS_STYLE,
   DEFAULT_PRIVACY_SETTINGS_STYLE,
   DEFAULT_WORKTREE_SETTINGS_STYLE,
   loadAppearance,
+  resolveArchivedSessionsSettingsStyle,
   resolveAutomationSettingsStyle,
+  resolveBrowserControlSettingsStyle,
   resolveGeneralSettingsStyle,
   resolveGitSettingsStyle,
   resolveNotificationSettingsStyle,
@@ -35,13 +39,15 @@ function withMockStorage(fn) {
   }
 }
 
-test("6 项设置页创意风格全部默认为现有经典设计，并支持各自模式持久化", () => {
+test("8 项设置页创意风格全部默认为现有经典设计，并支持各自模式持久化", () => {
   withMockStorage(() => {
     assert.equal(DEFAULT_GENERAL_SETTINGS_STYLE, "classic");
     assert.equal(DEFAULT_GIT_SETTINGS_STYLE, "classic");
     assert.equal(DEFAULT_WORKTREE_SETTINGS_STYLE, "classic");
     assert.equal(DEFAULT_NOTIFICATION_SETTINGS_STYLE, "classic");
     assert.equal(DEFAULT_AUTOMATION_SETTINGS_STYLE, "classic");
+    assert.equal(DEFAULT_BROWSER_CONTROL_SETTINGS_STYLE, "classic");
+    assert.equal(DEFAULT_ARCHIVED_SESSIONS_SETTINGS_STYLE, "classic");
     assert.equal(DEFAULT_PRIVACY_SETTINGS_STYLE, "classic");
 
     assert.equal(resolveGeneralSettingsStyle(DEFAULT_APPEARANCE), "classic");
@@ -49,6 +55,8 @@ test("6 项设置页创意风格全部默认为现有经典设计，并支持各
     assert.equal(resolveWorktreeSettingsStyle(DEFAULT_APPEARANCE), "classic");
     assert.equal(resolveNotificationSettingsStyle(DEFAULT_APPEARANCE), "classic");
     assert.equal(resolveAutomationSettingsStyle(DEFAULT_APPEARANCE), "classic");
+    assert.equal(resolveBrowserControlSettingsStyle(DEFAULT_APPEARANCE), "classic");
+    assert.equal(resolveArchivedSessionsSettingsStyle(DEFAULT_APPEARANCE), "classic");
     assert.equal(resolvePrivacySettingsStyle(DEFAULT_APPEARANCE), "classic");
 
     saveAppearance(
@@ -59,6 +67,8 @@ test("6 项设置页创意风格全部默认为现有经典设计，并支持各
         worktreeSettingsStyle: "greenhouse",
         notificationSettingsStyle: "mixer",
         automationSettingsStyle: "sundial",
+        browserControlSettingsStyle: "patchbay",
+        archivedSessionsSettingsStyle: "tea",
         privacySettingsStyle: "vault",
       },
       "dark",
@@ -70,6 +80,8 @@ test("6 项设置页创意风格全部默认为现有经典设计，并支持各
     assert.equal(resolveWorktreeSettingsStyle(loaded), "greenhouse");
     assert.equal(resolveNotificationSettingsStyle(loaded), "mixer");
     assert.equal(resolveAutomationSettingsStyle(loaded), "sundial");
+    assert.equal(resolveBrowserControlSettingsStyle(loaded), "patchbay");
+    assert.equal(resolveArchivedSessionsSettingsStyle(loaded), "tea");
     assert.equal(resolvePrivacySettingsStyle(loaded), "vault");
 
     saveAppearance(
@@ -94,6 +106,8 @@ test("非法或损坏的页面风格缓存值自动回退到经典默认设计",
         worktreeSettingsStyle: "invalid_c",
         notificationSettingsStyle: "invalid_d",
         automationSettingsStyle: "invalid_e",
+        browserControlSettingsStyle: "invalid_g",
+        archivedSessionsSettingsStyle: "invalid_h",
         privacySettingsStyle: "invalid_f",
       }),
     );
@@ -104,6 +118,8 @@ test("非法或损坏的页面风格缓存值自动回退到经典默认设计",
     assert.equal(loaded.worktreeSettingsStyle, undefined);
     assert.equal(loaded.notificationSettingsStyle, undefined);
     assert.equal(loaded.automationSettingsStyle, undefined);
+    assert.equal(loaded.browserControlSettingsStyle, undefined);
+    assert.equal(loaded.archivedSessionsSettingsStyle, undefined);
     assert.equal(loaded.privacySettingsStyle, undefined);
 
     assert.equal(resolveGeneralSettingsStyle(loaded), "classic");
@@ -111,6 +127,8 @@ test("非法或损坏的页面风格缓存值自动回退到经典默认设计",
     assert.equal(resolveWorktreeSettingsStyle(loaded), "classic");
     assert.equal(resolveNotificationSettingsStyle(loaded), "classic");
     assert.equal(resolveAutomationSettingsStyle(loaded), "classic");
+    assert.equal(resolveBrowserControlSettingsStyle(loaded), "classic");
+    assert.equal(resolveArchivedSessionsSettingsStyle(loaded), "classic");
     assert.equal(resolvePrivacySettingsStyle(loaded), "classic");
   });
 });

@@ -8,7 +8,9 @@ import type {
   AppearanceAccent,
   AppearanceBackground,
   AppearanceTheme,
+  ArchivedSessionsSettingsStyle,
   AutomationSettingsStyle,
+  BrowserControlSettingsStyle,
   GeneralSettingsStyle,
   GitSettingsStyle,
   NotificationSettingsStyle,
@@ -19,7 +21,9 @@ import type {
 } from "../types";
 import {
   DEFAULT_APPEARANCE,
+  resolveArchivedSessionsSettingsStyle,
   resolveAutomationSettingsStyle,
+  resolveBrowserControlSettingsStyle,
   resolveGeneralSettingsStyle,
   resolveGitSettingsStyle,
   resolveNotificationSettingsStyle,
@@ -153,12 +157,52 @@ function ProjectStylePreview({ style }: { style: ProjectManagementStyle }) {
   );
 }
 
+function ProjectStylePillSwatch({ style }: { style: ProjectManagementStyle }) {
+  if (style === "classic") {
+    return (
+      <span className="appearance-pm-swatch is-classic" aria-hidden="true">
+        <i />
+        <i className="short" />
+      </span>
+    );
+  }
+  if (style === "gallery") {
+    return <span className="appearance-pm-swatch is-gallery" aria-hidden="true" />;
+  }
+  if (style === "vinyl") {
+    return (
+      <span className="appearance-pm-swatch is-vinyl" aria-hidden="true">
+        <i className="disc" />
+        <i className="sleeve" />
+      </span>
+    );
+  }
+  if (style === "pinboard") {
+    return (
+      <span className="appearance-pm-swatch is-pinboard" aria-hidden="true">
+        <i />
+        <b />
+      </span>
+    );
+  }
+  return (
+    <span className="appearance-pm-swatch is-studio" aria-hidden="true">
+      <i className="on" />
+      <i />
+      <i />
+      <i className="on" />
+    </span>
+  );
+}
+
 type ExtraStyleModuleId =
   | "general"
   | "git"
   | "worktrees"
   | "notifications"
   | "automation"
+  | "browserControl"
+  | "archivedSessions"
   | "privacy";
 
 function ExtraStylePreview({ module, mode }: { module: ExtraStyleModuleId; mode: string }) {
@@ -247,6 +291,37 @@ function ExtraStylePreview({ module, mode }: { module: ExtraStyleModuleId; mode:
           <circle cx="26" cy="7" r="3" fill="var(--accent)" />
           <circle cx="43" cy="31" r="2.8" fill="var(--success)" />
           <circle cx="15" cy="19" r="2.6" fill="#6aa6f8" />
+        </svg>
+      </span>
+    );
+  }
+  if (module === "browserControl") {
+    return (
+      <span className="appearance-more-preview is-patchbay" aria-hidden="true">
+        <svg viewBox="0 0 80 46" width="68" height="39">
+          <circle cx="16" cy="23" r="5" fill="var(--bg-elev)" stroke="var(--accent)" strokeWidth="1.8" />
+          <circle cx="40" cy="23" r="3.8" fill="var(--bg-elev)" stroke="var(--warn, #e5a94c)" strokeWidth="1.5" />
+          <circle cx="64" cy="14" r="4.6" fill="var(--bg-elev)" stroke="var(--accent)" strokeWidth="1.8" />
+          <circle cx="64" cy="33" r="4.4" fill="var(--bg-elev)" stroke="var(--border-strong)" strokeWidth="1.5" />
+          <path d="M40 23 C50 23, 52 33, 60 33" fill="none" stroke="var(--border-strong)" strokeWidth="1.3" strokeDasharray="2.5 2.5" />
+          <path d="M16 23 C28 23, 30 23, 40 23 C50 23, 52 14, 64 14" fill="none" stroke="var(--accent)" strokeWidth="2.4" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+  if (module === "archivedSessions") {
+    return (
+      <span className="appearance-more-preview is-tea" aria-hidden="true">
+        <svg viewBox="0 0 64 48" width="54" height="40">
+          <path d="M37 15 C39 11, 36 8, 39 4" fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" />
+          <path d="M43 16 C45 12, 42 9, 45 6" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" opacity="0.82" />
+          <rect x="20" y="18" width="24" height="24" rx="5" fill="var(--bg-elev)" stroke="var(--accent)" strokeWidth="1.5" />
+          <rect x="28" y="21" width="8" height="17" rx="2" fill="var(--warn, #e5a94c)" opacity="0.72" />
+          <circle cx="32" cy="34" r="1.8" fill="var(--accent)" />
+          <g transform="translate(-4, -3) rotate(-11 32 16)">
+            <rect x="22" y="13" width="20" height="5" rx="2.4" fill="var(--warn, #e5a94c)" opacity="0.85" />
+            <circle cx="32" cy="11.5" r="2.2" fill="var(--accent)" />
+          </g>
         </svg>
       </span>
     );
@@ -340,16 +415,27 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
   const activeWorktreeStyle = resolveWorktreeSettingsStyle(appearance);
   const activeNotificationStyle = resolveNotificationSettingsStyle(appearance);
   const activeAutomationStyle = resolveAutomationSettingsStyle(appearance);
+  const activeBrowserControlStyle = resolveBrowserControlSettingsStyle(appearance);
+  const activeArchivedSessionsStyle = resolveArchivedSessionsSettingsStyle(appearance);
   const activePrivacyStyle = resolvePrivacySettingsStyle(appearance);
 
+  const currentProjectStyleOption =
+    PROJECT_STYLE_OPTIONS.find((item) => item.id === activeProjectStyle) ??
+    PROJECT_STYLE_OPTIONS[0];
+  const isProjectStyleCreative = activeProjectStyle !== "classic";
+
   const extraCreativeCount = [
+    isProjectStyleCreative,
     activeGeneralStyle !== "classic",
     activeGitStyle !== "classic",
     activeWorktreeStyle !== "classic",
     activeNotificationStyle !== "classic",
     activeAutomationStyle !== "classic",
+    activeBrowserControlStyle !== "classic",
+    activeArchivedSessionsStyle !== "classic",
     activePrivacyStyle !== "classic",
   ].filter(Boolean).length;
+  const totalStyleModules = 9;
 
   const extraStyleModules: Array<{
     id: ExtraStyleModuleId;
@@ -418,6 +504,34 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
         onChange((current) => ({
           ...current,
           automationSettingsStyle: mode as AutomationSettingsStyle,
+        })),
+    },
+    {
+      id: "browserControl",
+      title: "浏览器控制",
+      activeMode: activeBrowserControlStyle,
+      options: [
+        { id: "classic", label: "经典", hint: "现有单栏表单与运行状态布局" },
+        { id: "patchbay", label: "网页跳线总机", hint: "实体弯曲跳线直连内置面板与外部浏览器渠道" },
+      ],
+      onSelect: (mode) =>
+        onChange((current) => ({
+          ...current,
+          browserControlSettingsStyle: mode as BrowserControlSettingsStyle,
+        })),
+    },
+    {
+      id: "archivedSessions",
+      title: "归档会话",
+      activeMode: activeArchivedSessionsStyle,
+      options: [
+        { id: "classic", label: "经典", hint: "现有分组归档列表与快捷操作栏" },
+        { id: "tea", label: "岁茶藏罐架", hint: "项目木架密封茶罐与顶部开盖查香恢复台" },
+      ],
+      onSelect: (mode) =>
+        onChange((current) => ({
+          ...current,
+          archivedSessionsSettingsStyle: mode as ArchivedSessionsSettingsStyle,
         })),
     },
     {
@@ -671,71 +785,34 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
       </SettingsSection>
 
       <SettingsSection
-        className="appearance-settings-section appearance-project-style-section"
-        title="项目管理"
-        description="自定义「项目管理」页面的展示模式与互动玩法，切换后即时生效。"
-      >
-        <div className="appearance-project-style-grid" role="group" aria-label="项目管理模式">
-          {PROJECT_STYLE_OPTIONS.map((option) => {
-            const selected = activeProjectStyle === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                className={`appearance-start-style-option${selected ? " selected" : ""}`}
-                aria-label={option.label}
-                aria-pressed={selected}
-                onClick={() =>
-                  onChange((current) => ({
-                    ...current,
-                    projectManagementStyle: option.id,
-                  }))
-                }
-              >
-                <span className="appearance-start-style-stage">
-                  <ProjectStylePreview style={option.id} />
-                  {selected && (
-                    <span className="appearance-option-check">
-                      <CheckIcon size={13} weight="bold" />
-                    </span>
-                  )}
-                </span>
-                <span className="appearance-start-style-meta">
-                  <strong>
-                    {option.label}
-                    <em>{option.tag}</em>
-                  </strong>
-                  <small>{option.hint}</small>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
         className="appearance-settings-section appearance-more-styles-section"
         title="更多页面风格"
-        description="为常规、Git、Worktrees、通知、自动化与隐私开启可选创意模式，默认均保持现有设计。"
+        description="为项目管理、常规、Git、Worktrees、通知、自动化、浏览器控制、归档会话与隐私开启可选创意模式，默认均保持现有设计。"
       >
         <div className="appearance-more-styles-bar">
           <span className="appearance-more-styles-summary">
-            已开启创意模式：<strong>{extraCreativeCount} / 6</strong>
+            已开启创意模式：<strong>{extraCreativeCount} / {totalStyleModules}</strong>
           </span>
           <div className="appearance-more-styles-actions">
             <button
               type="button"
               className="btn secondary"
-              disabled={extraCreativeCount === 6}
+              disabled={extraCreativeCount === totalStyleModules}
               onClick={() =>
                 onChange((current) => ({
                   ...current,
+                  projectManagementStyle:
+                    resolveProjectManagementStyle(current) === "classic"
+                      ? "vinyl"
+                      : resolveProjectManagementStyle(current),
                   generalSettingsStyle: "coffee",
                   gitSettingsStyle: "railway",
                   worktreeSettingsStyle: "greenhouse",
                   notificationSettingsStyle:
                     resolveNotificationSettingsStyle(current) === "bellbox" ? "bellbox" : "mixer",
                   automationSettingsStyle: "sundial",
+                  browserControlSettingsStyle: "patchbay",
+                  archivedSessionsSettingsStyle: "tea",
                   privacySettingsStyle: "vault",
                 }))
               }
@@ -749,11 +826,14 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
               onClick={() =>
                 onChange((current) => ({
                   ...current,
+                  projectManagementStyle: "classic",
                   generalSettingsStyle: "classic",
                   gitSettingsStyle: "classic",
                   worktreeSettingsStyle: "classic",
                   notificationSettingsStyle: "classic",
                   automationSettingsStyle: "classic",
+                  browserControlSettingsStyle: "classic",
+                  archivedSessionsSettingsStyle: "classic",
                   privacySettingsStyle: "classic",
                 }))
               }
@@ -764,6 +844,50 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
         </div>
 
         <div className="appearance-more-styles-grid">
+          <article
+            className={`appearance-more-style-card is-featured${isProjectStyleCreative ? " is-creative" : ""}`}
+          >
+            <div className="appearance-more-style-top">
+              <span className="appearance-more-preview is-featured-pm" aria-hidden="true">
+                <ProjectStylePreview style={activeProjectStyle} />
+              </span>
+              <div className="appearance-more-style-copy">
+                <strong>
+                  项目管理
+                  {isProjectStyleCreative && <em>创意中</em>}
+                </strong>
+                <small>{currentProjectStyleOption.hint}</small>
+              </div>
+              <div className="appearance-more-style-top-end">
+                <span className="appearance-more-mode-tag">
+                  {currentProjectStyleOption.label} · {currentProjectStyleOption.tag}
+                </span>
+              </div>
+            </div>
+            <div className="appearance-pm-pills" role="group" aria-label="项目管理模式">
+              {PROJECT_STYLE_OPTIONS.map((option) => {
+                const selected = activeProjectStyle === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`appearance-pm-pill-btn${selected ? " selected" : ""}`}
+                    aria-pressed={selected}
+                    onClick={() =>
+                      onChange((current) => ({
+                        ...current,
+                        projectManagementStyle: option.id,
+                      }))
+                    }
+                  >
+                    <ProjectStylePillSwatch style={option.id} />
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </article>
+
           {extraStyleModules.map((mod) => {
             const currentOpt = mod.options.find((o) => o.id === mod.activeMode) ?? mod.options[0];
             const isCreative = mod.activeMode !== "classic";

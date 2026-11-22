@@ -1265,19 +1265,530 @@
   line-height: 1.5;
 }
 
+/* ---------------- 7. 浏览器控制 · 网页跳线总机 (patchbay) ---------------- */
+.browser-patchbay-mode .bc-patch-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.browser-patchbay-mode .bc-patch-hero {
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 2.2%, var(--bg-elev));
+  overflow: hidden;
+}
+
+.browser-patchbay-mode .bc-patch-master {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-elev));
+}
+
+.browser-patchbay-mode .bc-patch-master .browser-control-toggle {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+}
+
+.browser-patchbay-mode .bc-patch-stage {
+  padding: 16px 18px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--warn, #e5a94c) 5%, var(--bg-sunken)),
+    var(--bg-sunken)
+  );
+  display: grid;
+  grid-template-columns: 356px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.browser-patchbay-mode .bc-patch-svg {
+  width: 100%;
+  max-width: 350px;
+  height: auto;
+  display: block;
+}
+
+.browser-patchbay-mode .bc-patch-jack {
+  cursor: pointer;
+  outline: none;
+}
+
+.browser-patchbay-mode .bc-patch-jack.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.browser-patchbay-mode .bc-patch-jack:focus-visible rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.browser-patchbay-mode .bc-patch-cord {
+  transition: stroke 200ms ease;
+}
+
+@keyframes cvPatchPulse {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
+
+.browser-patchbay-mode .bc-patch-pulse {
+  stroke-dasharray: 5 19;
+  animation: cvPatchPulse 1.3s linear infinite;
+}
+
+.browser-patchbay-mode .bc-patch-telemetry {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.browser-patchbay-mode .bc-patch-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.browser-patchbay-mode .bc-patch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.browser-patchbay-mode .bc-patch-chip i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  opacity: 0.55;
+}
+
+.browser-patchbay-mode .bc-patch-chip.is-live i {
+  background: var(--success);
+  opacity: 1;
+}
+
+.browser-patchbay-mode .bc-patch-chip.is-accent i {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.browser-patchbay-mode .bc-patch-chip.is-cool i {
+  background: #6aa6f8;
+  opacity: 1;
+}
+
+.browser-patchbay-mode .bc-patch-telemetry h3 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.browser-patchbay-mode .bc-patch-telemetry p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+
+.browser-patchbay-mode .bc-patch-options-grid {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  transition: opacity 180ms ease;
+}
+
+.browser-patchbay-mode .bc-patch-options-grid.is-locked {
+  opacity: 0.48;
+}
+
+.browser-patchbay-mode .bc-patch-card {
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 2.2%, var(--bg-elev));
+  padding: 15px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.browser-patchbay-mode .bc-patch-card > header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.browser-patchbay-mode .bc-patch-card > header p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.browser-patchbay-mode .bc-patch-channels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.browser-patchbay-mode .bc-patch-channel-btn {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.browser-patchbay-mode .bc-patch-channel-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.browser-patchbay-mode .bc-patch-channel-btn.selected {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 11%, var(--bg-sunken));
+}
+
+.browser-patchbay-mode .bc-patch-channel-btn strong {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.browser-patchbay-mode .bc-patch-channel-btn.selected strong {
+  color: var(--accent);
+}
+
+.browser-patchbay-mode .bc-patch-channel-btn small {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.browser-patchbay-mode .bc-patch-custom-path {
+  margin-top: 2px;
+}
+
+.browser-patchbay-mode .bc-patch-switches {
+  display: grid;
+  gap: 9px;
+}
+
+.browser-patchbay-mode .bc-patch-switch-row {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  padding: 9px 12px;
+}
+
+.browser-patchbay-mode .bc-patch-switch-row .browser-control-toggle {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+}
+
+.browser-patchbay-mode .bc-patch-status {
+  margin-top: 14px;
+}
+
+.browser-patchbay-mode .bc-patch-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.browser-patchbay-mode .bc-patch-status-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.browser-patchbay-mode .bc-patch-status-head small {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.browser-patchbay-mode .bc-patch-fact-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.browser-patchbay-mode .bc-patch-fact-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.browser-patchbay-mode .bc-patch-fact-pill i.on {
+  background: var(--success);
+}
+
+/* ---------------- 8. 归档会话 · 岁茶藏罐架 (tea) ---------------- */
+.archived-tea-mode .archived-tea-stage {
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-sunken) 94%, var(--accent) 6%),
+    color-mix(in srgb, var(--text) 2%, var(--bg-elev))
+  );
+  padding: 16px 18px 15px;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+  overflow: hidden;
+}
+
+.archived-tea-mode .archived-tea-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.archived-tea-mode .archived-tea-svg {
+  width: 244px;
+  height: 148px;
+  overflow: visible;
+}
+
+.archived-tea-mode .archived-tea-lid {
+  transform-origin: 124px 56px;
+  transition: transform 360ms cubic-bezier(0.22, 1.25, 0.36, 1);
+}
+
+.archived-tea-mode .archived-tea-stage.unsealed .archived-tea-lid {
+  transform: translate(-12px, -11px) rotate(-13deg);
+}
+
+@keyframes cvTeaSteam {
+  0% { transform: translateY(4px); opacity: 0.25; }
+  50% { transform: translateY(-6px); opacity: 0.85; }
+  100% { transform: translateY(-13px); opacity: 0.15; }
+}
+
+.archived-tea-mode .archived-tea-stage.unsealed .steam-1 {
+  animation: cvTeaSteam 2.6s ease-in-out infinite;
+}
+
+.archived-tea-mode .archived-tea-stage.unsealed .steam-2 {
+  animation: cvTeaSteam 2.6s ease-in-out 0.7s infinite;
+}
+
+.archived-tea-mode .archived-tea-stage.unsealed .steam-3 {
+  animation: cvTeaSteam 2.6s ease-in-out 1.4s infinite;
+}
+
+.archived-tea-mode .archived-tea-inspect {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.archived-tea-mode .archived-tea-kicker {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.archived-tea-mode .archived-tea-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 650;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archived-tea-mode .archived-tea-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.archived-tea-mode .archived-tea-path {
+  display: block;
+  font: 11.5px var(--mono-font);
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archived-tea-mode .archived-tea-actions {
+  margin-top: 2px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.archived-tea-mode .archived-tea-shelves {
+  display: grid;
+  gap: 14px;
+}
+
+.archived-tea-mode .archived-tea-shelf {
+  display: grid;
+  gap: 8px;
+}
+
+.archived-tea-mode .archived-tea-shelf-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.archived-tea-mode .archived-tea-shelf-head strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.archived-tea-mode .archived-tea-shelf-head span {
+  margin-left: auto;
+  font-size: 11.5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+
+.archived-tea-mode .archived-tea-plank {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  border-bottom: 4px solid color-mix(in srgb, var(--warn, #e5a94c) 32%, var(--border-strong));
+  background: color-mix(in srgb, var(--text) 2%, var(--bg-elev));
+}
+
+.archived-tea-mode .archived-tea-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.archived-tea-mode .archived-tea-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.archived-tea-mode .archived-tea-card.selected {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-sunken));
+}
+
+.archived-tea-mode .archived-tea-mini {
+  width: 34px;
+  height: 44px;
+  flex: none;
+}
+
+.archived-tea-mode .archived-tea-mini-lid {
+  transition: transform 200ms ease;
+}
+
+.archived-tea-mode .archived-tea-card:hover .archived-tea-mini-lid,
+.archived-tea-mode .archived-tea-card.selected .archived-tea-mini-lid {
+  transform: translateY(-3px);
+}
+
+.archived-tea-mode .archived-tea-card-body {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.archived-tea-mode .archived-tea-card-body > strong {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archived-tea-mode .archived-tea-card-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.archived-tea-mode .archived-tea-card-sub > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---------------- 响应式适配 ---------------- */
 @media (max-width: 820px) {
   .general-coffee-layout,
   .noti-bellbox-layout,
   .auto-sundial-stage,
-  .privacy-vault-hero {
+  .privacy-vault-hero,
+  .browser-patchbay-mode .bc-patch-stage,
+  .archived-tea-mode .archived-tea-stage {
     grid-template-columns: minmax(0, 1fr);
   }
   .general-coffee-font-bar,
   .general-coffee-proxy-grid,
   .git-railway-controls,
   .noti-mixer-meter,
-  .auto-sundial-mini-grid {
+  .auto-sundial-mini-grid,
+  .browser-patchbay-mode .bc-patch-options-grid,
+  .archived-tea-mode .archived-tea-plank {
     grid-template-columns: minmax(0, 1fr);
   }
   .noti-channel-grid,

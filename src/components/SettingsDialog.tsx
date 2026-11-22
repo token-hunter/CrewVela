@@ -28,8 +28,10 @@ import { CollaborationSettingsPanel } from "./CollaborationSettingsPanel";
 import { SharedMemorySettingsPanel } from "./SharedMemorySettingsPanel";
 import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
 import {
+  resolveArchivedSessionsSettingsStyle,
   resolveAutomationSettingsStyle,
   resolveBaseTheme,
+  resolveBrowserControlSettingsStyle,
   resolveGeneralSettingsStyle,
   resolveGitSettingsStyle,
   resolveNotificationSettingsStyle,
@@ -455,6 +457,40 @@ export function SettingsDialog({
                     onOpenAppearanceSettings={() => setActiveSection("appearance")}
                   />
                 )}
+                {activeSection === "browserControl" && (
+                  <SettingsStyleMenu
+                    label="浏览器控制页面模式"
+                    value={resolveBrowserControlSettingsStyle(appearance)}
+                    options={[
+                      { id: "classic", label: "经典布局" },
+                      { id: "patchbay", label: "网页跳线总机" },
+                    ]}
+                    onChange={(style) =>
+                      onAppearanceChange((current) => ({
+                        ...current,
+                        browserControlSettingsStyle: style,
+                      }))
+                    }
+                    onOpenAppearanceSettings={() => setActiveSection("appearance")}
+                  />
+                )}
+                {activeSection === "archivedSessions" && (
+                  <SettingsStyleMenu
+                    label="归档会话页面模式"
+                    value={resolveArchivedSessionsSettingsStyle(appearance)}
+                    options={[
+                      { id: "classic", label: "经典列表" },
+                      { id: "tea", label: "岁茶藏罐架" },
+                    ]}
+                    onChange={(style) =>
+                      onAppearanceChange((current) => ({
+                        ...current,
+                        archivedSessionsSettingsStyle: style,
+                      }))
+                    }
+                    onOpenAppearanceSettings={() => setActiveSection("appearance")}
+                  />
+                )}
                 {activeSection === "privacy" && (
                   <SettingsStyleMenu
                     label="隐私页面模式"
@@ -547,7 +583,9 @@ export function SettingsDialog({
             ) : activeSection === "worktrees" ? (
               <WorktreeSettingsPanel viewStyle={resolveWorktreeSettingsStyle(appearance)} />
             ) : activeSection === "browserControl" ? (
-              <BrowserControlSettingsPanel />
+              <BrowserControlSettingsPanel
+                viewStyle={resolveBrowserControlSettingsStyle(appearance)}
+              />
             ) : activeSection === "skills" ? (
               <SkillCenterPanel projects={projects} />
             ) : activeSection === "notifications" ? (
@@ -563,6 +601,7 @@ export function SettingsDialog({
                 onRestore={onRestoreArchivedSession}
                 onDelete={onDeleteArchivedSession}
                 onViewTranscript={onViewArchivedTranscript}
+                viewStyle={resolveArchivedSessionsSettingsStyle(appearance)}
               />
             ) : activeSection === "companionship" ? (
               <PetSettingsPanel settings={petSettings} onChange={onPetSettingsChange} />

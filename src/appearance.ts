@@ -4,7 +4,9 @@ import type {
   AppearanceBackground,
   AppearanceTheme,
   AppTheme,
+  ArchivedSessionsSettingsStyle,
   AutomationSettingsStyle,
+  BrowserControlSettingsStyle,
   GeneralSettingsStyle,
   GitSettingsStyle,
   NotificationSettingsStyle,
@@ -58,6 +60,18 @@ export const NOTIFICATION_SETTINGS_STYLES: NotificationSettingsStyle[] = [
 
 export const DEFAULT_AUTOMATION_SETTINGS_STYLE: AutomationSettingsStyle = "classic";
 export const AUTOMATION_SETTINGS_STYLES: AutomationSettingsStyle[] = ["classic", "sundial"];
+
+export const DEFAULT_BROWSER_CONTROL_SETTINGS_STYLE: BrowserControlSettingsStyle = "classic";
+export const BROWSER_CONTROL_SETTINGS_STYLES: BrowserControlSettingsStyle[] = [
+  "classic",
+  "patchbay",
+];
+
+export const DEFAULT_ARCHIVED_SESSIONS_SETTINGS_STYLE: ArchivedSessionsSettingsStyle = "classic";
+export const ARCHIVED_SESSIONS_SETTINGS_STYLES: ArchivedSessionsSettingsStyle[] = [
+  "classic",
+  "tea",
+];
 
 export const DEFAULT_PRIVACY_SETTINGS_STYLE: PrivacySettingsStyle = "classic";
 export const PRIVACY_SETTINGS_STYLES: PrivacySettingsStyle[] = ["classic", "vault"];
@@ -150,6 +164,12 @@ export function loadAppearance(): AppAppearance {
           : {}),
         ...(includesValue(AUTOMATION_SETTINGS_STYLES, stored.automationSettingsStyle)
           ? { automationSettingsStyle: stored.automationSettingsStyle }
+          : {}),
+        ...(includesValue(BROWSER_CONTROL_SETTINGS_STYLES, stored.browserControlSettingsStyle)
+          ? { browserControlSettingsStyle: stored.browserControlSettingsStyle }
+          : {}),
+        ...(includesValue(ARCHIVED_SESSIONS_SETTINGS_STYLES, stored.archivedSessionsSettingsStyle)
+          ? { archivedSessionsSettingsStyle: stored.archivedSessionsSettingsStyle }
           : {}),
         ...(includesValue(PRIVACY_SETTINGS_STYLES, stored.privacySettingsStyle)
           ? { privacySettingsStyle: stored.privacySettingsStyle }
@@ -248,6 +268,25 @@ export function resolveAutomationSettingsStyle(
   return includesValue(AUTOMATION_SETTINGS_STYLES, appearance.automationSettingsStyle)
     ? appearance.automationSettingsStyle
     : DEFAULT_AUTOMATION_SETTINGS_STYLE;
+}
+
+export function resolveBrowserControlSettingsStyle(
+  appearance: AppAppearance,
+): BrowserControlSettingsStyle {
+  return includesValue(BROWSER_CONTROL_SETTINGS_STYLES, appearance.browserControlSettingsStyle)
+    ? appearance.browserControlSettingsStyle
+    : DEFAULT_BROWSER_CONTROL_SETTINGS_STYLE;
+}
+
+export function resolveArchivedSessionsSettingsStyle(
+  appearance: AppAppearance,
+): ArchivedSessionsSettingsStyle {
+  return includesValue(
+    ARCHIVED_SESSIONS_SETTINGS_STYLES,
+    appearance.archivedSessionsSettingsStyle,
+  )
+    ? appearance.archivedSessionsSettingsStyle
+    : DEFAULT_ARCHIVED_SESSIONS_SETTINGS_STYLE;
 }
 
 export function resolvePrivacySettingsStyle(
