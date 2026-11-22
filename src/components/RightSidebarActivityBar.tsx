@@ -47,6 +47,10 @@ function ResourceIcon({ id }: { id: string }) {
 export function RightSidebarActivityBar(props: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLButtonElement>(null);
+  const isCollaboration = sidebarTabKind(props.activeTab) === "multi_agent";
+  const maximizeLabel = isCollaboration
+    ? (props.maximized ? "返回辅助栏" : "在 Bot 模式打开")
+    : (props.maximized ? "恢复工作面板" : "最大化工作面板");
   useEffect(() => {
     if (props.menuOpen) menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
   }, [props.menuOpen]);
@@ -68,8 +72,8 @@ export function RightSidebarActivityBar(props: Props) {
       <div className="right-sidebar-actions">
         <button ref={addRef} type="button" aria-label="新建工作面板标签" title="新建标签" aria-expanded={props.menuOpen}
           aria-haspopup="menu" onClick={() => props.onMenuChange(!props.menuOpen)}><PlusIcon size={18} /></button>
-        <button type="button" aria-label={props.maximized ? "恢复工作面板" : "最大化工作面板"}
-          title={props.maximized ? "恢复" : "最大化"} onClick={props.onToggleMaximize}>
+        <button type="button" aria-label={maximizeLabel}
+          title={isCollaboration ? maximizeLabel : (props.maximized ? "恢复" : "最大化")} onClick={props.onToggleMaximize}>
           {props.maximized ? <CornersInIcon size={17} /> : <CornersOutIcon size={17} />}</button>
         <button type="button" aria-label="收起工作面板" title="收起" onClick={props.onClose}><SidebarSimpleIcon size={17} /></button>
       </div>

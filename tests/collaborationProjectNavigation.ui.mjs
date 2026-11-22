@@ -77,21 +77,70 @@ try {
   assert.deepEqual(errors, []);
 
   const app = await browser.newPage({ viewport: { width: 1500, height: 900 } });
+  app.on("pageerror", error => errors.push(error.message));
+  await app.addInitScript(() => {
+    localStorage.setItem("crewvela.team-chat-recipient.B.conversation-B", "agent-B");
+  });
   await app.goto(`${base}/tests/fixtures/app-session-async-ui.html?tasks-nav=1`);
-  const shortcut = app.getByRole("navigation", { name: "主导航" }).getByRole("button", { name: "多智能体 · 协作项目总览", exact: true });
+  const shortcut = app.getByRole("navigation", { name: "主导航" }).getByRole("button", { name: "Bot 模式", exact: true });
   const appNav = app.getByRole("navigation", { name: "协作项目列表" });
+  const workPanel = app.getByRole("complementary", { name: "右侧栏", exact: true });
+  const openBot = workPanel.getByRole("button", { name: "在 Bot 模式打开", exact: true });
+  const returnToSidebar = workPanel.getByRole("button", { name: "返回辅助栏", exact: true });
+  const project = workPanel.getByRole("combobox", { name: "协作项目", exact: true });
   await shortcut.click();
   await appNav.getByRole("button", { name: "协作项目 A 待审批" }).waitFor();
   const appEditor = app.getByRole("combobox", { name: "给团队发消息", exact: true });
   await appEditor.fill("保留在原面板的输入");
   await shortcut.click();
   await appNav.waitFor({ state: "hidden" });
-  assert.equal(await app.getByRole("combobox", { name: "协作项目", exact: true }).inputValue(), "A");
+  assert.equal(await project.inputValue(), "A");
   assert.equal(await appEditor.inputValue(), "保留在原面板的输入");
-  await shortcut.click();
+  assert.equal(await openBot.getAttribute("title"), "在 Bot 模式打开");
+  const splitWidth = await workPanel.evaluate(panel => parseFloat(getComputedStyle(panel).getPropertyValue("--right-sidebar-width")));
+  await openBot.press("Enter");
   await appNav.getByRole("button", { name: "协作项目 B 运行中" }).click();
   await app.getByRole("heading", { name: "协作项目 B", exact: true }).waitFor();
-  console.log("协作项目导航通过：状态分组、搜索、草稿隔离、任务入口、新建协作与窄窗切换");
+  await returnToSidebar.click();
+  await appNav.waitFor({ state: "hidden" });
+  assert.equal(await project.inputValue(), "B");
+  await app.waitForFunction(width => {
+    const panel = document.querySelector(".unified-right-sidebar");
+    return panel && Math.abs(panel.getBoundingClientRect().width - width) < 1;
+  }, splitWidth);
+
+  await workPanel.getByRole("button", { name: "新建工作面板标签" }).click();
+  await workPanel.getByRole("menuitem", { name: "多智能体", exact: true }).click();
+  const collaborationTabs = workPanel.getByRole("tab", { name: "多智能体", exact: true });
+  assert.equal(await collaborationTabs.count(), 2);
+  assert.equal(await collaborationTabs.last().getAttribute("aria-selected"), "true");
+  const recipient = workPanel.getByRole("button", { name: "发给 成员 B，切回发给全体", exact: true });
+  const conversation = workPanel.getByRole("button", { name: /^切换会话：/ });
+  await recipient.waitFor();
+  const conversationName = await conversation.getAttribute("aria-label");
+  await appEditor.fill("验证付款流程的未发送草稿");
+  const originalEditor = await appEditor.elementHandle();
+
+  await shortcut.click();
+  await appNav.getByRole("button", { name: "协作项目 B 运行中" }).waitFor();
+  assert.equal(await shortcut.getAttribute("aria-pressed"), "true");
+  assert.equal(await collaborationTabs.last().getAttribute("aria-selected"), "true");
+  assert.equal(await returnToSidebar.getAttribute("title"), "返回辅助栏");
+  assert.equal(await conversation.getAttribute("aria-label"), conversationName);
+  assert.equal(await appEditor.inputValue(), "验证付款流程的未发送草稿");
+  await recipient.waitFor();
+
+  await returnToSidebar.press("Enter");
+  await openBot.waitFor();
+  assert.equal(await openBot.evaluate(el => el === document.activeElement), true);
+  assert.equal(await collaborationTabs.last().getAttribute("aria-selected"), "true");
+  assert.equal(await project.inputValue(), "B");
+  assert.equal(await conversation.getAttribute("aria-label"), conversationName);
+  assert.equal(await appEditor.inputValue(), "验证付款流程的未发送草稿");
+  assert.equal(await appEditor.evaluate((el, original) => el === original, originalEditor), true);
+  await recipient.waitFor();
+  assert.deepEqual(errors, []);
+  console.log("协作项目导航和 Bot 模式通过：项目分组、改名、任务入口、原会话、草稿和收件人保留");
 } finally {
   await browser.close();
 }

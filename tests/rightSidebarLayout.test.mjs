@@ -17,7 +17,7 @@ test("多智能体、项目文件和 Git 统一进入右侧栏页签", () => {
   assert.match(app, /activeRightSidebarTab/);
   assert.match(app, /unified-right-sidebar/);
   assert.doesNotMatch(sidebar, /sidebar-claude-shortcut/);
-  assert.match(sidebar, /aria-label="多智能体 · 协作项目总览"/);
+  assert.match(sidebar, /aria-label="Bot 模式"/);
   assert.match(app, /selectRightSidebarTab\("multi_agent", true\)/);
   assert.doesNotMatch(sidebar, /sidebar-git-shortcut/);
 });

@@ -2079,11 +2079,13 @@ export default function App() {
     [controlDetached, mountRightSidebarTab, rememberRightSidebarTab, showError],
   );
 
-  const collaborationOverviewOpen = sidebarMaximized && sidebarTabKind(activeRightSidebarTab ?? "") === "multi_agent";
+  const collaborationTabActive = sidebarTabKind(activeRightSidebarTab ?? "") === "multi_agent";
+  const collaborationOverviewOpen = sidebarMaximized && collaborationTabActive;
+  const toggleSidebarMaximized = useCallback(() => setSidebarMaximized(value => !value), []);
   const toggleCollaborationOverview = useCallback(() => {
-    if (collaborationOverviewOpen) setSidebarMaximized(false);
+    if (collaborationTabActive) toggleSidebarMaximized();
     else void selectRightSidebarTab("multi_agent", true);
-  }, [collaborationOverviewOpen, selectRightSidebarTab]);
+  }, [collaborationTabActive, selectRightSidebarTab, toggleSidebarMaximized]);
 
   useEffect(() => {
     if (activeRightSidebarTab) mountRightSidebarTab(activeRightSidebarTab);
@@ -2672,7 +2674,7 @@ export default function App() {
                     tabs={openRightSidebarTabs.map(id => ({ id, label: id === "start" ? "开始" : sidebarTabKind(id ?? "") === "files" ? "文件" : sidebarTabKind(id ?? "") === "browser" ? "浏览器" : sidebarTabKind(id ?? "") === "git" ? "Git" : sidebarTabKind(id ?? "") === "multi_agent" ? "多智能体" : shellLabel(sessions.find(item => item.id === id.slice(9))?.shell) }))}
                     onCloseTab={tab => void closeSidebarResource(tab)}
                     maximized={sidebarMaximized}
-                    onToggleMaximize={() => setSidebarMaximized(value => !value)}
+                    onToggleMaximize={toggleSidebarMaximized}
                     menuOpen={sidebarMenuOpen}
                     onMenuChange={setSidebarMenuOpen}
                     onOpenTool={tool => void openSidebarTool(tool)}

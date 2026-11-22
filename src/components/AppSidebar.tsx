@@ -302,9 +302,9 @@ export function AppSidebar(props: Props) {
         <CommunicationGuideButton className="communication-sidebar-entry" />
         {props.onOpenCollaborationOverview && <button type="button"
           className={`collaboration-overview-entry${props.collaborationOverviewOpen ? " active" : ""}`}
-          aria-label="多智能体 · 协作项目总览" title="协作项目总览"
+          aria-label="Bot 模式" title="Bot 模式 · 协作项目总览"
           aria-pressed={props.collaborationOverviewOpen} onClick={props.onOpenCollaborationOverview}>
-          <RobotIcon size={19} aria-hidden="true" /><span>多智能体</span>
+          <RobotIcon size={19} aria-hidden="true" /><span>Bot 模式</span>
         </button>}
         {SIDEBAR_SHORTCUT_OPTIONS.filter((option) =>
           shortcuts.includes(option.id),
