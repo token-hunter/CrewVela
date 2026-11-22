@@ -83,19 +83,10 @@ test("8 项设置页创意风格全部默认为现有经典设计，并支持各
     assert.equal(resolveBrowserControlSettingsStyle(loaded), "patchbay");
     assert.equal(resolveArchivedSessionsSettingsStyle(loaded), "tea");
     assert.equal(resolvePrivacySettingsStyle(loaded), "vault");
-
-    saveAppearance(
-      {
-        ...loaded,
-        notificationSettingsStyle: "bellbox",
-      },
-      "dark",
-    );
-    assert.equal(resolveNotificationSettingsStyle(loadAppearance()), "bellbox");
   });
 });
 
-test("非法或损坏的页面风格缓存值自动回退到经典默认设计", () => {
+test("非法、损坏或已移除的旧页面风格缓存值自动回退到经典默认设计", () => {
   withMockStorage((store) => {
     store.set(
       "crewvela-appearance",
@@ -104,7 +95,7 @@ test("非法或损坏的页面风格缓存值自动回退到经典默认设计",
         generalSettingsStyle: "invalid_a",
         gitSettingsStyle: "invalid_b",
         worktreeSettingsStyle: "invalid_c",
-        notificationSettingsStyle: "invalid_d",
+        notificationSettingsStyle: "bellbox",
         automationSettingsStyle: "invalid_e",
         browserControlSettingsStyle: "invalid_g",
         archivedSessionsSettingsStyle: "invalid_h",

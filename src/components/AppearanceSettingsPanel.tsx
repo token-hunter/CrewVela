@@ -256,7 +256,7 @@ function ExtraStylePreview({ module, mode }: { module: ExtraStyleModuleId; mode:
       </span>
     );
   }
-  if (module === "notifications" && mode === "mixer") {
+  if (module === "notifications") {
     return (
       <span className="appearance-more-preview is-mixer" aria-hidden="true">
         <span className="amp-eq">
@@ -267,17 +267,6 @@ function ExtraStylePreview({ module, mode }: { module: ExtraStyleModuleId; mode:
           <i style={{ height: "52%" }} />
           <i style={{ height: "74%" }} />
         </span>
-      </span>
-    );
-  }
-  if (module === "notifications") {
-    return (
-      <span className="appearance-more-preview is-bellbox" aria-hidden="true">
-        <svg viewBox="0 0 56 48" width="46" height="40">
-          <circle cx="28" cy="10" r="3" fill="var(--warn, #e5a94c)" />
-          <path d="M16 33 C16 20, 20 13, 28 13 C36 13, 40 20, 40 33 L44 37 L12 37 Z" fill="var(--warn, #e5a94c)" opacity="0.92" />
-          <circle cx="28" cy="40" r="3.2" fill="var(--accent)" />
-        </svg>
       </span>
     );
   }
@@ -484,7 +473,6 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
       options: [
         { id: "classic", label: "经典", hint: "现有分标签通知开关与历史列表" },
         { id: "mixer", label: "迷你调音台", hint: "实时声波柱、音量推子与通道指示灯" },
-        { id: "bellbox", label: "桌角铜铃", hint: "摇铃测试涟漪与一屏直达便签信箱" },
       ],
       onSelect: (mode) =>
         onChange((current) => ({
@@ -808,8 +796,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                   generalSettingsStyle: "coffee",
                   gitSettingsStyle: "railway",
                   worktreeSettingsStyle: "greenhouse",
-                  notificationSettingsStyle:
-                    resolveNotificationSettingsStyle(current) === "bellbox" ? "bellbox" : "mixer",
+                  notificationSettingsStyle: "mixer",
                   automationSettingsStyle: "sundial",
                   browserControlSettingsStyle: "patchbay",
                   archivedSessionsSettingsStyle: "tea",

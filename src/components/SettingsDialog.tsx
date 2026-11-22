@@ -449,7 +449,6 @@ export function SettingsDialog({
                     options={[
                       { id: "classic", label: "经典列表" },
                       { id: "mixer", label: "迷你调音台" },
-                      { id: "bellbox", label: "桌角铜铃" },
                     ]}
                     onChange={(style) =>
                       onAppearanceChange((current) => ({ ...current, notificationSettingsStyle: style }))

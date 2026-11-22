@@ -124,7 +124,6 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
   const [history, setHistory] = useState<NotificationHistoryRecord[]>([]);
   const [feedback, setFeedback] = useState<{ error: boolean; text: string } | null>(null);
   const [eqPlaying, setEqPlaying] = useState(false);
-  const [bellRinging, setBellRinging] = useState(false);
   const animTimer = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -140,16 +139,12 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
     try { setHistory(await action()); }
     catch (reason) { setFeedback({ error: true, text: `更新通知历史失败：${String(reason)}` }); }
   };
-  const testNotice = async (source: "default" | "mixer" | "bell" = "default") => {
+  const testNotice = async (source: "default" | "mixer" = "default") => {
     setFeedback(null);
     if (source === "mixer") {
       setEqPlaying(true);
       if (animTimer.current !== null) window.clearTimeout(animTimer.current);
       animTimer.current = window.setTimeout(() => setEqPlaying(false), 1500);
-    } else if (source === "bell") {
-      setBellRinging(true);
-      if (animTimer.current !== null) window.clearTimeout(animTimer.current);
-      animTimer.current = window.setTimeout(() => setBellRinging(false), 850);
     }
     try {
       const shown = await deliverDesktopNotice({ title: "CrewVela · 测试通知", body: "这是一条测试通知，完整内容已保存在通知历史中。", force: true, category: "test" });
@@ -169,94 +164,6 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
 
   const visibleHistory = history.filter((item) => item.category !== "quota");
   const unreadCount = visibleHistory.filter((item) => !item.read).length;
-
-  if (viewStyle === "bellbox") {
-    return (
-      <div className="notification-settings-panel">
-        {feedback && <p role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
-        <div className="noti-bellbox-layout">
-          <section className="noti-bell-card" aria-label="桌角铜铃与提醒牌">
-            <span className="general-coffee-kicker">点击摇响测试铜铃</span>
-            <button
-              type="button"
-              className="noti-bell-btn"
-              disabled={!settings.enabled}
-              aria-label="摇响桌角铜铃发送测试通知"
-              onClick={() => void testNotice("bell")}
-            >
-              {bellRinging && <span className="noti-bell-ripple" aria-hidden="true" />}
-              <svg viewBox="0 0 80 80" width="74" height="74" className={`noti-bell-svg${bellRinging ? " ringing" : ""}`} aria-hidden="true">
-                <circle cx="40" cy="14" r="5" fill="var(--warn, #e5a94c)" />
-                <path d="M20 56 C20 34, 26 20, 40 20 C54 20, 60 34, 60 56 L66 62 L14 62 Z" fill="var(--warn, #e5a94c)" opacity="0.92" />
-                <circle cx="40" cy="65" r="5.5" fill="var(--accent)" />
-              </svg>
-            </button>
-            <small style={{ color: "var(--text-dim)", fontSize: "12px" }}>
-              {settings.enabled ? "摇一下即可发送真实测试通知并落入右侧信箱" : "启用通知总闸后可摇铃试听"}
-            </small>
-
-            <div className="noti-bell-tags">
-              <div className="noti-bell-tag-row">
-                <span><i style={{ background: "var(--accent)" }} />启用桌面通知</span>
-                <Switch wrapper="span" className="pet-switch" checked={settings.enabled} onChange={(enabled) => update({ enabled })} />
-              </div>
-              <div className="noti-bell-tag-row" style={{ opacity: settings.enabled ? 1 : 0.48 }}>
-                <span><i style={{ background: "var(--success)" }} />任务完成牌</span>
-                <Switch wrapper="span" className="pet-switch" checked={settings.taskComplete} disabled={!settings.enabled} onChange={(taskComplete) => update({ taskComplete })} />
-              </div>
-              <div className="noti-bell-tag-row" style={{ opacity: settings.enabled ? 1 : 0.48 }}>
-                <span><i style={{ background: "var(--danger)" }} />失败与审核牌</span>
-                <Switch wrapper="span" className="pet-switch" checked={settings.taskFailed} disabled={!settings.enabled} onChange={(taskFailed) => update({ taskFailed })} />
-              </div>
-              <div className="noti-bell-tag-row" style={{ opacity: settings.enabled ? 1 : 0.48 }}>
-                <span><i style={{ background: "var(--warn, #e5a94c)" }} />等待审批牌</span>
-                <Switch wrapper="span" className="pet-switch" checked={settings.waitingForUser} disabled={!settings.enabled} onChange={(waitingForUser) => update({ waitingForUser })} />
-              </div>
-            </div>
-
-            <details className="noti-bell-sound-details">
-              <summary>铃声、音量与专注静默</summary>
-              <div className="noti-bell-sound-body">
-                <select aria-label="通知声音" value={settings.sound} disabled={!settings.enabled} onChange={(event) => update({ sound: event.target.value as NotificationSettings["sound"] })}>
-                  <option value="system">系统默认</option>
-                  <option value="soft">柔和双音</option>
-                  <option value="bell">清脆铃声</option>
-                  <option value="none">静音</option>
-                </select>
-                <div className="noti-fader-row">
-                  <span>音量</span>
-                  <strong>{settings.volume}%</strong>
-                </div>
-                <input
-                  aria-label="通知音量"
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="5"
-                  value={settings.volume}
-                  disabled={!settings.enabled || settings.sound === "none" || settings.sound === "system"}
-                  onChange={(event) => update({ volume: Number(event.target.value) })}
-                />
-                <div className="noti-bell-tag-row">
-                  <span>专注时抑制</span>
-                  <Switch wrapper="span" className="pet-switch" checked={settings.suppressWhenFocused} disabled={!settings.enabled} onChange={(suppressWhenFocused) => update({ suppressWhenFocused })} />
-                </div>
-              </div>
-            </details>
-          </section>
-
-          <div className="noti-bellbox-inbox">
-            <NotificationHistoryView
-              records={visibleHistory}
-              onReadAll={() => void updateHistory(markAllNotificationsRead)}
-              onClear={() => void updateHistory(clearNotificationHistory)}
-              onOpenUrl={openSource}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const mixerActive = settings.enabled && settings.sound !== "none";
 

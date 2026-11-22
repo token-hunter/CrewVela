@@ -55,7 +55,6 @@ export const DEFAULT_NOTIFICATION_SETTINGS_STYLE: NotificationSettingsStyle = "c
 export const NOTIFICATION_SETTINGS_STYLES: NotificationSettingsStyle[] = [
   "classic",
   "mixer",
-  "bellbox",
 ];
 
 export const DEFAULT_AUTOMATION_SETTINGS_STYLE: AutomationSettingsStyle = "classic";
