@@ -52,7 +52,7 @@ const draftKey = (project: string, chat?: string) => `crewvela-conversation-draf
 const pendingKey = (project: string, chat?: string) => `crewvela-conversation-pending:${chat ? `${project}:${chat}` : project}`;
 function stored(key: string): string { try { return localStorage.getItem(key) ?? ""; } catch { return ""; } }
 function save(key: string, value: string) { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch { /* The current draft remains available in the editor. */ } }
-interface PendingSend extends ConversationSendInput { interrupt: boolean; preserveDraft?: boolean }
+interface PendingSend extends ConversationSendInput { interrupt: boolean; preserveDraft?: boolean; rememberRecipientId?: string }
 interface PlanIssue { kind: "git" | "member" | "codex_login"; message: string }
 const CODEX_LOGIN_REQUIRED = "CrewVela 的 Codex 专用目录尚未登录";
 const PLAN_VALIDATION_FAILURE = "真实成员已回复，但分工计划未通过校验：";
@@ -62,6 +62,7 @@ const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"];
 const VIDEO_EXTENSIONS = ["mp4", "mov", "webm"];
 const attachmentDraftKey = (projectId: string, conversationId: string) => `crewvela.team-attachment-draft.${projectId}.${conversationId}`;
 const memberSelectionKey = (projectId: string, conversationId: string) => `crewvela.team-member-selection.${projectId}.${conversationId}`;
+const chatRecipientKey = (projectId: string, conversationId: string) => `crewvela.team-chat-recipient.${projectId}.${conversationId}`;
 function storedMemberSelection(projectId: string, conversationId: string): string[] | null {
   try {
     const value: unknown = JSON.parse(stored(memberSelectionKey(projectId, conversationId)));
@@ -113,6 +114,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const workViewId = useId();
   const [memberSelection, setMemberSelection] = useState<string[] | null>(null);
+  const [chatRecipientId, setChatRecipientId] = useState<string>();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [healthy, setHealthy] = useState(false);
@@ -194,6 +196,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       setDraft(stored(draftKey(projectId, id)));
       setDraftFiles(storedAttachmentDraft(projectId, id));
       setMemberSelection(storedMemberSelection(projectId, id));
+      setChatRecipientId(stored(chatRecipientKey(projectId, id)) || undefined);
       setPending(storedPending(projectId, id));
       setShowOlder(false); setArchivedRuleId(""); setMembersOpen(null); setMentionOpen(false); setMentionSelection([]);
       setPlanIssues([]);
@@ -212,6 +215,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     request.current++; generation.current++;
     currentProject.current = id; currentConversation.current = undefined; setProjectId(id); setSnapshot(null); setConversation(null); setHealthy(false); setLoading(false);
     operationError.current = ""; setError(""); setMemberSelection(null); setMembersOpen(null); setShowOlder(false); setMentionOpen(false);
+    setChatRecipientId(undefined);
     setHistoryMenuOpen(false); setHistoryOpen(false); setClearConfirmation(null); setClearError("");
     setSessionAction(null); setSessionActionError("");
     setWorkView("chat"); setSelectedTaskId(null); setSelectedDeliveryId(null);
@@ -272,6 +276,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const manualMembers = useMemo(() => new Set(snapshot?.agentSessions.filter(session => session.projectId === projectId && session.controlMode === "manual").map(session => session.agentId) ?? []), [snapshot, projectId]);
   const eligibleMembers = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id);
   const availableRecipients = eligibleMembers.filter(id => !manualMembers.has(id));
+  const chatRecipient = agents.find(agent => agent.id === chatRecipientId && availableRecipients.includes(agent.id));
+  const rememberChatRecipient = useCallback((project: string, chat: string, recipient?: string) => {
+    save(chatRecipientKey(project, chat), recipient ?? "");
+    if (mounted.current && currentProject.current === project && currentConversation.current === chat) setChatRecipientId(recipient);
+  }, []);
   const selected = runtimeReady && !runtimeError
     ? memberSelection?.filter(id => eligibleMembers.includes(id)) ?? availableRecipients
     : [];
@@ -415,6 +424,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     if (!pending || !conversation || conversation.conversation.projectId !== pending.projectId || projectId !== pending.projectId) return;
     if (!conversation.messages.some(message => message.clientMessageId === pending.clientMessageId)) return;
     const conversationId = conversation.conversation.id;
+    if (pending.rememberRecipientId) rememberChatRecipient(pending.projectId, conversationId, pending.rememberRecipientId);
     save(pendingKey(pending.projectId, conversationId), "");
     if (!pending.preserveDraft) {
       if (stored(draftKey(pending.projectId, conversationId)) === pending.body) save(draftKey(pending.projectId, conversationId), "");
@@ -422,7 +432,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       setArchivedRuleId("");
     }
     setPending(null); setOperationError("");
-  }, [conversation, pending, projectId]);
+  }, [conversation, pending, projectId, rememberChatRecipient]);
   const visibleMessages = showOlder ? messages : messages.slice(-100);
   const planFailureInTranscript = !!round && round.mode === "execution_plan" && planCanRetry(round)
     && !conversation?.executionPlans.some(plan => plan.roundId === round.id)
@@ -492,6 +502,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const input = sendPayload(item);
       const result = await mutationCall(item.interrupt ? "ma_conversation_interrupt" : "ma_conversation_send", { input });
       if (!result) return;
+      if (item.rememberRecipientId) rememberChatRecipient(item.projectId, conversationId, item.rememberRecipientId);
       save(pendingKey(item.projectId, conversationId), "");
       if (!item.preserveDraft && stored(draftKey(item.projectId, conversationId)) === item.body) save(draftKey(item.projectId, conversationId), "");
       if (!item.preserveDraft && item.attachmentIds?.length) save(attachmentDraftKey(item.projectId, conversationId), "");
@@ -582,7 +593,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     try {
       const mode = conversationRequestMode(body, requestPlan ? "execution_plan" : "discussion", mentionTokens);
       const rule = archivedRuleId ? conversation?.archivedTaskRules?.find(value => value.id === archivedRuleId) : undefined;
-      const ids = conversationRecipients(body, mode === "discussion" ? availableRecipients : selected, agents, projectId);
+      const chat = mode === "discussion";
+      const ids = conversationRecipients(body, chat ? availableRecipients : selected, agents, projectId, chat ? chatRecipientId : undefined);
       if (ids.some(id => !isRuntimeEnabled(agents.find(agent => agent.id === id)!.runtimeKind))) throw Error("目标成员的 Runtime 已停用，请在协作设置中启用后重试。");
       if (ids.some(id => !supported.includes(agents.find(agent => agent.id === id)!.runtimeKind))) throw Error("所选成员此 Runtime 尚未接入群聊，请调整成员或在原会话中操作。");
       const manual = ids.filter(id => manualMembers.has(id)).map(id => agents.find(agent => agent.id === id)!.name);
@@ -598,6 +610,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         ? conversationChatDispatch(body, agents.filter(agent => ids.includes(agent.id)), rule?.agentId ?? undefined)
         : { intent: conversationRequestIntent(body) };
       const item: PendingSend = { projectId, expectedConversationId: conversation.conversation.id, clientMessageId: crypto.randomUUID(), body, participantAgentIds: ids, mode, ...routing, managed, nativeCapabilities: !managed, taskRules: rule ? { tools: "research", archivedRuleId: rule.id } : undefined, interrupt: discussing };
+      if (chat && ids.length === 1 && mentionTokens.some(token => hasMentionToken(body, token))) item.rememberRecipientId = ids[0];
       setPlanIssues([]);
       if (mode === "execution_plan") {
         const checkedForm = planForm.current;
@@ -701,7 +714,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         : await mutationCall("ma_conversation_delete", { input: { projectId, expectedConversationId: target.id, expectedMessageIds: target.messageIds } });
       if (!result) return;
       if (target.kind === "delete") {
-        for (const key of [draftKey, pendingKey, attachmentDraftKey, memberSelectionKey]) save(key(projectId, target.id), "");
+        for (const key of [draftKey, pendingKey, attachmentDraftKey, memberSelectionKey, chatRecipientKey]) save(key(projectId, target.id), "");
       }
       if (!mounted.current || currentProject.current !== projectId || generation.current !== epoch) return;
       if (target.kind === "delete") setWorkView("chat");
@@ -721,6 +734,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const keptDraft = stored(draftKey(target.projectId, target.expectedConversationId));
         save(draftKey(target.projectId, result.conversation.id), keptDraft);
         save(draftKey(target.projectId, target.expectedConversationId), "");
+        save(chatRecipientKey(target.projectId, target.expectedConversationId), "");
         const keptSelection = stored(memberSelectionKey(target.projectId, target.expectedConversationId));
         save(memberSelectionKey(target.projectId, result.conversation.id), keptSelection);
         setMemberSelection(storedMemberSelection(target.projectId, result.conversation.id));
@@ -860,9 +874,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const allRecipientsSelected = availableRecipients.length > 0
     && availableRecipients.length === selected.length && availableRecipients.every(id => selected.includes(id));
   const mentionCount = new Set(mentionTokens.filter(token => hasMentionToken(draft, token))).size;
-  const sendScopeLabel = conversationRequestMode(draft, "discussion", mentionTokens) === "execution_plan"
+  const planning = conversationRequestMode(draft, "discussion", mentionTokens) === "execution_plan";
+  const showChatRecipient = !planning && !mentionCount && !!chatRecipientId;
+  const sendScopeLabel = planning
     ? `分工 · ${mentionCount || selected.length} 位`
-    : mentionCount ? `已 @ ${mentionCount} 位` : `发给全体 · ${availableRecipients.length} 位`;
+    : mentionCount ? `已 @ ${mentionCount} 位`
+    : showChatRecipient ? (chatRecipient ? `发给 ${chatRecipient.name}` : "收件成员不可用")
+    : `发给全体 · ${availableRecipients.length} 位`;
   const sendLabel = discussing ? "发送插话" : "发送消息";
   const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} snapshot={snapshot}
     blocked={busy || loggingIn || !healthy || discussing || !active} paused={snapshot?.project.status === "paused"}
@@ -1171,7 +1189,14 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
                <span>视频 · {VIDEO_EXTENSIONS.join("、").toUpperCase()}</span>
                <span>文档 · {DOCUMENT_EXTENSIONS.join("、").toUpperCase()}</span>
              </span>
-           <span id={sendScopeId} className="conversation-send-scope">{sendScopeLabel}</span>
+            {showChatRecipient && conversation && projectId ? <button type="button" className="conversation-send-scope-reset"
+              title={`${sendScopeLabel} · 切回发给全体`} aria-label={`${sendScopeLabel}，切回发给全体`} disabled={busy || !!pending}
+              onClick={() => {
+                rememberChatRecipient(projectId, conversation.conversation.id);
+                editor.current?.focus();
+              }}>
+              <span id={sendScopeId} className="conversation-send-scope">{sendScopeLabel}</span><X size={13} aria-hidden="true" />
+            </button> : <span id={sendScopeId} className="conversation-send-scope">{sendScopeLabel}</span>}
            <button type="submit" className="conversation-send" aria-label={sendLabel} title={sendLabel} aria-describedby={sendScopeId}
              disabled={busy || pickingFiles || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || (!draft.trim() && !draftFiles.length) || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}>
              <ArrowElbowDownLeft size={20} aria-hidden="true" />

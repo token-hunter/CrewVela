@@ -35,6 +35,7 @@ try{
  const picker=routing.locator('.conversation-recipient-menu');
  await picker.getByRole('button',{name:'取消全选',exact:true}).click();
  await routing.locator('.conversation-target').click();
+ await routing.getByRole('button',{name:/发给 后端审查，切回发给全体/}).click();
  await send(routing,'请各自给一个验收意见');
  await routing.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===3);
  const opinions=(await call(routing,'ma_conversation_send'))[2].args.input;
@@ -44,6 +45,68 @@ try{
  await routing.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===4);
  assert.deepEqual((await call(routing,'ma_conversation_send'))[3].args.input.chatDispatch,{kind:'assigned',agentId:'kimi'});
  await routing.close();
+ const followup = await fresh('empty=1&natural=1', 320);
+ const scope = followup.locator('.conversation-send-scope');
+ const sendAndCheck = async (body, expected) => {
+  const index = (await call(followup, 'ma_conversation_send')).length;
+  await send(followup, body);
+  await followup.waitForFunction(index => window.conversationMock.calls.filter(c => c.command === 'ma_conversation_send').length > index, index);
+  const { args: { input } } = (await call(followup, 'ma_conversation_send'))[index];
+  assert.deepEqual(input.participantAgentIds, expected);
+  await followup.waitForFunction(() => document.querySelector('.conversation-composer textarea').value === '');
+ };
+ const original = await followup.evaluate(() => window.conversationMock.chats.A.conversation.id);
+ await sendAndCheck('@Codex 解释一下', ['codex']);
+ const resetTarget = followup.getByRole('button', { name: '发给 Codex，切回发给全体', exact: true });
+ await resetTarget.waitFor();
+ assert.equal(await scope.evaluate(element => element.scrollWidth <= element.clientWidth), true);
+ await sendAndCheck('请补充一下', ['codex']);
+ await sendAndCheck('@Claude Code @Kimi Code 分别给个意见', ['claude', 'kimi']);
+ await sendAndCheck('继续刚才的话题', ['codex']);
+
+ await followup.getByRole('button', { name: '讨论记录操作', exact: true }).click();
+ await followup.getByRole('menuitem', { name: '新建会话', exact: true }).click();
+ await scope.getByText('发给全体 · 3 位', { exact: true }).waitFor();
+ await sendAndCheck('@Claude Code @Kimi Code 看一下', ['claude', 'kimi']);
+ await sendAndCheck('大家好', ['claude', 'codex', 'kimi']);
+ await followup.getByRole('button', { name: '讨论记录操作', exact: true }).click();
+ await followup.getByRole('menuitem', { name: '历史会话', exact: true }).click();
+ await followup.getByRole('dialog', { name: '历史会话', exact: true }).locator('.conversation-history-list button:not([aria-current])').click();
+ await followup.waitForFunction(id => window.conversationMock.chats.A.conversation.id === id, original);
+ await resetTarget.waitFor();
+ await followup.reload();
+ await resetTarget.waitFor();
+ await sendAndCheck('回到原会话继续', ['codex']);
+ await sendAndCheck('@Kimi Code 现在问你', ['kimi']);
+ await sendAndCheck('再说两句', ['kimi']);
+
+ await followup.evaluate(() => window.conversationMock.snapshot('A').agents.find(agent => agent.id === 'kimi').enabled = false);
+ const resetUnavailable = followup.getByRole('button', { name: '收件成员不可用，切回发给全体', exact: true });
+ await resetUnavailable.waitFor();
+ const beforeUnavailable = (await call(followup, 'ma_conversation_send')).length;
+ await send(followup, '这个问题仍只发给原收件人');
+ await followup.getByRole('alert').filter({ hasText: '当前收件成员不可用' }).waitFor();
+ assert.equal((await call(followup, 'ma_conversation_send')).length, beforeUnavailable);
+ await resetUnavailable.click();
+ await scope.getByText('发给全体 · 2 位', { exact: true }).waitFor();
+ await sendAndCheck('现在发给全体', ['claude', 'codex']);
+ await followup.close();
+ for (const failure of ['send-before-save', 'send']) {
+  const interrupted = await fresh(`empty=1&fail=${failure}`);
+  const retry = interrupted.getByRole('button', { name: '核对并重试', exact: true });
+  await send(interrupted, '@Codex 核对发送结果');
+  await retry.waitFor();
+  if (failure === 'send-before-save') {
+   assert.equal(await interrupted.evaluate(() => localStorage.getItem('crewvela.team-chat-recipient.A.conversation-A')), null);
+   await retry.click();
+  }
+  await interrupted.getByRole('button', { name: '发给 Codex，切回发给全体', exact: true }).waitFor();
+  const attempts = await call(interrupted, 'ma_conversation_send');
+  assert.equal(attempts.length, failure === 'send-before-save' ? 2 : 1);
+  assert.deepEqual(attempts[0].args.input, attempts.at(-1).args.input);
+  assert.equal(await interrupted.locator('.conversation-message.user').filter({ hasText: '核对发送结果' }).count(), 1);
+  await interrupted.close();
+ }
  const counts = await fresh('empty=1&natural=1&members=eight', 420);
  const pickerButton = counts.locator('.conversation-target');
  const sendScope = counts.locator('.conversation-send-scope');

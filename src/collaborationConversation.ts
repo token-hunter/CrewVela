@@ -65,6 +65,7 @@ export function conversationRecipients(
   selected: readonly string[],
   agents: AgentProfile[],
   projectId: string,
+  preferredRecipient?: string,
 ): string[] {
   const enabled = agents.filter(agent => agent.enabled && agent.projectId === projectId);
   let remaining = body;
@@ -77,9 +78,12 @@ export function conversationRecipients(
   }
   const unknown = remaining.match(/(?:^|\s)(@[^\s@]+)/u)?.[1];
   if (unknown) throw new Error(`未找到明确的项目成员 ${unknown}，请从成员列表选择。`);
+  if (!mentioned.size && preferredRecipient && !selected.includes(preferredRecipient)) {
+    throw new Error("当前收件成员不可用，请 @ 其他成员或切回发给全体。");
+  }
   const candidates = enabled.filter(agent => mentioned.size
     ? mentioned.has(agent.id)
-    : selected.includes(agent.id));
+    : selected.includes(agent.id) && (!preferredRecipient || preferredRecipient === agent.id));
   if (!candidates.length) throw new Error("请选择至少一位项目成员。");
   return candidates.map(agent => agent.id);
 }
