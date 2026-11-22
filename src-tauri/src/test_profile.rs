@@ -209,7 +209,7 @@ pub(crate) fn allowed_command(command: &str) -> bool {
         "list_sessions" | "list_archived_sessions" | "session_snapshot" | "session_switch_list" |
         "session_usages" | "session_telemetry" | "list_agent_activity" | "list_approval_cards" |
         "list_projects" | "create_project" | "update_project" | "delete_project" | "list_launch_presets" |
-        "ma_list_projects" | "ma_snapshot" | "ma_conversation_snapshot" | "ma_list_interventions" | "ma_activity_events" | "ma_runtime_events" |
+        "ma_list_projects" | "ma_list_project_activity" | "ma_snapshot" | "ma_conversation_snapshot" | "ma_list_interventions" | "ma_activity_events" | "ma_runtime_events" |
         "general_settings_get" | "general_settings_save" | "list_automations" |
         "ai_memory_embedded_status" | "ai_memory_embedded_set_enabled" |
         "notification_history_list" | "notification_history_append" | "notification_history_mark_all_read" | "notification_history_clear" |

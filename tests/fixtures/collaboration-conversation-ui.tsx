@@ -52,6 +52,17 @@ const emptyChat = (id: string): any => ({ conversation: { id: `conversation-${id
 const message = (id: string, senderType: string, body: string, agentId: string | null = null, status = "completed", kind = "reply"): any => ({ id, projectId: "A", conversationId: "conversation-A", roundId: "round-1", replyToMessageId: "m1", taskId: null, runId: agentId ? `run-${agentId}` : null, agentId, senderType, kind, phase: "opinions", body, status, createdAt: clock + Number(id.slice(1) || 0) * 1000, updatedAt: clock });
 const chats: Record<string, any> = { A: emptyChat("A"), B: emptyChat("B") };
 const memberModelSettings = new Map<string, {model: string | null; reasoning: string | null}>();
+const projectOverview = params.has("project-overview");
+if (projectOverview) {
+  projects[0].name = "小栈商城";
+  projects[1].name = "单位换算器";
+  projects.push(
+    { ...projects[1], id: "C", name: "3D 赛车", rootPath: "/fixture/racing" },
+    { ...projects[1], id: "D", name: "星潮方块", rootPath: "/fixture/blocks", status: "completed" },
+  );
+  chats.C = emptyChat("C");
+  chats.D = emptyChat("D");
+}
 if (params.get("rules") === "1") chats.A.archivedTaskRules = [{ id: "acceptance-rule", agentId: "claude", label: "Claude 原验收规则", instructions: "只回复 ABC，不调用工具", tools: "none", createdAt: clock }];
 if (params.get("empty") !== "1") {
   chats.A.rounds = [{ id: "round-1", projectId: "A", conversationId: "conversation-A", userMessageId: "m1", participantAgentIds: ["claude", "codex", "kimi"], mode: "execution_plan", status: params.get("running") === "1" ? "running" : "completed", phase: "summary", maxRounds: 1, currentRound: 1, deadlineAt: clock + 600000, stopReason: null, createdAt: clock, updatedAt: clock }];
@@ -198,6 +209,9 @@ const mock = {
     if (params.get("fail-aux") === "1" && ["ma_probe_runtimes", "skill_center_snapshot"].includes(command)) throw Error("隔离测试：辅助读取失败");
     if ((["ma_snapshot", "ma_conversation_snapshot"].includes(command) && mock.holdProject === args.projectId) || (command === "ma_conversation_send" && mock.holdSend) || (command === "ma_conversation_clear" && mock.holdClear) || (command === "ma_conversation_new" && mock.holdNew)) return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
     if (command === "ma_list_projects") return structuredClone(projects);
+    if (command === "ma_list_project_activity") return structuredClone(projects.map(project => ({
+      project, activity: ({ A: "pending_approval", B: "running", C: "running", D: "delivered" } as Record<string, string>)[project.id] ?? project.status,
+    })));
     if (command === "ma_list_interventions") {
       const item={id:"permission-current",projectId:"A",taskId:"activity-task-claude",runId:"run-claude",kind:"approval_required",status:"open",metadata:{approvalId:"permission-claude"}};
       return mock.stalePermission ? [] : [{...item,id:"foreign-project",projectId:"B"},{...item,id:"old-run",runId:"previous-run"},item];
@@ -456,7 +470,7 @@ function Fixture() {
   const [instance, setInstance] = useState(0);
   (mock as any).setActive = setActive;
   (mock as any).selectInstance = setInstance;
-  const panel = (index: number) => <MultiAgentControl active={active && index === instance} defaultCwd="/fixture/todo-app" onOpenSession={(id, original) => { calls.push({ command: "fixture_open_session", args: { sessionId: id, original } }); }} onOpenProjectSettings={(id,target) => { calls.push({ command: "fixture_open_settings", args: { projectId: id, target } }); if(id&&target==="tasks")setTaskRequest({projectId:id,requestId:++taskSequence.current}); }} />;
+  const panel = (index: number) => <MultiAgentControl active={active && index === instance} projectOverview={projectOverview} defaultCwd="/fixture/todo-app" onOpenSession={(id, original) => { calls.push({ command: "fixture_open_session", args: { sessionId: id, original } }); }} onOpenProjectSettings={(id,target) => { calls.push({ command: "fixture_open_settings", args: { projectId: id, target } }); if(id&&target==="tasks")setTaskRequest({projectId:id,requestId:++taskSequence.current}); }} />;
   (mock as any).openTasks = (projectId:string) => setTaskRequest({projectId,requestId:++taskSequence.current});
   return <main className="conversation-fixture-frame"><header className="conversation-fixture-resource"><span><Robot size={21} />多智能体<XMark /></span><small>隔离示例 · 无真实 Agent 调用</small><CornersOut size={19} /></header>{params.get("header")==="1"&&<div className="conversation-shell-header" aria-hidden="true"/>}{params.get("instances") === "2" ? [0,1].map(index => <div style={{ display: index === instance ? "flex" : "none", flex: 1, minHeight: 0 }} key={index} data-instance={index}>{panel(index)}</div>) : panel(0)}{taskRequest && <SettingsDialog initialSection="collaboration" initialCollaborationProjectId={taskRequest.projectId} initialCollaborationTasksRequest={taskRequest} sessions={[]} archivedSessions={[]} projects={[]} appearance={appearance} resolvedAppearanceTheme={params.get("theme")==="light"?"light":"dark"} petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS} onAppearanceChange={setAppearance} onPetSettingsChange={()=>{}} onNotificationSettingsChange={()=>{}} onRestoreArchivedSession={()=>{}} onDeleteArchivedSession={()=>{}} onViewArchivedTranscript={()=>{}} onClose={()=>setTaskRequest(undefined)}/>}</main>;
 }

@@ -879,6 +879,12 @@ async fn ma_list_projects(state: State<'_, MultiAgentStore>) -> Result<Vec<Multi
 }
 
 #[tauri::command]
+async fn ma_list_project_activity(state: State<'_, MultiAgentStore>) -> Result<Vec<multi_agent::CollaborationProjectActivity>, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.list_project_activity().map_err(to_err)).await
+}
+
+#[tauri::command]
 fn ma_list_interventions(
     state: State<'_, MultiAgentStore>,
 ) -> Result<Vec<InterventionRecord>, String> {
@@ -6598,6 +6604,7 @@ pub fn run() {
             runtime_install_cancel,
             runtime_open_login,
             ma_list_projects,
+            ma_list_project_activity,
             ma_list_interventions,
             ma_resolve_intervention,
             ma_create_project,

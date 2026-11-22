@@ -203,6 +203,9 @@ const api = {
     }
     if (new URLSearchParams(location.search).has("tasks-nav")) {
       if(command==="ma_list_projects")return structuredClone(navigationProjects);
+      if (command === "ma_list_project_activity") return structuredClone(navigationProjects.map(project => ({
+        project, activity: project.id === "A" ? "pending_approval" : "running",
+      })));
       if(command==="ma_snapshot")return navigationSnapshot(String(args?.projectId));
       if(command==="ma_conversation_snapshot")return navigationConversation(String(args?.projectId));
       if(["ma_probe_runtimes","ma_check_runtime_updates"].includes(command))return [{kind:"codex",installed:true,executable:"fixture",version:"fixture",protocol:"local",capabilities:[],error:null}];

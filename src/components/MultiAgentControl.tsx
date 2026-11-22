@@ -21,6 +21,7 @@ import { ConversationDelegationDetails } from "./ConversationDelegationDetails";
 import { ConversationTaskView } from "./ConversationTaskView";
 import { AgentMentionMenu, type AgentMentionOption } from "./AgentMentionMenu";
 import { CollaborationProjectDialog } from "./CollaborationProjectDialog";
+import { CollaborationProjectNavigation } from "./CollaborationProjectNavigation";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
 import { Modal } from "./ui/Modal";
 import { conversationChatDispatch, conversationIsActive, conversationMentionToken, conversationRecipients, conversationRequestIntent, conversationRequestMode, CONVERSATION_STATUS, hasConversationPlanGoal, latestConversationRound, orderedConversationMessages } from "../collaborationConversation";
@@ -40,6 +41,7 @@ interface Props {
   defaultCwd: string | null;
   focusedProjectId?: string | null;
   focusedProjectRequest?: number;
+  projectOverview?: boolean;
   onOpenSession?: (sessionId: string | null, original?: ConversationOriginalSession) => void | Promise<void>;
   onOpenProjectSettings?: (projectId?: string, target?: "tasks") => void;
 }
@@ -94,7 +96,7 @@ function storedPending(id: string, chat?: string): PendingSend | null {
 function projectFromStorage(): string | null { return stored(PROJECT_KEY) || null; }
 
 /** One persisted project conversation. It deliberately has no general-command or global-broadcast route. */
-export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, onOpenSession, onOpenProjectSettings }: Props) {
+export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, projectOverview = false, onOpenSession, onOpenProjectSettings }: Props) {
   const { ready: runtimeReady, error: runtimeError, isRuntimeEnabled, refresh: refreshAvailability } = useRuntimeAvailability();
   const [projects, setProjects] = useState<MultiAgentProject[]>([]);
   const [projectId, setProjectId] = useState<string | null>(focusedProjectId ?? projectFromStorage);
@@ -886,11 +888,17 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       setOpenDelegation({ conversationId, itemId: item.id });
     }}>查看委派<CaretRight size={16} /></button>;
 
-  return <div className={`conversation-delegation-layout${delegation ? " has-delegation" : ""}`}>
+  return <div className={`collaboration-project-host${projectOverview ? " has-project-navigation" : ""}`}>
+    {projectOverview && <CollaborationProjectNavigation active={active} projects={projects} projectId={projectId}
+      onSelect={chooseProject} onCreate={() => setCreatingProject(true)} />}
+    <div className={`conversation-delegation-layout${delegation ? " has-delegation" : ""}`}>
     <section className="collaboration-conversation team-work-views" aria-label="团队协作会话">
     <header className="conversation-header">
-      <div className="conversation-heading"><span className="conversation-project-select"><select aria-label="协作项目" title={snapshot?.project.rootPath ? `${snapshot.project.name}\n项目目录：${snapshot.project.rootPath}` : projects.find(project => project.id === projectId)?.name} value={projectId ?? ""} onChange={event => chooseProject(event.target.value || null)}><option value="" disabled>选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select><CaretDown size={15} aria-hidden="true" /></span>
-        <button type="button" className="conversation-icon" aria-label="创建协作项目" onClick={() => setCreatingProject(true)}><Plus size={18} /></button>
+      <div className="conversation-heading">
+        {projectOverview
+          ? <h1 className="collaboration-project-title" title={snapshot?.project.rootPath}>{snapshot?.project.name ?? projects.find(project => project.id === projectId)?.name ?? "团队协作"}</h1>
+          : <><span className="conversation-project-select"><select aria-label="协作项目" title={snapshot?.project.rootPath ? `${snapshot.project.name}\n项目目录：${snapshot.project.rootPath}` : projects.find(project => project.id === projectId)?.name} value={projectId ?? ""} onChange={event => chooseProject(event.target.value || null)}><option value="" disabled>选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select><CaretDown size={15} aria-hidden="true" /></span>
+          <button type="button" className="conversation-icon" aria-label="创建协作项目" onClick={() => setCreatingProject(true)}><Plus size={18} /></button></>}
         {onOpenProjectSettings && <button type="button" className="conversation-icon" aria-label="管理项目与成员" onClick={() => onOpenProjectSettings(projectId ?? undefined)}><GearSix size={18} /></button>}
       </div>
       <div className="conversation-context-row"><div className="conversation-context"><button type="button" className="conversation-text-button conversation-task-link" disabled={!snapshot || !onOpenProjectSettings} onClick={openProjectTasks}>查看任务 · {tasks.length}<ArrowSquareOut size={14} /></button></div>
@@ -1195,5 +1203,6 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     </section>
     {delegation && projectId && conversationId && <ConversationDelegationDetails key={delegation.id}
       item={delegation} agents={agents} projectId={projectId} conversationId={conversationId} onClose={closeDelegation} />}
+    </div>
   </div>;
 }

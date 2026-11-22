@@ -2018,7 +2018,7 @@ export default function App() {
   };
 
   const selectRightSidebarTab = useCallback(
-    async (tab: RightSidebarTab) => {
+    async (tab: RightSidebarTab, expandCollaboration = false) => {
       if (tab === "files" && !workspaceRootRef.current) {
         showError("请先打开一个工作区");
         return;
@@ -2055,6 +2055,7 @@ export default function App() {
       }
       setControlDetached(false);
       setControlOpen(true);
+      if (expandCollaboration) setSidebarMaximized(true);
       return;
     }
     setControlOpen(false);
@@ -2077,6 +2078,12 @@ export default function App() {
     },
     [controlDetached, mountRightSidebarTab, rememberRightSidebarTab, showError],
   );
+
+  const collaborationOverviewOpen = sidebarMaximized && sidebarTabKind(activeRightSidebarTab ?? "") === "multi_agent";
+  const toggleCollaborationOverview = useCallback(() => {
+    if (collaborationOverviewOpen) setSidebarMaximized(false);
+    else void selectRightSidebarTab("multi_agent", true);
+  }, [collaborationOverviewOpen, selectRightSidebarTab]);
 
   useEffect(() => {
     if (activeRightSidebarTab) mountRightSidebarTab(activeRightSidebarTab);
@@ -2464,6 +2471,8 @@ export default function App() {
         onDeleteAll={deleteAllTabSessions}
         onOpenSection={openSettingsSection}
         onOpenSettings={openGeneralSettings}
+        collaborationOverviewOpen={collaborationOverviewOpen}
+        onOpenCollaborationOverview={toggleCollaborationOverview}
         onOpenAttentionSession={openAttentionSession}
         viewMenu={viewMenu}
       />
@@ -2697,6 +2706,7 @@ export default function App() {
                         <MemoControlSidebar
                         providers={[]}
                         open
+                        projectOverview={collaborationOverviewOpen && activeRightSidebarTab === tab}
                         active={!guideRequest && activeRightSidebarTab === tab && (tab !== "multi_agent" || !controlDetached)}
                         variant="docked"
                                         sessions={sessions}

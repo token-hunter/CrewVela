@@ -10,7 +10,7 @@ use super::{
     ActivityEvent, AddDependencyInput, AgentControlMode, AgentInstruction, AgentPersona,
     AgentProfile, AgentRole, AgentRun, AgentRuntimeKind, AgentSessionRecord, AgentSessionStatus,
     AppendRuntimeEventInput, ApprovalRecord, ArtifactRecord, ClaimTaskInput,
-    CollaborationMessage, CreateAgentInput, CreateProjectInput, CreateTaskInput,
+    CollaborationMessage, CollaborationProjectActivity, CreateAgentInput, CreateProjectInput, CreateTaskInput,
     EnqueueWakeupInput, HeartbeatReceipt, HeartbeatRunInput, KnowledgeIndexReceipt,
     KnowledgeSearchResult, MemoryEntry, MultiAgentProject, MultiAgentSnapshot, MultiAgentTask,
     PermissionProfile, ProjectStatus, PublishArtifactInput, PutMemoryInput, RecoveryReceipt,
@@ -175,6 +175,38 @@ impl MultiAgentStore {
         let projects = statement
             .query_map([], project_from_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(projects)
+    }
+
+    pub fn list_project_activity(&self) -> Result<Vec<CollaborationProjectActivity>> {
+        let connection = self.connection.lock().unwrap();
+        let mut statement = connection.prepare(
+            "SELECT p.id, p.name, p.goal, p.root_path, p.default_branch, p.status, p.created_at, p.updated_at,
+                CASE
+                    WHEN p.status = 'cancelled' THEN 'cancelled'
+                    WHEN EXISTS(SELECT 1 FROM ma_approvals a WHERE a.project_id = p.id AND a.status = 'pending')
+                        OR EXISTS(SELECT 1 FROM ma_conversation_rounds c WHERE c.project_id = p.id AND c.status = 'waiting_approval')
+                        THEN 'pending_approval'
+                    WHEN EXISTS(SELECT 1 FROM ma_conversation_rounds c WHERE c.project_id = p.id AND c.status = 'unconfirmed')
+                        OR EXISTS(SELECT 1 FROM ma_runs r WHERE r.project_id = p.id AND r.status = 'waiting_input')
+                        THEN 'needs_attention'
+                    WHEN EXISTS(SELECT 1 FROM ma_runs r WHERE r.project_id = p.id AND r.status IN ('queued','starting','running'))
+                        OR EXISTS(SELECT 1 FROM ma_conversation_rounds c WHERE c.project_id = p.id AND c.status IN ('queued','running','stopping'))
+                        THEN 'running'
+                    WHEN p.status = 'completed' AND EXISTS(
+                        SELECT 1 FROM ma_conversation_plans plan WHERE plan.project_id = p.id
+                        AND json_extract(plan.data_json, '$.managed.status') = 'completed'
+                    ) THEN 'delivered'
+                    ELSE p.status
+                END
+             FROM ma_projects p ORDER BY p.updated_at DESC, p.id",
+        )?;
+        let projects = statement.query_map([], |row| {
+            Ok(CollaborationProjectActivity {
+                project: project_from_row(row)?,
+                activity: row.get(8)?,
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(projects)
     }
 
@@ -5722,6 +5754,52 @@ mod tests {
             self.store.take();
             let _ = std::fs::remove_dir_all(&self.root);
         }
+    }
+
+    #[test]
+    fn project_activity_keeps_approvals_and_running_rounds_scoped_by_project() -> Result<()> {
+        let fixture = TestStore::new();
+        let store = fixture.store();
+        let waiting = fixture.project();
+        let working = fixture.project();
+        let delivered = fixture.project();
+        let inactive = fixture.project();
+        {
+            let db = store.connection.lock().unwrap();
+            for (id, project, status) in [
+                ("waiting", &waiting.id, "waiting_approval"),
+                ("working", &working.id, "running"),
+                ("delivered", &delivered.id, "completed"),
+            ] {
+                db.execute(
+                    "INSERT INTO ma_conversation_rounds (id,project_id,client_message_id,request_json,status,data_json,created_at)
+                     VALUES (?1,?2,?1,'{}',?3,'{}',1)", params![id, project, status],
+                )?;
+            }
+            db.execute("UPDATE ma_projects SET status='completed' WHERE id=?1", [&delivered.id])?;
+            db.execute(
+                "INSERT INTO ma_conversation_plans (id,project_id,round_id,data_json)
+                 VALUES ('delivery-plan',?1,'delivered',?2)",
+                params![delivered.id, r#"{"managed":{"status":"completed"}}"#],
+            )?;
+        }
+        let activity = || -> Result<std::collections::HashMap<String, String>> {
+            Ok(store.list_project_activity()?.into_iter()
+                .map(|item| (item.project.id, item.activity)).collect())
+        };
+        let initial = activity()?;
+        assert_eq!(initial[&waiting.id], "pending_approval");
+        assert_eq!(initial[&working.id], "running");
+        assert_eq!(initial[&delivered.id], "delivered");
+        assert_eq!(initial[&inactive.id], "active");
+        store.connection.lock().unwrap().execute(
+            "UPDATE ma_conversation_rounds SET status='running' WHERE id='waiting'", [],
+        )?;
+        let updated = activity()?;
+        assert_eq!(updated[&waiting.id], "running");
+        assert_eq!(updated[&working.id], "running");
+        assert_eq!(updated[&delivered.id], "delivered");
+        Ok(())
     }
 
     #[test]

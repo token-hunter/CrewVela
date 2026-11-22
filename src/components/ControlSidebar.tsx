@@ -15,6 +15,7 @@ interface Props {
   onOpenQuickSettings?: () => void;
   open: boolean;
   active?: boolean;
+  projectOverview?: boolean;
   variant?: "docked" | "detached";
   providers: ProviderConfig[];
   sessions: SessionRecord[];
@@ -31,7 +32,7 @@ interface Props {
 }
 
 /** Shared dock/detached shell. General commands remain available from their own application entry. */
-export function ControlSidebar({ open, active, variant = "docked", sessions, defaultCwd, onClose, onDetach, onDock, onSurfaceChange, isolatedSurface = false, onOpenSession, onOpenProjectSettings }: Props) {
+export function ControlSidebar({ open, active, projectOverview, variant = "docked", sessions, defaultCwd, onClose, onDetach, onDock, onSurfaceChange, isolatedSurface = false, onOpenSession, onOpenProjectSettings }: Props) {
   const [interventionsOpen, setInterventionsOpen] = useState(false);
   const [interventionCount, setInterventionCount] = useState(0);
   const [focusedProject, setFocusedProject] = useState<{ id: string; request: number } | null>(null);
@@ -64,7 +65,7 @@ export function ControlSidebar({ open, active, variant = "docked", sessions, def
         </div>
       </header>
       <InterventionCenter open={interventionsOpen} onClose={() => setInterventionsOpen(false)} onCountChange={setInterventionCount} onOpenProject={id => { setInterventionsOpen(false); setFocusedProject(value => ({ id, request: (value?.request ?? 0) + 1 })); }} />
-      <div className="control-multi-agent-surface"><MultiAgentControl sessions={sessions} active={isActive} defaultCwd={defaultCwd} focusedProjectId={focusedProject?.id} focusedProjectRequest={focusedProject?.request} onOpenSession={onOpenSession} onOpenProjectSettings={onOpenProjectSettings} /></div>
+      <div className="control-multi-agent-surface"><MultiAgentControl sessions={sessions} active={isActive} projectOverview={projectOverview} defaultCwd={defaultCwd} focusedProjectId={focusedProject?.id} focusedProjectRequest={focusedProject?.request} onOpenSession={onOpenSession} onOpenProjectSettings={onOpenProjectSettings} /></div>
     </aside>
   </div>;
 }

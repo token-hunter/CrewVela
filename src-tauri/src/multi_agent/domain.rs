@@ -270,6 +270,13 @@ pub struct MultiAgentProject {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollaborationProjectActivity {
+    pub project: MultiAgentProject,
+    pub activity: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateProjectInput {
