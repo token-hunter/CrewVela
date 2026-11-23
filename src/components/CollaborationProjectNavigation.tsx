@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { CaretDown, DotsThree, FolderSimple, MagnifyingGlass, PencilSimple, Plus, SidebarSimple } from "@phosphor-icons/react";
 import { loadMultiAgentRailCollapsed, saveMultiAgentRailCollapsed } from "../appearance";
-import type { MultiAgentProject, MultiAgentStyle } from "../types";
+import type { MultiAgentProject } from "../types";
 import { Modal } from "./ui/Modal";
 import "../styles/collaboration-project-navigation.css";
 
@@ -34,14 +34,12 @@ interface Props {
   active: boolean;
   projects: MultiAgentProject[];
   projectId: string | null;
-  style?: MultiAgentStyle;
   onSelect: (id: string) => void;
   onCreate: () => void;
   onRename: (id: string, name: string) => Promise<MultiAgentProject>;
 }
 
-export function CollaborationProjectNavigation({ active, projects, projectId, style = "classic", onSelect, onCreate, onRename }: Props) {
-  const isGrokNoir = style === "grok_noir";
+export function CollaborationProjectNavigation({ active, projects, projectId, onSelect, onCreate, onRename }: Props) {
   const [railCollapsed, setRailCollapsed] = useState<boolean>(loadMultiAgentRailCollapsed);
   const toggleRailCollapsed = () => {
     setRailCollapsed(current => {
@@ -136,15 +134,15 @@ export function CollaborationProjectNavigation({ active, projects, projectId, st
     }
   };
 
-  return <nav className={`collaboration-project-navigation${isGrokNoir && railCollapsed ? " is-rail-collapsed" : ""}`}
-    data-multi-agent-style={style}
-    data-rail-collapsed={isGrokNoir && railCollapsed ? "true" : "false"}
+  return <nav className={`collaboration-project-navigation${railCollapsed ? " is-rail-collapsed" : ""}`}
+    data-multi-agent-style="grok_noir"
+    data-rail-collapsed={railCollapsed ? "true" : "false"}
     aria-label="协作项目列表">
     <button ref={drawerTrigger} type="button" className="collaboration-project-drawer" aria-controls={id} aria-expanded={drawerOpen}
       onClick={() => setDrawerOpen(value => !value)}>
       <FolderSimple size={17} aria-hidden="true" />协作项目<CaretDown size={13} aria-hidden="true" />
     </button>
-    {isGrokNoir && railCollapsed && (
+    {railCollapsed && (
       <div className="collaboration-slim-rail" aria-label="极简协作项目图标轨">
         <button type="button" className="collaboration-rail-icon-btn" aria-label="展开协作项目列表" title="展开协作项目列表" onClick={toggleRailCollapsed}>
           <SidebarSimple size={16} aria-hidden="true" />
@@ -178,13 +176,11 @@ export function CollaborationProjectNavigation({ active, projects, projectId, st
       <div className="collaboration-project-navigation-heading">
         <h2>协作项目</h2>
         <div className="collaboration-project-heading-actions">
-          {isGrokNoir && (
-            <button type="button" className="collaboration-rail-toggle" aria-label="收起为极简图标轨" title="收起为极简图标轨" onClick={toggleRailCollapsed}>
-              <SidebarSimple size={16} aria-hidden="true" />
-            </button>
-          )}
-          <button type="button" className="collaboration-project-add" onClick={onCreate}>
-            <Plus size={16} aria-hidden="true" />{isGrokNoir ? "新建" : "新建协作"}
+          <button type="button" className="collaboration-rail-toggle" aria-label="收起为极简图标轨" title="收起为极简图标轨" onClick={toggleRailCollapsed}>
+            <SidebarSimple size={16} aria-hidden="true" />
+          </button>
+          <button type="button" className="collaboration-project-add" aria-label="新建协作" title="新建协作" onClick={onCreate}>
+            <Plus size={16} aria-hidden="true" />新建
           </button>
         </div>
       </div>

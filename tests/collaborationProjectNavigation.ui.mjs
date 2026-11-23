@@ -41,10 +41,10 @@ try {
   const tasksPanel = page.getByRole("tabpanel", { name: "任务执行" });
   const taskList = tasksPanel.locator(".team-task-list");
   await taskList.waitFor();
-  const tabsBounds = await page.locator(".conversation-tabs-row").boundingBox();
+  const topbarBounds = await page.locator(".grok-topbar").boundingBox();
   const listBounds = await taskList.boundingBox();
-  assert.equal(listBounds.width, tabsBounds.width, "wide task list shares the tabs' content width");
-  assert.ok(Math.abs(listBounds.x - tabsBounds.x) <= 1, "wide task list aligns with the tabs even when the panel scrolls");
+  assert.ok(topbarBounds.height <= 50, "Grok topbar stays single-row");
+  assert.ok(listBounds.width <= 782 && listBounds.width >= 700, "wide task list stays centered within readable Grok canvas width");
   const task = taskList.getByRole("button", { name: /方案与验收/ });
   await task.click();
   const detail = tasksPanel.getByRole("article", { name: "任务详情 方案与验收" });

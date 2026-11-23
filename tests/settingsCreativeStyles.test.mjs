@@ -7,7 +7,6 @@ import {
   DEFAULT_BROWSER_CONTROL_SETTINGS_STYLE,
   DEFAULT_GENERAL_SETTINGS_STYLE,
   DEFAULT_GIT_SETTINGS_STYLE,
-  DEFAULT_MULTI_AGENT_STYLE,
   DEFAULT_NOTIFICATION_SETTINGS_STYLE,
   DEFAULT_PRIVACY_SETTINGS_STYLE,
   DEFAULT_WORKTREE_SETTINGS_STYLE,
@@ -18,7 +17,6 @@ import {
   resolveBrowserControlSettingsStyle,
   resolveGeneralSettingsStyle,
   resolveGitSettingsStyle,
-  resolveMultiAgentStyle,
   resolveNotificationSettingsStyle,
   resolvePrivacySettingsStyle,
   resolveWorktreeSettingsStyle,
@@ -61,14 +59,11 @@ test("8 项设置页创意风格全部默认为现有经典设计，并支持各
     assert.equal(resolveAutomationSettingsStyle(DEFAULT_APPEARANCE), "classic");
     assert.equal(resolveBrowserControlSettingsStyle(DEFAULT_APPEARANCE), "classic");
     assert.equal(resolveArchivedSessionsSettingsStyle(DEFAULT_APPEARANCE), "classic");
-    assert.equal(DEFAULT_MULTI_AGENT_STYLE, "classic");
-    assert.equal(resolveMultiAgentStyle(DEFAULT_APPEARANCE), "classic");
     assert.equal(resolvePrivacySettingsStyle(DEFAULT_APPEARANCE), "classic");
 
     saveAppearance(
       {
         ...DEFAULT_APPEARANCE,
-        multiAgentStyle: "grok_noir",
         generalSettingsStyle: "coffee",
         gitSettingsStyle: "railway",
         worktreeSettingsStyle: "greenhouse",
@@ -82,7 +77,6 @@ test("8 项设置页创意风格全部默认为现有经典设计，并支持各
     );
 
     const loaded = loadAppearance();
-    assert.equal(resolveMultiAgentStyle(loaded), "grok_noir");
     assert.equal(resolveGeneralSettingsStyle(loaded), "coffee");
     assert.equal(resolveGitSettingsStyle(loaded), "railway");
     assert.equal(resolveWorktreeSettingsStyle(loaded), "greenhouse");
@@ -108,13 +102,10 @@ test("非法、损坏或已移除的旧页面风格缓存值自动回退到经�
         browserControlSettingsStyle: "invalid_g",
         archivedSessionsSettingsStyle: "invalid_h",
         privacySettingsStyle: "invalid_f",
-        multiAgentStyle: "invalid_ma",
       }),
     );
 
     const loaded = loadAppearance();
-    assert.equal(loaded.multiAgentStyle, undefined);
-    assert.equal(resolveMultiAgentStyle(loaded), "classic");
     assert.equal(loaded.generalSettingsStyle, undefined);
     assert.equal(loaded.gitSettingsStyle, undefined);
     assert.equal(loaded.worktreeSettingsStyle, undefined);

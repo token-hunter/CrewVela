@@ -513,7 +513,7 @@
 }
 
 .collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-delegation-layout.has-grok-drawer {
-  grid-template-columns: minmax(0, 1fr) 356px;
+  grid-template-columns: minmax(0, 1fr) clamp(284px, 32cqw, 356px);
 }
 
 /* ==================== Ultra-Clean Single-Row Grok Header ==================== */
@@ -1378,7 +1378,7 @@
   gap: 5px;
 }
 
-@container delegation-layout (max-width: 960px) {
+@container delegation-layout (max-width: 680px) {
   .collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-delegation-layout.has-grok-drawer {
     grid-template-columns: minmax(0, 1fr);
   }

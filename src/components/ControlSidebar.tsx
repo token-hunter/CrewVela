@@ -5,16 +5,10 @@ import { WarningCircleIcon } from "@phosphor-icons/react/dist/csr/WarningCircle"
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { InterventionCenter } from "./InterventionCenter";
 import { MultiAgentControl } from "./MultiAgentControl";
-import { SettingsStyleMenu } from "./SettingsStyleMenu";
 import { hasOpenModal } from "./ui/Modal";
 import { saveControlSurface, type ControlSurface } from "../controlSurface";
 import type { QuickContext } from "../quickCommands";
-import type { ConversationOriginalSession, MultiAgentStyle, ProviderConfig, SessionRecord } from "../types";
-
-const MULTI_AGENT_STYLE_OPTIONS = [
-  { id: "classic", label: "经典协作" },
-  { id: "grok_noir", label: "Grok 思考流画布" },
-] as const;
+import type { ConversationOriginalSession, ProviderConfig, SessionRecord } from "../types";
 
 interface Props {
   quickContext?: QuickContext;
@@ -26,9 +20,6 @@ interface Props {
   providers: ProviderConfig[];
   sessions: SessionRecord[];
   defaultCwd: string | null;
-  multiAgentStyle?: MultiAgentStyle;
-  onMultiAgentStyleChange?: (style: MultiAgentStyle) => void;
-  onOpenAppearanceSettings?: () => void;
   onClose: () => void;
   onDetach?: () => void | Promise<void>;
   onDock?: () => void | Promise<void>;
@@ -41,7 +32,7 @@ interface Props {
 }
 
 /** Shared dock/detached shell. General commands remain available from their own application entry. */
-export function ControlSidebar({ open, active, projectOverview, variant = "docked", sessions, defaultCwd, multiAgentStyle = "classic", onMultiAgentStyleChange, onOpenAppearanceSettings, onClose, onDetach, onDock, onSurfaceChange, isolatedSurface = false, onOpenSession, onOpenProjectSettings }: Props) {
+export function ControlSidebar({ open, active, projectOverview, variant = "docked", sessions, defaultCwd, onClose, onDetach, onDock, onSurfaceChange, isolatedSurface = false, onOpenSession, onOpenProjectSettings }: Props) {
   const [interventionsOpen, setInterventionsOpen] = useState(false);
   const [interventionCount, setInterventionCount] = useState(0);
   const [focusedProject, setFocusedProject] = useState<{ id: string; request: number } | null>(null);
@@ -63,19 +54,10 @@ export function ControlSidebar({ open, active, projectOverview, variant = "docke
     return () => { cancelAnimationFrame(frame); document.removeEventListener("keydown", key); previous?.focus(); };
   }, [open, isActive, onClose, interventionsOpen]);
   if (!open) return null;
-  return <div className={`control-overlay control-${variant} collaboration-control-overlay`} data-multi-agent-style={multiAgentStyle}>
-    <aside ref={panel} className="control-sidebar collaboration-control-sidebar" data-multi-agent-style={multiAgentStyle} role="complementary" aria-label="多智能体协作" tabIndex={-1}>
+  return <div className={`control-overlay control-${variant} collaboration-control-overlay`} data-multi-agent-style="grok_noir">
+    <aside ref={panel} className="control-sidebar collaboration-control-sidebar" data-multi-agent-style="grok_noir" role="complementary" aria-label="多智能体协作" tabIndex={-1}>
       <header className="conversation-shell-header">
         <div className="conversation-shell-actions">
-          {onMultiAgentStyleChange && (
-            <SettingsStyleMenu
-              label="多智能体风格"
-              value={multiAgentStyle}
-              options={MULTI_AGENT_STYLE_OPTIONS}
-              onChange={onMultiAgentStyleChange}
-              onOpenAppearanceSettings={onOpenAppearanceSettings}
-            />
-          )}
           <button type="button" className="conversation-icon" aria-label={`待处理中心，${interventionCount} 项`} title="待处理中心" aria-expanded={interventionsOpen} onClick={() => setInterventionsOpen(value => !value)}><WarningCircleIcon size={17} />{interventionCount > 0 && <span>{Math.min(interventionCount, 99)}</span>}</button>
           {variant === "docked" && onDetach && <button type="button" className="conversation-icon" aria-label="分离多智能体窗口" title="分离为独立窗口" onClick={() => void onDetach()}><ArrowSquareOutIcon size={16} /></button>}
           {variant === "detached" && onDock && <button type="button" className="conversation-icon" aria-label="重新停靠多智能体窗口" onClick={() => void onDock()}><ArrowSquareInIcon size={16} /></button>}
@@ -83,7 +65,7 @@ export function ControlSidebar({ open, active, projectOverview, variant = "docke
         </div>
       </header>
       <InterventionCenter open={interventionsOpen} onClose={() => setInterventionsOpen(false)} onCountChange={setInterventionCount} onOpenProject={id => { setInterventionsOpen(false); setFocusedProject(value => ({ id, request: (value?.request ?? 0) + 1 })); }} />
-      <div className="control-multi-agent-surface"><MultiAgentControl sessions={sessions} active={isActive} projectOverview={projectOverview} multiAgentStyle={multiAgentStyle} defaultCwd={defaultCwd} focusedProjectId={focusedProject?.id} focusedProjectRequest={focusedProject?.request} onOpenSession={onOpenSession} onOpenProjectSettings={onOpenProjectSettings} /></div>
+      <div className="control-multi-agent-surface"><MultiAgentControl sessions={sessions} active={isActive} projectOverview={projectOverview} defaultCwd={defaultCwd} focusedProjectId={focusedProject?.id} focusedProjectRequest={focusedProject?.request} onOpenSession={onOpenSession} onOpenProjectSettings={onOpenProjectSettings} /></div>
     </aside>
   </div>;
 }

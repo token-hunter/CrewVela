@@ -9,7 +9,6 @@ import type {
   BrowserControlSettingsStyle,
   GeneralSettingsStyle,
   GitSettingsStyle,
-  MultiAgentStyle,
   NotificationSettingsStyle,
   PrivacySettingsStyle,
   ProjectManagementStyle,
@@ -43,9 +42,6 @@ export const PROJECT_MANAGEMENT_STYLES: ProjectManagementStyle[] = [
   "pinboard",
   "studio",
 ];
-
-export const DEFAULT_MULTI_AGENT_STYLE: MultiAgentStyle = "classic";
-export const MULTI_AGENT_STYLES: MultiAgentStyle[] = ["classic", "grok_noir"];
 
 export const DEFAULT_GENERAL_SETTINGS_STYLE: GeneralSettingsStyle = "classic";
 export const GENERAL_SETTINGS_STYLES: GeneralSettingsStyle[] = ["classic", "coffee"];
@@ -154,9 +150,6 @@ export function loadAppearance(): AppAppearance {
         ...(includesValue(PROJECT_MANAGEMENT_STYLES, stored.projectManagementStyle)
           ? { projectManagementStyle: stored.projectManagementStyle }
           : {}),
-        ...(includesValue(MULTI_AGENT_STYLES, stored.multiAgentStyle)
-          ? { multiAgentStyle: stored.multiAgentStyle }
-          : {}),
         ...(includesValue(GENERAL_SETTINGS_STYLES, stored.generalSettingsStyle)
           ? { generalSettingsStyle: stored.generalSettingsStyle }
           : {}),
@@ -235,14 +228,6 @@ export function resolveProjectManagementStyle(
   return includesValue(PROJECT_MANAGEMENT_STYLES, appearance.projectManagementStyle)
     ? appearance.projectManagementStyle
     : DEFAULT_PROJECT_MANAGEMENT_STYLE;
-}
-
-export function resolveMultiAgentStyle(
-  appearance: AppAppearance,
-): MultiAgentStyle {
-  return includesValue(MULTI_AGENT_STYLES, appearance.multiAgentStyle)
-    ? appearance.multiAgentStyle
-    : DEFAULT_MULTI_AGENT_STYLE;
 }
 
 export function resolveGeneralSettingsStyle(

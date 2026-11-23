@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ArrowClockwise, ArrowElbowDownLeft, ArrowSquareOut, ArrowUp, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Paperclip, Pause, PencilSimple, Plus, Robot, SidebarSimple, Stop, Trash, User, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowElbowDownLeft, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Paperclip, Pause, PencilSimple, Plus, Robot, SidebarSimple, Stop, Trash, User, WarningCircle, X } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConversationMentionHighlight } from "./ConversationMentionHighlight";
 import { ResizableConversationComposer } from "./ResizableConversationComposer";
@@ -30,7 +30,7 @@ import { RUNTIME_LABELS } from "../runtimeLogos";
 import { visibleProjectTasks } from "../collaborationTasks";
 import { hasMentionToken, mentionTextSegments, selectMentionTokens } from "../multiAgentMention";
 import { useRuntimeAvailability } from "../runtimeAvailability";
-import type { AgentProfile, AgentRun, ConversationAttachment, ConversationDesignDelegation, ConversationExecutionPlan, ConversationMemberModelSummary, ConversationMessage, ConversationOriginalSession, ConversationRound, ConversationSendInput, ConversationSnapshot, MultiAgentProject, MultiAgentSnapshot, MultiAgentStyle, MultiAgentTask, SessionRecord } from "../types";
+import type { AgentProfile, AgentRun, ConversationAttachment, ConversationDesignDelegation, ConversationExecutionPlan, ConversationMemberModelSummary, ConversationMessage, ConversationOriginalSession, ConversationRound, ConversationSendInput, ConversationSnapshot, MultiAgentProject, MultiAgentSnapshot, MultiAgentTask, SessionRecord } from "../types";
 import "../styles/collaboration-conversation.css";
 import "../styles/team-work-views.css";
 import "../styles/conversation-member-activity.css";
@@ -44,7 +44,6 @@ interface Props {
   focusedProjectId?: string | null;
   focusedProjectRequest?: number;
   projectOverview?: boolean;
-  multiAgentStyle?: MultiAgentStyle;
   onOpenSession?: (sessionId: string | null, original?: ConversationOriginalSession) => void | Promise<void>;
   onOpenProjectSettings?: (projectId?: string, target?: "tasks") => void;
 }
@@ -100,9 +99,8 @@ function storedPending(id: string, chat?: string): PendingSend | null {
 function projectFromStorage(): string | null { return stored(PROJECT_KEY) || null; }
 
 /** One persisted project conversation. It deliberately has no general-command or global-broadcast route. */
-export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, projectOverview = false, multiAgentStyle = "classic", onOpenSession, onOpenProjectSettings }: Props) {
-  const isGrokNoir = multiAgentStyle === "grok_noir";
-  const [execDrawerOpen, setExecDrawerOpen] = useState(true);
+export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, projectOverview = false, onOpenSession, onOpenProjectSettings }: Props) {
+  const [execDrawerOpen, setExecDrawerOpen] = useState(false);
   const [expandedUserMsgs, setExpandedUserMsgs] = useState<Record<string, boolean>>({});
   const { ready: runtimeReady, error: runtimeError, isRuntimeEnabled, refresh: refreshAvailability } = useRuntimeAvailability();
   const [projects, setProjects] = useState<MultiAgentProject[]>([]);
@@ -894,7 +892,6 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const sendLabel = discussing ? "发送插话" : "发送消息";
   const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} snapshot={snapshot}
     blocked={busy || loggingIn || !healthy || discussing || !active} paused={snapshot?.project.status === "paused"}
-    style={multiAgentStyle}
     onCodexLogin={blockedPlanId === plan.id || plan.managed?.status === "waiting_login" ? () => void loginCodex(async () => {
       if (plan.managed) {
         await mutationCall("ma_conversation_resume_managed_after_login", { projectId, expectedConversationId: conversation?.conversation.id, planId: plan.id });
@@ -908,7 +905,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     onTaskRecords={id => {
       setSelectedDeliveryId(null);
       setSelectedTaskId(id);
-      if (isGrokNoir && projectOverview && !delegation && window.innerWidth >= 980) {
+      if (projectOverview && !delegation && window.innerWidth >= 980) {
         setExecDrawerOpen(true);
       } else {
         setWorkView("taskRecords");
@@ -942,21 +939,21 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       setOpenDelegation({ conversationId, itemId: item.id });
     }}>查看委派<CaretRight size={16} /></button>;
 
-  const showExecDrawer = isGrokNoir && projectOverview && workView === "chat" && execDrawerOpen && !delegation;
+  const showExecDrawer = projectOverview && workView === "chat" && execDrawerOpen && !delegation;
   const projectTitleText = snapshot?.project.name ?? projects.find(project => project.id === projectId)?.name ?? "团队协作";
   const projectSelectEl = <span className="conversation-project-select"><select aria-label="协作项目" title={snapshot?.project.rootPath ? `${snapshot.project.name}\n项目目录：${snapshot.project.rootPath}` : projects.find(project => project.id === projectId)?.name} value={projectId ?? ""} onChange={event => chooseProject(event.target.value || null)}><option value="" disabled>选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select><CaretDown size={15} aria-hidden="true" /></span>;
-  const createProjectBtnEl = <button type="button" className="conversation-icon" aria-label="创建协作项目" title="创建协作项目" onClick={() => setCreatingProject(true)}><Plus size={isGrokNoir ? 16 : 18} /></button>;
-  const settingsBtnEl = onOpenProjectSettings && <button type="button" className="conversation-icon" aria-label="管理项目与成员" title="管理项目与成员" onClick={() => onOpenProjectSettings(projectId ?? undefined)}><GearSix size={isGrokNoir ? 16 : 18} /></button>;
+  const createProjectBtnEl = <button type="button" className="conversation-icon" aria-label="创建协作项目" title="创建协作项目" onClick={() => setCreatingProject(true)}><Plus size={16} /></button>;
+  const settingsBtnEl = onOpenProjectSettings && <button type="button" className="conversation-icon" aria-label="管理项目与成员" title="管理项目与成员" onClick={() => onOpenProjectSettings(projectId ?? undefined)}><GearSix size={16} /></button>;
   const taskLinkEl = <button type="button" className="conversation-text-button conversation-task-link" disabled={!snapshot || !onOpenProjectSettings} onClick={openProjectTasks}>查看任务 · {tasks.length}<ArrowSquareOut size={14} /></button>;
   const membersTriggerEl = <div className="conversation-members" aria-label="当前团队成员"><button ref={headerMemberTrigger} type="button" className="conversation-members-trigger" aria-label={`选择参与成员，已选 ${selected.length} 位，共 ${agents.length} 位`} aria-expanded={membersOpen === "header"} aria-controls={membersOpen === "header" ? membersId : undefined} onClick={() => setMembersOpen(value => value === "header" ? null : "header")} disabled={!snapshot}>
-    <span className="conversation-member-preview" aria-hidden="true">{agents.slice(0, delegation ? 4 : isGrokNoir && !projectOverview ? 2 : 3).map(agent => <span key={agent.id} data-selected={selected.includes(agent.id)}><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /></span>)}</span><span>{isGrokNoir ? agents.length : `成员 ${agents.length}`}</span>{!isGrokNoir && <CaretDown size={14} />}</button></div>;
+    <span className="conversation-member-preview" aria-hidden="true">{agents.slice(0, delegation ? 4 : !projectOverview ? 2 : 3).map(agent => <span key={agent.id} data-selected={selected.includes(agent.id)}><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /></span>)}</span><span>{agents.length}</span></button></div>;
   const modeTabsEl = <div className="conversation-modes" role="tablist" aria-label="协作视图">{([['chat', '团队聊天'], ['tasks', '任务执行']] as const).map(([value, label]) => <button type="button" role="tab" id={`${workViewId}-${value}-tab`} aria-label={label} aria-controls={`${workViewId}-${value}-panel`} key={value} aria-selected={workView === value} tabIndex={workView === value ? 0 : -1} onKeyDown={event => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault(); const next = event.key === "Home" ? "chat" : event.key === "End" ? "tasks" : workView === "chat" ? "tasks" : "chat";
     setWorkView(next); setSelectedDeliveryId(null); setMembersOpen(null); setHistoryMenuOpen(false);
     requestAnimationFrame(() => document.getElementById(`${workViewId}-${next}-tab`)?.focus());
-  }} onClick={() => { setWorkView(value); setSelectedDeliveryId(null); setMembersOpen(null); setHistoryMenuOpen(false); }}>{isGrokNoir ? (value === "chat" ? "对话" : "任务") : label}{value === "tasks" && <span className="team-task-count">{tasks.length}</span>}</button>)}</div>;
-  const historyActionsEl = <div className="conversation-history-actions"><button ref={historyTrigger} type="button" className="conversation-icon" aria-label="讨论记录操作" aria-haspopup="menu" aria-expanded={historyMenuOpen} aria-controls={historyMenuOpen ? historyMenuId : undefined} disabled={!projectId || busy || !active} onClick={() => { setMembersOpen(null); setHistoryMenuOpen(value => !value); }}><DotsThree size={isGrokNoir ? 19 : 21} /></button>
+  }} onClick={() => { setWorkView(value); setSelectedDeliveryId(null); setMembersOpen(null); setHistoryMenuOpen(false); }}>{value === "chat" ? "对话" : "任务"}{value === "tasks" && <span className="team-task-count">{tasks.length}</span>}</button>)}</div>;
+  const historyActionsEl = <div className="conversation-history-actions"><button ref={historyTrigger} type="button" className="conversation-icon" aria-label="讨论记录操作" aria-haspopup="menu" aria-expanded={historyMenuOpen} aria-controls={historyMenuOpen ? historyMenuId : undefined} disabled={!projectId || busy || !active} onClick={() => { setMembersOpen(null); setHistoryMenuOpen(value => !value); }}><DotsThree size={19} /></button>
     {historyMenuOpen && <div ref={historyMenu} id={historyMenuId} className="conversation-history-menu" role="menu" aria-label="讨论记录操作">
     <button type="button" role="menuitem" disabled={newConversationBlocked} title={conversation?.rounds.some(conversationIsActive) ? "团队正在回复，结束后可新建会话" : pending ? "请先核对未确认的发送" : "开始新的团队会话"} onClick={() => void startNewConversation()}><Plus size={17} />新建会话</button>
     <button type="button" role="menuitem" disabled={!conversation} onClick={() => {
@@ -980,8 +977,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     projectId={projectId} currentId={conversation.conversation.id} currentTitle={currentTitle} blocked={newConversationBlocked} busy={busy}
     memberCount={selectionCount} onSwitch={switchConversation} onRename={startRename} />;
 
-  return <div className={`collaboration-project-host${projectOverview ? " has-project-navigation" : ""}`} data-multi-agent-style={multiAgentStyle} data-surface={projectOverview ? "bot" : "docked"}>
-    {projectOverview && <CollaborationProjectNavigation active={active} projects={projects} projectId={projectId} style={multiAgentStyle}
+  return <div className={`collaboration-project-host${projectOverview ? " has-project-navigation" : ""}`} data-multi-agent-style="grok_noir" data-surface={projectOverview ? "bot" : "docked"}>
+    {projectOverview && <CollaborationProjectNavigation active={active} projects={projects} projectId={projectId}
       onSelect={chooseProject} onCreate={() => setCreatingProject(true)} onRename={async (id, name) => {
         const updated = await invoke<MultiAgentProject>("ma_rename_project", { projectId: id, name });
         if (mounted.current) {
@@ -994,66 +991,48 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       }} />}
     <div className={`conversation-delegation-layout${delegation ? " has-delegation" : showExecDrawer ? " has-grok-drawer" : ""}`}>
     <section className="collaboration-conversation team-work-views" aria-label="团队协作会话">
-    <header className={`conversation-header${isGrokNoir ? " is-grok-noir" : ""}`}>
-      {isGrokNoir ? (
-        projectOverview ? (
-          <div className="grok-topbar">
-            <div className="grok-top-left">
-              <h1 className="collaboration-project-title" title={snapshot?.project.rootPath}>{projectTitleText}</h1>
-              {switcherEl}
-            </div>
+    <header className="conversation-header is-grok-noir">
+      {projectOverview ? (
+        <div className="grok-topbar">
+          <div className="grok-top-left">
+            <h1 className="collaboration-project-title" title={snapshot?.project.rootPath}>{projectTitleText}</h1>
+            {switcherEl}
+          </div>
+          <div className="grok-top-center">{modeTabsEl}</div>
+          <div className="grok-top-right">
+            {!showExecDrawer && onOpenProjectSettings && <div className="grok-top-task-wrap">{taskLinkEl}</div>}
+            {membersTriggerEl}
+            {workView === "chat" && !delegation && (
+              <button type="button" className={`conversation-icon grok-drawer-toggle${execDrawerOpen ? " is-active" : ""}`}
+                aria-label={execDrawerOpen ? "收起右侧执行画布" : "展开右侧执行画布"}
+                aria-pressed={execDrawerOpen}
+                title={execDrawerOpen ? "收起右侧执行画布" : "展开右侧执行画布"}
+                onClick={() => setExecDrawerOpen(value => !value)}>
+                <SidebarSimple size={16} style={{ transform: "scaleX(-1)" }} aria-hidden="true" />
+              </button>
+            )}
+            {historyActionsEl}
+            {settingsBtnEl}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grok-topbar is-docked">
+            <div className="grok-top-left">{projectSelectEl}</div>
             <div className="grok-top-center">{modeTabsEl}</div>
             <div className="grok-top-right">
-              {!showExecDrawer && onOpenProjectSettings && <div className="grok-top-task-wrap">{taskLinkEl}</div>}
               {membersTriggerEl}
-              {workView === "chat" && !delegation && (
-                <button type="button" className={`conversation-icon grok-drawer-toggle${execDrawerOpen ? " is-active" : ""}`}
-                  aria-label={execDrawerOpen ? "收起右侧执行画布" : "展开右侧执行画布"}
-                  aria-pressed={execDrawerOpen}
-                  title={execDrawerOpen ? "收起右侧执行画布" : "展开右侧执行画布"}
-                  onClick={() => setExecDrawerOpen(value => !value)}>
-                  <SidebarSimple size={16} style={{ transform: "scaleX(-1)" }} aria-hidden="true" />
-                </button>
-              )}
               {historyActionsEl}
               {settingsBtnEl}
             </div>
           </div>
-        ) : (
-          <>
-            <div className="grok-topbar is-docked">
-              <div className="grok-top-left">{projectSelectEl}</div>
-              <div className="grok-top-center">{modeTabsEl}</div>
-              <div className="grok-top-right">
-                {membersTriggerEl}
-                {historyActionsEl}
-                {settingsBtnEl}
-              </div>
+          <div className="grok-docked-subbar">
+            <div className="grok-docked-subbar-left">{switcherEl}</div>
+            <div className="grok-docked-subbar-right">
+              {onOpenProjectSettings && taskLinkEl}
+              {createProjectBtnEl}
             </div>
-            <div className="grok-docked-subbar">
-              <div className="grok-docked-subbar-left">{switcherEl}</div>
-              <div className="grok-docked-subbar-right">
-                {onOpenProjectSettings && taskLinkEl}
-                {createProjectBtnEl}
-              </div>
-            </div>
-          </>
-        )
-      ) : (
-        <>
-          <div className="conversation-heading">
-            {projectOverview
-              ? <h1 className="collaboration-project-title" title={snapshot?.project.rootPath}>{projectTitleText}</h1>
-              : <>{projectSelectEl}{createProjectBtnEl}</>}
-            {settingsBtnEl}
           </div>
-          <div className="conversation-context-row"><div className="conversation-context">{taskLinkEl}</div>
-            {membersTriggerEl}
-          </div>
-          <div className="conversation-tabs-row">{modeTabsEl}
-            {historyActionsEl}
-          </div>
-          {switcherEl}
         </>
       )}
     </header>
@@ -1146,7 +1125,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
             {fromUser && <span className="conversation-avatar conversation-user-avatar" role="img" aria-label="我"><User size={21} aria-hidden="true" /></span>}
           </header>
             {fromUser ? ((!!message.body && !plan) || attachments) && (() => {
-              const isLongUserMsg = isGrokNoir && !!message.body && !plan && (message.body.length > 160 || message.body.split("\n").length > 3);
+              const isLongUserMsg = !!message.body && !plan && (message.body.length > 160 || message.body.split("\n").length > 3);
               const isExpanded = !!expandedUserMsgs[message.id];
               return <div className="conversation-user-bubble">
                 {!!message.body && !plan && (
@@ -1290,7 +1269,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
             </div>
           </div>
            <div className="conversation-composer-send-actions"><button type="button" className="conversation-icon conversation-add-attachment" aria-label="添加附件" aria-describedby={attachmentTooltipId}
-             disabled={!projectId || !conversation || !active || busy || !!pending || pickingFiles} onClick={() => void pickAttachments()}>{isGrokNoir ? <Plus size={16} weight="bold" aria-hidden="true" /> : <Paperclip size={18} />}</button>
+             disabled={!projectId || !conversation || !active || busy || !!pending || pickingFiles} onClick={() => void pickAttachments()}><Plus size={16} weight="bold" aria-hidden="true" /></button>
              <span className="conversation-attachment-tooltip" id={attachmentTooltipId} role="tooltip">
                <span>图片 · {IMAGE_EXTENSIONS.join("、").toUpperCase()}</span>
                <span>视频 · {VIDEO_EXTENSIONS.join("、").toUpperCase()}</span>
@@ -1306,7 +1285,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
             </button> : <span id={sendScopeId} className="conversation-send-scope">{sendScopeLabel}</span>}
            <button type="submit" className="conversation-send" aria-label={sendLabel} title={sendLabel} aria-describedby={sendScopeId}
              disabled={busy || pickingFiles || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || (!draft.trim() && !draftFiles.length) || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}>
-             {isGrokNoir ? <ArrowUp size={17} weight="bold" aria-hidden="true" /> : <ArrowElbowDownLeft size={20} aria-hidden="true" />}
+             <ArrowElbowDownLeft size={17} aria-hidden="true" />
            </button></div></div>
         {membersOpen === "composer" && <div id={membersId} ref={membersMenu} className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>分工与托管成员</strong>
             <div className="conversation-recipient-actions">
