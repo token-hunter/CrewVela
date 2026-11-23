@@ -127,8 +127,7 @@ export type AppearanceAccent =
   | "cyan"
   | "orange"
   | "pink"
-  | "coral"
-  | "gray";
+  | "coral";
 export type RightSidebarStartStyle =
   | "minimal"
   | "lamp"

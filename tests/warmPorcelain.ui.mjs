@@ -33,7 +33,7 @@ try {
   });
   assert.equal(colors.bg,"rgb(253, 250, 247)"); assert.equal(colors.nav,"rgb(235, 229, 224)"); assert.equal(colors.scheme,"light");
   assert.ok(ratio(colors.text,colors.bg)>=4.5); assert.ok(ratio(colors.secondary,colors.nav)>=4.5);
-  for(const label of ["陶土","紫色","青色","橙色","粉色","珊瑚色","灰色","无强调色"]) {
+  for(const label of ["陶土","紫色","青色","橙色","粉色","珊瑚色","无强调色"]) {
     await page.getByRole("radio",{name:label,exact:true}).click();
     assert.equal(await page.locator(".settings-native").evaluate(el=>getComputedStyle(el).backgroundColor),colors.bg);
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem("crewvela-appearance")).theme),"aurora");
@@ -51,5 +51,5 @@ try {
   await openAppearance();
   assert.equal(await page.getByRole("button",{name:"暖瓷白",exact:true}).getAttribute("aria-pressed"),"true");
   assert.deepEqual(errors,[]);
-  console.log(`PASS: old aurora loads warm light theme; three dark/three light; all 8 accents independent; primary contrast ${ratio(colors.text,colors.bg).toFixed(2)}, navigation secondary ${ratio(colors.secondary,colors.nav).toFixed(2)}; narrow layout and reload persistence`);
+  console.log(`PASS: old aurora loads warm light theme; three dark/three light; all 7 accents independent; primary contrast ${ratio(colors.text,colors.bg).toFixed(2)}, navigation secondary ${ratio(colors.secondary,colors.nav).toFixed(2)}; narrow layout and reload persistence`);
 } finally { await browser.close(); }

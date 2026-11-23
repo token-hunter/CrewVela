@@ -7,7 +7,7 @@ await new Promise((resolve,reject)=>{server.stdout.on('data',d=>{if(d.toString()
 const browser = await chromium.launch({channel:'chrome',headless:true});
 mkdirSync('output/playwright',{recursive:true});
 try {
- for (const old of ['blue','green']) {
+ for (const old of ['blue','green','gray']) {
   const page=await browser.newPage({viewport:{width:1440,height:1100}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(accent=>{if(!localStorage.getItem('crewvela-appearance'))localStorage.setItem('crewvela-appearance',JSON.stringify({theme:'dark',background:'solid',accent}))},old);
@@ -15,8 +15,11 @@ try {
   const none=page.getByRole('radio',{name:'无强调色',exact:true});
   await none.waitFor();
   assert.equal(await none.getAttribute('aria-checked'),'true');
-  assert.equal(await page.getByRole('radio',{name:/^(蓝色|绿色)$/}).count(),0);
-  assert.equal(await page.getByRole('radio',{name:/^(无强调色|陶土|紫色|青色|橙色|粉色|珊瑚色|灰色)$/}).count(),8);
+  assert.equal(await page.getByRole('radio',{name:/^(蓝色|绿色|灰色)$/}).count(),0);
+  const accentGroup=page.getByRole('radiogroup',{name:'强调色',exact:true});
+  assert.deepEqual(await accentGroup.getByRole('radio').evaluateAll(radios=>radios.map(radio=>radio.getAttribute('aria-label'))),
+   ['无强调色','陶土','紫色','青色','橙色','粉色','珊瑚色']);
+  assert.equal(await page.locator('.appearance-accent-current').textContent(),'无强调色');
   for(const [label,theme,expected] of [['深色','dark','#c9c9c6'],['浅色','light','#454543'],['暖夜黑','ocean','#c9c9c6'],['石墨黑','purple','#c9c9c6'],['暖沙','sand','#454543'],['暖瓷白','aurora','#454543']]) {
    await page.getByRole('button',{name:label,exact:true}).click();
    await page.waitForFunction(t=>document.documentElement.dataset.appearanceTheme===t,theme);
@@ -32,9 +35,9 @@ try {
   assert.equal(await none.getAttribute('aria-checked'),'true');
   await page.reload();await none.waitFor();assert.equal(await none.getAttribute('aria-checked'),'true');
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('crewvela-appearance')).accent),'none');
-  await page.getByRole('button',{name:'恢复默认'}).click();
+  await page.getByRole('button',{name:'恢复默认',exact:true}).click();
   assert.equal(await page.getByRole('radio',{name:'陶土',exact:true}).getAttribute('aria-checked'),'true');
   assert.deepEqual(errors,[]);await page.close();
  }
- console.log('PASS: blue/green migration, 8 choices, 6 themes, mouse/keyboard selection, reload persistence and reset');
+ console.log('PASS: blue/green/gray migration, 7 choices, 6 themes, mouse/keyboard selection, reload persistence and reset');
 } finally {await browser.close();server.kill()}

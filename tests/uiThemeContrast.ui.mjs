@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 const output = "output/playwright/theme-contrast";
 mkdirSync(output, { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
-const accents = ["clay", "blue", "purple", "cyan", "green", "orange", "pink", "coral", "gray"];
+const accents = ["clay", "none", "purple", "cyan", "orange", "pink", "coral"];
 const luminance = (color) => {
   const components = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(value => {
     const channel = value / 255;
@@ -51,7 +51,7 @@ try {
       assert.ok(hoverRatio >= 4.5, `${theme}/${accent}: hovered primary action contrast ${hoverRatio.toFixed(2)}`);
       await page.mouse.move(0, 0);
       console.log(`PASS ${theme}/${accent}: primary action contrast ${ratio.toFixed(2)}`);
-      if (accent === "blue") await page.screenshot({ path: `${output}/${theme}-models.png` });
+      if (accent === "purple") await page.screenshot({ path: `${output}/${theme}-models.png` });
     }
   }
   assert.deepEqual(errors, []);

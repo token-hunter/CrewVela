@@ -10,7 +10,7 @@ test('removed accents migrate, remaining accents persist and invalid values stil
     for (const accent of ['blue', 'green', 'none', 'clay', 'purple', 'cyan', 'orange', 'pink', 'coral', 'gray', 'invalid']) {
       values.set('crewvela-appearance', JSON.stringify({ theme: 'sand', accent, terminalOpacity: 0.4 }));
       const appearance = loadAppearance();
-      assert.equal(appearance.accent, ['blue', 'green'].includes(accent) ? 'none' : accent === 'invalid' ? 'clay' : accent);
+      assert.equal(appearance.accent, ['blue', 'green', 'gray'].includes(accent) ? 'none' : accent === 'invalid' ? 'clay' : accent);
       assert.equal(appearance.theme, 'sand');
       assert.equal(appearance.terminalOpacity, 0.4);
       saveAppearance(appearance, 'light');

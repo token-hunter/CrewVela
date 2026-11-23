@@ -109,11 +109,10 @@ const APPEARANCE_ACCENTS: AppearanceAccent[] = [
   "orange",
   "pink",
   "coral",
-  "gray",
 ];
 
 export function migrateAppearanceAccent(value: unknown): unknown {
-  return value === "blue" || value === "green" ? "none" : value;
+  return value === "blue" || value === "green" || value === "gray" ? "none" : value;
 }
 
 function includesValue<T extends string>(values: T[], value: unknown): value is T {

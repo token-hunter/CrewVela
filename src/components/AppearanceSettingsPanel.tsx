@@ -65,7 +65,6 @@ const ACCENT_OPTIONS: Array<{ id: AppearanceAccent; label: string }> = [
   { id: "orange", label: "橙色" },
   { id: "pink", label: "粉色" },
   { id: "coral", label: "珊瑚色" },
-  { id: "gray", label: "灰色" },
 ];
 
 const START_STYLE_OPTIONS: Array<{

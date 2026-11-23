@@ -52,7 +52,7 @@ try {
   assert.ok(contrast(colors.dim, colors.nav) >= 4.5);
   assert.equal(colors.terminalText, colors.text); assert.equal(colors.terminalDim, colors.dim);
   await frame.screenshot({ path: `${out}/reference-state.png` });
-  for (const label of ['陶土', '紫色', '青色', '橙色', '粉色', '珊瑚色', '灰色', '无强调色']) {
+  for (const label of ['陶土', '紫色', '青色', '橙色', '粉色', '珊瑚色', '无强调色']) {
     await frame.getByRole('radio', { name: label, exact: true }).click();
     assert.equal(await frame.evaluate(el => getComputedStyle(el).backgroundColor), colors.canvas);
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('crewvela-appearance')).theme), 'ocean');
@@ -97,5 +97,5 @@ try {
   assert.equal(persisted.theme, 'ocean'); assert.equal(persisted.background, 'solid'); assert.equal(persisted.terminalOpacity, 0); assert.equal(persisted.followSystem, false);
   assert.deepEqual(errors, []);
   writeFileSync(`${out}/results.json`, JSON.stringify({ colors, persisted, paletteClasses, errors }, null, 2));
-  console.log('PASS: old ocean becomes warm night; real App settings/preview tokens, six themes, eight accents, backgrounds, transparency, follow system, fixed geometry, narrow layouts and reload persistence.');
+  console.log('PASS: old ocean becomes warm night; real App settings/preview tokens, six themes, seven accents, backgrounds, transparency, follow system, fixed geometry, narrow layouts and reload persistence.');
 } finally { await browser.close(); }

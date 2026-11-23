@@ -1274,7 +1274,6 @@
 .appearance-accent-list button[data-accent="orange"] { background: #e8933a; }
 .appearance-accent-list button[data-accent="pink"] { background: #cf6aa0; }
 .appearance-accent-list button[data-accent="coral"] { background: #e06b5f; }
-.appearance-accent-list button[data-accent="gray"] { background: #90979f; }
 
 .appearance-accent-list button:hover {
   transform: scale(1.08);

@@ -4,7 +4,7 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import {chromium} from 'playwright';
 const base=process.env.CREWVELA_UI_URL||'http://127.0.0.1:1435',out='.scratch/automation-accent-20261116/ui';mkdirSync(out,{recursive:true});
 const browser=await chromium.launch({channel:'chrome'}),errors=[],metrics=[];
-const accents=[['clay','陶土'],['none','无强调色'],['purple','紫色'],['cyan','青色'],['orange','橙色'],['pink','粉色'],['coral','珊瑚色'],['gray','灰色']];
+const accents=[['clay','陶土'],['none','无强调色'],['purple','紫色'],['cyan','青色'],['orange','橙色'],['pink','粉色'],['coral','珊瑚色']];
 const themes=[['dark','深色'],['light','浅色'],['ocean','暖夜黑'],['purple','石墨黑'],['sand','暖沙'],['aurora','暖瓷白']];
 const rgb=color=>color.match(/[\d.]+/g).slice(0,3).map(Number);
 function contrast(a,b){const luminance=color=>rgb(color).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);const values=[luminance(a),luminance(b)].sort((a,b)=>a-b);return (values[1]+.05)/(values[0]+.05);}
@@ -41,7 +41,7 @@ try{
    const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('crewvela-appearance')));assert.equal(saved.accent,accent);assert.equal(saved.theme,theme);
    if((theme==='dark'&&accent==='purple')||(theme==='light'&&accent==='cyan')){await page.mouse.move(1,1);await settings.screenshot({path:`${out}/${key}.png`});}
   }
-  assert.equal(seen.size,8,`${theme}: every selectable accent produces a distinct palette`);
+  assert.equal(seen.size,accents.length,`${theme}: every selectable accent produces a distinct palette`);
  }
  // CSS responds immediately on an already-mounted list as root theme attributes change.
  const live=await page.locator('.automation-card').first().elementHandle();
@@ -53,9 +53,9 @@ try{
   check(await colors(page),`live-${accent}`);assert.equal(await live.evaluate(el=>el===document.querySelector('.automation-card')),true);
  }
  await page.reload();await page.getByRole('button',{name:'设置',exact:true}).click();await page.getByRole('navigation',{name:'设置分类',exact:true}).getByRole('button',{name:'自动化',exact:true}).click();await page.locator('.automation-card').first().waitFor();
- assert.deepEqual(await page.evaluate(()=>[document.documentElement.dataset.appearanceTheme,document.documentElement.dataset.appearanceAccent]),['aurora','gray']);check(await colors(page),'reload');
+ assert.deepEqual(await page.evaluate(()=>[document.documentElement.dataset.appearanceTheme,document.documentElement.dataset.appearanceAccent]),['aurora','coral']);check(await colors(page),'reload');
  await page.setViewportSize({width:687,height:903});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);await page.screenshot({path:`${out}/narrow.png`});
  const calls=await page.evaluate(()=>window.appSessionMock.automationAccentCalls);assert.equal(calls.some(c=>['create_automation','run_automation_now','set_automation_enabled','stop_automation_run','delete_automation'].includes(c.command)),false);
  assert.deepEqual(errors,[]);writeFileSync(`${out}/metrics.json`,JSON.stringify({metrics,errors},null,2));
- console.log('PASS: actual App settings, 8 accents × 6 themes, keyboard selection, immediate mounted-list updates, hover, semantic statuses, button/knob contrast, persistence/reload, narrow layout and no automation mutations');
+ console.log('PASS: actual App settings, 7 accents × 6 themes, keyboard selection, immediate mounted-list updates, hover, semantic statuses, button/knob contrast, persistence/reload, narrow layout and no automation mutations');
 }finally{await browser.close();}
