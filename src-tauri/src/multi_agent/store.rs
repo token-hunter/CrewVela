@@ -178,6 +178,17 @@ impl MultiAgentStore {
         Ok(projects)
     }
 
+    pub(crate) fn rename_project(&self, project_id: &str, name: &str) -> Result<MultiAgentProject> {
+        let name = required(name, "项目名称")?;
+        anyhow::ensure!(!name.chars().any(char::is_control), "项目名称不能包含控制字符");
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("UPDATE ma_projects SET name = ?2 WHERE id = ?1", params![project_id, name])?;
+        let project = self.get_project_with(&tx, project_id)?;
+        tx.commit()?;
+        Ok(project)
+    }
+
     pub fn list_project_activity(&self) -> Result<Vec<CollaborationProjectActivity>> {
         let connection = self.connection.lock().unwrap();
         let mut statement = connection.prepare(
@@ -5803,6 +5814,14 @@ mod tests {
         assert_eq!(updated[&waiting.id], "running");
         assert_eq!(updated[&working.id], "running");
         assert_eq!(updated[&delivered.id], "delivered");
+        let renamed = store.rename_project(&delivered.id, " 已验收演示 ")?;
+        assert_eq!(renamed.name, "已验收演示");
+        assert_eq!(activity()?, updated);
+        let saved_plan: String = store.connection.lock().unwrap().query_row(
+            "SELECT data_json FROM ma_conversation_plans WHERE id = 'delivery-plan' AND project_id = ?1",
+            [&delivered.id], |row| row.get(0),
+        )?;
+        assert_eq!(saved_plan, r#"{"managed":{"status":"completed"}}"#);
         Ok(())
     }
 

@@ -111,11 +111,23 @@
 .collaboration-project-group-toggle[aria-expanded="false"] > svg:last-child { transform: rotate(-90deg); }
 .collaboration-project-group-toggle:disabled { cursor: default; }
 .collaboration-project-navigation :is(.collaboration-project-group-toggle, .collaboration-project-row, .collaboration-project-drawer):hover:not(:disabled) { background: var(--bg-hover); }
-.collaboration-project-navigation .collaboration-project-row { min-height: 43px; }
-.collaboration-project-navigation .collaboration-project-row[aria-current="true"] {
+.collaboration-project-list-item { display: flex; align-items: center; padding-inline-end: 4px; border-radius: 7px; }
+.collaboration-project-navigation .collaboration-project-row { flex: 1; min-width: 0; min-height: 43px; }
+.collaboration-project-list-item:hover { background: var(--bg-hover); }
+.collaboration-project-list-item:has(> .collaboration-project-row[aria-current="true"]) {
   background: var(--accent-soft);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+.collaboration-project-navigation .collaboration-project-row:hover:not(:disabled) { background: transparent; }
+.collaboration-project-actions {
+  display: grid; place-items: center; flex: none; width: 28px; height: 28px;
+  border: 0; border-radius: 5px; background: transparent; color: var(--text-dim);
+}
+.collaboration-project-actions:is(:hover, [aria-expanded="true"]) { background: var(--bg-hover); color: var(--text); }
+.conversation-history-menu.collaboration-project-actions-menu {
+  position: fixed; inset: auto; z-index: var(--z-popover, 1200); font-family: var(--display-font);
+}
+.collaboration-project-actions-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .collaboration-project-row > svg, .collaboration-project-status-dot { flex: none; }
 .collaboration-project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .collaboration-project-status {

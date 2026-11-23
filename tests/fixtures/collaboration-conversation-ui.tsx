@@ -179,6 +179,7 @@ const mock = {
   previewBrowsed: [] as string[],
   previewVersion: "",
   clipboardWrites: [] as string[], copyError: "", holdCopy: false, pendingCopies: [] as Array<()=>void>, failPermission:false, stalePermission:false,
+  failProjectRename: false,
   calls, pending, chats, projects, snapshot, activityEvents, activityApprovals, runHistory, archivedConversations: [] as any[], holdProject: "", holdSend: false, holdClear: false, holdNew: false, failExecution: false, failApproval: false, failClear: false, failNew: false,
   release(command: string, value?: any, error?: string) { const index = pending.findIndex(item => item.command === command); if (index < 0) throw Error(`No pending ${command}`); const item = pending.splice(index, 1)[0]; if (error) item.reject(Error(error)); else item.resolve(value ?? (command === "ma_snapshot" ? snapshot(item.args.projectId) : chats[item.args.projectId ?? item.args.input.projectId])); },
   failPlanning() {
@@ -209,6 +210,12 @@ const mock = {
     if (params.get("fail-aux") === "1" && ["ma_probe_runtimes", "skill_center_snapshot"].includes(command)) throw Error("隔离测试：辅助读取失败");
     if ((["ma_snapshot", "ma_conversation_snapshot"].includes(command) && mock.holdProject === args.projectId) || (command === "ma_conversation_send" && mock.holdSend) || (command === "ma_conversation_clear" && mock.holdClear) || (command === "ma_conversation_new" && mock.holdNew)) return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
     if (command === "ma_list_projects") return structuredClone(projects);
+    if (command === "ma_rename_project") {
+      const project = projects.find(item => item.id === args.projectId);
+      if (!project || mock.failProjectRename) throw Error("隔离测试：项目名称未保存");
+      project.name = args.name;
+      return structuredClone(project);
+    }
     if (command === "ma_list_project_activity") return structuredClone(projects.map(project => ({
       project, activity: ({ A: "pending_approval", B: "running", C: "running", D: "delivered" } as Record<string, string>)[project.id] ?? project.status,
     })));

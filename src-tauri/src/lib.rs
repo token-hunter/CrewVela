@@ -931,6 +931,12 @@ async fn ma_create_project(
 }
 
 #[tauri::command]
+async fn ma_rename_project(project_id: String, name: String, state: State<'_, MultiAgentStore>) -> Result<MultiAgentProject, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.rename_project(&project_id, &name).map_err(to_err)).await
+}
+
+#[tauri::command]
 async fn ma_project_git_status(root_path: String) -> Result<multi_agent::project_git::ProjectGitStatus, String> {
     blocking_command(move || multi_agent::project_git::inspect(std::path::Path::new(&root_path)).map_err(to_err)).await
 }
@@ -6610,6 +6616,7 @@ pub fn run() {
             ma_list_interventions,
             ma_resolve_intervention,
             ma_create_project,
+            ma_rename_project,
             ma_project_git_status,
             ma_member_library,
             ma_member_library_import,

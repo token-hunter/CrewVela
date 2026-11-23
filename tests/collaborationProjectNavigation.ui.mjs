@@ -64,11 +64,65 @@ try {
   await create.getByRole("button", { name: "取消" }).click();
   await create.waitFor({ state: "hidden" });
 
+  const rename = page.getByRole("dialog", { name: "重命名项目", exact: true });
+  const name = rename.getByRole("textbox", { name: "项目名称", exact: true });
+  const save = rename.getByRole("button", { name: "保存", exact: true });
+  const shopActions = nav.getByRole("button", { name: "小栈商城的项目操作", exact: true });
+  const openRename = async actions => {
+    await actions.click();
+    await page.getByRole("menuitem", { name: "重命名项目", exact: true }).click();
+    await rename.waitFor();
+  };
+  await shopActions.focus();
+  await page.keyboard.press("Enter");
+  const menu = page.getByRole("menu", { name: "小栈商城的项目操作", exact: true });
+  await menu.waitFor();
+  await page.keyboard.press("Escape");
+  await menu.waitFor({ state: "hidden" });
+  assert.ok(await shopActions.evaluate(el => document.activeElement === el));
+
+  await openRename(shopActions);
+  assert.equal(await name.inputValue(), "小栈商城");
+  await name.fill("   ");
+  assert.ok(await save.isDisabled());
+  await name.fill("  小栈商城 · 验收  ");
+  await page.evaluate(() => window.conversationMock.failProjectRename = true);
+  await save.click();
+  await rename.getByRole("alert").filter({ hasText: /项目名称未保存/ }).waitFor();
+  assert.equal(await name.inputValue(), "  小栈商城 · 验收  ");
+  await page.getByRole("heading", { name: "小栈商城", exact: true }).waitFor();
+  await page.evaluate(() => window.conversationMock.failProjectRename = false);
+  await save.click();
+  await rename.waitFor({ state: "hidden" });
+  await page.getByRole("heading", { name: "小栈商城 · 验收", exact: true }).waitFor();
+  assert.equal(await nav.getByRole("button", { name: "小栈商城 · 验收 待审批", exact: true }).getAttribute("aria-current"), "true");
+  await search.fill("商城 · 验收");
+  await nav.getByRole("button", { name: "小栈商城 · 验收 待审批", exact: true }).waitFor();
+  assert.equal(await converter.count(), 0);
+  await search.clear();
+  assert.equal(await editor.inputValue(), "商城项目专属草稿");
+  await page.getByRole("log").getByText("按这个分工执行。").waitFor();
+  await page.getByRole("tab", { name: "任务执行", exact: true }).click();
+  await task.waitFor();
+  await page.getByRole("tab", { name: "团队聊天", exact: true }).click();
+
   await page.setViewportSize({ width: 520, height: 900 });
   const drawer = nav.getByRole("button", { name: "协作项目", exact: true });
   await drawer.waitFor();
   await search.waitFor({ state: "hidden" });
   await drawer.click();
+  await openRename(nav.getByRole("button", { name: "星潮方块的项目操作", exact: true }));
+  await name.fill("星潮方块 · 已验收");
+  await save.click();
+  await rename.waitFor({ state: "hidden" });
+  await nav.getByRole("button", { name: "星潮方块 · 已验收 已交付", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "小栈商城 · 验收", exact: true }).waitFor();
+  const renames = await page.evaluate(() => window.conversationMock.calls.filter(item => item.command === "ma_rename_project").map(item => item.args));
+  assert.deepEqual(renames, [
+    { projectId: "A", name: "小栈商城 · 验收" },
+    { projectId: "A", name: "小栈商城 · 验收" },
+    { projectId: "D", name: "星潮方块 · 已验收" },
+  ]);
   await running.click();
   await converter.click();
   await search.waitFor({ state: "hidden" });

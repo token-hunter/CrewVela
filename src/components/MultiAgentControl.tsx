@@ -929,7 +929,16 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
 
   return <div className={`collaboration-project-host${projectOverview ? " has-project-navigation" : ""}`}>
     {projectOverview && <CollaborationProjectNavigation active={active} projects={projects} projectId={projectId}
-      onSelect={chooseProject} onCreate={() => setCreatingProject(true)} />}
+      onSelect={chooseProject} onCreate={() => setCreatingProject(true)} onRename={async (id, name) => {
+        const updated = await invoke<MultiAgentProject>("ma_rename_project", { projectId: id, name });
+        if (mounted.current) {
+          setProjects(items => items.map(item => item.id === updated.id ? { ...item, name: updated.name } : item));
+          setSnapshot(current => current?.project.id === updated.id
+            ? { ...current, project: { ...current.project, name: updated.name } } : current);
+          if (projectId === updated.id && currentProject.current === updated.id) void refresh();
+        }
+        return updated;
+      }} />}
     <div className={`conversation-delegation-layout${delegation ? " has-delegation" : ""}`}>
     <section className="collaboration-conversation team-work-views" aria-label="团队协作会话">
     <header className="conversation-header">

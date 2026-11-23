@@ -701,6 +701,30 @@ fn new_conversation_allows_empty_sessions_and_rejects_stale_or_active_requests()
 }
 
 #[test]
+fn project_rename_preserves_conversation_and_execution_records() -> Result<()> {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    fixture.run(&Replies::default());
+    let chat = serde_json::to_value(store.conversation_snapshot(&fixture.project)?)?;
+    let mut execution = serde_json::to_value(store.snapshot(&fixture.project)?)?;
+    assert!(!execution["tasks"].as_array().unwrap().is_empty());
+    for name in ["  ", "间隔\n换行"] {
+        assert!(store.rename_project(&fixture.project, name).is_err());
+    }
+    assert!(store.rename_project("missing-project", "新名称").is_err());
+    assert_eq!(serde_json::to_value(store.snapshot(&fixture.project)?)?, execution);
+
+    let renamed = store.rename_project(&fixture.project, " 新名称 ")?;
+    assert_eq!(renamed.id, fixture.project);
+    assert_eq!(renamed.name, "新名称");
+    execution["project"]["name"] = json!("新名称");
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db"))?;
+    assert_eq!(serde_json::to_value(reopened.snapshot(&fixture.project)?)?, execution);
+    assert_eq!(serde_json::to_value(reopened.conversation_snapshot(&fixture.project)?)?, chat);
+    Ok(())
+}
+
+#[test]
 fn conversation_sessions_rename_history_and_delete_current_durably() {
     let fixture = Fixture::new();
     let previous = fixture.run(&Replies::default());
