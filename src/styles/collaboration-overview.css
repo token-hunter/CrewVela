@@ -168,17 +168,19 @@
 .collab-team-member > div { min-width: 0; }
 .collab-avatar-picker { border: 0; padding: 0; margin: 0; }
 .collab-avatar-picker legend { font-size: 12px; margin-bottom: 8px; }
-.collab-avatar-picker > div { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.collab-avatar-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .collab-avatar-picker button { display: flex; flex-direction: column; align-items: center; gap: 5px; min-height: 68px; padding: 8px 4px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-secondary); font-size: 11px; cursor: pointer; }
 .collab-avatar-picker button img { width: 28px; height: 28px; object-fit: contain; }
 .collab-avatar-picker button.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--text-primary); }
 .collab-avatar-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .collab-avatar-picker button:disabled { cursor: default; opacity: .5; }
 
-.collab-avatar-picker > button { flex-direction: row; min-height: 36px; padding: 5px 10px; margin-bottom: 8px; }
-.collab-avatar-picker > button img { width: 24px; height: 24px; }
-@media (max-width: 600px) { .collab-avatar-picker > div { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (max-width: 380px) { .collab-avatar-picker > div { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.collab-avatar-top { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.collab-avatar-top > button { flex-direction: row; min-height: 36px; padding: 5px 10px; }
+.collab-avatar-top > button img { width: 24px; height: 24px; }
+img[data-avatar="imported"] { border-radius: 24%; }
+@media (max-width: 600px) { .collab-avatar-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 380px) { .collab-avatar-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* ── 团队名片墙（角色筛选 + 搜索 + 点卡片编辑）────────────────────────── */
 .collab-team-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

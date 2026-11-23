@@ -56,6 +56,7 @@ function applyFixtureTeam(projectId: string) {
 }
 const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate: false, releaseCreate: null as (() => void) | null, pickerResult: null as string | null, pickerError: false,
   gitSetups: [] as any[], gitStatus: null as any, gitError: false,
+  avatarImports: [] as string[],
   libraryImports: [] as any[],
   removalRequests: [] as any[], removalBlockers: [] as string[], removedAgents: () => snapshot.agents.filter((agent: any) => agent.removedAt) };
 (window as any).projectMock = projectMock;
@@ -96,6 +97,20 @@ const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate:
   if (command === "plugin:dialog|open") {
     if (projectMock.pickerError) throw Error("回归测试：目录选择失败");
     return projectMock.pickerResult;
+  }
+  if (command === "ma_import_agent_avatar") {
+    projectMock.avatarImports.push(args.path);
+    if (args.path !== "/fixture/portrait.png") throw Error("回归测试：图片格式不支持");
+    return `imported:${"a".repeat(64)}`;
+  }
+  if (command === "ma_agent_avatar_image") {
+    if (args.avatarId !== `imported:${"a".repeat(64)}`) throw Error("回归测试：找不到头像");
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 24;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#73c7a2";
+    context.fillRect(0, 0, 24, 24);
+    return canvas.toDataURL();
   }
   if (command === "ma_project_git_status") {
     if (projectMock.gitError) throw Error("找不到 Git，请安装 Git 后重新检查。");

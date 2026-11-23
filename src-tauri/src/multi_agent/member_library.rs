@@ -574,7 +574,7 @@ impl MultiAgentStore {
         profile.description = profile.description.trim().to_string();
         profile.persona_custom =
             sanitized_persona_custom(&profile.persona, &profile.persona_custom);
-        super::super::domain::validate_agent_avatar(profile.avatar_id.as_deref())?;
+        self.check_agent_avatar(profile.avatar_id.as_deref())?;
         if !profile.runtime_kind.is_collaboration_cli() {
             bail!("全局成员请选择协作 CLI Runtime");
         }

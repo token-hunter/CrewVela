@@ -16,3 +16,7 @@ export const AGENT_AVATARS = [
 export function agentAvatarSource(avatarId: string | null | undefined, runtimeSource: string): string {
   return AGENT_AVATARS.find((avatar) => avatar.id === avatarId)?.src ?? runtimeSource;
 }
+
+export function isImportedAgentAvatar(avatarId: string | null | undefined): avatarId is string {
+  return typeof avatarId === "string" && /^imported:[0-9a-f]{64}$/.test(avatarId);
+}

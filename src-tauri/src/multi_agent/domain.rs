@@ -1303,9 +1303,9 @@ pub const AGENT_AVATAR_IDS: &[&str] = &[
     "cloud",
 ];
 pub fn validate_agent_avatar(id: Option<&str>) -> anyhow::Result<()> {
-    if id.is_some_and(|value| !AGENT_AVATAR_IDS.contains(&value)) {
+    if id.is_some_and(|value| !AGENT_AVATAR_IDS.contains(&value) && !super::avatar::is_imported_avatar(value)) {
         return Err(anyhow::anyhow!(
-            "未知成员头像，请选择内置头像或 Runtime 默认图标"
+            "未知成员头像，请重新选择头像"
         ));
     }
     Ok(())

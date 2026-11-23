@@ -1,3 +1,4 @@
+pub(crate) mod avatar;
 mod bridge;
 mod coordinator;
 pub(crate) mod conversation;

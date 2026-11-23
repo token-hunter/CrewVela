@@ -800,6 +800,7 @@ dependencies = [
  "cron",
  "dirs 5.0.1",
  "flate2",
+ "image",
  "junction",
  "keyring",
  "libc",

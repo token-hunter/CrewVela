@@ -975,6 +975,18 @@ fn ma_member_library_update(
 }
 
 #[tauri::command]
+async fn ma_import_agent_avatar(path: String, state: State<'_, MultiAgentStore>) -> Result<String, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.import_agent_avatar(std::path::Path::new(&path)).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_agent_avatar_image(avatar_id: String, state: State<'_, MultiAgentStore>) -> Result<String, String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.agent_avatar_image(&avatar_id).map_err(to_err)).await
+}
+
+#[tauri::command]
 fn ma_create_agent(
     input: CreateAgentInput,
     state: State<'_, MultiAgentStore>,
@@ -6624,6 +6636,8 @@ pub fn run() {
             ma_member_library_auto_apply,
             ma_member_library_update,
             ma_create_agent,
+            ma_import_agent_avatar,
+            ma_agent_avatar_image,
             ma_update_agent,
             ma_remove_agent,
             ma_create_task,

@@ -226,7 +226,7 @@ impl MultiAgentStore {
         if !input.runtime_kind.is_collaboration_cli() {
             return Err(anyhow!("新增协作成员仅支持 CLI 执行引擎；ZCode Desktop 仅兼容已有成员，独立 Chat 不作为新成员"));
         }
-        super::domain::validate_agent_avatar(input.avatar_id.as_deref())?;
+        self.check_agent_avatar(input.avatar_id.as_deref())?;
         let name = required(&input.name, "Agent 名称")?;
         let connection = self.connection.lock().unwrap();
         ensure_project_exists(&connection, &input.project_id)?;
@@ -291,7 +291,7 @@ impl MultiAgentStore {
     /// Only model fields change; unrelated profile edits and task/session identity survive.
     /// 保存成员配置，不重建成员，也不改写已有任务、运行及会话关联。
     pub fn update_agent(&self, input: UpdateAgentInput) -> Result<AgentProfile> {
-        super::domain::validate_agent_avatar(input.avatar_id.as_deref())?;
+        self.check_agent_avatar(input.avatar_id.as_deref())?;
         let name = required(&input.name, "Agent 名称")?;
         let previous_profile = self.agent_profile(&input.agent_id)?;
         if input.runtime_kind != previous_profile.runtime_kind
@@ -3994,6 +3994,10 @@ fn migrate(connection: &Connection) -> Result<()> {
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS ma_agent_avatar_images (
+            id TEXT PRIMARY KEY,
+            png BLOB NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS ma_agents (
             id TEXT PRIMARY KEY,
             project_id TEXT NOT NULL REFERENCES ma_projects(id) ON DELETE CASCADE,
@@ -6021,6 +6025,42 @@ mod tests {
         let mut reset = agent_edit(&switched);
         reset.avatar_id = None;
         assert_eq!(fixture.store().update_agent(reset).unwrap().avatar_id, None);
+    }
+
+    #[test]
+    fn imported_agent_avatar_survives_source_removal_and_database_reopen() -> Result<()> {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let fixture = TestStore::new();
+        let store = fixture.store();
+        let project = fixture.project();
+        let source = fixture.root.join("portrait.png");
+        image::DynamicImage::new_rgb8(320, 180).save(&source)?;
+        let avatar = store.import_agent_avatar(&source)?;
+        assert_eq!(store.import_agent_avatar(&source)?, avatar);
+        let agent = store.create_agent(serde_json::from_value(serde_json::json!({
+            "projectId": project.id, "name": "Custom avatar", "runtimeKind": "codex", "role": "worker", "avatarId": avatar,
+        }))?)?;
+        std::fs::remove_file(&source)?;
+
+        let reopened = MultiAgentStore::open_at(fixture.root.join("control.db"))?;
+        assert_eq!(reopened.agent_profile(&agent.id)?.avatar_id.as_deref(), Some(avatar.as_str()));
+        let source = reopened.agent_avatar_image(&avatar)?;
+        let png = STANDARD.decode(source.strip_prefix("data:image/png;base64,").unwrap())?;
+        let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)?;
+        assert_eq!((image.width(), image.height()), (192, 192));
+        let invalid = fixture.root.join("invalid.png");
+        std::fs::write(&invalid, b"<svg xmlns='http://www.w3.org/2000/svg'/>")?;
+        assert!(reopened.import_agent_avatar(&invalid).is_err());
+        assert!(reopened.agent_avatar_image("../../portrait.png").is_err());
+        let mut edit = agent_edit(&agent);
+        edit.avatar_id = Some(format!("imported:{}", "0".repeat(64)));
+        assert!(reopened.update_agent(edit).is_err());
+        assert_eq!(reopened.agent_profile(&agent.id)?.avatar_id.as_deref(), Some(avatar.as_str()));
+        let mut reset = agent_edit(&agent);
+        reset.avatar_id = None;
+        assert!(reopened.update_agent(reset)?.avatar_id.is_none());
+        assert_eq!(reopened.agent_avatar_image(&avatar)?, source);
+        Ok(())
     }
 
     #[test]
