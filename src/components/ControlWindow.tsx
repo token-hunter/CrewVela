@@ -1,30 +1,41 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import type { AppTheme, ProviderConfig, SessionRecord } from "../types";
+import {
+  APPEARANCE_STORAGE_KEY,
+  LEGACY_THEME_STORAGE_KEY,
+  applyAppearanceToRoot,
+  loadAppearance,
+  resolveAppearanceTheme,
+} from "../appearance";
+import type { ProviderConfig, SessionRecord } from "../types";
 import { ControlSidebar } from "./ControlSidebar";
-const THEME_STORAGE_KEY = "crewvela-theme";
-
-function loadTheme(): AppTheme {
-  try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === "light"
-      ? "light"
-      : "dark";
-  } catch {
-    return "dark";
-  }
-}
 
 export function ControlWindow() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
-  const [theme] = useState<AppTheme>(loadTheme);
   const [error, setError] = useState<string | null>(null);
   useLayoutEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const syncAppearance = () => {
+      const appearance = loadAppearance();
+      applyAppearanceToRoot(appearance, resolveAppearanceTheme(appearance, media?.matches ?? true));
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === APPEARANCE_STORAGE_KEY || event.key === LEGACY_THEME_STORAGE_KEY || event.key === null) {
+        syncAppearance();
+      }
+    };
+    syncAppearance();
+    window.addEventListener("storage", onStorage);
+    media?.addEventListener("change", syncAppearance);
     document.body.classList.add("detached-control-window");
-    return () => document.body.classList.remove("detached-control-window");
-  }, [theme]);
+    return () => {
+      document.body.classList.remove("detached-control-window");
+      window.removeEventListener("storage", onStorage);
+      media?.removeEventListener("change", syncAppearance);
+    };
+  }, []);
 
   useEffect(() => {
     const openPreview = (event: Event) => {

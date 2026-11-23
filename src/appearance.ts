@@ -199,6 +199,24 @@ export function resolveBaseTheme(theme: AppearanceTheme): AppTheme {
   return theme === "light" || theme === "sand" || theme === "aurora" ? "light" : "dark";
 }
 
+export function applyAppearanceToRoot(
+  appearance: AppAppearance,
+  resolvedTheme: AppearanceTheme,
+): void {
+  const root = document.documentElement;
+  const transparent = appearance.terminalTransparent === true ? "true" : "false";
+  root.dataset.theme = resolveBaseTheme(resolvedTheme);
+  root.dataset.appearanceTheme = resolvedTheme;
+  root.dataset.appearanceBackground = appearance.background;
+  root.dataset.appearanceAccent = appearance.accent;
+  root.dataset.terminalTransparent = transparent;
+  root.dataset.globalTransparent = transparent;
+  root.style.setProperty(
+    "--terminal-pane-opacity",
+    `${Math.round((appearance.terminalOpacity ?? 0.65) * 100)}%`,
+  );
+}
+
 export function saveAppearance(
   appearance: AppAppearance,
   baseTheme: AppTheme,

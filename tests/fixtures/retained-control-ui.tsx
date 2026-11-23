@@ -7,7 +7,8 @@ import { CollaborationSettingsPanel } from "../../src/components/CollaborationSe
 import { CollaborationSupportPanel } from "../../src/components/CollaborationSupportPanel";
 import "../../src/styles.css";
 
-const mode = new URLSearchParams(location.search).get("mode") || "multi";
+const params = new URLSearchParams(location.search);
+const mode = params.get("mode") || "multi";
 const projects = ["A", "B", "C"].map(id => ({ id, name: `Project-${id}`, goal: `Goal-${id}`, rootPath: "C:/fixture", defaultBranch: "main", status: "active", createdAt: 1, updatedAt: 1 }));
 const baseSnapshot = (id: string) => ({ project: projects.find(item => item.id === id)!, agents: [{ id: `${id}-agent`, projectId: id, name: `${id}-agent`, runtimeKind: "claude_code", role: "worker", enabled: true, description: "", capabilities: [], persona: "efficient", personaCustom: "", model: null, createdAt: 1, updatedAt: 1 }], tasks: [{ id: `${id}-task`, projectId: id, title: `${id}-task`, status: mode === "support" ? "running" : "in_review", stage: 0, assigneeAgentId: `${id}-agent`, acceptanceCriteria: "", description: "", updatedAt: 1 }], messages: [], runs: [], events: [], agentSessions: [], runtimeEvents: [], memories: [], runLogs: [], artifacts: [], dependencies: [], approvals: [], instructions: [], reviewDecisions: [] });
 const snapshot = (id: string) => {
@@ -26,7 +27,7 @@ const snapshot = (id: string) => {
 };
 const health = { cliPath: "fixture", cliPathExists: true, replyEvidence: "fixture", runtimes: [], messages: [], handoffs: [], sessions: ["source", "target"].map(id => ({ id, title: id, runtime: "claude_code", cwd: "C:/fixture", ptyId: 1, status: "running", processRunning: true, ready: true, reason: "fixture", error: null, waitingReason: null, interactiveHandoff: true, identityEnvironment: "fixture", bridge: { configured: false, error: null } })) };
 const plan = { intent: "plan_project", reply: "fixture plan", projectName: "New project", goal: "Fixture goal", rootPath: "C:/fixture", targetTaskId: null, targetAgentId: null, agents: [], tasks: [], requestedRuntimes: [], requiresConfirmation: true };
-localStorage.clear();
+if (!params.has("preserve-storage")) localStorage.clear();
 localStorage.setItem("crewvela-multi-agent-project", "A");
 if (mode.startsWith("plan")) localStorage.setItem("crewvela-multi-agent-draft-v1", JSON.stringify({ coordinatorProjectId: "A", projectPath: "C:/fixture", coordinatorDraft: "", coordinatorMessages: [], mentionBindings: [], pendingPlan: plan, pendingPlanContext: { projectId: null, projectPath: "C:/fixture", autoStart: true, requestedRuntimes: [] } }));
 const pending: Array<{ command: string; args: any; resolve: (value: any) => void; reject: (reason: Error) => void }> = [];

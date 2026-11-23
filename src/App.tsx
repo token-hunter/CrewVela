@@ -44,6 +44,7 @@ import type {
   ConversationOriginalSession,
 } from "./types";
 import {
+  applyAppearanceToRoot,
   loadAppearance,
   resolveAppearanceTheme,
   resolveBaseTheme,
@@ -991,19 +992,7 @@ export default function App() {
   }, []);
 
   useLayoutEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.dataset.appearanceTheme = resolvedAppearanceTheme;
-    document.documentElement.dataset.appearanceBackground =
-      appearance.background;
-    document.documentElement.dataset.appearanceAccent = appearance.accent;
-    document.documentElement.dataset.terminalTransparent =
-      appearance.terminalTransparent === true ? "true" : "false";
-    document.documentElement.dataset.globalTransparent =
-      appearance.terminalTransparent === true ? "true" : "false";
-    document.documentElement.style.setProperty(
-      "--terminal-pane-opacity",
-      `${Math.round((appearance.terminalOpacity ?? 0.65) * 100)}%`,
-    );
+    applyAppearanceToRoot(appearance, resolvedAppearanceTheme);
     try { saveAppearance(appearance, theme); }
     catch (reason) { showError(`外观设置未能保存，当前修改仅在本次使用中生效：${String(reason)}`); }
   }, [

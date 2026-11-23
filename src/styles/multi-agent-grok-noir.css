@@ -4,62 +4,39 @@
    stays 100% untouched.
    ============================================================================ */
 
-/* Theme Tokens (Obsidian Dark default + crisp Grok Light polarity) */
+/* Keep the canvas's surface hierarchy while using the active appearance palette. */
 [data-multi-agent-style="grok_noir"] {
-  --gn-bg: #08080a;
-  --gn-shell: #0d0d10;
-  --gn-sidebar: #0a0a0d;
-  --gn-surface: #141418;
-  --gn-surface-2: #1c1c22;
-  --gn-surface-3: #26262e;
-  --gn-sunken: #0f0f13;
-  --gn-border: rgba(255, 255, 255, 0.085);
-  --gn-border-strong: rgba(255, 255, 255, 0.16);
-  --gn-text: #f5f5f7;
-  --gn-text-2: #bdbdc7;
-  --gn-muted: #7d7d8a;
-  --gn-cta-bg: #ffffff;
-  --gn-cta-fg: #09090b;
-  --gn-ok: #34d399;
-  --gn-ok-soft: rgba(52, 211, 153, 0.13);
-  --gn-warn: #f5b942;
-  --gn-warn-soft: rgba(245, 185, 66, 0.14);
-  --gn-danger: #f87171;
-  --gn-danger-soft: rgba(248, 113, 113, 0.13);
+  --gn-bg: var(--bg);
+  --gn-shell: var(--bg);
+  --gn-sidebar: var(--bg-sidebar);
+  --gn-surface: var(--bg-elev);
+  --gn-surface-2: var(--bg-hover);
+  --gn-surface-3: color-mix(in srgb, var(--text) 6%, var(--bg-hover));
+  --gn-sunken: var(--bg-sunken);
+  --gn-border: var(--border);
+  --gn-border-strong: var(--border-strong);
+  --gn-text: var(--text);
+  --gn-text-2: color-mix(in srgb, var(--text) 30%, var(--text-dim));
+  --gn-muted: var(--text-dim);
+  --gn-cta-bg: var(--text);
+  --gn-cta-fg: var(--bg);
+  --gn-ok: var(--success);
+  --gn-ok-soft: color-mix(in srgb, var(--success) 13%, transparent);
+  --gn-warn: var(--warn);
+  --gn-warn-soft: var(--signal-soft);
+  --gn-danger: var(--danger);
+  --gn-danger-soft: color-mix(in srgb, var(--danger) 13%, transparent);
   --gn-cool: #60a5fa;
-  --gn-cool-soft: rgba(96, 165, 250, 0.13);
-  --gn-capsule-shadow: 0 10px 30px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --gn-capsule-shadow: var(--shadow-md);
 }
 
 :root[data-theme="light"] [data-multi-agent-style="grok_noir"] {
-  --gn-bg: #f3f3f6;
-  --gn-shell: #ffffff;
-  --gn-sidebar: #f7f7fa;
-  --gn-surface: #ffffff;
-  --gn-surface-2: #f2f2f6;
-  --gn-surface-3: #e7e7ee;
-  --gn-sunken: #f6f6f9;
-  --gn-border: rgba(15, 15, 20, 0.09);
-  --gn-border-strong: rgba(15, 15, 20, 0.17);
-  --gn-text: #0f0f14;
-  --gn-text-2: #4b4b57;
-  --gn-muted: #767684;
-  --gn-cta-bg: #111114;
-  --gn-cta-fg: #ffffff;
-  --gn-ok: #169c65;
-  --gn-ok-soft: rgba(22, 156, 101, 0.11);
-  --gn-warn: #c27b0e;
-  --gn-warn-soft: rgba(194, 123, 14, 0.12);
-  --gn-danger: #d43f3a;
-  --gn-danger-soft: rgba(212, 63, 58, 0.11);
   --gn-cool: #2563eb;
-  --gn-cool-soft: rgba(37, 99, 235, 0.11);
-  --gn-capsule-shadow: 0 8px 26px rgba(15, 15, 20, 0.08), inset 0 1px 0 #ffffff;
 }
 
 :root[data-terminal-transparent="true"] [data-multi-agent-style="grok_noir"] {
-  --gn-shell: color-mix(in srgb, var(--bg-elev) 90%, transparent);
-  --gn-sidebar: color-mix(in srgb, var(--bg) 88%, transparent);
+  --gn-shell: color-mix(in srgb, var(--bg) 90%, transparent);
+  --gn-sidebar: color-mix(in srgb, var(--bg-sidebar) 88%, transparent);
 }
 
 /* ==================== Shell & ControlSidebar Frame ==================== */
