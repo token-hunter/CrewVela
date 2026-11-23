@@ -1,6 +1,7 @@
 // Isolated browser regression for the project member model bar.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { chooseConversationTool } from './helpers/conversationComposerTools.mjs';
 
 const base = process.env.CREWVELA_UI_URL || 'http://127.0.0.1:1432';
 const browser = await chromium.launch({ channel: process.env.CREWVELA_BROWSER_CHANNEL || 'chrome' });
@@ -14,10 +15,18 @@ try {
     assert.equal((await calls(settingsPage, 'ma_conversation_member_models')).length, 0);
     const header = settingsPage.locator('.conversation-members-trigger');
     await header.click();
-    const trigger = settingsPage.getByRole('button', {name: 'Codex的模型与推理', exact: true});
-    const checkbox = settingsPage.locator('.conversation-member-menu').getByRole('checkbox', {name:'Codex', exact:true});
+    const members = settingsPage.getByRole('group', {name:'选择参与成员', exact:true});
+    const checkbox = members.getByRole('checkbox', {name:'Codex', exact:true});
+    await checkbox.waitFor();
+    assert.equal(await members.getByRole('button', {name:/模型与推理/}).count(), 0);
     const wasChecked = await checkbox.isChecked();
-    await trigger.click();
+    await checkbox.click();
+    assert.notEqual(await checkbox.isChecked(), wasChecked);
+    await checkbox.click();
+    assert.equal((await calls(settingsPage, 'ma_conversation_member_models')).length, 0);
+    await header.click();
+    await chooseConversationTool(settingsPage, '模型与推理');
+    await settingsPage.getByRole('combobox', {name:'配置成员', exact:true}).selectOption('codex');
     const editor = settingsPage.getByRole('region', {name:'Codex的模型与推理设置'});
     const model = editor.getByRole('combobox', {name:'模型', exact:true});
     const reasoning = editor.getByRole('combobox', {name:'推理级别', exact:true});
@@ -32,7 +41,8 @@ try {
     }));
     assert.ok(menuColors.flat().every(option => option.matchesText && option.matchesSurface),
       'member, model and reasoning menus give native options explicit theme colors');
-    assert.deepEqual((await calls(settingsPage, 'ma_conversation_member_models'))[0].args, {projectId:'A', agentId:'codex', refresh:false});
+    assert.deepEqual((await calls(settingsPage, 'ma_conversation_member_models')).find(item => item.args.agentId === 'codex')?.args,
+      {projectId:'A', agentId:'codex', refresh:false});
     assert.equal((await calls(settingsPage, 'ma_conversation_send')).length, 0);
     const modelBounds = await editor.boundingBox();
     assert.ok(modelBounds.x >= 0 && modelBounds.x + modelBounds.width <= width);
@@ -56,12 +66,12 @@ try {
     assert.equal(await settingsPage.locator('[data-message-id="m2"] .conversation-member-model-summary').count(), 0);
     await editor.getByRole('button', {name:'收起模型与推理', exact:true}).click();
     await editor.waitFor({state:'hidden'});
-    const lower = settingsPage.getByRole('button', {name:'模型与推理', exact:true});
+    const lower = settingsPage.getByRole('button', {name:'聊天工具', exact:true});
     assert.equal(await lower.evaluate(el => el === document.activeElement), true);
     await header.click();
     assert.equal(await checkbox.isChecked(), wasChecked);
     await header.click();
-    await lower.click();
+    await chooseConversationTool(settingsPage, '模型与推理');
     await settingsPage.getByRole('combobox', {name:'配置成员', exact:true}).selectOption('codex');
     await model.locator('option[value="fixture-a"]').waitFor({state:'attached'});
     assert.equal(await model.inputValue(), 'fixture-a');

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ArrowClockwise, ArrowElbowDownLeft, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Paperclip, Pause, PencilSimple, Plus, Robot, SidebarSimple, Stop, Trash, User, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowElbowDownLeft, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Lightning, ListChecks, Paperclip, Pause, PencilSimple, Plus, Robot, SidebarSimple, SlidersHorizontal, Stop, Trash, User, WarningCircle, X } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConversationMentionHighlight } from "./ConversationMentionHighlight";
 import { ResizableConversationComposer } from "./ResizableConversationComposer";
@@ -125,15 +125,19 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<PendingSend | null>(null);
   const [membersOpen, setMembersOpen] = useState<"header" | "composer" | null>(null);
+  const [composerToolsOpen, setComposerToolsOpen] = useState(false);
+  const [composerToolsKeyboard, setComposerToolsKeyboard] = useState(false);
   const [modelMemberId, setModelMemberId] = useState<string>();
   const [membersPosition, setMembersPosition] = useState({ left: 0, top: 0, width: MAX_MEMBER_MENU_WIDTH, maxHeight: 320 });
   const membersId = useId();
   const modelBarId = useId();
   const sendScopeId = useId();
-  const attachmentTooltipId = useId();
+  const composerToolsId = useId();
+  const attachmentFormatsId = useId();
   const headerMemberTrigger = useRef<HTMLButtonElement>(null);
   const composerMemberTrigger = useRef<HTMLButtonElement>(null);
-  const modelBarTrigger = useRef<HTMLButtonElement>(null);
+  const composerToolsTrigger = useRef<HTMLButtonElement>(null);
+  const composerToolsMenu = useRef<HTMLDivElement>(null);
   const membersMenu = useRef<HTMLDivElement>(null);
   const [creatingProject, setCreatingProject] = useState(false);
   const [composingMention, setComposingMention] = useState(false);
@@ -305,6 +309,47 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   planForm.current = JSON.stringify([draft, draftFiles, selected, archivedRuleId, snapshot?.project.rootPath,
     snapshot?.project.defaultBranch, conversation?.rounds.length]);
   useEffect(() => { if (!active) { setMembersOpen(null); setHistoryMenuOpen(false); setHistoryOpen(false); setClearConfirmation(null); setMentionOpen(false); setSessionAction(null); } }, [active]);
+  useEffect(() => { setComposerToolsOpen(false); }, [active, projectId, conversation?.conversation.id, workView]);
+  useEffect(() => {
+    const menu = composerToolsMenu.current;
+    const trigger = composerToolsTrigger.current;
+    if (!composerToolsOpen || !menu || !trigger) return;
+    const items = () => Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'));
+    (items()[0] ?? menu).focus();
+    const outside = (event: Event) => {
+      if (event.target instanceof Node && !menu.contains(event.target) && !trigger.contains(event.target)) {
+        setComposerToolsOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setComposerToolsOpen(false);
+        trigger.focus();
+      } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        setComposerToolsKeyboard(true);
+        const buttons = items();
+        if (!buttons.length) return;
+        const index = buttons.findIndex(item => item === document.activeElement);
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        const next = event.key === "Home" || (index < 0 && direction === 1) ? 0
+          : event.key === "End" || index < 0 ? buttons.length - 1
+          : (index + direction + buttons.length) % buttons.length;
+        buttons[next]?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("focusin", outside);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("focusin", outside);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [composerToolsOpen]);
   useEffect(() => {
     if (!historyMenuOpen) return;
     const frame = requestAnimationFrame(() => historyMenu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus());
@@ -354,7 +399,12 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const modelMember = agents.find(agent => agent.id === modelMemberId);
   const closeModelBar = () => {
     setModelMemberId(undefined);
-    modelBarTrigger.current?.focus();
+    composerToolsTrigger.current?.focus();
+  };
+  const runComposerTool = (run: () => void) => {
+    setComposerToolsOpen(false);
+    composerToolsTrigger.current?.focus();
+    run();
   };
   const saveModelSummary = (agentId: string, value: ConversationMemberModelSummary | null) => {
     if (currentProject.current !== projectId) return;
@@ -399,6 +449,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const mentionTokens = useMemo(() => agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind))
     .map(agent => conversationMentionToken(agent, agents)), [agents, supported, isRuntimeEnabled]);
   const canGeneratePlan = hasConversationPlanGoal(draft, mentionTokens);
+  const planToolDisabled = busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError ||
+    !canGeneratePlan || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "");
   const planHasMentions = planIssues.length > 0 && mentionTokens.some(token => hasMentionToken(draft, token));
   const discussing = conversationIsActive(round);
   const activityTicking = discussing || !!conversation?.messages.some(message=>message.senderType === "agent" && message.status === "needs_decision" && snapshot?.runs.some(run=>run.id === message.runId && ["starting","running","waiting_input","waiting_approval"].includes(run.status)));
@@ -1042,9 +1094,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id);
       const discussionOnly = discussionOnlyMembers.has(agent.id);
       const reason = !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? "Runtime 已停用" : !supported.includes(agent.runtimeKind) ? "此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? "用户接管中" : discussionOnly ? "仅团队聊天" : "";
-      return <div key={agent.id} className="conversation-member-entry" data-active={modelMemberId === agent.id}>
+      return <div key={agent.id} className="conversation-member-entry">
         <label title={`${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]}${reason ? ` · ${reason}` : ""}`}><input type="checkbox" aria-label={agent.name} checked={selected.includes(agent.id)} disabled={discussionOnly || (!eligible && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span className="conversation-member-name"><strong>{agent.name}</strong><small>{ROLE[agent.role] ?? agent.role}{reason && ` · ${reason}`}{activeAgent?.id === agent.id && " · 正在回复"}</small></span><Check size={18} className="conversation-member-check" aria-hidden="true" /></label>
-        <button type="button" className="conversation-member-model-trigger" aria-label={`${agent.name}的模型与推理`} title="在输入框上方配置" aria-expanded={modelMemberId === agent.id} onClick={() => { setMembersOpen(null); setWorkView("chat"); setModelMemberId(agent.id); }}><CaretRight size={15} /></button>
       </div>;
     })}{!agents.length && <p>还没有团队成员。{onOpenProjectSettings && <button type="button" className="conversation-text-button" onClick={() => { setMembersOpen(null); onOpenProjectSettings(projectId ?? undefined); }}>添加成员</button>}</p>}</div>
     </div>, document.body)}
@@ -1248,33 +1299,57 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         <div className="conversation-composer-actions">
           {!!conversation?.archivedTaskRules?.length && <label className="conversation-task-rule">本次规则<select aria-label="本次规则" title={conversation.archivedTaskRules.find(rule => rule.id === archivedRuleId)?.instructions ?? "仅在本条请求生效，不自动延续到下一条"} value={archivedRuleId} disabled={busy || !!pending} onChange={event => setArchivedRuleId(event.target.value)}><option value="">无附加规则</option>{conversation.archivedTaskRules.map(rule => <option key={rule.id} value={rule.id}>{rule.agentId ? agents.find(agent => agent.id === rule.agentId)?.name ?? "历史成员" : "项目"} · {rule.label} · {new Date(rule.createdAt).toLocaleString("zh-CN")}</option>)}</select></label>}
           <div className="conversation-composer-plan-actions">
+            <div className="conversation-composer-tools">
+              <button ref={composerToolsTrigger} type="button" className="conversation-icon conversation-composer-tools-trigger"
+                aria-label="聊天工具" title="聊天工具" aria-haspopup="menu" aria-expanded={composerToolsOpen}
+                aria-controls={composerToolsOpen ? composerToolsId : undefined} disabled={!active}
+                onClick={event => {
+                  setComposerToolsKeyboard(event.detail === 0);
+                  setComposerToolsOpen(value => !value);
+                }}
+                onKeyDown={event => {
+                  if (event.key === "ArrowDown" && !composerToolsOpen) {
+                    event.preventDefault();
+                    setComposerToolsKeyboard(true);
+                    setComposerToolsOpen(true);
+                  }
+                }}><Plus size={16} weight="bold" aria-hidden="true" /></button>
+              {composerToolsOpen && <div className="conversation-composer-tools-popup" data-keyboard={composerToolsKeyboard}>
+                <div ref={composerToolsMenu} id={composerToolsId} className="conversation-composer-tools-menu"
+                  role="menu" aria-label="聊天工具" tabIndex={-1}>
+                  <button type="button" role="menuitem" tabIndex={-1} className="conversation-composer-attachment-tool" aria-describedby={attachmentFormatsId}
+                    disabled={!projectId || !conversation || !active || busy || !!pending || pickingFiles}
+                    onClick={() => runComposerTool(() => void pickAttachments())}>
+                    <Paperclip size={17} aria-hidden="true" />添加附件
+                  </button>
+                  <button type="button" role="menuitem" tabIndex={-1} title={canGeneratePlan ? undefined : "请填写要完成的目标，再生成分工"}
+                    disabled={planToolDisabled}
+                    onClick={() => runComposerTool(() => void submit(undefined, undefined, true))}>
+                    <ListChecks size={17} aria-hidden="true" />生成分工
+                  </button>
+                  <button type="button" role="menuitem" tabIndex={-1} title="选择至少一位开发成员，按本轮分工自动执行并验收"
+                    disabled={planToolDisabled || discussing || archivedRuleId !== ""}
+                    onClick={() => runComposerTool(() => void submit(undefined, undefined, true, true))}>
+                    <Lightning size={17} aria-hidden="true" />全自动托管
+                  </button>
+                  <button type="button" role="menuitem" tabIndex={-1} aria-controls={modelMember ? modelBarId : undefined}
+                    disabled={!agents.length || !active}
+                    onClick={() => runComposerTool(() => {
+                      setMembersOpen(null);
+                      setModelMemberId(modelMember ? undefined : selected[0] ?? agents[0]?.id);
+                    })}><SlidersHorizontal size={17} aria-hidden="true" />模型与推理</button>
+                </div>
+                <span id={attachmentFormatsId} className="conversation-composer-attachment-tooltip" role="tooltip">图片、视频和文档</span>
+              </div>}
+            </div>
             <button ref={composerMemberTrigger} type="button" className="conversation-target" aria-expanded={membersOpen === "composer"}
               aria-label={`分工与托管 · 已选 ${selected.length} 位`} aria-controls={membersOpen === "composer" ? membersId : undefined}
               title="选择分工与托管成员。消息中有 @ 时，优先使用点名成员。"
               onClick={() => setMembersOpen(value => value === "composer" ? null : "composer")} disabled={!agents.length}>
               <User size={16} /><span><b className="conversation-target-prefix">分工与托管 · </b>已选 {selected.length} 位</span><CaretDown size={12} />
             </button>
-            <div className="conversation-composer-plan-buttons">
-              <button type="button" className="conversation-text-button team-generate-plan" title={canGeneratePlan ? undefined : "请填写要完成的目标，再生成分工"} disabled={busy || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")} onClick={() => void submit(undefined, undefined, true)}>生成分工</button>
-              <button type="button" className="conversation-text-button team-generate-plan" title="选择至少一位开发成员，按本轮分工自动执行并验收"
-                disabled={busy || discussing || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !canGeneratePlan || !!pending || archivedRuleId !== "" || ["stopping", "unconfirmed"].includes(round?.status ?? "")}
-                onClick={() => void submit(undefined, undefined, true, true)}>全自动托管</button>
-              <button ref={modelBarTrigger} type="button" className="conversation-text-button conversation-configure-models"
-                aria-expanded={!!modelMember} aria-controls={modelMember ? modelBarId : undefined} disabled={!agents.length || !active}
-                onClick={() => {
-                  setMembersOpen(null);
-                  if (modelMember) closeModelBar();
-                  else setModelMemberId(selected[0] ?? agents[0]?.id);
-                }}>模型与推理</button>
-            </div>
           </div>
-           <div className="conversation-composer-send-actions"><button type="button" className="conversation-icon conversation-add-attachment" aria-label="添加附件" aria-describedby={attachmentTooltipId}
-             disabled={!projectId || !conversation || !active || busy || !!pending || pickingFiles} onClick={() => void pickAttachments()}><Plus size={16} weight="bold" aria-hidden="true" /></button>
-             <span className="conversation-attachment-tooltip" id={attachmentTooltipId} role="tooltip">
-               <span>图片 · {IMAGE_EXTENSIONS.join("、").toUpperCase()}</span>
-               <span>视频 · {VIDEO_EXTENSIONS.join("、").toUpperCase()}</span>
-               <span>文档 · {DOCUMENT_EXTENSIONS.join("、").toUpperCase()}</span>
-             </span>
+           <div className="conversation-composer-send-actions">
             {showChatRecipient && conversation && projectId ? <button type="button" className="conversation-send-scope-reset"
               title={`${sendScopeLabel} · 切回发给全体`} aria-label={`${sendScopeLabel}，切回发给全体`} disabled={busy || !!pending}
               onClick={() => {

@@ -19,8 +19,6 @@
 .team-work-views .conversation-composer.multi-agent-composer { border-radius:16px; padding:10px 18px 8px; }
 .team-work-views .conversation-composer textarea { min-height:64px; height:64px; max-height:min(240px,max(64px,calc(100dvh - 360px))); font-size:16px; }
 .team-work-views .conversation-target { min-height:34px; font-size:14px !important; }
-.team-work-views .team-generate-plan { color:var(--text-dim); font-size:14px; }
-.team-work-views .team-generate-plan:hover:not(:disabled) { color:var(--accent); }
 .team-work-views .conversation-message.plan-continuation { margin-left:36px; }
 .team-work-views .conversation-message.plan-continuation > .conversation-avatar { display:none; }
 .team-work-views .team-plan-card { position:relative; margin:0; padding:18px 22px; border:1px solid var(--border-strong); border-radius:13px; background:color-mix(in srgb,var(--text) 2%,transparent); }

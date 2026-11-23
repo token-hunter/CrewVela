@@ -1020,6 +1020,7 @@ export default function App() {
       // 侧栏直接新建菜单先消费 Esc，保留当前会话选择。
       if (document.querySelector(".direct-new-menu")) return;
       if (document.querySelector(".right-sidebar-new-menu")) return;
+      if (document.querySelector(".conversation-composer-tools-menu")) return;
       // Harness 编辑区自行关闭命令菜单，避免输入时退出会话视图。
       if (event.target instanceof Element && event.target.closest(".harness-chat-composer, .harness-goal-dialog")) return;
       // Modal 栈接管的弹窗（ProviderEditor / CountPrompt / MultiDirPrompt /

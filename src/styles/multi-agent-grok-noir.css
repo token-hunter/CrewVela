@@ -1417,10 +1417,6 @@
   gap: 5px 7px;
 }
 
-.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-composer-plan-buttons {
-  gap: 4px 5px;
-}
-
 .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-target {
   min-height: 28px;
   height: 28px;
@@ -1438,30 +1434,7 @@
   color: var(--gn-text);
 }
 
-.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .team-generate-plan,
-.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-configure-models {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--gn-border);
-  background: transparent;
-  color: var(--gn-text-2);
-  font-size: 12px;
-  font-weight: 550;
-  text-decoration: none;
-  transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
-}
-
-.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .team-generate-plan:hover:not(:disabled),
-.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-configure-models:hover:not(:disabled),
-.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-configure-models[aria-expanded="true"] {
-  background: var(--gn-surface-2);
-  border-color: var(--gn-border-strong);
-  color: var(--gn-text);
-  text-decoration: none;
-}
-
-.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-add-attachment {
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-composer-tools-trigger {
   width: 30px;
   height: 30px;
   border-radius: 999px;
@@ -1470,7 +1443,7 @@
   color: var(--gn-text-2);
 }
 
-.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-add-attachment:hover:not(:disabled) {
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-composer-tools-trigger:is(:hover, [aria-expanded="true"]):not(:disabled) {
   background: var(--gn-surface-3);
   border-color: var(--gn-border-strong);
   color: var(--gn-text);
@@ -1546,12 +1519,7 @@
     padding: 9px 10px 8px 12px;
     border-radius: 20px;
   }
-  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-target-prefix {
-    display: none;
-  }
-  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-target,
-  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .team-generate-plan,
-  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-configure-models {
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-target {
     height: 26px;
     min-height: 26px;
     padding: 0 8px;

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { chooseConversationTool, openConversationTools } from './helpers/conversationComposerTools.mjs';
 const base = process.env.CREWVELA_UI_URL || 'http://127.0.0.1:1420';
 const out = '.scratch/team-chat-task-views-20261117/ui'; mkdirSync(out,{recursive:true});
 const browser = await chromium.launch({channel:'chrome'}), contexts=[], errors=[];
@@ -12,13 +13,12 @@ async function fresh(query='',width=680,height=980) {
  const context=await browser.newContext({viewport:{width,height}});contexts.push(context);
  const p=await context.newPage();p.setDefaultTimeout(10000);p.on('pageerror',e=>errors.push(e.message));
  await p.goto(`${base}/tests/fixtures/collaboration-conversation-ui.html?dual-views=1&${query}`);
- await p.locator('.conversation-members-trigger:not(:disabled)').waitFor();
- await p.waitForFunction(()=>document.querySelector('.conversation-members-trigger')?.textContent.includes('成员 3'));
+ await p.getByRole('button',{name:/^选择参与成员，已选 \d+ 位，共 3 位$/}).waitFor();
  return p;
 }
 try {
  const attachmentPage=await fresh('natural=1&attachments=1', 420);
- await attachmentPage.getByRole('button',{name:'添加附件',exact:true}).click();
+ await chooseConversationTool(attachmentPage,'添加附件');
  const staged=attachmentPage.getByLabel('待发送附件',{exact:true});
  const draftImage=staged.getByRole('button',{name:'预览图片 设计截图.png',exact:true});
  const checkImage = locator => locator.evaluate(img => img.complete && img.naturalWidth === 360);
@@ -37,7 +37,7 @@ try {
  assert.equal(await draftImage.evaluate(button => button === document.activeElement),true);
  await staged.getByRole('button',{name:'移除附件 设计截图.png',exact:true}).click();
  assert.equal(await staged.getByRole('button',{name:'预览图片 设计截图.png',exact:true}).count(),0);
- await attachmentPage.getByRole('button',{name:'添加附件',exact:true}).click();
+ await chooseConversationTool(attachmentPage,'添加附件');
  await staged.getByRole('button',{name:'移除附件 需求说明.md',exact:true}).click();
  assert.equal(await staged.getByRole('button').count(),2);
  assert.equal(await editor(attachmentPage).inputValue(),'');
@@ -57,26 +57,27 @@ try {
  assert.equal((await calls(attachmentPage,'ma_conversation_open_attachment')).length,0);
  assert.equal(await staged.count(),0);
 
- await attachmentPage.getByRole('button',{name:'添加附件',exact:true}).click();
+ await chooseConversationTool(attachmentPage,'添加附件');
  await staged.getByRole('button',{name:'移除附件 设计截图.png',exact:true}).click();
  await attachmentSend.click();
  await attachmentPage.getByLabel('消息附件',{exact:true}).getByRole('button',{name:'需求说明.md',exact:true}).click();
  assert.equal((await calls(attachmentPage,'ma_conversation_open_attachment')).length,1);
 
  const videoPage=await fresh('natural=1&video=1', 420);
- const pickVideo=videoPage.getByRole('button',{name:'添加附件',exact:true});
+ const tools=await openConversationTools(videoPage);
+ const pickVideo=tools.getByRole('menuitem',{name:'添加附件',exact:true});
+ const formats=videoPage.getByRole('tooltip',{name:'图片、视频和文档',exact:true});
  await pickVideo.hover();
- const formats=videoPage.getByRole('tooltip').filter({hasText:'视频 · MP4、MOV、WEBM'});
  await formats.waitFor();
- assert.match(await formats.innerText(),/图片 · PNG、JPG、JPEG、WEBP、GIF/);
- assert.match(await formats.innerText(),/文档 · PDF、DOCX、TXT、MD、CSV/);
  const hintBounds=await formats.boundingBox();
  assert.ok(hintBounds.x>=0 && hintBounds.x+hintBounds.width<=420);
  await pickVideo.click();
  const videoDraft=videoPage.getByRole('button',{name:'移除附件 操作演示.mp4',exact:true});
  await videoDraft.waitFor();
  const [picker]=await calls(videoPage,'plugin:dialog|open');
+ assert.deepEqual(picker.args.options.filters.find(filter=>filter.name==='图片').extensions,['png','jpg','jpeg','webp','gif']);
  assert.deepEqual(picker.args.options.filters.find(filter=>filter.name==='视频').extensions,['mp4','mov','webm']);
+ assert.deepEqual(picker.args.options.filters.find(filter=>filter.name==='文档').extensions,['pdf','docx','txt','md','csv']);
  assert.ok(picker.args.options.filters[0].extensions.includes('mp4'));
  const draftPreview=videoPage.getByLabel('待发送附件',{exact:true}).getByRole('button',{name:'预览视频 操作演示.mp4'});
  await draftPreview.click();
@@ -95,7 +96,7 @@ try {
  assert.ok(await draftPreview.evaluate(element=>element===document.activeElement));
  await videoDraft.click();
  await videoDraft.waitFor({state:'detached'});
- await pickVideo.click();
+ await chooseConversationTool(videoPage,'添加附件');
  await videoDraft.waitFor();
  await videoPage.getByRole('button',{name:'发送消息',exact:true}).click();
  await videoPage.getByLabel('消息附件',{exact:true}).getByRole('button',{name:'预览视频 操作演示.mp4',exact:true}).click();
@@ -112,14 +113,14 @@ try {
  await player.getByRole('button',{name:'关闭视频预览',exact:true}).click();
 
  const brokenVideo=await fresh('natural=1&video=1&broken-video=1', 320);
- await brokenVideo.getByRole('button',{name:'添加附件',exact:true}).click();
+ await chooseConversationTool(brokenVideo,'添加附件');
  await brokenVideo.getByRole('button',{name:'预览视频 操作演示.mp4',exact:true}).click();
  await brokenVideo.getByRole('alert').getByText(/内置播放器无法播放/).waitFor();
  await brokenVideo.getByRole('button',{name:'用系统播放器打开',exact:true}).click();
  assert.equal((await calls(brokenVideo,'ma_conversation_open_video'))[0].args.source.kind,'draft');
 
  const brokenPage=await fresh('natural=1&attachments=1&broken-image=1', 360);
- await brokenPage.getByRole('button',{name:'添加附件',exact:true}).click();
+ await chooseConversationTool(brokenPage,'添加附件');
  await brokenPage.getByRole('button',{name:'无法预览 设计截图.png',exact:true}).waitFor();
  await brokenPage.getByRole('button',{name:'移除附件 设计截图.png',exact:true}).click();
 
@@ -155,7 +156,7 @@ try {
     '.member-activity-details li':['fontSize'],
     '.conversation-composer textarea':['fontSize'],
     '.conversation-target':['fontSize','minHeight'],
-    '.team-generate-plan':['fontSize'],
+    '.conversation-composer-tools-trigger':['width','height'],
     '.conversation-send':['width','height'],
    };
    return Object.fromEntries(Object.entries(sizes).map(([selector,properties]) => {
@@ -286,13 +287,14 @@ try {
  await plan.keyboard.press('Home');await plan.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='团队聊天');assert.equal(await tab(plan,'团队聊天').getAttribute('aria-selected'),'true');
  const chat=await fresh('natural=1&empty=1');
  await editor(chat).fill('@Codex');
- assert.equal(await chat.getByRole('button',{name:'生成分工',exact:true}).isDisabled(),true,'a mention alone cannot start a plan');
+ const chatTools=await openConversationTools(chat);
+ assert.equal(await chatTools.getByRole('menuitem',{name:'生成分工',exact:true}).isDisabled(),true,'a mention alone cannot start a plan');
  assert.equal(await chat.getByRole('button',{name:'发送消息',exact:true}).isEnabled(),true);
  await tab(chat,'任务执行').click();await tab(chat,'团队聊天').click();
  await editor(chat).fill('你们有哪些功能');await editor(chat).press('Enter');
  await chat.waitForFunction(()=>window.conversationMock.calls.some(c=>c.command==='ma_conversation_send'));
  assert.equal((await calls(chat,'ma_conversation_send')).at(-1).args.input.mode,'discussion');
- await editor(chat).fill('登录页的需求');await chat.getByRole('button',{name:'生成分工',exact:true}).click();
+ await editor(chat).fill('登录页的需求');await chooseConversationTool(chat,'生成分工');
  await chat.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===2);
  assert.equal((await calls(chat,'ma_conversation_send')).at(-1).args.input.mode,'execution_plan');
  await editor(chat).fill('hi');await editor(chat).press('Enter');
@@ -300,15 +302,15 @@ try {
  assert.equal((await calls(chat,'ma_conversation_send')).at(-1).args.input.mode,'discussion','generate plan never becomes a sticky input mode');
  const managed = await fresh('natural=1&empty=1&managed-test=1');
  await editor(managed).fill('开发并交付可运行的贪吃蛇游戏');
- const startManaged = managed.getByRole('button',{name:'全自动托管',exact:true});
+ const startManaged = () => chooseConversationTool(managed,'全自动托管');
  managed.once('dialog',dialog=>dialog.dismiss());
- await startManaged.click();
+ await startManaged();
  assert.equal((await calls(managed,'ma_conversation_send')).length,0);
  await Promise.all([managed.waitForEvent('dialog').then(async confirmation=>{
    const message = confirmation.message();
    await confirmation.accept();
    assert.match(message, /main.*\/fixture\/todo-app/s);
- }),startManaged.click()]);
+ }),startManaged()]);
  await managed.getByText('全自动托管 · 正在生成分工',{exact:true}).waitFor();
  const sent = (await calls(managed,'ma_conversation_send')).at(-1).args.input;
  assert.equal(sent.managed,true);

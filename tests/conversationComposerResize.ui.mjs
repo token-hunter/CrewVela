@@ -9,7 +9,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 900, height: 1050 } });
   page.setDefaultTimeout(10000);
   const errors = []; page.on("pageerror", error => errors.push(error.message));
-  await page.goto(`${base}/tests/fixtures/collaboration-conversation-ui.html?empty=1&natural=1`);
+  await page.goto(`${base}/tests/fixtures/collaboration-conversation-ui.html?empty=1&natural=1&attachments=1`);
   const form = page.locator(".resizable-conversation-composer");
   await form.waitFor();
   const box = () => form.boundingBox();
@@ -102,11 +102,10 @@ try {
   const toolbar = () => form.evaluate(node => {
     const bounds = selector => node.querySelector(selector).getBoundingClientRect();
     const centerY = rect => rect.top + rect.height / 2;
-    const target = bounds(".conversation-target"), attachment = bounds(".conversation-add-attachment");
+    const target = bounds(".conversation-target"), tools = bounds(".conversation-composer-tools-trigger");
     const layout = bounds(".conversation-composer-actions"), send = bounds(".conversation-send");
     return {
-      planningY: [...node.querySelectorAll(".team-generate-plan")].map(button => centerY(button.getBoundingClientRect())),
-      targetY: centerY(target), sendY: centerY(send), inset: attachment.left - layout.left, right: layout.right - send.right,
+      toolsY: centerY(tools), targetY: centerY(target), sendY: centerY(send), inset: tools.left - layout.left, right: layout.right - send.right,
     };
   });
   let actions = await toolbar();
@@ -115,12 +114,53 @@ try {
   await drag("e", 340 - (await box()).width, 0);
   actions = await toolbar();
   await contained();
-  closeTo(actions.planningY[0], actions.planningY[1], "planning buttons stay together");
-  assert.ok(actions.sendY > actions.planningY[1] + 20, "send controls move to a separate row");
-  closeTo(actions.inset, 0, "attachment anchors to the left edge");
+  closeTo(actions.toolsY, actions.targetY, "tools and participant selector stay on one row");
+  closeTo(actions.targetY, actions.sendY, "compact toolbar keeps send on the same row");
+  closeTo(actions.inset, 0, "tools anchor to the left edge");
   closeTo(actions.right, 0, "send anchors to the right edge");
   assert.equal(await form.locator(".conversation-target span").innerText(), "已选 3 位");
+  const tools = form.getByRole("button", { name: "聊天工具", exact: true });
+  const menu = form.getByRole("menu", { name: "聊天工具", exact: true });
+  const attachment = menu.getByRole("menuitem", { name: "添加附件", exact: true });
+  const formats = form.getByText("图片、视频和文档", { exact: true });
+  assert.equal(await menu.count(), 0);
+  await tools.press("ArrowDown");
+  await menu.waitFor();
+  const menuBounds = await menu.boundingBox();
+  const anchor = await tools.boundingBox();
+  closeTo(menuBounds.x, anchor.x, "tools menu aligns with its trigger");
+  assert.ok(menuBounds.y + menuBounds.height < anchor.y, "tools menu opens upward");
+  assert.equal(await menu.getByRole("menuitem").count(), 4);
+  assert.equal(await menu.getByRole("menuitem", { name: "生成分工", exact: true }).isDisabled(), true);
+  assert.equal(await menu.getByRole("menuitem", { name: "全自动托管", exact: true }).isDisabled(), true);
+  assert.equal(await attachment.evaluate(el => el === document.activeElement), true);
+  await formats.waitFor();
+  await page.keyboard.press("ArrowDown");
+  const model = menu.getByRole("menuitem", { name: "模型与推理", exact: true });
+  assert.equal(await model.evaluate(el => el === document.activeElement), true);
+  await formats.waitFor({ state: "hidden" });
+  await page.keyboard.press("Escape");
+  await menu.waitFor({ state: "hidden" });
+  assert.equal(await tools.evaluate(el => el === document.activeElement), true);
+  await tools.click();
+  await menu.waitFor();
+  assert.equal(await attachment.innerText(), "添加附件");
+  assert.equal(await formats.isVisible(), false);
+  await attachment.hover();
+  await formats.waitFor();
+  const hint = await formats.boundingBox();
+  assert.ok(hint.y >= 0 && hint.y + hint.height < (await menu.boundingBox()).y);
+  await model.hover();
+  await formats.waitFor({ state: "hidden" });
+  await attachment.click();
+  await menu.waitFor({ state: "hidden" });
+  await form.getByRole("button", { name: "移除附件 设计截图.png", exact: true }).waitFor();
+  await form.getByRole("button", { name: "移除附件 需求说明.md", exact: true }).waitFor();
+  const filters = await page.evaluate(() => window.conversationMock.calls.find(call => call.command === "plugin:dialog|open").args.options.filters);
+  assert.deepEqual(filters.slice(1).map(filter => filter.name), ["图片", "视频", "文档"]);
+  await tools.click();
   await form.getByRole("button", { name: /^分工与托管 · 已选 \d+ 位$/ }).click();
+  await menu.waitFor({ state: "hidden" });
   await form.locator(".conversation-recipient-menu").waitFor();
   assert.deepEqual(errors, []);
   console.log("PASS composer resize: 8 edges/corners, native glyph removed, opposite-edge anchors, panel/minimum bounds, keyboard/reset, blur cleanup, draft retention, menus/send, narrow viewport");

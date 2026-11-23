@@ -4,7 +4,6 @@
 .collaboration-conversation .resizable-conversation-composer[data-sized="true"] .conversation-editor { flex: 1; min-height: 0; }
 .collaboration-conversation .resizable-conversation-composer[data-sized="true"] textarea { flex: 1 1 0; height: 100%; min-height: 0; max-height: none; }
 .resizable-conversation-composer .conversation-composer-actions { flex: none; }
-.resizable-conversation-composer .team-generate-plan { white-space: nowrap; }
 .collaboration-conversation button.conversation-composer-resizer { position: absolute; z-index: 2; display: block; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; touch-action: none; user-select: none; }
 .conversation-composer-resizer:is([data-edge="n"],[data-edge="s"]) { left: 12px; right: 12px; height: 8px; }
 .conversation-composer-resizer[data-edge="n"] { top: -3px; }

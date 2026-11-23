@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {mkdirSync} from 'node:fs';
+import { chooseConversationTool } from './helpers/conversationComposerTools.mjs';
 const base=process.env.CREWVELA_UI_URL||'http://127.0.0.1:1420';
 const browser=await chromium.launch({channel:'chrome'}),errors=[];
 async function fresh(query='',width=780){const p=await browser.newPage({viewport:{width,height:1100}});p.on('pageerror',e=>errors.push(e.message));await p.goto(`${base}/tests/fixtures/collaboration-conversation-ui.html?${query}`);await p.getByRole('button',{name:/选择参与成员/}).waitFor();return p;}
@@ -133,12 +134,12 @@ try{
  assert.deepEqual((await call(counts,'ma_conversation_send'))[1].args.input.participantAgentIds,['codex']);
  await draft.fill('开发一个待办列表项目');
  assert.equal(await sendScope.innerText(),'分工 · 3 位');
- await counts.getByRole('button',{name:'生成分工',exact:true}).click();
+ await chooseConversationTool(counts,'生成分工');
  await counts.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===3);
  assert.deepEqual((await call(counts,'ma_conversation_send'))[2].args.input.participantAgentIds,selected);
  await draft.fill('开发一个待办列表项目');
  counts.once('dialog', dialog=>dialog.accept());
- await counts.getByRole('button',{name:'全自动托管',exact:true}).click();
+ await chooseConversationTool(counts,'全自动托管');
  await counts.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===4);
  const managed = (await call(counts,'ma_conversation_send'))[3].args.input;
  assert.equal(managed.managed,true);
