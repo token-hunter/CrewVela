@@ -900,6 +900,7 @@ impl SessionManager {
             "deepseek_harness" => ("deepseek_harness", "DeepSeek Harness"),
             "zcode" => ("zcode", "ZCode Desktop"),
             "zcode_cli" => ("zcode_cli", "ZCode CLI"),
+            "antigravity" => ("antigravity", "Antigravity CLI"),
             value => return Err(anyhow!("暂不支持新建 Runtime 会话: {value}")),
         };
         let now = now_millis();
@@ -983,6 +984,7 @@ impl SessionManager {
             "deepseek_harness" => "DeepSeek Harness".to_string(),
             "zcode" => "ZCode Desktop".to_string(),
             "zcode_cli" => "ZCode CLI".to_string(),
+            "antigravity" => "Antigravity CLI".to_string(),
             _ => input.runtime_kind.clone(),
         };
         let record = SessionRecord {
@@ -1242,6 +1244,7 @@ impl SessionManager {
             crate::multi_agent::AgentRuntimeKind::DeepSeekHarness => "DeepSeek Harness",
             crate::multi_agent::AgentRuntimeKind::ZCode => "ZCode Desktop",
             crate::multi_agent::AgentRuntimeKind::ZCodeCli => "ZCode CLI",
+            crate::multi_agent::AgentRuntimeKind::Antigravity => "Antigravity CLI",
             crate::multi_agent::AgentRuntimeKind::OhMyPi => "Oh My Pi（已移除）",
         };
         let label = format!("{runtime_label} · {}", profile.name);

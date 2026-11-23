@@ -57,7 +57,7 @@ impl MultiAgentStore {
         super::conversation::migrate(&connection)?;
         delegation::migrate(&connection)?;
         connection.execute(
-            "UPDATE ma_agents SET enabled = 0 WHERE runtime_kind NOT IN ('claude_code','codex','kimi_code','pi','opencode','deepseek_harness','zcode','zcode_cli') AND enabled != 0",
+            "UPDATE ma_agents SET enabled = 0 WHERE runtime_kind NOT IN ('claude_code','codex','kimi_code','pi','opencode','deepseek_harness','zcode','zcode_cli','antigravity') AND enabled != 0",
             [],
         )?;
         // Retain old approval records for audit, but do not offer actions for finished runs.
@@ -418,11 +418,11 @@ impl MultiAgentStore {
         if let Some(parent_id) = input.parent_id.as_deref() {
             ensure_task_in_project(&connection, parent_id, &input.project_id)?;
         }
-        if let Some(agent_id) = input.assignee_agent_id.as_deref() {
+        for agent_id in [input.assignee_agent_id.as_deref(), input.reviewer_agent_id.as_deref()].into_iter().flatten() {
             ensure_current_agent_in_project(&connection, agent_id, &input.project_id)?;
-        }
-        if let Some(agent_id) = input.reviewer_agent_id.as_deref() {
-            ensure_current_agent_in_project(&connection, agent_id, &input.project_id)?;
+            if get_agent_with(&connection, agent_id)?.runtime_kind == AgentRuntimeKind::Antigravity {
+                return Err(anyhow!("Antigravity CLI 目前仅支持团队普通对话"));
+            }
         }
         let id = uuid::Uuid::new_v4().to_string();
         let now = now_millis();
@@ -2056,7 +2056,7 @@ impl MultiAgentStore {
             let now = now_millis();
             let mut statement = tx.prepare(
                 "SELECT r.id FROM ma_runs r JOIN ma_agents a ON a.id = r.agent_id
-                 WHERE r.project_id = ?1 AND a.runtime_kind IN ('claude_code','codex','kimi_code','pi','opencode','deepseek_harness','zcode','zcode_cli')
+                 WHERE r.project_id = ?1 AND a.runtime_kind IN ('claude_code','codex','kimi_code','pi','opencode','deepseek_harness','zcode','zcode_cli','antigravity')
                    AND r.status IN ('starting','running','waiting_input','waiting_approval')
                    AND r.lease_expires_at < ?2
                    AND COALESCE(json_extract(r.session_locator_json, '$.stopUnverified'), 0) != 1",
@@ -3425,6 +3425,9 @@ impl MultiAgentStore {
         if !agent.enabled || agent.runtime_kind.is_retired() {
             return Err(anyhow!("目标 Agent 已禁用或其 Runtime 已移除，不能改派"));
         }
+        if agent.runtime_kind == AgentRuntimeKind::Antigravity {
+            return Err(anyhow!("Antigravity CLI 目前仅支持团队普通对话"));
+        }
         if matches!(
             task.status,
             TaskStatus::Claimed
@@ -3606,7 +3609,7 @@ impl MultiAgentStore {
              FROM ma_runs r JOIN ma_tasks t ON t.id = r.task_id
              JOIN ma_agents a ON a.id = r.agent_id
              WHERE r.status IN ('starting','running','waiting_input','waiting_approval')
-               AND a.runtime_kind IN ('claude_code','codex','kimi_code','pi','opencode','deepseek_harness','zcode','zcode_cli')
+               AND a.runtime_kind IN ('claude_code','codex','kimi_code','pi','opencode','deepseek_harness','zcode','zcode_cli','antigravity')
                AND COALESCE(json_extract(r.session_locator_json, '$.stopUnverified'), 0) != 1",
         )?;
         let stale = statement
@@ -5553,6 +5556,7 @@ fn parse_runtime_kind(value: String) -> rusqlite::Result<AgentRuntimeKind> {
         "deepseek_harness" => Some(AgentRuntimeKind::DeepSeekHarness),
         "zcode" => Some(AgentRuntimeKind::ZCode),
         "zcode_cli" => Some(AgentRuntimeKind::ZCodeCli),
+        "antigravity" => Some(AgentRuntimeKind::Antigravity),
         _ => Some(AgentRuntimeKind::Unsupported),
     })
 }

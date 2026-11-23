@@ -8,6 +8,7 @@ export const TERMINAL_RUNTIMES: readonly AgentRuntimeKind[] = [
   "pi",
   "opencode",
   "zcode_cli",
+  "antigravity",
 ];
 
 /** 原生聊天 Agent：自绘 UI 的原生聊天会话（原生聊天切换栏成员）。 */

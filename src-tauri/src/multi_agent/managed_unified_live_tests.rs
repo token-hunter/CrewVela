@@ -239,3 +239,58 @@ fn real_unified_deepseek_acp_chat() -> Result<()> {
         "missing real ACP session evidence");
     Ok(())
 }
+
+#[test]
+#[ignore = "opt-in: requires a locally signed-in Antigravity CLI"]
+fn real_antigravity_acp_team_chat_resumes_exact_session() -> Result<()> {
+    ensure!(std::env::var("CREWVELA_RUN_REAL_ANTIGRAVITY").as_deref() == Ok("1"), "explicit acceptance opt-in required");
+    let root = std::env::temp_dir().join(format!("cva-{}", id()));
+    std::fs::create_dir(&root)?;
+    crate::test_profile::initialize(&root.join("profile"))?;
+    let fixture = Fixture::at(root);
+    let agent = fixture.store.create_agent(CreateAgentInput {
+        avatar_id: None, project_id: fixture.project.clone(), name: "Antigravity".into(),
+        runtime_kind: AgentRuntimeKind::Antigravity, role: AgentRole::Reviewer,
+        description: "Answer the user with the requested marker and do not call tools.".into(),
+        persona: Default::default(), persona_custom: String::new(), model: None,
+        permission_profile: PermissionProfile::Default, max_concurrency: 1,
+    })?;
+    let sessions = SessionManager::open_at(fixture.root.join("sessions.json"), fixture.root.join("session-events"))?;
+    let executor = ExistingRunExecutor {
+        host: AgentTerminalHost::new(PtyManager::new(), sessions),
+        bridge: CollaborationBridge::start(fixture.store.clone())?,
+    };
+    let marker = format!("ACP_OK_{}", &id()[..8]);
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut native_ids = Vec::new();
+    for body in [
+        format!("记住本次验收标记 {marker}。只回复该标记，不调用工具。"),
+        "上一轮的验收标记是什么？只回复标记，不调用工具。".into(),
+    ] {
+        let mut input = fixture.input();
+        input.client_message_id = id();
+        input.body = body;
+        input.native_capabilities = true;
+        input.max_duration_seconds = 180;
+        input.participant_agent_ids = vec![agent.id.clone()];
+        let (round, _) = fixture.store.begin_conversation(input)?;
+        run_discussion(&fixture.store, &round.id, &cancel, &executor)?;
+        let snapshot = fixture.store.conversation_snapshot(&fixture.project)?;
+        let reply = snapshot.messages.iter().find(|message| {
+            message.round_id.as_deref() == Some(round.id.as_str()) && message.agent_id.as_deref() == Some(agent.id.as_str())
+                && message.sender_type == "agent" && message.body.contains(&marker)
+        }).with_context(|| {
+            let results: Vec<_> = snapshot.messages.iter().filter(|message| message.round_id.as_deref() == Some(round.id.as_str()))
+                .map(|message| (&message.status, &message.body)).collect();
+            format!("Antigravity ACP reply missing for its round: {results:?}")
+        })?;
+        let run_id = reply.run_id.as_deref().context("missing run for ACP reply")?;
+        let state = fixture.store.snapshot(&fixture.project)?;
+        let locator = state.runs.iter().find(|run| run.id == run_id).and_then(|run| run.session_locator.as_ref())
+            .context("missing native session evidence")?;
+        ensure!(locator["protocol"] == "acp-v1" && locator["runtimeKind"] == "antigravity");
+        native_ids.push(locator["sessionId"].as_str().context("missing native session ID")?.to_owned());
+    }
+    assert_eq!(native_ids[0], native_ids[1]);
+    Ok(())
+}

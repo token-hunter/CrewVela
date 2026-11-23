@@ -72,6 +72,15 @@ fn supports_conversation(runtime: AgentRuntimeKind, native: bool) -> bool {
     else { matches!(runtime, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex | AgentRuntimeKind::Pi) }
 }
 
+fn validate_discussion_only_member(runtime: AgentRuntimeKind, input: &ConversationSendInput) -> Result<()> {
+    if runtime == AgentRuntimeKind::Antigravity
+        && (input.mode != "discussion" || input.managed || !input.native_capabilities || input.task_rules.is_some())
+    {
+        bail!("Antigravity CLI 目前仅支持团队普通对话，请取消分工、全自动托管或附加规则后重试");
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CollaborationConversation {
@@ -253,11 +262,33 @@ pub(super) fn plan_runtime_label(runtime: &str) -> &str {
         "claude_code" => "Claude Code", "codex" => "Codex",
         "kimi_code" => "Kimi Code", "pi" => "Pi", "opencode" => "OpenCode",
         "zcode_cli" => "ZCode CLI", "deepseek_harness" => "DeepSeek Harness", "zcode" => "ZCode Desktop",
+        "antigravity" => "Antigravity CLI",
         _ => runtime,
     }
 }
 
 impl MultiAgentStore {
+    pub(super) fn antigravity_conversation_locator(&self, task: &str, project: &str, agent: &str) -> Result<Option<serde_json::Value>> {
+        let connection = self.connection.lock().unwrap();
+        let locator: Option<String> = connection.query_row(
+            "SELECT run.session_locator_json
+             FROM ma_conversation_turns current_turn
+             JOIN ma_conversation_rounds current_round ON current_round.id=current_turn.round_id
+             JOIN ma_conversation_rounds prior_round ON prior_round.project_id=current_round.project_id
+                AND json_extract(prior_round.data_json,'$.conversationId')=json_extract(current_round.data_json,'$.conversationId')
+             JOIN ma_conversation_turns prior_turn ON prior_turn.round_id=prior_round.id
+             JOIN ma_runs run ON run.task_id=prior_turn.task_id
+             WHERE current_turn.task_id=?1 AND current_round.project_id=?2 AND run.project_id=?2 AND run.agent_id=?3
+                AND run.status='succeeded'
+                AND json_extract(run.session_locator_json,'$.protocol')='acp-v1'
+                AND json_extract(run.session_locator_json,'$.runtimeKind')='antigravity'
+                AND json_extract(run.session_locator_json,'$.sessionId') IS NOT NULL
+             ORDER BY run.rowid DESC LIMIT 1",
+            params![task, project, agent], |row| row.get(0),
+        ).optional()?;
+        locator.map(|value| serde_json::from_str(&value).context("无法读取 Antigravity 原生会话记录")).transpose()
+    }
+
     pub(crate) fn conversation_plan_retry_input(
         &self,
         project_id: &str,
@@ -1079,6 +1110,7 @@ impl MultiAgentStore {
             if agent.project_id != input.project_id || !agent.enabled {
                 bail!("参与成员不属于当前项目或已停用");
             }
+            validate_discussion_only_member(agent.runtime_kind, &input)?;
             if !input.managed && !supports_conversation(agent.runtime_kind, input.native_capabilities) {
                 bail!("{} 暂未提供已验证的禁止写入讨论模式，请选择 Claude、Codex 或 Pi；该成员仍可执行明确授权的项目任务",agent.name);
             }
@@ -1306,6 +1338,7 @@ impl MultiAgentStore {
         if let Some(request) = &queued_input {
             for agent_id in &request.participant_agent_ids {
                 let agent = self.agent_profile(agent_id)?;
+                validate_discussion_only_member(agent.runtime_kind, request)?;
                 if agent.project_id != request.project_id || !agent.enabled || !supports_conversation(agent.runtime_kind, request.native_capabilities) {
                     bail!("插话接收成员不属于当前项目、已停用或不支持受限讨论");
                 }
@@ -2397,6 +2430,13 @@ fn prepare_turn_addressed(
     let body = format!("{}\n\n本次直接回复的消息 ID：{reply_to}。回答这条消息提出的问题，不替其他成员发言。", discussion_prompt(store, &tx, &round, phase, cycle, agent)?);
     let stamp = now();
     let native = round.member_policies.get(agent).is_some_and(EffectiveConversationPolicy::uses_native_capabilities);
+    let is_antigravity: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM ma_agents WHERE project_id=?1 AND id=?2 AND runtime_kind='antigravity')",
+        params![round.project_id, agent], |row| row.get(0),
+    )?;
+    if is_antigravity && (!native || round.mode != "discussion") {
+        bail!("Antigravity CLI 目前仅支持团队普通对话");
+    }
     tx.execute("INSERT INTO ma_tasks(id,project_id,parent_id,stage,title,description,acceptance_criteria,verification_command,status,assignee_agent_id,reviewer_agent_id,workspace_mode,priority,required_capabilities_json,max_attempts,retry_backoff_seconds,next_retry_at,created_at,updated_at) VALUES(?1,?2,NULL,0,?3,?4,'按当前用户请求回复公共会话；本轮回复不等于工程验收通过',NULL,'ready',?5,NULL,?7,0,'[]',1,5,NULL,?6,?6)",params![task_id,round.project_id,format!("团队会话 · {phase}"),body,agent,stamp,if native {"shared_write"} else {"read_only"}])?;
     tx.execute("INSERT INTO ma_conversation_turns(id,round_id,task_id,data_json,ordinal) VALUES(?1,?2,?3,?4,?5)",params![turn_id,round.id,task_id,serde_json::to_string(&turn)?,ordinal as i64])?;
     let message = ConversationMessage {

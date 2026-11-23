@@ -574,7 +574,8 @@ export type AgentRuntimeKind =
   | "opencode_chat"
   | "pi_chat"
   | "zcode"
-  | "zcode_cli";
+  | "zcode_cli"
+  | "antigravity";
 
 export type AgentRole = "orchestrator" | "worker" | "reviewer" | "integrator";
 export type PermissionProfile = "default" | "auto" | "yolo";

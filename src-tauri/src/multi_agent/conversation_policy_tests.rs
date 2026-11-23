@@ -1,12 +1,29 @@
 use super::*;
 
 #[test]
-fn fresh_conversation_reports_only_seven_cli_engines() {
+fn fresh_conversation_reports_native_cli_engines() {
     let fixture=Fixture::new();
     let snapshot=fixture.store.conversation_snapshot(&fixture.project).unwrap();
-    assert_eq!(snapshot.supported_discussion_runtimes.len(),7);
+    assert_eq!(snapshot.supported_discussion_runtimes.len(),8);
+    assert!(snapshot.supported_discussion_runtimes.contains(&AgentRuntimeKind::Antigravity));
     assert!(!snapshot.supported_discussion_runtimes.contains(&AgentRuntimeKind::ZCode));
     assert!(snapshot.supported_discussion_runtimes.contains(&AgentRuntimeKind::DeepSeekHarness));
+}
+
+#[test]
+fn antigravity_accepts_only_native_discussion() {
+    let fixture = Fixture::new();
+    let mut input = fixture.input();
+    let runtime = AgentRuntimeKind::Antigravity;
+    assert!(validate_discussion_only_member(runtime, &input).is_err());
+    input.native_capabilities = true;
+    assert!(validate_discussion_only_member(runtime, &input).is_ok());
+    input.mode = "execution_plan".into();
+    assert!(validate_discussion_only_member(runtime, &input).is_err());
+    assert!(validate_discussion_only_member(AgentRuntimeKind::Codex, &input).is_ok());
+    input.mode = "discussion".into();
+    input.task_rules = Some(Default::default());
+    assert!(validate_discussion_only_member(runtime, &input).is_err());
 }
 
 #[test]
@@ -14,7 +31,7 @@ fn existing_desktop_member_keeps_native_group_compatibility() {
     let fixture=Fixture::new();
     fixture.store.connection.lock().unwrap().execute("UPDATE ma_agents SET runtime_kind='zcode',model='desktop/original' WHERE id=?1",[&fixture.agents[0]]).unwrap();
     let snapshot=fixture.store.conversation_snapshot(&fixture.project).unwrap();
-    assert_eq!(snapshot.supported_discussion_runtimes.len(),8);
+    assert_eq!(snapshot.supported_discussion_runtimes.len(),9);
     assert!(snapshot.supported_discussion_runtimes.contains(&AgentRuntimeKind::ZCode));
     let mut input=fixture.input();input.native_capabilities=true;input.participant_agent_ids=vec![fixture.agents[0].clone()];
     let (round,_)=fixture.store.begin_conversation(input).unwrap();

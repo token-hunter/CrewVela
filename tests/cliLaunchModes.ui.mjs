@@ -9,7 +9,7 @@ const errors = [];
 async function choose(page, kind) {
   await page.getByRole('button', {name:'新建会话',exact:true}).first().click();
   const labels = {
-    claude_code:'Claude Code', codex:'Codex CLI', kimi_code:'Kimi Code', opencode:'OpenCode', pi:'Pi Agent', zcode_cli:'ZCode CLI',
+    claude_code:'Claude Code', codex:'Codex CLI', kimi_code:'Kimi Code', opencode:'OpenCode', pi:'Pi Agent', zcode_cli:'ZCode CLI', antigravity:'Antigravity CLI',
     claude_chat:'Claude Code Chat', codex_chat:'Codex Chat', kimi_chat:'Kimi Code Chat', opencode_chat:'OpenCode Chat',
     pi_chat:'Pi Chat', deepseek_harness:'DeepSeek Harness', zcode:'ZCode Desktop',
   };
@@ -34,10 +34,17 @@ try {
     let call=await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1));
     assert.equal(call.args.launchMode,'workspace'); assert.equal(call.args.cwd,'C:\\fixture');
     await page.locator('.pane-launch-mode').filter({hasText:'工作区写入'}).waitFor();
+    dialog = await choose(page,'antigravity');
+    assert.deepEqual(await dialog.getByRole('combobox',{name:'本次启动模式'}).locator('option').allTextContents(),['CLI 默认']);
+    await dialog.getByRole('button',{name:'启动',exact:true}).click();
+    await dialog.waitFor({state:'detached'});
+    call = await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1));
+    assert.equal(call.args.runtimeKind,'antigravity');
+    assert.equal(call.args.launchMode,'cli_default');
     dialog=await choose(page,'claude_code');
     await dialog.getByRole('button',{name:'管理默认模式'}).click();
     const management=page.getByRole('dialog',{name:'管理 Runtime',exact:true});
-    assert.equal(await management.locator('.runtime-default-mode').count(),6);
+    assert.equal(await management.locator('.runtime-default-mode').count(),7);
     await management.getByRole('combobox',{name:'默认启动模式 · Claude Code'}).selectOption('manual');
     await page.waitForFunction(()=>window.appSessionMock.cliLaunch.defaults.claude_code==='manual');
     await management.screenshot({path:`${output}/management-${theme}.png`});
@@ -178,5 +185,5 @@ try {
   assert.equal(await launch.getByRole('combobox', { name: '启动 Agent' }).inputValue(), 'claude_chat');
   await firstRun.close();
   assert.deepEqual(errors,[]);
-  console.log('PASS: real App launch routes for six CLIs and seven Chats, directory selection, mode controls, pending dedup/close guard, saved defaults, dark/light and narrow layouts');
+  console.log('PASS: real App launch routes for seven CLIs and seven Chats, directory selection, mode controls, pending dedup/close guard, saved defaults, dark/light and narrow layouts');
 } finally { await browser.close(); }

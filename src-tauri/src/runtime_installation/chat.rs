@@ -471,8 +471,8 @@ fn install_adapter(
     id: &str,
     cancel: &AtomicBool,
 ) -> Result<()> {
-    let (name, version) = adapter
-        .package()
+    let package = adapter.package().context("该 ACP 使用本机 CLI，无 npm 适配器")?;
+    let (name, version) = package
         .rsplit_once('@')
         .context("适配器版本配置无效")?;
     let root = root.join("adapters").join(adapter.binary()).join(version);
@@ -510,7 +510,7 @@ fn install_adapter(
             "--no-package-lock",
             "--include=optional",
         ])
-        .arg(adapter.package());
+        .arg(package);
     let output = crate::title_summary::run_cli_until_cancelled(
         command,
         None,

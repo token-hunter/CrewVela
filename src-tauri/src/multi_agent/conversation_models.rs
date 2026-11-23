@@ -62,6 +62,7 @@ fn acp_kind(runtime: AgentRuntimeKind) -> Option<ManagedAcpKind> {
         AgentRuntimeKind::KimiCode => Some(ManagedAcpKind::Kimi),
         AgentRuntimeKind::OpenCode => Some(ManagedAcpKind::OpenCode),
         AgentRuntimeKind::DeepSeekHarness => Some(ManagedAcpKind::DeepSeekHarness),
+        AgentRuntimeKind::Antigravity => Some(ManagedAcpKind::Antigravity),
         _ => None,
     }
 }

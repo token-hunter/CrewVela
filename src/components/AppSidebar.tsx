@@ -109,7 +109,7 @@ interface Props extends Pick<ComponentProps<typeof SessionList>, "onOpenProject"
   onNewRuntimeSession: (
     runtimeKind: Extract<
       AgentRuntimeKind,
-      "codex" | "kimi_code" | "pi" | "opencode"
+      "codex" | "kimi_code" | "pi" | "opencode" | "antigravity"
     >,
   ) => void;
   onAddProject: () => void;
@@ -451,6 +451,7 @@ export function AppSidebar(props: Props) {
                 </button>}
                 {isRuntimeEnabled("zcode") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenZCode)}><img src={RUNTIME_LOGOS.zcode} data-runtime="zcode" alt="" aria-hidden="true" />ZCode Desktop</button>}
                 {isRuntimeEnabled("zcode_cli") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onOpenZCodeCli)}><img src={RUNTIME_LOGOS.zcode_cli} data-runtime="zcode_cli" alt="" aria-hidden="true" />ZCode CLI</button>}
+                {isRuntimeEnabled("antigravity") && <button type="button" role="menuitem" onClick={() => runNewAction(() => props.onNewRuntimeSession("antigravity"))}><img src={RUNTIME_LOGOS.antigravity} data-runtime="antigravity" alt="" aria-hidden="true" />Antigravity CLI</button>}
                 {terminalShells().map(shell => <button key={shell} type="button" role="menuitem" onClick={() => runNewAction(() => props.onNewTerminal(shell))}>
                   <TerminalWindowIcon size={20} />
                   <span><strong>{shellLabel(shell)}</strong></span>

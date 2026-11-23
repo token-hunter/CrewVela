@@ -70,7 +70,7 @@ mod tests {
     }
     #[test]
     fn every_advertised_choice_is_wired_and_defaults_preserve_native_configuration() {
-        assert_eq!(catalog().len(), 6);
+        assert_eq!(catalog().len(), 7);
         for (kind, choices) in catalog() {
             for choice in choices {
                 assert!(!choice.label.is_empty() && !choice.description.is_empty());

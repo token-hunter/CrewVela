@@ -34,6 +34,9 @@
     {"id":"plan","label":"Plan","description":"选择原生 plan Agent，保留其配置权限。"},
     {"id":"auto","label":"Auto","description":"原生 --auto 自动批准，明确拒绝的权限仍保留。"}
   ],
+  "antigravity": [
+    {"id":"cli_default","label":"CLI 默认","description":"沿用 Antigravity CLI 的原生设置。"}
+  ],
   "pi": [
     {"id":"cli_default","label":"CLI 默认","description":"沿用原生工具、扩展及 MCP 配置。Pi 没有原生 YOLO 开关。"},
     {"id":"read_tools","label":"仅文件读取工具","description":"仅启用 read、grep、find、ls，关闭自动扩展和 MCP。这是工具限制，不是系统沙箱。"}

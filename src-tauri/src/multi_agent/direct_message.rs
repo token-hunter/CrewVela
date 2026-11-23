@@ -254,7 +254,7 @@ fn runtime_aliases(runtime: AgentRuntimeKind) -> &'static [&'static str] {
         AgentRuntimeKind::OpenCodeChat => &["opencode chat", "opencode_chat"],
         AgentRuntimeKind::ZCode => &["zcode"],
         AgentRuntimeKind::ZCodeCli => &["zcode cli", "zcode_cli", "zcodecli", "zcode-cli"],
-        AgentRuntimeKind::OhMyPi => &[],
+        AgentRuntimeKind::OhMyPi | AgentRuntimeKind::Antigravity => &[],
     }
 }
 

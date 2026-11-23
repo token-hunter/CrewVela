@@ -29,16 +29,17 @@ pub enum AgentRuntimeKind {
     ZCode,
     #[serde(rename = "zcode_cli", alias = "z_code_cli")]
     ZCodeCli,
+    Antigravity,
     /// Historical unknown runtimes remain readable but are never executable.
     #[serde(other)]
     Unsupported,
 }
 
 /// New collaboration members execute CLI engines. Session UI categories remain independent.
-pub const COLLABORATION_CLI_RUNTIMES: [AgentRuntimeKind; 7] = [
+pub const COLLABORATION_CLI_RUNTIMES: [AgentRuntimeKind; 8] = [
     AgentRuntimeKind::ClaudeCode, AgentRuntimeKind::Codex, AgentRuntimeKind::KimiCode,
     AgentRuntimeKind::Pi, AgentRuntimeKind::OpenCode, AgentRuntimeKind::ZCodeCli,
-    AgentRuntimeKind::DeepSeekHarness,
+    AgentRuntimeKind::DeepSeekHarness, AgentRuntimeKind::Antigravity,
 ];
 
 impl AgentRuntimeKind {
@@ -69,6 +70,7 @@ impl AgentRuntimeKind {
             Self::DeepSeekHarness => "deepseek_harness",
             Self::ZCode => "zcode",
             Self::ZCodeCli => "zcode_cli",
+            Self::Antigravity => "antigravity",
             Self::Unsupported => "unsupported",
         }
     }

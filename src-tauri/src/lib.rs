@@ -3307,6 +3307,7 @@ fn standalone_runtime_kind(record: &SessionRecord) -> Result<AgentRuntimeKind, S
         Some("deepseek_harness") => Ok(AgentRuntimeKind::DeepSeekHarness),
         Some("zcode") => Ok(AgentRuntimeKind::ZCode),
         Some("zcode_cli") => Ok(AgentRuntimeKind::ZCodeCli),
+        Some("antigravity") => Ok(AgentRuntimeKind::Antigravity),
         Some(value) => Err(format!("暂不支持交互式 Runtime 会话: {value}")),
         None => Err("Runtime 会话缺少 Runtime 类型".to_string()),
     }
@@ -3363,6 +3364,7 @@ fn configure_yolo_runtime_command(
         }
         // zcode CLI TUI 在会话内自行管理权限模式，启动无需附加参数。
         AgentRuntimeKind::ZCodeCli => {}
+        AgentRuntimeKind::Antigravity => return Err("Antigravity CLI 请在原生会话内管理权限".into()),
         AgentRuntimeKind::DeepSeekHarness => {
             return Err("DeepSeek Harness 通过协作项目 ACP 执行，不支持 PTY 会话".into())
         }

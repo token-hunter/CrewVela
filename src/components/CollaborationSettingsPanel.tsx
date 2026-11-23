@@ -95,6 +95,7 @@ const RUNTIME_ORDER: AgentRuntimeKind[] = [
   "pi_chat",
   "zcode",
   "zcode_cli",
+  "antigravity",
 ];
 
 const RUNTIME_LABELS: Record<AgentRuntimeKind, string> = {
@@ -114,6 +115,7 @@ const RUNTIME_LABELS: Record<AgentRuntimeKind, string> = {
   pi_chat: "Pi Chat",
   zcode: "ZCode Desktop",
   zcode_cli: "ZCode CLI",
+  antigravity: "Antigravity CLI",
 };
 
 const ROLE_LABELS: Record<AgentRole, string> = {

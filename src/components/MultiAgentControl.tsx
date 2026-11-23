@@ -276,18 +276,21 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const manualMembers = useMemo(() => new Set(snapshot?.agentSessions.filter(session => session.projectId === projectId && session.controlMode === "manual").map(session => session.agentId) ?? []), [snapshot, projectId]);
   const eligibleMembers = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id);
   const availableRecipients = eligibleMembers.filter(id => !manualMembers.has(id));
+  const discussionOnlyMembers = new Set(agents.filter(agent => agent.runtimeKind === "antigravity").map(agent => agent.id));
+  const eligiblePlanMembers = eligibleMembers.filter(id => !discussionOnlyMembers.has(id));
+  const availablePlanMembers = availableRecipients.filter(id => !discussionOnlyMembers.has(id));
   const chatRecipient = agents.find(agent => agent.id === chatRecipientId && availableRecipients.includes(agent.id));
   const rememberChatRecipient = useCallback((project: string, chat: string, recipient?: string) => {
     save(chatRecipientKey(project, chat), recipient ?? "");
     if (mounted.current && currentProject.current === project && currentConversation.current === chat) setChatRecipientId(recipient);
   }, []);
   const selected = runtimeReady && !runtimeError
-    ? memberSelection?.filter(id => eligibleMembers.includes(id)) ?? availableRecipients
+    ? memberSelection?.filter(id => eligiblePlanMembers.includes(id)) ?? availablePlanMembers
     : [];
   const selectionCount = (id: string) => {
     if (id === conversation?.conversation.id) return selected.length;
-    return (projectId ? storedMemberSelection(projectId, id) : null)?.filter(member => eligibleMembers.includes(member)).length
-      ?? availableRecipients.length;
+    return (projectId ? storedMemberSelection(projectId, id) : null)?.filter(member => eligiblePlanMembers.includes(member)).length
+      ?? availablePlanMembers.length;
   };
   const setSelected = (next: string[] | ((current: string[]) => string[])) => {
     if (!projectId || !conversation || !runtimeReady || runtimeError) return;
@@ -595,6 +598,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const rule = archivedRuleId ? conversation?.archivedTaskRules?.find(value => value.id === archivedRuleId) : undefined;
       const chat = mode === "discussion";
       const ids = conversationRecipients(body, chat ? availableRecipients : selected, agents, projectId, chat ? chatRecipientId : undefined);
+      if ((!chat || managed || archivedRuleId) && ids.some(id => discussionOnlyMembers.has(id))) throw Error("Antigravity CLI 目前仅支持团队普通对话。");
       if (ids.some(id => !isRuntimeEnabled(agents.find(agent => agent.id === id)!.runtimeKind))) throw Error("目标成员的 Runtime 已停用，请在协作设置中启用后重试。");
       if (ids.some(id => !supported.includes(agents.find(agent => agent.id === id)!.runtimeKind))) throw Error("所选成员此 Runtime 尚未接入群聊，请调整成员或在原会话中操作。");
       const manual = ids.filter(id => manualMembers.has(id)).map(id => agents.find(agent => agent.id === id)!.name);
@@ -871,8 +875,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const toggleMember = (agent: AgentProfile) => {
     setSelected(ids => ids.includes(agent.id) ? ids.filter(id => id !== agent.id) : [...ids, agent.id]);
   };
-  const allRecipientsSelected = availableRecipients.length > 0
-    && availableRecipients.length === selected.length && availableRecipients.every(id => selected.includes(id));
+  const allRecipientsSelected = availablePlanMembers.length > 0
+    && availablePlanMembers.length === selected.length && availablePlanMembers.every(id => selected.includes(id));
   const mentionCount = new Set(mentionTokens.filter(token => hasMentionToken(draft, token))).size;
   const planning = conversationRequestMode(draft, "discussion", mentionTokens) === "execution_plan";
   const showChatRecipient = !planning && !mentionCount && !!chatRecipientId;
@@ -975,9 +979,10 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       style={{ left:membersPosition.left, top:membersPosition.top, width:membersPosition.width, "--conversation-member-menu-height":`${membersPosition.maxHeight}px` } as React.CSSProperties}>
       <div className="conversation-member-menu" role="group" aria-label="选择参与成员"><header>参与成员</header>{agents.map(agent => {
       const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id);
-      const reason = !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? "Runtime 已停用" : !supported.includes(agent.runtimeKind) ? "此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? "用户接管中" : "";
+      const discussionOnly = discussionOnlyMembers.has(agent.id);
+      const reason = !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? "Runtime 已停用" : !supported.includes(agent.runtimeKind) ? "此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? "用户接管中" : discussionOnly ? "仅团队聊天" : "";
       return <div key={agent.id} className="conversation-member-entry" data-active={modelMemberId === agent.id}>
-        <label title={`${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]}${reason ? ` · ${reason}` : ""}`}><input type="checkbox" aria-label={agent.name} checked={selected.includes(agent.id)} disabled={(!eligible && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span className="conversation-member-name"><strong>{agent.name}</strong><small>{ROLE[agent.role] ?? agent.role}{reason && ` · ${reason}`}{activeAgent?.id === agent.id && " · 正在回复"}</small></span><Check size={18} className="conversation-member-check" aria-hidden="true" /></label>
+        <label title={`${agent.name} · ${RUNTIME_LABELS[agent.runtimeKind]}${reason ? ` · ${reason}` : ""}`}><input type="checkbox" aria-label={agent.name} checked={selected.includes(agent.id)} disabled={discussionOnly || (!eligible && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span className="conversation-member-name"><strong>{agent.name}</strong><small>{ROLE[agent.role] ?? agent.role}{reason && ` · ${reason}`}{activeAgent?.id === agent.id && " · 正在回复"}</small></span><Check size={18} className="conversation-member-check" aria-hidden="true" /></label>
         <button type="button" className="conversation-member-model-trigger" aria-label={`${agent.name}的模型与推理`} title="在输入框上方配置" aria-expanded={modelMemberId === agent.id} onClick={() => { setMembersOpen(null); setWorkView("chat"); setModelMemberId(agent.id); }}><CaretRight size={15} /></button>
       </div>;
     })}{!agents.length && <p>还没有团队成员。{onOpenProjectSettings && <button type="button" className="conversation-text-button" onClick={() => { setMembersOpen(null); onOpenProjectSettings(projectId ?? undefined); }}>添加成员</button>}</p>}</div>
@@ -1203,9 +1208,9 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
            </button></div></div>
         {membersOpen === "composer" && <div id={membersId} ref={membersMenu} className="conversation-recipient-menu" aria-label="选择参与成员"><header><strong>分工与托管成员</strong>
             <div className="conversation-recipient-actions">
-              <button type="button" disabled={busy || !availableRecipients.length} onClick={() => setSelected(allRecipientsSelected ? [] : availableRecipients)}>{allRecipientsSelected ? "取消全选" : "全选"}</button>
+              <button type="button" disabled={busy || !availablePlanMembers.length} onClick={() => setSelected(allRecipientsSelected ? [] : availablePlanMembers)}>{allRecipientsSelected ? "取消全选" : "全选"}</button>
             </div>
-          </header>{agents.map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || (manualMembers.has(agent.id) && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? " · 用户接管中" : ""}</small></span></label>)}</div>}
+          </header>{agents.filter(agent => !discussionOnlyMembers.has(agent.id)).map(agent => <label key={agent.id}><input type="checkbox" checked={selected.includes(agent.id)} disabled={!supported.includes(agent.runtimeKind) || !isRuntimeEnabled(agent.runtimeKind) || (manualMembers.has(agent.id) && !selected.includes(agent.id)) || busy} onChange={() => toggleMember(agent)} /><AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /><span>{agent.name}<small>{RUNTIME_LABELS[agent.runtimeKind]}{!isRuntimeEnabled(agent.runtimeKind) ? " · Runtime 已停用" : !supported.includes(agent.runtimeKind) ? " · 此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? " · 用户接管中" : ""}</small></span></label>)}</div>}
       </ResizableConversationComposer>
     </footer></div>
     {workView === "tasks" && <div id={`${workViewId}-tasks-panel`} className="team-tasks-panel" role="tabpanel" aria-labelledby={`${workViewId}-tasks-tab`}><ConversationTaskView

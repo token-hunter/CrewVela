@@ -651,7 +651,9 @@ pub fn interpret_collaboration_message_streaming(
         )
     };
 
-    let mut execution_runtimes = super::COLLABORATION_CLI_RUNTIMES.iter().map(|runtime| runtime.as_str()).collect::<Vec<_>>();
+    let mut execution_runtimes = super::COLLABORATION_CLI_RUNTIMES.iter()
+        .filter(|runtime| **runtime != AgentRuntimeKind::Antigravity)
+        .map(|runtime| runtime.as_str()).collect::<Vec<_>>();
     if snapshot.is_some_and(|project| project.agents.iter().any(|agent| agent.runtime_kind == AgentRuntimeKind::ZCode)) { execution_runtimes.push("zcode"); }
     let schema = serde_json::json!({
         "type": "object",
@@ -895,7 +897,7 @@ fn add_project_communication_contract(
             snapshot
                 .agents
                 .iter()
-                .filter(|agent| agent.enabled)
+                .filter(|agent| agent.enabled && agent.runtime_kind != AgentRuntimeKind::Antigravity)
                 .map(|agent| agent.runtime_kind.as_str()),
         );
     }
@@ -1006,6 +1008,7 @@ fn runtime_label(runtime: AgentRuntimeKind) -> &'static str {
         AgentRuntimeKind::OpenCodeChat => "OpenCode Chat",
         AgentRuntimeKind::ZCode => "ZCode Desktop",
         AgentRuntimeKind::ZCodeCli => "ZCode CLI",
+        AgentRuntimeKind::Antigravity => "Antigravity CLI",
     }
 }
 
@@ -1181,6 +1184,9 @@ fn parse_plan_value(value: &serde_json::Value, context: &str) -> Result<Coordina
     })?;
     // Historical records tolerate removed kinds; new execution plans must not.
     for (index, agent) in plan.agents.iter().enumerate() {
+        if agent.runtime_kind == AgentRuntimeKind::Antigravity {
+            bail!("{context}：Antigravity CLI 目前仅支持团队普通对话");
+        }
         if agent.runtime_kind.is_retired() {
             bail!("{context}：agents[{index}].runtimeKind 不受支持：{}；输出片段：{}",
                 value["agents"][index]["runtimeKind"], text_excerpt(&value.to_string()));
@@ -1467,7 +1473,8 @@ mod tests {
             assert!(parse_plan(&structured_plan(runtime)).unwrap_err().to_string().contains("CLI"));
         }
         for runtime in super::super::COLLABORATION_CLI_RUNTIMES {
-            assert!(parse_plan(&structured_plan(runtime.as_str())).is_ok());
+            assert_eq!(parse_plan(&structured_plan(runtime.as_str())).is_ok(),
+                runtime != super::AgentRuntimeKind::Antigravity);
         }
         let mut old:serde_json::Value=serde_json::from_str(&structured_plan("zcode")).unwrap();
         old["structured_output"]["intent"]=serde_json::json!("add_tasks");

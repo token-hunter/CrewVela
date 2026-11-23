@@ -1413,6 +1413,7 @@ fn powershell_protocol_presenter(kind: AgentRuntimeKind) -> Vec<String> {
         AgentRuntimeKind::OpenCodeChat => "OpenCode Chat",
         AgentRuntimeKind::ZCode => "ZCode Desktop",
         AgentRuntimeKind::ZCodeCli => "ZCode CLI",
+        AgentRuntimeKind::Antigravity => "Antigravity CLI",
     };
     vec![
         "$crewvelaThinkingShown = $false".into(),
@@ -3306,6 +3307,7 @@ struct CodexAdapter;
 struct KimiCodeAdapter;
 struct PiAdapter;
 struct OpenCodeAdapter;
+struct AntigravityAdapter;
 struct DeepSeekHarnessAdapter;
 struct ZCodeAdapter(AgentRuntimeKind);
 
@@ -3318,6 +3320,7 @@ fn adapter_for(kind: AgentRuntimeKind) -> Box<dyn AgentRuntimeAdapter> {
         AgentRuntimeKind::Pi => Box::new(PiAdapter),
         AgentRuntimeKind::OhMyPi => unreachable!("已移除的 Runtime 不能执行"),
         AgentRuntimeKind::OpenCode => Box::new(OpenCodeAdapter),
+        AgentRuntimeKind::Antigravity => Box::new(AntigravityAdapter),
         AgentRuntimeKind::DeepSeekHarness => Box::new(DeepSeekHarnessAdapter),
         AgentRuntimeKind::ClaudeChat => unreachable!("claude_chat 仅用于独立原生聊天会话"),
         AgentRuntimeKind::KimiChat => unreachable!("kimi_chat 仅用于独立原生聊天会话"),
@@ -3399,7 +3402,7 @@ fn request_requires_session_cli(request: &RuntimeRequest) -> Result<bool> {
             .snapshot(&request.project.id)?
             .agents
             .iter()
-            .filter(|agent| agent.enabled)
+            .filter(|agent| agent.enabled && agent.runtime_kind != AgentRuntimeKind::Antigravity)
             .map(|agent| agent.runtime_kind.as_str())
             .collect::<HashSet<_>>()
             .len()
@@ -3539,7 +3542,7 @@ fn execute_preferred_acp(
     if research_policy.is_some() && kind != ManagedAcpKind::ClaudeCode {
         bail!("{} 暂不能强制执行完整群聊工具白名单与读取边界；请使用已适配的 Claude 或 Pi。未启动模型，也未降级为 YOLO；明确授权的工程任务仍可使用此 Runtime", request.agent.runtime_kind.as_str());
     }
-    if kind != ManagedAcpKind::DeepSeekHarness
+    if !matches!(kind, ManagedAcpKind::DeepSeekHarness | ManagedAcpKind::Antigravity)
         && (request.launch.mode().is_some() || request_requires_session_cli(request)?) {
         return Ok(None);
     }
@@ -3565,8 +3568,20 @@ fn execute_preferred_acp(
         }))
     } else { None };
     let images = request.store.conversation_task_images(&request.task.id)?;
-    let resume_session_id = locator_string(request.resume_locator.as_ref(), locator_keys);
-    let mode = if native_discussion && request.agent.permission_profile == PermissionProfile::Default { ManagedAcpMode::Inherit } else { managed_acp_mode(
+    let resume_session_id = if kind == ManagedAcpKind::Antigravity {
+        request.store.antigravity_conversation_locator(&request.task.id, &request.project.id, &request.agent.id)?
+            .map(|locator| {
+                let cwd = locator["cwd"].as_str().context("Antigravity 原生会话缺少工作目录")?;
+                anyhow::ensure!(std::path::Path::new(cwd).canonicalize()? == request.cwd.canonicalize()?,
+                    "项目目录已变化，无法安全恢复原 Antigravity 会话");
+                locator["sessionId"].as_str().filter(|id| !id.trim().is_empty())
+                    .map(str::to_owned).context("Antigravity 原生会话 ID 无效")
+            }).transpose()?
+    } else {
+        locator_string(request.resume_locator.as_ref(), locator_keys).map(str::to_owned)
+    };
+    let mode = if kind == ManagedAcpKind::Antigravity { ManagedAcpMode::Default }
+    else if native_discussion && request.agent.permission_profile == PermissionProfile::Default { ManagedAcpMode::Inherit } else { managed_acp_mode(
         request.task.workspace_mode, request.agent.permission_profile,
     ) };
     let deepseek_policy = match mode {
@@ -3681,7 +3696,8 @@ fn execute_preferred_acp(
         } else {
             None
         };
-    let mcp_url = if research_policy.as_ref().is_some_and(|p| !p.allows_tools()) { String::new() } else { format!("{}/mcp", request.collaboration.endpoint) };
+    // Antigravity's native ACP advertises no client-injected HTTP MCP support.
+    let mcp_url = if kind == ManagedAcpKind::Antigravity || research_policy.as_ref().is_some_and(|p| !p.allows_tools()) { String::new() } else { format!("{}/mcp", request.collaboration.endpoint) };
     let event_store = request.store.clone();
     let event_run = request.run_id.clone();
     let update_handler: Option<Box<dyn FnMut(&serde_json::Value) + Send>> = if discussion { Some(Box::new(move |update| {
@@ -3739,7 +3755,7 @@ fn execute_preferred_acp(
         None,
         permission_handler,
         update_handler,
-        scoped_design_tool(request)?,
+        if kind == ManagedAcpKind::Antigravity { None } else { scoped_design_tool(request)? },
         &images,
         codex,
         conversation_config,
@@ -3798,7 +3814,10 @@ fn execute_preferred_acp(
             if kind == ManagedAcpKind::Codex && resume_session_id.is_some() {
                 bail!("无法恢复原 Codex 会话，未创建替代会话：{reason}");
             }
-            if discussion { return Err(anyhow!("群聊 ACP 未就绪，未更换权限或切换供应商：{reason}")); }
+            if discussion {
+                if kind == ManagedAcpKind::Antigravity { let _ = publish_activity(SessionStatus::Error, Some(reason.clone())); }
+                return Err(anyhow!("群聊 ACP 未就绪，未更换权限或切换供应商：{reason}"));
+            }
             if kind == ManagedAcpKind::DeepSeekHarness {
                 request.terminal_host.sessions.mark_agent_activity(
                     &session.id,
@@ -4295,7 +4314,7 @@ fn configure_collaboration_mcp(command: &mut Command, request: &RuntimeRequest) 
             command.env("CREWVELA_PI_MCP_URL", mcp_url);
             command.env("CREWVELA_AGENT_TOKEN", &request.collaboration.token);
         }
-        AgentRuntimeKind::OpenCode
+        AgentRuntimeKind::OpenCode | AgentRuntimeKind::Antigravity
         => {}
         AgentRuntimeKind::DeepSeekHarness
         | AgentRuntimeKind::ClaudeChat
@@ -4922,6 +4941,18 @@ impl AgentRuntimeAdapter for PiAdapter {
             object.insert("sessionPath".to_string(), serde_json::json!(actual_session));
         }
         Ok(result)
+    }
+}
+
+impl AgentRuntimeAdapter for AntigravityAdapter {
+    fn kind(&self) -> AgentRuntimeKind { AgentRuntimeKind::Antigravity }
+
+    fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
+        if !native_conversation(request)? || request.managed {
+            bail!("Antigravity CLI 目前仅支持团队普通对话");
+        }
+        execute_preferred_acp(ManagedAcpKind::Antigravity, &["sessionId"], request, cancelled)?
+            .context("Antigravity CLI 群聊 ACP 未就绪")
     }
 }
 
@@ -5847,6 +5878,7 @@ fn resolve_runtime(kind: AgentRuntimeKind) -> Result<PathBuf> {
         AgentRuntimeKind::Pi => "pi",
         AgentRuntimeKind::OhMyPi => return Err(anyhow!("Oh My Pi 已移除，请更换 Runtime 后重试")),
         AgentRuntimeKind::OpenCode => "opencode",
+        AgentRuntimeKind::Antigravity => "agy",
         AgentRuntimeKind::ClaudeChat => {
             return Err(anyhow!("Claude Code Chat 是原生 ACP 会话，不能以 PTY 方式启动"))
         }

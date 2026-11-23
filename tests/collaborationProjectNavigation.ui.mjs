@@ -140,6 +140,52 @@ try {
   assert.equal(await appEditor.evaluate((el, original) => el === original, originalEditor), true);
   await recipient.waitFor();
   assert.deepEqual(errors, []);
+  const antigravity = await browser.newPage({ viewport: { width: 1500, height: 900 } });
+  antigravity.on("pageerror", error => errors.push(error.message));
+  await antigravity.goto(`${base}/tests/fixtures/app-session-async-ui.html?tasks-nav=1`);
+  await antigravity.evaluate(() => {
+    const mock = window.appSessionMock;
+    const original = mock.invoke.bind(mock);
+    window.antigravitySends = [];
+    mock.invoke = async (command, args) => {
+      if (command === "ma_conversation_send") {
+        window.antigravitySends.push(args.input);
+        return mock.invoke("ma_conversation_snapshot", { projectId: args.input.projectId });
+      }
+      const result = await original(command, args);
+      if (command === "ma_snapshot" && args.projectId === "A") {
+        result.agents[0].name = "Antigravity";
+        result.agents[0].runtimeKind = "antigravity";
+      }
+      if (command === "ma_conversation_snapshot" && args.projectId === "A") {
+        result.supportedDiscussionRuntimes.push("antigravity");
+      }
+      return result;
+    };
+  });
+  await antigravity.getByRole("button", { name: "Bot 模式", exact: true }).click();
+  const agyEditor = antigravity.getByRole("combobox", { name: "给团队发消息", exact: true });
+  const agySend = antigravity.getByRole("button", { name: "发送消息", exact: true });
+  await antigravity.getByRole("button", { name: "分工与托管 · 已选 0 位", exact: true }).click();
+  const planMembers = antigravity.locator(".conversation-recipient-menu");
+  await planMembers.waitFor();
+  assert.equal(await planMembers.getByText("Antigravity").count(), 0);
+  await agyEditor.fill("@Antigravity 记住项目验收标记。");
+  await agySend.click();
+  const agyRecipient = antigravity.getByRole("button", { name: "发给 Antigravity，切回发给全体", exact: true });
+  await agyRecipient.waitFor();
+  await antigravity.getByRole("button", { name: "返回辅助栏", exact: true }).click();
+  await agyRecipient.waitFor();
+  await agyEditor.fill("上一轮的标记是什么？");
+  await agySend.click();
+  await antigravity.waitForFunction(() => window.antigravitySends.length === 2);
+  const agyRoutes = await antigravity.evaluate(() => window.antigravitySends.map(input =>
+    [input.expectedConversationId, input.mode, input.participantAgentIds]));
+  assert.deepEqual(agyRoutes, [
+    ["conversation-A", "discussion", ["agent-A"]],
+    ["conversation-A", "discussion", ["agent-A"]],
+  ]);
+  assert.deepEqual(errors, []);
   console.log("协作项目导航和 Bot 模式通过：项目分组、改名、任务入口、原会话、草稿和收件人保留");
 } finally {
   await browser.close();

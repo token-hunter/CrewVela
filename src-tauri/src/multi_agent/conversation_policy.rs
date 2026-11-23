@@ -198,7 +198,11 @@ pub(super) fn runtime_capabilities(legacy_desktop: bool) -> Vec<ConversationRunt
     if legacy_desktop { runtimes.push(AgentRuntimeKind::ZCode); }
     runtimes.into_iter().map(|runtime_kind| ConversationRuntimeCapability {
         runtime_kind, research: true, reply_only: true, network_control: false, path_control: false,
-        status: "native".into(), detail: if runtime_kind == AgentRuntimeKind::ZCode { "已有 ZCode Desktop 成员保持原配置兼容；新增成员请选择 CLI，不自动替换账号或模型。" } else { "保留 CLI 原生工具、联网、Skill、MCP 与权限确认方式；角色设定仅用于专长和分工。实际可用性由当前 CLI 安装、登录及自身配置决定。" }.into(),
+        status: "native".into(), detail: match runtime_kind {
+            AgentRuntimeKind::ZCode => "已有 ZCode Desktop 成员保持原配置兼容；新增成员请选择 CLI，不自动替换账号或模型。",
+            AgentRuntimeKind::Antigravity => "使用本机 Antigravity CLI 的原生 ACP，只参与团队普通对话。工具请求使用 CrewVela 审批。",
+            _ => "保留 CLI 原生工具、联网、Skill、MCP 与权限确认方式；角色设定仅用于专长和分工。实际可用性由当前 CLI 安装、登录及自身配置决定。",
+        }.into(),
     }).collect()
 }
 

@@ -19,6 +19,7 @@ export const RUNTIME_LOGOS: Record<AgentRuntimeKind, string> = {
   opencode: openCodeAgentLogo,
   zcode: new URL("./assets/model-zhipu.svg", import.meta.url).href,
   zcode_cli: new URL("./assets/model-zhipu.svg", import.meta.url).href,
+  antigravity: new URL("./assets/agent-avatars/prism.svg", import.meta.url).href,
   deepseek_harness: new URL("./assets/model-deepseek.svg", import.meta.url).href,
   claude_chat: claudeCodeAgentLogo,
   codex_chat: codexAgentLogo,
@@ -44,4 +45,5 @@ export const RUNTIME_LABELS: Record<AgentRuntimeKind, string> = {
   pi_chat: "Pi Chat",
   zcode: "ZCode Desktop",
   zcode_cli: "ZCode CLI",
+  antigravity: "Antigravity CLI",
 };

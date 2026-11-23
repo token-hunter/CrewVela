@@ -45,7 +45,13 @@ struct RuntimeDefinition {
     capabilities: &'static [&'static str],
 }
 
-const DEFINITIONS: [RuntimeDefinition; 8] = [
+const DEFINITIONS: [RuntimeDefinition; 9] = [
+    RuntimeDefinition {
+        kind: AgentRuntimeKind::Antigravity,
+        command: "agy",
+        protocol: "acp_v1",
+        capabilities: &["resume", "interrupt", "approvals", "acp"],
+    },
     RuntimeDefinition {
         kind: AgentRuntimeKind::ZCode,
         command: "zcode",
@@ -286,6 +292,12 @@ fn probe_runtime(definition: &RuntimeDefinition) -> RuntimeProbe {
 
 fn update_spec(kind: AgentRuntimeKind) -> UpdateSpec {
     match kind {
+        AgentRuntimeKind::Antigravity => UpdateSpec {
+            package: None,
+            args: &[],
+            display: "agy update",
+            automatic: false,
+        },
         AgentRuntimeKind::ZCode => UpdateSpec {
             package: None,
             args: &[],
@@ -584,6 +596,11 @@ fn resolve_definition_executable(
 
     if let Ok(path) = which::which(definition.command) {
         return Some((path, None));
+    }
+    #[cfg(windows)]
+    if definition.kind == AgentRuntimeKind::Antigravity {
+        let path = PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("agy/bin/agy.exe");
+        return path.is_file().then_some((path, None));
     }
     None
 }

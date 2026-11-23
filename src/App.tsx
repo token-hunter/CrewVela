@@ -1514,6 +1514,7 @@ export default function App() {
       | "pi"
       | "opencode"
       | "zcode_cli"
+      | "antigravity"
     >,
     project?: SessionDirectory,
     selection?: RuntimeLaunchSelection,
@@ -1529,6 +1530,7 @@ export default function App() {
       pi: "Pi Agent",
       opencode: "OpenCode",
       zcode_cli: "ZCode CLI",
+      antigravity: "Antigravity CLI",
     }[runtimeKind];
     if (UI_PREVIEW) {
       if (selection?.saveAsDefault) await setRuntimeLaunchDefault(runtimeKind, selection.mode);
@@ -2307,6 +2309,7 @@ export default function App() {
         | "kimi_code"
           | "pi"
         | "opencode"
+        | "antigravity"
       >,
     ) => setCliLaunchRequest({ runtime: runtimeKind }),
     [],

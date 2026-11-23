@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CLI_RUNTIMES, launchChoices, launchModeLabel, isCliRuntime } from '../src/runtimeLaunch.ts';
-test('六种 CLI 的模式目录独立，原生聊天与不存在的模式不混入', () => {
-  assert.equal(CLI_RUNTIMES.length, 6);
+test('各 CLI 的模式目录独立，原生聊天与不存在的模式不混入', () => {
+  assert.equal(CLI_RUNTIMES.length, 7);
+  assert.deepEqual(launchChoices('antigravity').map(choice => choice.id), ['cli_default']);
   assert.equal(isCliRuntime('codex_chat'), false);
   assert.deepEqual(launchChoices('unsupported'), []);
   assert.equal(launchChoices('pi').some(choice => choice.id === 'yolo'), false);

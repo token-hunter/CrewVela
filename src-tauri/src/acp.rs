@@ -39,6 +39,7 @@ pub(crate) enum ManagedAcpKind {
     DeepSeekHarness,
     Kimi,
     OpenCode,
+    Antigravity,
 }
 
 impl ManagedAcpKind {
@@ -49,6 +50,7 @@ impl ManagedAcpKind {
             Self::DeepSeekHarness => "DeepSeek Harness",
             Self::Kimi => "Kimi Code",
             Self::OpenCode => "OpenCode",
+            Self::Antigravity => "Antigravity CLI",
         }
     }
 
@@ -59,16 +61,18 @@ impl ManagedAcpKind {
             Self::DeepSeekHarness => "dsh",
             Self::Kimi => "kimi",
             Self::OpenCode => "opencode",
+            Self::Antigravity => "agy",
         }
     }
 
-    pub(crate) fn package(self) -> &'static str {
+    pub(crate) fn package(self) -> Option<&'static str> {
         match self {
-            Self::ClaudeCode => ACP_ADAPTER_PACKAGE,
-            Self::Codex => CODEX_ACP_ADAPTER_PACKAGE,
-            Self::DeepSeekHarness => "@deepseek-ai/dsh",
-            Self::Kimi => "@moonshot-ai/kimi-code",
-            Self::OpenCode => "opencode-ai",
+            Self::ClaudeCode => Some(ACP_ADAPTER_PACKAGE),
+            Self::Codex => Some(CODEX_ACP_ADAPTER_PACKAGE),
+            Self::DeepSeekHarness => Some("@deepseek-ai/dsh"),
+            Self::Kimi => Some("@moonshot-ai/kimi-code"),
+            Self::OpenCode => Some("opencode-ai"),
+            Self::Antigravity => None,
         }
     }
 }
@@ -528,6 +532,7 @@ impl AcpConnection {
             }
             ManagedAcpKind::Kimi => crate::multi_agent::AgentRuntimeKind::KimiCode,
             ManagedAcpKind::OpenCode => crate::multi_agent::AgentRuntimeKind::OpenCode,
+            ManagedAcpKind::Antigravity => crate::multi_agent::AgentRuntimeKind::Antigravity,
         });
         let runtime_lease = crate::runtime_preferences::acquire(kind)?;
         // Harness traverses workspace parents through Node realpath.native, which
@@ -728,7 +733,7 @@ impl AcpConnection {
             .pointer("/agentCapabilities/loadSession")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let loaded_session = if adapter == ManagedAcpKind::DeepSeekHarness {
+        let loaded_session = if matches!(adapter, ManagedAcpKind::DeepSeekHarness | ManagedAcpKind::Antigravity) {
             match resume_session_id.filter(|id| !id.trim().is_empty()) {
                 Some(session_id) => {
                     if initialized
@@ -736,16 +741,19 @@ impl AcpConnection {
                         .is_none()
                     {
                         return Err(anyhow!(
-                            "DeepSeek Harness 不支持 session/resume，不能恢复已有会话"
+                            "{} 不支持 session/resume，不能恢复已有会话", adapter.label()
                         ));
                     }
                     let mut session = connection.request("session/resume",
                         json!({"sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers.clone()}),
                         START_TIMEOUT, None)?;
-                    session
+                    let session_data = session
                         .as_object_mut()
-                        .context("ACP resume 返回值不是对象")?
-                        .insert("sessionId".into(), Value::String(session_id.into()));
+                        .context("ACP resume 返回值不是对象")?;
+                    if adapter == ManagedAcpKind::Antigravity && session_data.get("sessionId").and_then(Value::as_str).is_some_and(|actual| actual != session_id) {
+                        return Err(anyhow!("Antigravity CLI 恢复返回了不同的原生会话 ID"));
+                    }
+                    session_data.insert("sessionId".into(), Value::String(session_id.into()));
                     Some(session)
                 }
                 None => None,
@@ -799,7 +807,7 @@ impl AcpConnection {
         let current_mode = session.pointer("/modes/currentModeId").and_then(Value::as_str);
         let current_full_access = matches!(current_mode, Some("bypassPermissions" | "agent-full-access"));
         let negotiated_mode =
-            if adapter == ManagedAcpKind::DeepSeekHarness || mode_candidates.is_empty() {
+            if matches!(adapter, ManagedAcpKind::DeepSeekHarness | ManagedAcpKind::Antigravity) || mode_candidates.is_empty() {
                 None
             } else {
                 let mode_id = mode_candidates
@@ -846,6 +854,21 @@ impl AcpConnection {
             } else {
                 connection.full_permissions =
                     matches!(mode_id, "bypassPermissions" | "agent-full-access");
+            }
+        }
+        if adapter == ManagedAcpKind::Antigravity && !mode_candidates.is_empty() {
+            let default_mode = |options: &[Value]| {
+                options.iter().any(|item| item["id"] == "mode" && item["currentValue"] == "default")
+            };
+            if !default_mode(&connection.config_options) {
+                let session_id = connection.session_id.clone();
+                let updated = connection.request("session/set_config_option",
+                    json!({"sessionId": session_id, "configId": "mode", "value": "default"}),
+                    START_TIMEOUT, None)?;
+                if let Some(options) = updated["configOptions"].as_array() {
+                    connection.config_options = options.clone();
+                }
+                anyhow::ensure!(default_mode(&connection.config_options), "Antigravity CLI 未确认 Default 权限模式");
             }
         }
         connection.drain_updates(Duration::from_millis(750), None)?;
@@ -2086,7 +2109,7 @@ fn execute_managed_acp_inner(
     }
     connection.permission_handler = permission_handler;
     connection.scoped_design_tool = scoped_design_tool;
-    connection.single_use_permissions = matches!(mode,ManagedAcpMode::Inherit);
+    connection.single_use_permissions = kind == ManagedAcpKind::Antigravity || matches!(mode,ManagedAcpMode::Inherit);
     if let Some(handler) = update_handler { connection.set_update_handler(handler); }
     if kind == ManagedAcpKind::DeepSeekHarness {
         if let Some(model) = model.filter(|model| !model.trim().is_empty()) {
@@ -2315,6 +2338,13 @@ pub(crate) fn adapter_command(adapter: ManagedAcpKind) -> Result<Command> {
     if adapter == ManagedAcpKind::OpenCode {
         return opencode_acp_command();
     }
+    if adapter == ManagedAcpKind::Antigravity {
+        let executable = crate::multi_agent::resolve_runtime_executable_checked(crate::multi_agent::AgentRuntimeKind::Antigravity)
+            .map_err(anyhow::Error::msg)?;
+        let mut command = crate::multi_agent::command_for_path(&executable);
+        command.arg("acp");
+        return Ok(command);
+    }
     if let Some(entry) = managed_adapter_entry(adapter) {
         let node = crate::runtime_dependencies::node_executable().context("Claude Code Chat 需要 Node.js 22+")?;
         return Ok(claude_adapter_entry_command(&node, &entry));
@@ -2337,12 +2367,12 @@ pub(crate) fn adapter_command(adapter: ManagedAcpKind) -> Result<Command> {
     }))
     .with_context(|| format!("未找到 {binary}，也未找到 npx；请先安装 Node.js 22+"))?;
     let mut command = npx_command(&npx)?;
-    command.arg("--yes").arg(adapter.package());
+    command.arg("--yes").arg(adapter.package().context("该 ACP 使用本机 CLI，无 npm 适配器")?);
     Ok(command)
 }
 
 pub(crate) fn managed_adapter_entry(adapter: ManagedAcpKind) -> Option<PathBuf> {
-    let package = adapter.package();
+    let package = adapter.package()?;
     let (name, version) = package.rsplit_once('@')?;
     let root = crate::runtime_dependencies::chat_install_root().ok()?.join("adapters").join(adapter.binary()).join(version);
     crate::runtime_dependencies::active_component(&root, &PathBuf::from("node_modules").join(name).join("dist/index.js"))
