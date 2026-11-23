@@ -38,7 +38,13 @@ try {
   const workPanel = app.getByRole("complementary", { name: "右侧栏", exact: true });
   await workPanel.getByRole("button", { name: "多智能体" }).click();
   const openSettings = async () => {
-    await app.locator(".unified-sidebar-settings-button").click();
+    const workspace = app.getByRole("tablist", { name: "工作区页签" });
+    if (await workPanel.getByRole("button", { name: "返回辅助栏", exact: true }).isVisible()) {
+      await workspace.getByRole("button", { name: "更多工具", exact: true }).click();
+      await app.getByRole("menuitem", { name: "设置", exact: true }).click();
+    } else {
+      await app.locator(".unified-sidebar-settings-button").click();
+    }
     await app.getByRole("button", { name: "外观", exact: true }).click();
   };
   const choose = (label) => app.getByRole("button", { name: label, exact: true }).click();

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { CaretRight, Question, ShieldCheck, ArrowClockwise, Info, Eye, CornersOut, CornersIn, DotsThree } from "@phosphor-icons/react";
+import { CaretRight, Question, ShieldCheck, ArrowClockwise, Info, Eye, CornersOut, CornersIn, DotsThree, GearSix } from "@phosphor-icons/react";
 import type { AppHelpSection } from "../appHelp";
 import type { AppViewMenuProps } from "../appView";
 import { AppHelpDialog } from "./AppHelpDialog";
@@ -11,6 +11,7 @@ interface Props {
   reserveSidebarSpace?: boolean;
   onHelp: (section: AppHelpSection) => void;
   onClose: () => void;
+  onSettings?: () => void;
   view?: AppViewMenuProps;
 }
 type Section = "view" | "help";
@@ -89,12 +90,13 @@ export function AppToolsMenu(props: Props) {
   };
   const choose = (section: AppHelpSection) => { close(); props.onHelp(section); };
   const act = (action: () => void) => { close(); action(); };
-  const view = props.view;
+  const { view, onSettings } = props;
   const menu = createPortal(<>
     <div className="menu-backdrop app-tools-backdrop" onClick={() => close()} />
     <div className="unified-tools-menu app-tools-menu" role="menu" aria-label="更多工具" ref={root} style={{left:position.left,top:position.top}} onKeyDown={event=>navigate(event)}>
       {view && <button ref={viewButton} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={section === "view"} aria-controls={section === "view"?"app-view-submenu":undefined} className="app-help-root" onMouseEnter={()=>openSection("view",false)} onClick={()=>openSection("view",true)}><Eye size={17} /><span>视图</span><CaretRight size={13} /></button>}
       <button ref={helpButton} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={section === "help"} aria-controls={section === "help"?"app-help-submenu":undefined} className="app-help-root" onMouseEnter={()=>openSection("help",false)} onClick={()=>openSection("help",true)}><Question size={17} /><span>帮助</span><CaretRight size={13} /></button>
+      {onSettings && <button type="button" role="menuitem" className="app-help-root" onMouseEnter={() => setSection(null)} onClick={() => act(onSettings)}><GearSix size={17} /><span>设置</span></button>}
     </div>
     {section === "help" && <div ref={sectionMenu} id="app-help-submenu" className="app-help-submenu" role="menu" aria-label="帮助" style={{left:position.sectionLeft,top:position.sectionTop}} onKeyDown={event=>navigate(event,1)}>
       <button type="button" role="menuitem" onClick={()=>choose("privacy")}><ShieldCheck size={17}/><span>隐私政策</span></button>
@@ -112,13 +114,13 @@ export function AppToolsMenu(props: Props) {
 }
 
 /** 左侧栏隐藏后仍保留相同工具菜单，不依赖隐藏栏内的触发按钮。 */
-export function CollapsedAppTools({ view }: { view?: AppViewMenuProps }) {
+export function CollapsedAppTools({ view, onSettings }: { view?: AppViewMenuProps; onSettings?: () => void }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [help, setHelp] = useState<AppHelpSection | null>(null);
   return <>
     <button ref={trigger} type="button" className="workspace-sidebar-expand" aria-label="更多工具" title="更多工具" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(current=>!current)}><DotsThree size={18} weight="bold" /></button>
-    {open && <AppToolsMenu trigger={trigger} view={view} onClose={()=>setOpen(false)} onHelp={setHelp} />}
+    {open && <AppToolsMenu trigger={trigger} view={view} onClose={()=>setOpen(false)} onHelp={setHelp} onSettings={onSettings} />}
     {help && <AppHelpDialog key={help} section={help} onClose={()=>setHelp(null)} />}
   </>;
 }

@@ -219,7 +219,7 @@
 
 /* ==================== Left Sidebar & Collapsible 56px Slim Icon Rail ==================== */
 .collaboration-project-navigation[data-multi-agent-style="grok_noir"] {
-  width: clamp(232px, 21vw, 272px);
+  width: clamp(250px, 23cqw, 390px);
   background: var(--gn-sidebar);
   border-inline-end: 1px solid var(--gn-border);
   color: var(--gn-text);
@@ -425,7 +425,7 @@
 
 .collaboration-project-navigation[data-multi-agent-style="grok_noir"]
   .collaboration-project-list-item:has(> .collaboration-project-row[aria-current="true"]) {
-  background: var(--gn-surface-2);
+  background: color-mix(in srgb, var(--accent) 16%, var(--gn-surface-2));
   box-shadow: none;
 }
 
@@ -443,7 +443,8 @@
 }
 
 .collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-row > svg {
-  display: none;
+  display: block;
+  flex: none;
 }
 
 .collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-status {
@@ -467,6 +468,7 @@
 }
 
 @container collaboration-projects (max-width: 710px) {
+  .collaboration-project-navigation[data-multi-agent-style="grok_noir"],
   .collaboration-project-navigation[data-multi-agent-style="grok_noir"][data-rail-collapsed="true"] {
     width: 100%;
   }
@@ -1529,4 +1531,94 @@
     padding: 0 8px;
     font-size: 11.5px;
   }
+}
+
+.collaboration-project-host[data-surface="bot"] .team-work-views {
+  --bot-chat-width: 970px;
+}
+
+.collaboration-project-host[data-surface="bot"] .team-work-views :is(.conversation-transcript, .conversation-footer) {
+  padding-inline: clamp(14px, 2.5cqw, 24px);
+}
+
+.collaboration-project-host[data-surface="bot"] .team-work-views .conversation-transcript-inner,
+.collaboration-project-host[data-surface="bot"] .team-work-views .conversation-footer > * {
+  max-inline-size: var(--bot-chat-width);
+  margin-inline: auto;
+}
+
+.collaboration-project-host[data-surface="bot"] .team-work-views .conversation-message-content:has(> .member-activity[data-compact="true"]),
+.collaboration-project-host[data-surface="bot"] .team-work-views .bot-user-message > .conversation-message-content {
+  max-inline-size: none;
+}
+
+.collaboration-project-host[data-surface="bot"] .conversation-message.bot-user-message {
+  justify-content: flex-start;
+}
+
+.collaboration-project-host[data-surface="bot"] .bot-user-message > .conversation-message-content {
+  display: block;
+  flex: 1;
+}
+
+.collaboration-project-host[data-surface="bot"] .bot-user-message > .conversation-message-content > header {
+  justify-content: flex-start;
+  text-align: start;
+}
+
+.collaboration-project-host[data-surface="bot"] .conversation-message.bot-user-message > .conversation-user-avatar {
+  display: grid;
+  border-radius: 50%;
+  color: var(--accent);
+}
+
+.collaboration-project-host[data-surface="bot"] .bot-user-message .conversation-user-bubble {
+  max-inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.member-activity[data-compact="true"] {
+  margin-top: 0;
+}
+
+.member-activity[data-compact="true"] .member-activity-summary {
+  gap: 5px 7px;
+  margin-bottom: 5px;
+  font-size: 13.5px;
+}
+
+.member-activity-status-label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.member-activity-compact-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+  min-inline-size: 0;
+}
+
+.member-activity-compact-actions .conversation-message-actions {
+  margin-top: 0;
+}
+
+.member-activity[data-compact="true"] .member-activity-toggle {
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-dim);
+}
+
+.member-activity[data-compact="true"] .member-activity-toggle:is(:hover, :focus-visible) {
+  color: var(--text);
+  background: var(--bg-hover);
 }

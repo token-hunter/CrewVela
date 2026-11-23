@@ -20,6 +20,7 @@ interface Props {
   onRename: (tab: WorkspaceTab, title: string) => void;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
+  onOpenSettings?: () => void;
   rightSidebarOpen: boolean;
   onToggleRightSidebar: () => void;
   viewMenu?: AppViewMenuProps;
@@ -35,6 +36,7 @@ export function WorkspaceTabs({
   onRename,
   sidebarCollapsed,
   onToggleSidebar,
+  onOpenSettings,
   rightSidebarOpen,
   onToggleRightSidebar,
   viewMenu,
@@ -75,7 +77,7 @@ export function WorkspaceTabs({
       aria-label="工作区页签"
       data-tauri-drag-region
     >
-      {sidebarCollapsed && <CollapsedAppTools view={viewMenu} />}
+      {sidebarCollapsed && <CollapsedAppTools view={viewMenu} onSettings={onOpenSettings} />}
       {sidebarCollapsed && (
         <button
           type="button"

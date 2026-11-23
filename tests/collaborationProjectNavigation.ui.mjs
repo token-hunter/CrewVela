@@ -49,9 +49,14 @@ try {
   await task.click();
   const detail = tasksPanel.getByRole("article", { name: "任务详情 方案与验收" });
   await detail.waitFor();
-  const detailBounds = await detail.boundingBox();
-  assert.equal(detailBounds.width, listBounds.width);
-  assert.equal(detailBounds.x, listBounds.x);
+  // Measure both after opening the detail, in the same frame of the project rail transition.
+  await tasksPanel.evaluate(panel => {
+    const list = panel.querySelector(".team-task-list").getBoundingClientRect();
+    const detail = panel.querySelector(".team-task-detail").getBoundingClientRect();
+    if (Math.abs(list.width - detail.width) > 0.05 || Math.abs(list.x - detail.x) > 0.05) {
+      throw new Error("Task list and detail must align");
+    }
+  });
 
   await page.setViewportSize({ width: 390, height: 820 });
   await taskList.getByRole("button", { name: /列表与筛选/ }).click();
@@ -136,7 +141,25 @@ try {
     localStorage.setItem("crewvela.team-chat-recipient.B.conversation-B", "agent-B");
   });
   await app.goto(`${base}/tests/fixtures/app-session-async-ui.html?tasks-nav=1`);
+  await app.evaluate(() => {
+    const mock = window.appSessionMock;
+    const invoke = mock.invoke.bind(mock);
+    mock.invoke = async (command, args) => {
+      if (command === "plugin:clipboard-manager|write_text") { window.layoutCopied = args.text; return; }
+      if (command === "ma_conversation_history") return [];
+      const result = await invoke(command, args);
+      if (command !== "ma_conversation_snapshot" || args.projectId !== "A") return result;
+      const at = Date.now();
+      const message = { projectId: "A", conversationId: result.conversation.id, phase: "chat", runId: null, createdAt: at, updatedAt: at };
+      return { ...result, messages: [
+        { ...message, id: "layout-prompt", senderType: "user", kind: "message", status: "completed", body: "请确认支付流程的验收结果。" },
+        { ...message, id: "layout-reply", senderType: "agent", kind: "reply", status: "completed", body: "支付流程已通过验收。", agentId: "agent-A", runId: "layout-run" },
+        { ...message, id: "layout-cancelled", senderType: "agent", kind: "reply", status: "cancelled", body: "本次回归已取消。", agentId: "agent-A" },
+      ] };
+    };
+  });
   const shortcuts = app.getByRole("navigation", { name: "主导航" });
+  await shortcuts.waitFor();
   assert.equal(await shortcuts.getByRole("button", { name: "Bot 模式", exact: true }).count(), 0);
   const appNav = app.getByRole("navigation", { name: "协作项目列表" });
   const workPanel = app.getByRole("complementary", { name: "右侧栏", exact: true });
@@ -149,10 +172,47 @@ try {
   assert.equal(await openBot.getAttribute("title"), "在 Bot 模式打开");
   await openBot.click();
   await appNav.getByRole("button", { name: "协作项目 A 待审批" }).waitFor();
+  await shortcuts.waitFor({ state: "hidden" });
   const appEditor = app.getByRole("combobox", { name: "给团队发消息", exact: true });
+  const prompt = workPanel.locator('[data-message-id="layout-prompt"]');
+  const reply = workPanel.locator('[data-message-id="layout-reply"]');
+  await prompt.getByRole("img", { name: "我" }).waitFor();
+  assert.equal(await prompt.getByText("用户", { exact: true }).isVisible(), true);
+  const actions = reply.locator(".member-activity-summary");
+  const activity = actions.getByRole("button", { name: "查看活动" });
+  await activity.click();
+  await reply.getByRole("list", { name: "成员活动时间线" }).waitFor();
+  await actions.getByRole("button", { name: "收起活动" }).click();
+  await actions.getByRole("button", { name: "复制消息" }).click();
+  await actions.locator(".conversation-copy-feedback").getByText("已复制", { exact: true }).waitFor();
+  assert.equal(await app.evaluate(() => window.layoutCopied), "支付流程已通过验收。");
+  await workPanel.locator('[data-message-id="layout-cancelled"]').getByText("已取消", { exact: true }).waitFor();
+  const canvas = await workPanel.locator(".conversation-transcript-inner").boundingBox();
+  const composer = await workPanel.locator(".multi-agent-composer").boundingBox();
+  assert.ok(Math.abs(canvas.x - composer.x) <= 1 && Math.abs(canvas.width - composer.width) <= 1,
+    "Bot transcript and composer use the same column");
+  const topbar = workPanel.locator(".grok-topbar");
+  const controls = [
+    topbar.getByRole("heading", { name: "协作项目 A" }), topbar.getByRole("button", { name: /^切换会话：/ }),
+    topbar.getByRole("tablist", { name: "协作视图" }), topbar.getByRole("button", { name: /^查看任务/ }),
+    topbar.getByRole("button", { name: /^选择参与成员/ }), topbar.getByRole("button", { name: "展开右侧执行画布" }),
+    topbar.getByRole("button", { name: "讨论记录操作" }), topbar.getByRole("button", { name: "管理项目与成员" }),
+  ];
+  const positions = await Promise.all(controls.map(control => control.boundingBox()));
+  assert.ok(positions.every((bounds, index) => bounds && (index === 0 || bounds.x > positions[index - 1].x)),
+    "Bot toolbar retains the current control order");
+  const sessionPicker = controls[1];
+  assert.equal(await sessionPicker.getAttribute("aria-expanded"), "false");
+  await sessionPicker.click();
+  await topbar.locator(".conversation-switch-popover button[aria-current='true']").waitFor();
+  await sessionPicker.press("Escape");
+  assert.equal(await sessionPicker.getAttribute("aria-expanded"), "false");
   await appEditor.fill("保留在原面板的输入");
   await returnToSidebar.click();
   await appNav.waitFor({ state: "hidden" });
+  await shortcuts.waitFor();
+  await reply.getByText("已完成", { exact: true }).waitFor();
+  await prompt.getByRole("img", { name: "我" }).waitFor({ state: "hidden" });
   assert.equal(await project.inputValue(), "A");
   assert.equal(await appEditor.inputValue(), "保留在原面板的输入");
   assert.equal(await openBot.getAttribute("title"), "在 Bot 模式打开");

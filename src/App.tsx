@@ -2328,6 +2328,14 @@ export default function App() {
     () => setSidebarCollapsed((current) => !current),
     [],
   );
+  const toggleWorkspaceSidebar = useCallback(() => {
+    if (collaborationOverviewOpen) {
+      setSidebarMaximized(false);
+      setSidebarCollapsed(false);
+    } else {
+      toggleSidebar();
+    }
+  }, [collaborationOverviewOpen, toggleSidebar]);
   const toggleRightSidebar = useCallback(() => {
     if (rightSidebarOpen) closeRightSidebar();
     else void selectRightSidebarTab(openRightSidebarTabs.includes(lastRightSidebarTab) ? lastRightSidebarTab : "start");
@@ -2358,7 +2366,7 @@ export default function App() {
 
   const nativeSessionView = Boolean(multiAgentWorkspaceProjectId || (selectedSession && isNativeChatSession(selectedSession)));
   const viewMenu: AppViewMenuProps = {
-    leftSidebarVisible: !sidebarCollapsed,
+    leftSidebarVisible: !sidebarCollapsed && !collaborationOverviewOpen,
     rightSidebarVisible: rightSidebarOpen,
     activePanel: activeRightSidebarTab && sidebarTabKind(activeRightSidebarTab) !== "start" ? sidebarTabKind(activeRightSidebarTab) as ViewPanel : null,
     filesAvailable: Boolean(activeWorkspaceRoot),
@@ -2370,7 +2378,7 @@ export default function App() {
     fullscreenPending: windowFullscreen.pending,
     fullscreenAvailable: windowFullscreen.available,
     onToggleLeft: () => {
-      toggleSidebar();
+      toggleWorkspaceSidebar();
       requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('button[aria-label="更多工具"]')?.focus());
     },
     onToggleRight: toggleRightSidebar,
@@ -2387,6 +2395,7 @@ export default function App() {
   return (
     <div
       className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
+      data-bot-mode={collaborationOverviewOpen || undefined}
       style={appShellStyle}
     >
       <MemoAppSidebar
@@ -2496,8 +2505,9 @@ export default function App() {
           onAdd={addTab}
           onClose={closeTab}
           onRename={renameTab}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={toggleSidebar}
+          sidebarCollapsed={sidebarCollapsed || collaborationOverviewOpen}
+          onToggleSidebar={toggleWorkspaceSidebar}
+          onOpenSettings={collaborationOverviewOpen ? openGeneralSettings : undefined}
           rightSidebarOpen={rightSidebarOpen}
           onToggleRightSidebar={toggleRightSidebar}
           viewMenu={viewMenu}
