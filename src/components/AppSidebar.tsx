@@ -39,7 +39,6 @@ import type {
 import claudeIcon from "../assets/claude-color.png";
 import { RUNTIME_LOGOS } from "../runtimeLogos";
 import { SessionList } from "./SessionList";
-import { CommunicationGuideButton } from "./CommunicationGuide";
 import { AutomationIcon } from "./AutomationIcon";
 import { AppToolsMenu } from "./AppToolsMenu";
 import { AppHelpDialog } from "./AppHelpDialog";
@@ -299,7 +298,6 @@ export function AppSidebar(props: Props) {
             <SlidersIcon size={14} weight="bold" />
           </button>
         </div>
-        <CommunicationGuideButton className="communication-sidebar-entry" />
         {props.onOpenCollaborationOverview && <button type="button"
           className={`collaboration-overview-entry${props.collaborationOverviewOpen ? " active" : ""}`}
           aria-label="Bot 模式" title="Bot 模式 · 协作项目总览"

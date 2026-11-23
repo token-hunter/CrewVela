@@ -90,6 +90,13 @@ try {
   const app=await browser.newPage({viewport:{width:1440,height:960}});app.setDefaultTimeout(10000);app.on('pageerror',error=>errors.push(error.message));
   await app.goto(`${base}/tests/fixtures/app-session-async-ui.html?tasks-nav=1`);
   await app.getByRole('button',{name:'新建会话',exact:true}).first().waitFor();
+  const shortcuts=app.getByRole('navigation',{name:'主导航',exact:true});
+  assert.equal(await shortcuts.getByRole('button',{name:'会话通信',exact:true}).count(),0);
+  await shortcuts.getByRole('button',{name:'Bot 模式',exact:true}).waitFor();
+  await app.locator('.workspace-tabs').getByRole('button',{name:'会话通信',exact:true}).click();
+  await app.getByRole('heading',{name:'会话通信',exact:true}).waitFor();
+  await app.getByRole('button',{name:'关闭通信指南',exact:true}).click();
+  await app.locator('.communication-guide').waitFor({state:'detached'});
   await app.evaluate(()=>window.dispatchEvent(new CustomEvent('crewvela-open-communication-guide',{detail:{scope:'project',projectId:'B'}})));
   await app.getByRole('button',{name:'打开协作中心',exact:true}).click();
   const settings=app.getByRole('dialog',{name:'设置',exact:true});
