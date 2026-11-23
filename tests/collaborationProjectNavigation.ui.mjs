@@ -176,8 +176,25 @@ try {
   const appEditor = app.getByRole("combobox", { name: "给团队发消息", exact: true });
   const prompt = workPanel.locator('[data-message-id="layout-prompt"]');
   const reply = workPanel.locator('[data-message-id="layout-reply"]');
-  await prompt.getByRole("img", { name: "我" }).waitFor();
-  assert.equal(await prompt.getByText("用户", { exact: true }).isVisible(), true);
+  const checkUserMessage = async () => {
+    await prompt.getByRole("img", { name: "我", exact: true }).waitFor();
+    const layout = await prompt.evaluate(row => {
+      const bubble = row.querySelector(".conversation-user-bubble").getBoundingClientRect();
+      const avatar = row.querySelector(".conversation-user-avatar");
+      const icon = avatar.getBoundingClientRect();
+      const { color, borderRadius } = getComputedStyle(avatar);
+      return {
+        rowRight: row.getBoundingClientRect().right, bubbleRight: bubble.right, bubbleTop: bubble.top,
+        iconRight: icon.right, iconBottom: icon.bottom, style: { color, borderRadius, width: icon.width, height: icon.height },
+      };
+    });
+    assert.ok(Math.abs(layout.rowRight - layout.bubbleRight) < 2, "The user's bubble is right-aligned");
+    assert.ok(Math.abs(layout.iconRight - layout.bubbleRight) < 2 && layout.iconBottom <= layout.bubbleTop,
+      "The user avatar sits above the right edge of the bubble");
+    assert.equal(layout.style.borderRadius, "50%");
+    return layout.style;
+  };
+  const botAvatarStyle = await checkUserMessage();
   const actions = reply.locator(".member-activity-summary");
   const activity = actions.getByRole("button", { name: "查看活动" });
   await activity.click();
@@ -212,7 +229,7 @@ try {
   await appNav.waitFor({ state: "hidden" });
   await shortcuts.waitFor();
   await reply.getByText("已完成", { exact: true }).waitFor();
-  await prompt.getByRole("img", { name: "我" }).waitFor({ state: "hidden" });
+  assert.deepEqual(await checkUserMessage(), botAvatarStyle, "The same avatar remains visible in the docked panel");
   assert.equal(await project.inputValue(), "A");
   assert.equal(await appEditor.inputValue(), "保留在原面板的输入");
   assert.equal(await openBot.getAttribute("title"), "在 Bot 模式打开");

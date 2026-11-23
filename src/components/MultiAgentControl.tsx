@@ -1194,11 +1194,9 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const activity = !fromUser && !plan
           ? conversationMemberActivity(message, snapshot?.runs.find(run => run.id === message.runId), activityEvents, snapshot?.approvals ?? [], activityNow)
           : undefined;
-        const plainBotMessage = projectOverview && !delegation && !plan && !planning && !planReplyRound && !message.queuedInput;
-        const botUserMessage = fromUser && plainBotMessage;
-        const compactReply = plainBotMessage && activity?.phase === "completed" && !activity.live;
+        const compactReply = projectOverview && !delegation && !planReplyRound && !message.queuedInput
+          && activity?.phase === "completed" && !activity.live;
         const memberHeading = !fromUser && <><strong>{agent?.name ?? "历史成员"}</strong>{memberModelChips(agent?.id)}</>;
-        const userAvatar = fromUser && <span className="conversation-avatar conversation-user-avatar" role="img" aria-label="我"><User size={21} aria-hidden="true" /></span>;
         const copyAction = !plan && !generatingPlan && !rawPlanReply && !!message.body.trim() && <ConversationMessageCopy body={message.body} />;
         const attachments = !!message.attachments?.length && <div className="conversation-attachments" aria-label="消息附件">{message.attachments.map(file => {
           const source = { kind: "message" as const, projectId: message.projectId,
@@ -1209,15 +1207,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
             <Paperclip size={15} /><span>{file.name}</span>
           </button>;
         })}</div>;
-        return <article className={`conversation-message ${message.senderType} ${message.status}${continuation ? " plan-continuation" : ""}${botUserMessage ? " bot-user-message" : ""}`} key={message.id} data-message-id={message.id}>
+        return <article className={`conversation-message ${message.senderType} ${message.status}${continuation ? " plan-continuation" : ""}`} key={message.id} data-message-id={message.id}>
           {!fromUser && (agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar"><Robot size={21} /></span>)}
-          {botUserMessage && userAvatar}
           <div className="conversation-message-content">{!compactReply && <header>
             {memberHeading}
-            {botUserMessage && <strong>用户</strong>}
             {requestRound?.chatDispatch?.kind === "assigned" && requestRound.participantAgentIds.length > 1 && <small>发给 {requestRound.participantAgentIds.length} 位</small>}
             {recipientId && <small>接手成员 · {snapshot?.agents.find(item => item.id === recipientId)?.name ?? "历史成员"}</small>}
-            {!botUserMessage && userAvatar}
+            {fromUser && <span className="conversation-avatar conversation-user-avatar" role="img" aria-label="我"><User size={21} aria-hidden="true" /></span>}
           </header>}
             {fromUser ? ((!!message.body && !plan) || attachments) && (() => {
               const isLongUserMsg = !!message.body && !plan && (message.body.length > 160 || message.body.split("\n").length > 3);

@@ -822,7 +822,8 @@
 
 /* Grok Right-Aligned User Prompt Pill + Collapsible Clamp */
 .collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-message.user .conversation-user-avatar {
-  display: none;
+  border-radius: 50%;
+  color: var(--accent);
 }
 
 .collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-user-bubble {
@@ -1547,36 +1548,8 @@
   margin-inline: auto;
 }
 
-.collaboration-project-host[data-surface="bot"] .team-work-views .conversation-message-content:has(> .member-activity[data-compact="true"]),
-.collaboration-project-host[data-surface="bot"] .team-work-views .bot-user-message > .conversation-message-content {
+.collaboration-project-host[data-surface="bot"] .team-work-views .conversation-message-content:has(> .member-activity[data-compact="true"]) {
   max-inline-size: none;
-}
-
-.collaboration-project-host[data-surface="bot"] .conversation-message.bot-user-message {
-  justify-content: flex-start;
-}
-
-.collaboration-project-host[data-surface="bot"] .bot-user-message > .conversation-message-content {
-  display: block;
-  flex: 1;
-}
-
-.collaboration-project-host[data-surface="bot"] .bot-user-message > .conversation-message-content > header {
-  justify-content: flex-start;
-  text-align: start;
-}
-
-.collaboration-project-host[data-surface="bot"] .conversation-message.bot-user-message > .conversation-user-avatar {
-  display: grid;
-  border-radius: 50%;
-  color: var(--accent);
-}
-
-.collaboration-project-host[data-surface="bot"] .bot-user-message .conversation-user-bubble {
-  max-inline-size: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
 }
 
 .member-activity[data-compact="true"] {
