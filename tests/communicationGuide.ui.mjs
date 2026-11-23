@@ -92,7 +92,7 @@ try {
   await app.getByRole('button',{name:'新建会话',exact:true}).first().waitFor();
   const shortcuts=app.getByRole('navigation',{name:'主导航',exact:true});
   assert.equal(await shortcuts.getByRole('button',{name:'会话通信',exact:true}).count(),0);
-  await shortcuts.getByRole('button',{name:'Bot 模式',exact:true}).waitFor();
+  assert.equal(await shortcuts.getByRole('button',{name:'Bot 模式',exact:true}).count(),0);
   await app.locator('.workspace-tabs').getByRole('button',{name:'会话通信',exact:true}).click();
   await app.getByRole('heading',{name:'会话通信',exact:true}).waitFor();
   await app.getByRole('button',{name:'关闭通信指南',exact:true}).click();

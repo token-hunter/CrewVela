@@ -2084,10 +2084,6 @@ export default function App() {
   const collaborationTabActive = sidebarTabKind(activeRightSidebarTab ?? "") === "multi_agent";
   const collaborationOverviewOpen = sidebarMaximized && collaborationTabActive;
   const toggleSidebarMaximized = useCallback(() => setSidebarMaximized(value => !value), []);
-  const toggleCollaborationOverview = useCallback(() => {
-    if (collaborationTabActive) toggleSidebarMaximized();
-    else void selectRightSidebarTab("multi_agent", true);
-  }, [collaborationTabActive, selectRightSidebarTab, toggleSidebarMaximized]);
 
   useEffect(() => {
     if (activeRightSidebarTab) mountRightSidebarTab(activeRightSidebarTab);
@@ -2476,8 +2472,6 @@ export default function App() {
         onDeleteAll={deleteAllTabSessions}
         onOpenSection={openSettingsSection}
         onOpenSettings={openGeneralSettings}
-        collaborationOverviewOpen={collaborationOverviewOpen}
-        onOpenCollaborationOverview={toggleCollaborationOverview}
         onOpenAttentionSession={openAttentionSession}
         viewMenu={viewMenu}
       />

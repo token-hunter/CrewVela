@@ -136,17 +136,22 @@ try {
     localStorage.setItem("crewvela.team-chat-recipient.B.conversation-B", "agent-B");
   });
   await app.goto(`${base}/tests/fixtures/app-session-async-ui.html?tasks-nav=1`);
-  const shortcut = app.getByRole("navigation", { name: "主导航" }).getByRole("button", { name: "Bot 模式", exact: true });
+  const shortcuts = app.getByRole("navigation", { name: "主导航" });
+  assert.equal(await shortcuts.getByRole("button", { name: "Bot 模式", exact: true }).count(), 0);
   const appNav = app.getByRole("navigation", { name: "协作项目列表" });
   const workPanel = app.getByRole("complementary", { name: "右侧栏", exact: true });
   const openBot = workPanel.getByRole("button", { name: "在 Bot 模式打开", exact: true });
   const returnToSidebar = workPanel.getByRole("button", { name: "返回辅助栏", exact: true });
   const project = workPanel.getByRole("combobox", { name: "协作项目", exact: true });
-  await shortcut.click();
+  await app.getByRole("button", { name: "切换右侧栏", exact: true }).click();
+  await workPanel.getByRole("button", { name: "多智能体" }).click();
+  await openBot.waitFor();
+  assert.equal(await openBot.getAttribute("title"), "在 Bot 模式打开");
+  await openBot.click();
   await appNav.getByRole("button", { name: "协作项目 A 待审批" }).waitFor();
   const appEditor = app.getByRole("combobox", { name: "给团队发消息", exact: true });
   await appEditor.fill("保留在原面板的输入");
-  await shortcut.click();
+  await returnToSidebar.click();
   await appNav.waitFor({ state: "hidden" });
   assert.equal(await project.inputValue(), "A");
   assert.equal(await appEditor.inputValue(), "保留在原面板的输入");
@@ -175,9 +180,8 @@ try {
   await appEditor.fill("验证付款流程的未发送草稿");
   const originalEditor = await appEditor.elementHandle();
 
-  await shortcut.click();
+  await openBot.click();
   await appNav.getByRole("button", { name: "协作项目 B 运行中" }).waitFor();
-  assert.equal(await shortcut.getAttribute("aria-pressed"), "true");
   assert.equal(await collaborationTabs.last().getAttribute("aria-selected"), "true");
   assert.equal(await returnToSidebar.getAttribute("title"), "返回辅助栏");
   assert.equal(await conversation.getAttribute("aria-label"), conversationName);
@@ -217,7 +221,10 @@ try {
       return result;
     };
   });
-  await antigravity.getByRole("button", { name: "Bot 模式", exact: true }).click();
+  const agyWorkPanel = antigravity.getByRole("complementary", { name: "右侧栏", exact: true });
+  await antigravity.getByRole("button", { name: "切换右侧栏", exact: true }).click();
+  await agyWorkPanel.getByRole("button", { name: "多智能体" }).click();
+  await agyWorkPanel.getByRole("button", { name: "在 Bot 模式打开", exact: true }).click();
   const agyEditor = antigravity.getByRole("combobox", { name: "给团队发消息", exact: true });
   const agySend = antigravity.getByRole("button", { name: "发送消息", exact: true });
   await antigravity.getByRole("button", { name: "分工与托管 · 已选 0 位", exact: true }).click();

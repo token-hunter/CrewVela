@@ -20,7 +20,6 @@ import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
 import { PackageIcon } from "@phosphor-icons/react/dist/csr/Package";
 import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
-import { RobotIcon } from "@phosphor-icons/react/dist/csr/Robot";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { SlidersIcon } from "@phosphor-icons/react/dist/csr/Sliders";
 import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
@@ -129,8 +128,6 @@ interface Props extends Pick<ComponentProps<typeof SessionList>, "onOpenProject"
   onDeleteAll: () => void;
   onOpenSection: (section: SettingsSection) => void;
   onOpenSettings: () => void;
-  onOpenCollaborationOverview?: () => void;
-  collaborationOverviewOpen?: boolean;
   onOpenAttentionSession: (session: SessionRecord, kind: AttentionKind) => void;
   viewMenu?: AppViewMenuProps;
 }
@@ -298,12 +295,6 @@ export function AppSidebar(props: Props) {
             <SlidersIcon size={14} weight="bold" />
           </button>
         </div>
-        {props.onOpenCollaborationOverview && <button type="button"
-          className={`collaboration-overview-entry${props.collaborationOverviewOpen ? " active" : ""}`}
-          aria-label="Bot 模式" title="Bot 模式 · 协作项目总览"
-          aria-pressed={props.collaborationOverviewOpen} onClick={props.onOpenCollaborationOverview}>
-          <RobotIcon size={19} aria-hidden="true" /><span>Bot 模式</span>
-        </button>}
         {SIDEBAR_SHORTCUT_OPTIONS.filter((option) =>
           shortcuts.includes(option.id),
         ).map((option) => {

@@ -1,8 +1,4 @@
 .collaboration-project-host { display: contents; }
-.unified-sidebar .unified-sidebar-nav > .collaboration-overview-entry.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
 .collaboration-project-host.has-project-navigation {
   display: grid;
   flex: 1;
