@@ -13,6 +13,7 @@ import type {
   BrowserControlSettingsStyle,
   GeneralSettingsStyle,
   GitSettingsStyle,
+  MultiAgentStyle,
   NotificationSettingsStyle,
   PrivacySettingsStyle,
   ProjectManagementStyle,
@@ -26,6 +27,7 @@ import {
   resolveBrowserControlSettingsStyle,
   resolveGeneralSettingsStyle,
   resolveGitSettingsStyle,
+  resolveMultiAgentStyle,
   resolveNotificationSettingsStyle,
   resolvePrivacySettingsStyle,
   resolveProjectManagementStyle,
@@ -92,6 +94,75 @@ const PROJECT_STYLE_OPTIONS: Array<{
   { id: "pinboard", label: "相纸灵感墙", tag: "可对齐", hint: "图钉相纸软木墙，运行亮起状态灯" },
   { id: "studio", label: "亮灯工作室", tag: "光影联动", hint: "启动服务窗格亮灯，总览园区灯火" },
 ];
+
+const MULTI_AGENT_STYLE_OPTIONS: Array<{
+  id: MultiAgentStyle;
+  label: string;
+  tag: string;
+  hint: string;
+}> = [
+  { id: "classic", label: "经典协作", tag: "默认", hint: "保留现有 Bot 模式与右侧栏多智能体经典布局" },
+  { id: "grok_noir", label: "Grok 思考流画布", tag: "极简三栏", hint: "可折叠左栏图标轨、思考链折页、右侧执行画布与胶囊输入栏" },
+];
+
+function MultiAgentStylePreview({ style }: { style: MultiAgentStyle }) {
+  if (style === "classic") {
+    return (
+      <span className="appearance-ma-preview is-classic" aria-hidden="true">
+        <span className="ama-sidebar">
+          <i />
+          <i className="active" />
+          <i />
+        </span>
+        <span className="ama-main">
+          <span className="ama-top" />
+          <span className="ama-card" />
+          <span className="ama-input" />
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="appearance-ma-preview is-grok" aria-hidden="true">
+      <span className="ama-rail">
+        <i className="plus" />
+        <i className="on" />
+        <i />
+      </span>
+      <span className="ama-stream">
+        <span className="ama-fold">
+          <i />
+          <i />
+        </span>
+        <span className="ama-capsule">
+          <i className="send" />
+        </span>
+      </span>
+      <span className="ama-drawer">
+        <i className="line" />
+        <i className="log" />
+      </span>
+    </span>
+  );
+}
+
+function MultiAgentStylePillSwatch({ style }: { style: MultiAgentStyle }) {
+  if (style === "classic") {
+    return (
+      <span className="appearance-pm-swatch is-classic" aria-hidden="true">
+        <i />
+        <i className="short" />
+      </span>
+    );
+  }
+  return (
+    <span className="appearance-pm-swatch is-ma-grok" aria-hidden="true">
+      <i className="rail" />
+      <i className="mid" />
+      <i className="dot" />
+    </span>
+  );
+}
 
 function ProjectStylePreview({ style }: { style: ProjectManagementStyle }) {
   if (style === "classic") {
@@ -433,6 +504,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
   const currentAccent = ACCENT_OPTIONS.find((item) => item.id === appearance.accent) ?? ACCENT_OPTIONS[1];
   const activeStartStyle = resolveRightSidebarStartStyle(appearance);
   const activeProjectStyle = resolveProjectManagementStyle(appearance);
+  const activeMultiAgentStyle = resolveMultiAgentStyle(appearance);
   const activeGeneralStyle = resolveGeneralSettingsStyle(appearance);
   const activeGitStyle = resolveGitSettingsStyle(appearance);
   const activeWorktreeStyle = resolveWorktreeSettingsStyle(appearance);
@@ -451,9 +523,15 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
     PROJECT_STYLE_OPTIONS[0];
   const isProjectStyleCreative = activeProjectStyle !== "classic";
 
+  const currentMultiAgentStyleOption =
+    MULTI_AGENT_STYLE_OPTIONS.find((item) => item.id === activeMultiAgentStyle) ??
+    MULTI_AGENT_STYLE_OPTIONS[0];
+  const isMultiAgentStyleCreative = activeMultiAgentStyle !== "classic";
+
   const extraCreativeCount = [
     isStartStyleCreative,
     isProjectStyleCreative,
+    isMultiAgentStyleCreative,
     activeGeneralStyle !== "classic",
     activeGitStyle !== "classic",
     activeWorktreeStyle !== "classic",
@@ -463,7 +541,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
     activeArchivedSessionsStyle !== "classic",
     activePrivacyStyle !== "classic",
   ].filter(Boolean).length;
-  const totalStyleModules = 10;
+  const totalStyleModules = 11;
 
   const extraStyleModules: Array<{
     id: ExtraStyleModuleId;
@@ -771,7 +849,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
       <SettingsSection
         className="appearance-settings-section appearance-more-styles-section"
         title="更多页面风格"
-        description="为工作区开始页、项目管理、常规、Git、Worktrees、通知、自动化、浏览器控制、归档会话与隐私开启可选创意模式，默认均保持现有设计。"
+        description="为工作区开始页、项目管理、多智能体 / Bot 模式以及常规、Git、Worktrees、通知、自动化、浏览器控制、归档会话与隐私开启可选创意模式，默认均保持现有设计。"
       >
         <div className="appearance-more-styles-bar">
           <span className="appearance-more-styles-summary">
@@ -793,6 +871,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                     resolveProjectManagementStyle(current) === "classic"
                       ? "vinyl"
                       : resolveProjectManagementStyle(current),
+                  multiAgentStyle: "grok_noir",
                   generalSettingsStyle: "coffee",
                   gitSettingsStyle: "railway",
                   worktreeSettingsStyle: "greenhouse",
@@ -815,6 +894,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                   ...current,
                   rightSidebarStartStyle: "minimal",
                   projectManagementStyle: "classic",
+                  multiAgentStyle: "classic",
                   generalSettingsStyle: "classic",
                   gitSettingsStyle: "classic",
                   worktreeSettingsStyle: "classic",
@@ -913,6 +993,50 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                     }
                   >
                     <ProjectStylePillSwatch style={option.id} />
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </article>
+
+          <article
+            className={`appearance-more-style-card is-featured${isMultiAgentStyleCreative ? " is-creative" : ""}`}
+          >
+            <div className="appearance-more-style-top">
+              <span className="appearance-more-preview is-featured-pm" aria-hidden="true">
+                <MultiAgentStylePreview style={activeMultiAgentStyle} />
+              </span>
+              <div className="appearance-more-style-copy">
+                <strong>
+                  多智能体 / Bot 模式
+                  {isMultiAgentStyleCreative && <em>创意中</em>}
+                </strong>
+                <small>{currentMultiAgentStyleOption.hint}</small>
+              </div>
+              <div className="appearance-more-style-top-end">
+                <span className="appearance-more-mode-tag">
+                  {currentMultiAgentStyleOption.label} · {currentMultiAgentStyleOption.tag}
+                </span>
+              </div>
+            </div>
+            <div className="appearance-pm-pills is-two-cols" role="group" aria-label="多智能体与 Bot 模式风格">
+              {MULTI_AGENT_STYLE_OPTIONS.map((option) => {
+                const selected = activeMultiAgentStyle === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`appearance-pm-pill-btn${selected ? " selected" : ""}`}
+                    aria-pressed={selected}
+                    onClick={() =>
+                      onChange((current) => ({
+                        ...current,
+                        multiAgentStyle: option.id,
+                      }))
+                    }
+                  >
+                    <MultiAgentStylePillSwatch style={option.id} />
                     <span>{option.label}</span>
                   </button>
                 );

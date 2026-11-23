@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import type { AppTheme, ProviderConfig, SessionRecord } from "../types";
+import {
+  APPEARANCE_STORAGE_KEY,
+  loadAppearance,
+  resolveBaseTheme,
+  resolveMultiAgentStyle,
+  saveAppearance,
+} from "../appearance";
+import type { AppAppearance, AppTheme, MultiAgentStyle, ProviderConfig, SessionRecord } from "../types";
 import { ControlSidebar } from "./ControlSidebar";
 const THEME_STORAGE_KEY = "crewvela-theme";
 
@@ -18,6 +25,7 @@ function loadTheme(): AppTheme {
 export function ControlWindow() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [appearance, setAppearance] = useState<AppAppearance>(loadAppearance);
   const [theme] = useState<AppTheme>(loadTheme);
   const [error, setError] = useState<string | null>(null);
   useLayoutEffect(() => {
@@ -25,6 +33,22 @@ export function ControlWindow() {
     document.body.classList.add("detached-control-window");
     return () => document.body.classList.remove("detached-control-window");
   }, [theme]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === APPEARANCE_STORAGE_KEY) setAppearance(loadAppearance());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const handleMultiAgentStyleChange = useCallback((multiAgentStyle: MultiAgentStyle) => {
+    setAppearance((current) => {
+      const next = { ...current, multiAgentStyle };
+      saveAppearance(next, resolveBaseTheme(next.theme));
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const openPreview = (event: Event) => {
@@ -97,6 +121,8 @@ export function ControlWindow() {
         providers={providers.filter((provider) => !provider.hidden)}
         sessions={sessions}
         defaultCwd={defaultCwd}
+        multiAgentStyle={resolveMultiAgentStyle(appearance)}
+        onMultiAgentStyleChange={handleMultiAgentStyleChange}
         onClose={closeWindow}
         onDock={dockWindow}
         onSessionsChange={handleSessionsChange}

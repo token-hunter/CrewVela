@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { CaretDown, DotsThree, FolderSimple, MagnifyingGlass, PencilSimple, Plus } from "@phosphor-icons/react";
-import type { MultiAgentProject } from "../types";
+import { CaretDown, DotsThree, FolderSimple, MagnifyingGlass, PencilSimple, Plus, SidebarSimple } from "@phosphor-icons/react";
+import { loadMultiAgentRailCollapsed, saveMultiAgentRailCollapsed } from "../appearance";
+import type { MultiAgentProject, MultiAgentStyle } from "../types";
 import { Modal } from "./ui/Modal";
 import "../styles/collaboration-project-navigation.css";
 
@@ -33,12 +34,22 @@ interface Props {
   active: boolean;
   projects: MultiAgentProject[];
   projectId: string | null;
+  style?: MultiAgentStyle;
   onSelect: (id: string) => void;
   onCreate: () => void;
   onRename: (id: string, name: string) => Promise<MultiAgentProject>;
 }
 
-export function CollaborationProjectNavigation({ active, projects, projectId, onSelect, onCreate, onRename }: Props) {
+export function CollaborationProjectNavigation({ active, projects, projectId, style = "classic", onSelect, onCreate, onRename }: Props) {
+  const isGrokNoir = style === "grok_noir";
+  const [railCollapsed, setRailCollapsed] = useState<boolean>(loadMultiAgentRailCollapsed);
+  const toggleRailCollapsed = () => {
+    setRailCollapsed(current => {
+      const next = !current;
+      saveMultiAgentRailCollapsed(next);
+      return next;
+    });
+  };
   const id = useId();
   const menuId = useId();
   const [activity, setActivity] = useState<ProjectActivity[] | null>(null);
@@ -125,17 +136,57 @@ export function CollaborationProjectNavigation({ active, projects, projectId, on
     }
   };
 
-  return <nav className="collaboration-project-navigation" aria-label="协作项目列表">
+  return <nav className={`collaboration-project-navigation${isGrokNoir && railCollapsed ? " is-rail-collapsed" : ""}`}
+    data-multi-agent-style={style}
+    data-rail-collapsed={isGrokNoir && railCollapsed ? "true" : "false"}
+    aria-label="协作项目列表">
     <button ref={drawerTrigger} type="button" className="collaboration-project-drawer" aria-controls={id} aria-expanded={drawerOpen}
       onClick={() => setDrawerOpen(value => !value)}>
       <FolderSimple size={17} aria-hidden="true" />协作项目<CaretDown size={13} aria-hidden="true" />
     </button>
+    {isGrokNoir && railCollapsed && (
+      <div className="collaboration-slim-rail" aria-label="极简协作项目图标轨">
+        <button type="button" className="collaboration-rail-icon-btn" aria-label="展开协作项目列表" title="展开协作项目列表" onClick={toggleRailCollapsed}>
+          <SidebarSimple size={16} aria-hidden="true" />
+        </button>
+        <button type="button" className="collaboration-rail-icon-btn is-create" aria-label="新建协作" title="新建协作" onClick={onCreate}>
+          <Plus size={16} weight="bold" aria-hidden="true" />
+        </button>
+        <span className="collaboration-rail-divider" aria-hidden="true" />
+        <div className="collaboration-rail-projects">
+          {entries.map(({ project, activity: status }) => {
+            const abbr = Array.from(project.name.trim())[0] ?? "协";
+            return (
+              <button
+                key={project.id}
+                type="button"
+                className="collaboration-rail-proj-btn"
+                aria-current={project.id === projectId ? "true" : undefined}
+                aria-label={`${project.name}（${labels[status]}）`}
+                title={`${project.name} · ${labels[status]}\n${project.rootPath}`}
+                onClick={() => onSelect(project.id)}
+              >
+                <span>{abbr}</span>
+                <span className="collaboration-project-status-dot" data-activity={status} aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    )}
     <div id={id} className={`collaboration-project-navigation-body${drawerOpen ? " is-open" : ""}`}>
       <div className="collaboration-project-navigation-heading">
         <h2>协作项目</h2>
-        <button type="button" className="collaboration-project-add" onClick={onCreate}>
-          <Plus size={16} aria-hidden="true" />新建协作
-        </button>
+        <div className="collaboration-project-heading-actions">
+          {isGrokNoir && (
+            <button type="button" className="collaboration-rail-toggle" aria-label="收起为极简图标轨" title="收起为极简图标轨" onClick={toggleRailCollapsed}>
+              <SidebarSimple size={16} aria-hidden="true" />
+            </button>
+          )}
+          <button type="button" className="collaboration-project-add" onClick={onCreate}>
+            <Plus size={16} aria-hidden="true" />{isGrokNoir ? "新建" : "新建协作"}
+          </button>
+        </div>
       </div>
       <label className="collaboration-project-search">
         <MagnifyingGlass size={16} aria-hidden="true" />

@@ -1,0 +1,1587 @@
+/* ============================================================================
+   CrewVela Multi-Agent / Bot Mode · Grok Noir Thinking Flow Canvas
+   Strictly scoped to [data-multi-agent-style="grok_noir"] so classic mode
+   stays 100% untouched.
+   ============================================================================ */
+
+/* Theme Tokens (Obsidian Dark default + crisp Grok Light polarity) */
+[data-multi-agent-style="grok_noir"] {
+  --gn-bg: #08080a;
+  --gn-shell: #0d0d10;
+  --gn-sidebar: #0a0a0d;
+  --gn-surface: #141418;
+  --gn-surface-2: #1c1c22;
+  --gn-surface-3: #26262e;
+  --gn-sunken: #0f0f13;
+  --gn-border: rgba(255, 255, 255, 0.085);
+  --gn-border-strong: rgba(255, 255, 255, 0.16);
+  --gn-text: #f5f5f7;
+  --gn-text-2: #bdbdc7;
+  --gn-muted: #7d7d8a;
+  --gn-cta-bg: #ffffff;
+  --gn-cta-fg: #09090b;
+  --gn-ok: #34d399;
+  --gn-ok-soft: rgba(52, 211, 153, 0.13);
+  --gn-warn: #f5b942;
+  --gn-warn-soft: rgba(245, 185, 66, 0.14);
+  --gn-danger: #f87171;
+  --gn-danger-soft: rgba(248, 113, 113, 0.13);
+  --gn-cool: #60a5fa;
+  --gn-cool-soft: rgba(96, 165, 250, 0.13);
+  --gn-capsule-shadow: 0 10px 30px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme="light"] [data-multi-agent-style="grok_noir"] {
+  --gn-bg: #f3f3f6;
+  --gn-shell: #ffffff;
+  --gn-sidebar: #f7f7fa;
+  --gn-surface: #ffffff;
+  --gn-surface-2: #f2f2f6;
+  --gn-surface-3: #e7e7ee;
+  --gn-sunken: #f6f6f9;
+  --gn-border: rgba(15, 15, 20, 0.09);
+  --gn-border-strong: rgba(15, 15, 20, 0.17);
+  --gn-text: #0f0f14;
+  --gn-text-2: #4b4b57;
+  --gn-muted: #767684;
+  --gn-cta-bg: #111114;
+  --gn-cta-fg: #ffffff;
+  --gn-ok: #169c65;
+  --gn-ok-soft: rgba(22, 156, 101, 0.11);
+  --gn-warn: #c27b0e;
+  --gn-warn-soft: rgba(194, 123, 14, 0.12);
+  --gn-danger: #d43f3a;
+  --gn-danger-soft: rgba(212, 63, 58, 0.11);
+  --gn-cool: #2563eb;
+  --gn-cool-soft: rgba(37, 99, 235, 0.11);
+  --gn-capsule-shadow: 0 8px 26px rgba(15, 15, 20, 0.08), inset 0 1px 0 #ffffff;
+}
+
+:root[data-terminal-transparent="true"] [data-multi-agent-style="grok_noir"] {
+  --gn-shell: color-mix(in srgb, var(--bg-elev) 90%, transparent);
+  --gn-sidebar: color-mix(in srgb, var(--bg) 88%, transparent);
+}
+
+/* ==================== Shell & ControlSidebar Frame ==================== */
+.collaboration-control-sidebar[data-multi-agent-style="grok_noir"] {
+  background: var(--gn-shell);
+  color: var(--gn-text);
+}
+
+.collaboration-control-sidebar[data-multi-agent-style="grok_noir"] .conversation-shell-header {
+  height: 36px;
+  padding: 4px 12px 0;
+  background: var(--gn-sidebar);
+  border-bottom: 1px solid var(--gn-border);
+}
+
+.collaboration-control-sidebar[data-multi-agent-style="grok_noir"] .conversation-shell-actions {
+  gap: 5px;
+}
+
+.collaboration-control-sidebar[data-multi-agent-style="grok_noir"] .conversation-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: var(--gn-muted);
+}
+
+.collaboration-control-sidebar[data-multi-agent-style="grok_noir"] .conversation-icon:hover {
+  background: var(--gn-surface-2);
+  color: var(--gn-text);
+}
+
+/* ==================== Shared Grok Primitives ==================== */
+[data-multi-agent-style="grok_noir"] .grok-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+  background: var(--gn-muted);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-status-dot.is-running {
+  background: var(--gn-ok);
+  box-shadow: 0 0 0 3px var(--gn-ok-soft);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-status-dot.is-done {
+  background: var(--gn-ok);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-status-dot.is-fail {
+  background: var(--gn-danger);
+  box-shadow: 0 0 0 3px var(--gn-danger-soft);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-status-dot.is-warn {
+  background: var(--gn-warn);
+  box-shadow: 0 0 0 3px var(--gn-warn-soft);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--gn-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+  transition: background 130ms ease, color 130ms ease;
+}
+
+[data-multi-agent-style="grok_noir"] .grok-icon-btn.sm {
+  width: 24px;
+  height: 24px;
+}
+
+[data-multi-agent-style="grok_noir"] .grok-icon-btn:hover:not(:disabled) {
+  background: var(--gn-surface-2);
+  color: var(--gn-text);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-pill-btn {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--gn-border-strong);
+  background: var(--gn-surface);
+  color: var(--gn-text);
+  font-size: 12px;
+  font-weight: 550;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 130ms ease, border-color 130ms ease, opacity 130ms ease;
+}
+
+[data-multi-agent-style="grok_noir"] .grok-pill-btn:hover:not(:disabled) {
+  background: var(--gn-surface-2);
+  border-color: var(--gn-text-2);
+  text-decoration: none;
+}
+
+[data-multi-agent-style="grok_noir"] .grok-pill-btn.primary {
+  background: var(--gn-cta-bg);
+  color: var(--gn-cta-fg);
+  border-color: transparent;
+  font-weight: 650;
+}
+
+[data-multi-agent-style="grok_noir"] .grok-pill-btn.primary:hover:not(:disabled) {
+  opacity: 0.9;
+  background: var(--gn-cta-bg);
+  border-color: transparent;
+}
+
+[data-multi-agent-style="grok_noir"] .grok-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--gn-surface-2);
+  color: var(--gn-text-2);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-chip.st-done,
+[data-multi-agent-style="grok_noir"] .grok-chip.st-running,
+[data-multi-agent-style="grok_noir"] .grok-chip.st-claimed {
+  background: var(--gn-ok-soft);
+  color: var(--gn-ok);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-chip.st-failed,
+[data-multi-agent-style="grok_noir"] .grok-chip.st-changes_requested {
+  background: var(--gn-danger-soft);
+  color: var(--gn-danger);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-chip.st-waiting_approval,
+[data-multi-agent-style="grok_noir"] .grok-chip.st-blocked,
+[data-multi-agent-style="grok_noir"] .grok-chip.st-in_review {
+  background: var(--gn-warn-soft);
+  color: var(--gn-warn);
+}
+
+[data-multi-agent-style="grok_noir"] .grok-cmd-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--gn-sunken);
+  border: 1px solid var(--gn-border);
+  font-family: var(--mono-font, ui-monospace, Consolas, monospace);
+  font-size: 12px;
+  color: var(--gn-text-2);
+  min-width: 0;
+}
+
+[data-multi-agent-style="grok_noir"] .grok-cmd-box code {
+  min-width: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: transparent;
+  padding: 0;
+}
+
+/* ==================== Left Sidebar & Collapsible 56px Slim Icon Rail ==================== */
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] {
+  width: clamp(232px, 21vw, 272px);
+  background: var(--gn-sidebar);
+  border-inline-end: 1px solid var(--gn-border);
+  color: var(--gn-text);
+  font-size: 13px;
+  transition: width 160ms ease;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"][data-rail-collapsed="true"] {
+  width: 56px;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"][data-rail-collapsed="true"]
+  .collaboration-project-navigation-body {
+  display: none;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-slim-rail {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 8px;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--gn-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex: none;
+  transition: background 130ms ease, color 130ms ease, transform 130ms ease;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-icon-btn:hover {
+  background: var(--gn-surface-2);
+  color: var(--gn-text);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-icon-btn.is-create {
+  background: var(--gn-cta-bg);
+  color: var(--gn-cta-fg);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-icon-btn.is-create:hover {
+  opacity: 0.9;
+  transform: scale(1.04);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-divider {
+  width: 24px;
+  height: 1px;
+  background: var(--gn-border);
+  flex: none;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-projects {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 6px;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-proj-btn {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--gn-text-2);
+  font-size: 12.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-proj-btn:hover {
+  background: var(--gn-surface-2);
+  color: var(--gn-text);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"]
+  .collaboration-rail-proj-btn[aria-current="true"] {
+  background: var(--gn-surface-2);
+  border-color: var(--gn-border-strong);
+  color: var(--gn-text);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"]
+  .collaboration-rail-proj-btn .collaboration-project-status-dot {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  width: 6.5px;
+  height: 6.5px;
+  border: 1.5px solid var(--gn-sidebar);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-navigation-body {
+  padding: 12px 10px 10px;
+  gap: 10px;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-navigation-heading h2 {
+  font-size: 14px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-toggle {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--gn-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-toggle:hover {
+  background: var(--gn-surface-2);
+  color: var(--gn-text);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-add {
+  min-height: 27px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--gn-cta-bg);
+  color: var(--gn-cta-fg);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-add:hover {
+  background: var(--gn-cta-bg);
+  opacity: 0.9;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-search {
+  min-height: 32px;
+  padding-inline: 11px;
+  border-radius: 999px;
+  background: var(--gn-surface);
+  border-color: var(--gn-border);
+  color: var(--gn-muted);
+  font-size: 12.5px;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-search:focus-within {
+  border-color: var(--gn-border-strong);
+  color: var(--gn-text);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-groups section + section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top-color: var(--gn-border);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-group-toggle {
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: 11.5px;
+  color: var(--gn-muted);
+  letter-spacing: 0.02em;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-list-item {
+  border-radius: 10px;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-list-item:hover {
+  background: var(--gn-surface);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"]
+  .collaboration-project-list-item:has(> .collaboration-project-row[aria-current="true"]) {
+  background: var(--gn-surface-2);
+  box-shadow: none;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-row {
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  color: var(--gn-text-2);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"]
+  .collaboration-project-row[aria-current="true"] {
+  color: var(--gn-text);
+  font-weight: 600;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-row > svg {
+  display: none;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-status {
+  font-size: 11px;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] [data-activity="delivered"] {
+  --project-activity-color: var(--gn-cool);
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-actions {
+  opacity: 0;
+  border-radius: 999px;
+}
+
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-list-item:hover .collaboration-project-actions,
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"]
+  .collaboration-project-list-item:has(> .collaboration-project-row[aria-current="true"]) .collaboration-project-actions,
+.collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-project-actions[aria-expanded="true"] {
+  opacity: 1;
+}
+
+@container collaboration-projects (max-width: 710px) {
+  .collaboration-project-navigation[data-multi-agent-style="grok_noir"][data-rail-collapsed="true"] {
+    width: 100%;
+  }
+  .collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-slim-rail,
+  .collaboration-project-navigation[data-multi-agent-style="grok_noir"] .collaboration-rail-toggle {
+    display: none;
+  }
+  .collaboration-project-navigation[data-multi-agent-style="grok_noir"][data-rail-collapsed="true"]
+    .collaboration-project-navigation-body.is-open {
+    display: flex;
+  }
+}
+
+/* ==================== Conversation Main Canvas & Layout ==================== */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .collaboration-conversation.team-work-views {
+  --team-chat-width: 780px;
+  background: var(--gn-shell);
+  color: var(--gn-text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-delegation-layout.has-grok-drawer {
+  grid-template-columns: minmax(0, 1fr) 356px;
+}
+
+/* ==================== Ultra-Clean Single-Row Grok Header ==================== */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-header.is-grok-noir {
+  padding: 0;
+  border-bottom: 1px solid var(--gn-border);
+  background: var(--gn-shell);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-topbar {
+  height: 48px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-topbar.is-docked {
+  height: 44px;
+  padding: 0 12px;
+  gap: 8px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-top-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .collaboration-project-title {
+  flex: 0 1 auto;
+  min-width: 110px;
+  font-size: 14px;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-topbar.is-docked .conversation-project-select {
+  max-width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-topbar.is-docked .conversation-project-select select {
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 2px 22px 2px 4px;
+  font-size: 13.5px;
+  font-weight: 680;
+  height: 30px;
+  color: var(--gn-text);
+  width: 100%;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-topbar.is-docked .conversation-project-select select:hover {
+  background: var(--gn-surface-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-topbar.is-docked .conversation-project-select option {
+  background: var(--gn-surface);
+  color: var(--gn-text);
+  font-size: 13px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-switcher {
+  padding: 0;
+  border-bottom: 0;
+  flex: 0 1 190px;
+  min-width: 68px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .has-grok-drawer .conversation-switcher {
+  flex: 0 1 124px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-switch-trigger {
+  min-height: 27px;
+  height: 27px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface);
+  color: var(--gn-muted);
+  font-size: 11.5px;
+  gap: 5px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-switch-trigger:hover {
+  color: var(--gn-text);
+  border-color: var(--gn-border-strong);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-switch-trigger > svg:first-child {
+  display: none;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-top-center {
+  flex: none;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-modes {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--gn-surface);
+  border: 1px solid var(--gn-border);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-modes button {
+  min-height: 24px;
+  height: 24px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--gn-muted);
+  font-size: 12px;
+  font-weight: 550;
+  gap: 4px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-modes button:hover {
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-modes button[aria-selected="true"] {
+  border-bottom: 0;
+  background: var(--gn-surface-3);
+  color: var(--gn-text);
+  font-weight: 650;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-task-count {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-top-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-top-task-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-task-link {
+  font-size: 11.5px;
+  color: var(--gn-muted);
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface);
+  white-space: nowrap;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-task-link:hover:not(:disabled) {
+  color: var(--gn-text);
+  border-color: var(--gn-border-strong);
+  text-decoration: none;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-members .conversation-members-trigger {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 9px 0 5px;
+  border-radius: 999px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface);
+  color: var(--gn-text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  gap: 6px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-members .conversation-members-trigger:hover {
+  border-color: var(--gn-border-strong);
+  background: var(--gn-surface-2);
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-member-preview {
+  gap: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-member-preview > span {
+  margin-left: -4px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-member-preview > span:first-child {
+  margin-left: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-member-preview img {
+  width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  background: var(--gn-surface-2);
+  border: 1.5px solid var(--gn-shell);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: var(--gn-muted);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-icon:hover {
+  background: var(--gn-surface-2);
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-toggle.is-active {
+  background: var(--gn-surface-3);
+  color: var(--gn-text);
+}
+
+/* Docked Narrow Subbar (Session Switcher + Task Link + Create) */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-docked-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 12px;
+  border-top: 1px solid var(--gn-border);
+  background: var(--gn-sunken);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-docked-subbar-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-docked-subbar-left .conversation-switcher {
+  flex: 1;
+  max-width: 100%;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-docked-subbar-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+
+/* Override classic container header rules so Grok Noir stays single-row on wide screens */
+@container (min-width: 1000px) {
+  .collaboration-project-host[data-multi-agent-style="grok_noir"]
+    .team-work-views .conversation-header > .grok-topbar {
+    max-inline-size: none;
+    margin-inline: 0;
+  }
+}
+
+/* ==================== Breathable Grok Chat Stream ==================== */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-transcript {
+  padding: 20px 24px 14px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-transcript-inner {
+  display: flex;
+  flex-direction: column;
+  max-inline-size: var(--team-chat-width);
+  margin-inline: auto;
+  width: 100%;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-message {
+  gap: 11px;
+  margin-bottom: 20px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--gn-surface-2);
+  border: 1px solid var(--gn-border-strong);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-message img.conversation-avatar {
+  padding: 3px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-message-content > header {
+  min-height: 24px;
+  gap: 7px;
+  margin-bottom: 5px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-message-content > header strong {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-message-body {
+  font-size: 14px;
+  line-height: 1.68;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-member-model-summary small {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--gn-surface);
+  border-color: var(--gn-border);
+  color: var(--gn-muted);
+  font-size: 11px;
+}
+
+/* Grok Right-Aligned User Prompt Pill + Collapsible Clamp */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-message.user .conversation-user-avatar {
+  display: none;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-user-bubble {
+  padding: 11px 16px;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--gn-surface-2);
+  border: 1px solid var(--gn-border);
+  color: var(--gn-text);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-user-body.is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-more-link {
+  margin-top: 6px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--gn-muted);
+  font-size: 11.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-more-link:hover {
+  color: var(--gn-text);
+}
+
+/* ==================== Signature Grok Process Fold (ConversationPlanCard) ==================== */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-plan-wrap {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-process-fold {
+  border-radius: 14px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface);
+  overflow: hidden;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-trigger {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--gn-text);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 130ms ease;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-trigger:hover {
+  background: color-mix(in srgb, var(--gn-surface-2) 60%, transparent);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-avatars {
+  display: inline-flex;
+  align-items: center;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-avatar-chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--gn-surface-2);
+  border: 1.5px solid var(--gn-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin-left: -5px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-avatar-chip:first-child {
+  margin-left: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-avatar-chip img {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--gn-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-count {
+  font-size: 11px;
+  color: var(--gn-muted);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--gn-surface-2);
+  flex: none;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--gn-muted);
+  font-size: 11.5px;
+  flex: none;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-process-fold:not(.is-open) .grok-fold-toggle svg {
+  transform: rotate(-90deg);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body {
+  padding: 8px 14px 13px 16px;
+  border-top: 1px solid var(--gn-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Vertical Hairline Trace styling for ManagedDeliveryMembers inside Grok Fold */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-delivery-members {
+  margin-top: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-delivery-members h4 {
+  display: none;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-plan-rows {
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-plan-rows::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: var(--gn-border-strong);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-delivery-row {
+  position: relative;
+  border: 1px solid var(--gn-border);
+  border-radius: 10px;
+  background: var(--gn-sunken);
+  padding: 9px 11px;
+  font-size: 12.5px;
+  color: var(--gn-text);
+  transition: border-color 130ms ease, background 130ms ease;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-delivery-row::before {
+  content: "";
+  position: absolute;
+  left: -15px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gn-muted);
+  border: 1.5px solid var(--gn-surface);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"]
+  .grok-fold-body .team-delivery-row:has(.team-task-status.failed)::before {
+  background: var(--gn-danger);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"]
+  .grok-fold-body .team-delivery-row:has(.team-task-status.done)::before,
+.collaboration-project-host[data-multi-agent-style="grok_noir"]
+  .grok-fold-body .team-delivery-row:has(.team-task-status.running)::before {
+  background: var(--gn-ok);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body button.team-delivery-row:hover {
+  border-color: var(--gn-border-strong);
+  background: var(--gn-surface-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-delivery-row + .team-delivery-row {
+  border-top: 1px solid var(--gn-border);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-plan-row {
+  position: relative;
+  border: 1px solid var(--gn-border);
+  border-radius: 10px;
+  background: var(--gn-sunken);
+  padding: 9px 11px;
+  font-size: 12.5px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-plan-row + .team-plan-row {
+  border-top: 1px solid var(--gn-border);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-body .team-plan-row > strong {
+  gap: 8px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-fold-cmd-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gn-muted);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-plan-contract {
+  position: static;
+  margin: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-plan-contract > summary {
+  position: static;
+  font-size: 12px;
+  color: var(--gn-muted);
+}
+
+/* Verdict Callout & Delivery Card */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-verdict {
+  margin: 0;
+  padding: 10px 13px;
+  border-radius: 11px;
+  background: var(--gn-surface);
+  border-left: 2.5px solid var(--gn-border-strong);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-verdict.is-fail {
+  border-left-color: var(--gn-danger);
+  background: color-mix(in srgb, var(--gn-danger) 7%, var(--gn-surface));
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-verdict.is-done {
+  border-left-color: var(--gn-ok);
+  background: color-mix(in srgb, var(--gn-ok) 7%, var(--gn-surface));
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-verdict.is-warn {
+  border-left-color: var(--gn-warn);
+  background: color-mix(in srgb, var(--gn-warn) 7%, var(--gn-surface));
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-plan-actions {
+  margin-top: 2px;
+  gap: 8px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-plan-actions .conversation-primary {
+  min-height: 30px;
+  min-width: auto;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 650;
+  background: var(--gn-cta-bg);
+  color: var(--gn-cta-fg);
+  border-color: transparent;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-delivery-card {
+  border-radius: 14px;
+  border: 1px solid var(--gn-border-strong);
+  background: var(--gn-surface);
+  padding: 14px 16px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-open {
+  border-radius: 999px;
+  background: var(--gn-cta-bg);
+  color: var(--gn-cta-fg);
+  border-color: transparent;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-stop {
+  border-radius: 999px;
+  border-color: var(--gn-border-strong);
+  color: var(--gn-text);
+}
+
+/* ==================== Right Execution Canvas Drawer ==================== */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-execution-drawer {
+  background: var(--gn-sidebar);
+  border-inline-start: 1px solid var(--gn-border);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-head {
+  height: 48px;
+  flex: none;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--gn-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scrollbar-width: thin;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--gn-warn-soft);
+  color: var(--gn-warn);
+  font-size: 12px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-empty {
+  padding: 18px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--gn-border-strong);
+  color: var(--gn-muted);
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-empty strong {
+  color: var(--gn-text);
+  font-size: 13px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-empty p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-task-pill {
+  width: 100%;
+  border: 1px solid var(--gn-border);
+  border-radius: 11px;
+  background: var(--gn-surface);
+  color: var(--gn-text);
+  padding: 9px 11px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  transition: border-color 130ms ease, background 130ms ease;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-task-pill:hover {
+  border-color: var(--gn-border-strong);
+  background: var(--gn-surface-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-task-pill.is-selected {
+  border-color: var(--gn-text-2);
+  background: var(--gn-surface-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-task-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-task-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-task-agent img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-task-name {
+  font-size: 12px;
+  color: var(--gn-text-2);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-task-meta {
+  font-size: 11px;
+  color: var(--gn-muted);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-section-label {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--gn-muted);
+  letter-spacing: 0.02em;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-meta-line {
+  margin: 0;
+  font-size: 12px;
+  color: var(--gn-text-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-logs {
+  border-radius: 11px;
+  background: var(--gn-sunken);
+  border: 1px solid var(--gn-border);
+  padding: 10px 11px;
+  font-size: 12px;
+  color: var(--gn-text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-logs p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-logs [role="alert"] {
+  color: var(--gn-danger);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-logs pre {
+  margin: 0;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: var(--gn-bg);
+  border: 1px solid var(--gn-border);
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11.5px/1.6 var(--mono-font, ui-monospace, Consolas, monospace);
+  color: var(--gn-text-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-foot {
+  flex: none;
+  padding: 10px 14px;
+  border-top: 1px solid var(--gn-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-drawer-foot-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+@container delegation-layout (max-width: 960px) {
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-delegation-layout.has-grok-drawer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-execution-drawer {
+    position: absolute;
+    inset: 48px 0 0 0;
+    z-index: 6;
+    border-inline-start: 0;
+  }
+}
+
+/* ==================== Signature Grok Floating Capsule Composer ==================== */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-footer {
+  padding: 6px 22px 15px;
+  background: linear-gradient(180deg, transparent, var(--gn-shell) 28%);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-member-models {
+  border-radius: 14px;
+  background: var(--gn-surface);
+  border-color: var(--gn-border-strong);
+  margin-block-end: 8px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-composer.multi-agent-composer {
+  border-radius: 22px;
+  border: 1px solid var(--gn-border-strong);
+  background: var(--gn-surface);
+  box-shadow: var(--gn-capsule-shadow);
+  padding: 10px 12px 9px 14px;
+  transition: border-color 150ms ease;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-composer.multi-agent-composer:has(textarea:focus-visible) {
+  border-color: var(--gn-text-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-composer textarea {
+  min-height: 44px;
+  height: 52px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--gn-text);
+  -webkit-text-fill-color: var(--gn-text);
+  caret-color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-composer textarea::placeholder {
+  color: var(--gn-muted);
+  -webkit-text-fill-color: var(--gn-muted);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-composer-actions {
+  gap: 6px 8px;
+  padding-top: 6px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-composer-plan-actions {
+  gap: 5px 7px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-composer-plan-buttons {
+  gap: 4px 5px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-target {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-sunken);
+  color: var(--gn-text-2);
+  font-size: 12px !important;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-target:hover:not(:disabled) {
+  border-color: var(--gn-border-strong);
+  background: var(--gn-surface-2);
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .team-generate-plan,
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-configure-models {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--gn-border);
+  background: transparent;
+  color: var(--gn-text-2);
+  font-size: 12px;
+  font-weight: 550;
+  text-decoration: none;
+  transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .team-generate-plan:hover:not(:disabled),
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-configure-models:hover:not(:disabled),
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-configure-models[aria-expanded="true"] {
+  background: var(--gn-surface-2);
+  border-color: var(--gn-border-strong);
+  color: var(--gn-text);
+  text-decoration: none;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-add-attachment {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-surface-2);
+  color: var(--gn-text-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-add-attachment:hover:not(:disabled) {
+  background: var(--gn-surface-3);
+  border-color: var(--gn-border-strong);
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-send-scope {
+  font-size: 11.5px;
+  color: var(--gn-muted);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-send-scope-reset {
+  border-radius: 999px;
+  background: var(--gn-surface-2);
+  padding: 2px 9px;
+}
+
+/* Iconic Grok Circular Pure-White / High-Contrast Up-Arrow Send Button */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-send {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--gn-cta-bg);
+  color: var(--gn-cta-fg);
+  transition: transform 130ms ease, opacity 130ms ease;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-send:not(:disabled):hover {
+  background: var(--gn-cta-bg);
+  opacity: 0.92;
+  transform: scale(1.05);
+}
+
+/* ==================== Tasks Tab Harmony in Grok Noir ==================== */
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-tasks-panel {
+  background: var(--gn-shell);
+  padding: 20px 24px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-task-list,
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-task-detail {
+  border-radius: 14px;
+  border-color: var(--gn-border);
+  background: var(--gn-surface);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views button.team-task-row {
+  font-size: 14px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views button.team-task-row[aria-pressed="true"] {
+  border-color: var(--gn-border-strong);
+  background: var(--gn-surface-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .team-execution-control {
+  border-radius: 999px;
+  background: var(--gn-cta-bg);
+  color: var(--gn-cta-fg);
+  border-color: transparent;
+  font-weight: 650;
+  padding: 7px 14px;
+}
+
+/* ==================== Narrow Docked Right Sidebar (<= 520px) ==================== */
+@container (max-width: 520px) {
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-transcript {
+    padding: 14px 14px 10px;
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-footer {
+    padding: 6px 12px 12px;
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-composer.multi-agent-composer {
+    padding: 9px 10px 8px 12px;
+    border-radius: 20px;
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-target-prefix {
+    display: none;
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-target,
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .team-generate-plan,
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .conversation-configure-models {
+    height: 26px;
+    min-height: 26px;
+    padding: 0 8px;
+    font-size: 11.5px !important;
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-modes button {
+    padding: 0 8px;
+    font-size: 11.5px;
+  }
+}

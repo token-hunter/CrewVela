@@ -47,6 +47,7 @@ import {
   loadAppearance,
   resolveAppearanceTheme,
   resolveBaseTheme,
+  resolveMultiAgentStyle,
   resolveRightSidebarStartStyle,
   saveAppearance,
 } from "./appearance";
@@ -2708,8 +2709,13 @@ export default function App() {
                         projectOverview={collaborationOverviewOpen && activeRightSidebarTab === tab}
                         active={!guideRequest && activeRightSidebarTab === tab && (tab !== "multi_agent" || !controlDetached)}
                         variant="docked"
-                                        sessions={sessions}
+                        sessions={sessions}
                         defaultCwd={activeWorkspaceRoot}
+                        multiAgentStyle={resolveMultiAgentStyle(appearance)}
+                        onMultiAgentStyleChange={(multiAgentStyle) =>
+                          setAppearance((current) => ({ ...current, multiAgentStyle }))
+                        }
+                        onOpenAppearanceSettings={() => openSettingsSection("appearance")}
                         quickContext={{ workspaceSessionIds: tabSessions.map(s => s.id), projectId: activeProjectId ?? null, cwd: activeWorkspaceRoot, projects: activeProjects }}
                         onOpenQuickSettings={() => openSettingsSection("quickCommands")}
                         onClose={closeRightSidebar}

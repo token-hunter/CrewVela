@@ -142,6 +142,8 @@ export type ProjectManagementStyle =
   | "pinboard"
   | "studio";
 
+export type MultiAgentStyle = "classic" | "grok_noir";
+
 export type GeneralSettingsStyle = "classic" | "coffee";
 export type GitSettingsStyle = "classic" | "railway";
 export type WorktreeSettingsStyle = "classic" | "greenhouse";
@@ -161,6 +163,7 @@ export interface AppAppearance {
   communicationMotion?: boolean;
   rightSidebarStartStyle?: RightSidebarStartStyle;
   projectManagementStyle?: ProjectManagementStyle;
+  multiAgentStyle?: MultiAgentStyle;
   generalSettingsStyle?: GeneralSettingsStyle;
   gitSettingsStyle?: GitSettingsStyle;
   worktreeSettingsStyle?: WorktreeSettingsStyle;

@@ -9,6 +9,7 @@ import type {
   BrowserControlSettingsStyle,
   GeneralSettingsStyle,
   GitSettingsStyle,
+  MultiAgentStyle,
   NotificationSettingsStyle,
   PrivacySettingsStyle,
   ProjectManagementStyle,
@@ -22,6 +23,7 @@ export const RIGHT_SIDEBAR_LAMP_STORAGE_KEY = "crewvela-right-sidebar-lamp-on";
 export const RIGHT_SIDEBAR_BREEZE_STORAGE_KEY = "crewvela-right-sidebar-breeze-on";
 export const PROJECT_GALLERY_DENSITY_STORAGE_KEY = "crewvela-project-gallery-density";
 export const PROJECT_PINBOARD_NEAT_STORAGE_KEY = "crewvela-project-pinboard-neat";
+export const MULTI_AGENT_RAIL_COLLAPSED_STORAGE_KEY = "crewvela-multi-agent-rail-collapsed";
 
 export const DEFAULT_RIGHT_SIDEBAR_START_STYLE: RightSidebarStartStyle = "minimal";
 
@@ -41,6 +43,9 @@ export const PROJECT_MANAGEMENT_STYLES: ProjectManagementStyle[] = [
   "pinboard",
   "studio",
 ];
+
+export const DEFAULT_MULTI_AGENT_STYLE: MultiAgentStyle = "classic";
+export const MULTI_AGENT_STYLES: MultiAgentStyle[] = ["classic", "grok_noir"];
 
 export const DEFAULT_GENERAL_SETTINGS_STYLE: GeneralSettingsStyle = "classic";
 export const GENERAL_SETTINGS_STYLES: GeneralSettingsStyle[] = ["classic", "coffee"];
@@ -149,6 +154,9 @@ export function loadAppearance(): AppAppearance {
         ...(includesValue(PROJECT_MANAGEMENT_STYLES, stored.projectManagementStyle)
           ? { projectManagementStyle: stored.projectManagementStyle }
           : {}),
+        ...(includesValue(MULTI_AGENT_STYLES, stored.multiAgentStyle)
+          ? { multiAgentStyle: stored.multiAgentStyle }
+          : {}),
         ...(includesValue(GENERAL_SETTINGS_STYLES, stored.generalSettingsStyle)
           ? { generalSettingsStyle: stored.generalSettingsStyle }
           : {}),
@@ -227,6 +235,14 @@ export function resolveProjectManagementStyle(
   return includesValue(PROJECT_MANAGEMENT_STYLES, appearance.projectManagementStyle)
     ? appearance.projectManagementStyle
     : DEFAULT_PROJECT_MANAGEMENT_STYLE;
+}
+
+export function resolveMultiAgentStyle(
+  appearance: AppAppearance,
+): MultiAgentStyle {
+  return includesValue(MULTI_AGENT_STYLES, appearance.multiAgentStyle)
+    ? appearance.multiAgentStyle
+    : DEFAULT_MULTI_AGENT_STYLE;
 }
 
 export function resolveGeneralSettingsStyle(
@@ -357,6 +373,22 @@ export function loadRightSidebarBreezeOn(): boolean {
 export function saveRightSidebarBreezeOn(on: boolean): void {
   try {
     window.localStorage.setItem(RIGHT_SIDEBAR_BREEZE_STORAGE_KEY, on ? "1" : "0");
+  } catch {
+    // 持久化不可用时保留当前会话内状态。
+  }
+}
+
+export function loadMultiAgentRailCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(MULTI_AGENT_RAIL_COLLAPSED_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveMultiAgentRailCollapsed(collapsed: boolean): void {
+  try {
+    window.localStorage.setItem(MULTI_AGENT_RAIL_COLLAPSED_STORAGE_KEY, collapsed ? "1" : "0");
   } catch {
     // 持久化不可用时保留当前会话内状态。
   }
