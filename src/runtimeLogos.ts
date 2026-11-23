@@ -1,4 +1,5 @@
 import type { AgentRuntimeKind } from "./types";
+import antigravityAgentLogo from "./assets/agent-antigravity.png";
 import claudeCodeAgentLogo from "./assets/agent-claude-code.png";
 import codexAgentLogo from "./assets/agent-codex.png";
 import openCodeAgentLogo from "./assets/agent-opencode.png";
@@ -19,7 +20,7 @@ export const RUNTIME_LOGOS: Record<AgentRuntimeKind, string> = {
   opencode: openCodeAgentLogo,
   zcode: new URL("./assets/model-zhipu.svg", import.meta.url).href,
   zcode_cli: new URL("./assets/model-zhipu.svg", import.meta.url).href,
-  antigravity: new URL("./assets/agent-avatars/prism.svg", import.meta.url).href,
+  antigravity: antigravityAgentLogo,
   deepseek_harness: new URL("./assets/model-deepseek.svg", import.meta.url).href,
   claude_chat: claudeCodeAgentLogo,
   codex_chat: codexAgentLogo,
