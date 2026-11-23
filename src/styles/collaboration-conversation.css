@@ -66,7 +66,9 @@
   border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg);
   color: var(--text); text-overflow: ellipsis; font: inherit;
 }
-.conversation-model-member select { border-color: transparent; background: transparent; font-weight: 600; }
+.conversation-model-member select { border-color: transparent; background: var(--bg-elev); font-weight: 600; }
+.conversation-member-models option { background-color: var(--bg-elev); color: var(--text); }
+.conversation-member-models option:disabled { color: var(--text-dim); }
 .conversation-member-models select:disabled { color: var(--text-dim); }
 .conversation-model-actions { justify-content: flex-end; }
 .conversation-model-actions small { font-size: 11px; }

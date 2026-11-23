@@ -21,7 +21,17 @@ try {
     const editor = settingsPage.getByRole('region', {name:'Codex的模型与推理设置'});
     const model = editor.getByRole('combobox', {name:'模型', exact:true});
     const reasoning = editor.getByRole('combobox', {name:'推理级别', exact:true});
-    await model.waitFor();
+    await model.locator('option[value="fixture-a"]').waitFor({state:'attached'});
+    const menuColors = await editor.locator('select').evaluateAll(selects => selects.map(select => {
+      const foreground = getComputedStyle(select).color;
+      const background = getComputedStyle(select.closest('.conversation-member-models')).backgroundColor;
+      return Array.from(select.options, option => ({
+        matchesText: getComputedStyle(option).color === foreground,
+        matchesSurface: getComputedStyle(option).backgroundColor === background,
+      }));
+    }));
+    assert.ok(menuColors.flat().every(option => option.matchesText && option.matchesSurface),
+      'member, model and reasoning menus give native options explicit theme colors');
     assert.deepEqual((await calls(settingsPage, 'ma_conversation_member_models'))[0].args, {projectId:'A', agentId:'codex', refresh:false});
     assert.equal((await calls(settingsPage, 'ma_conversation_send')).length, 0);
     const modelBounds = await editor.boundingBox();
