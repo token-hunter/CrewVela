@@ -3551,6 +3551,8 @@ fn execute_preferred_acp(
         let project = request.project.id.clone();
         let agent = request.agent.id.clone();
         let runtime = request.agent.runtime_kind;
+        let steering_run = (kind == ManagedAcpKind::Codex && request.store.is_plain_chat_turn(&request.task.id)?)
+            .then(|| request.run_id.clone());
         let selection = store.discussion_model_selection(&request.task.id, &agent, runtime)?;
         Some(Box::new(move |connection| {
             let observe = |connection: &crate::acp::AcpConnection| {
@@ -3564,6 +3566,7 @@ fn execute_preferred_acp(
                 observe(connection);
                 result.context("本轮模型与推理设置未获确认，请检查成员设置后重新发送")?;
             }
+            if let Some(run_id) = steering_run { connection.register_conversation_steering(run_id); }
             Ok(())
         }))
     } else { None };

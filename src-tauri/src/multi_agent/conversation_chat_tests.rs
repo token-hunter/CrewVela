@@ -1,6 +1,69 @@
 use super::*;
 
 #[test]
+fn followups_wait_without_stopping_and_promote_in_original_order() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let (running, _) = store.begin_conversation(fixture.input()).unwrap();
+    let mut first = fixture.input();
+    first.client_message_id = "queued-first".into();
+    first.expected_conversation_id = Some(running.conversation_id.clone());
+    first.participant_agent_ids = vec![fixture.agents[0].clone()];
+    let mut second = first.clone();
+    second.client_message_id = "queued-second".into();
+    let mut third = second.clone();
+    third.client_message_id = "queued-third".into();
+    assert!(store.enqueue_chat(first.clone()).unwrap());
+    assert!(!store.enqueue_chat(first.clone()).unwrap());
+    assert!(store.enqueue_chat(second.clone()).unwrap());
+    assert!(store.enqueue_chat(third.clone()).unwrap());
+    assert_eq!(store.conversation_round(&running.id).unwrap().status, "queued");
+    assert!(store.start_queued_conversation(&fixture.project).unwrap().is_none());
+    let queued = store.conversation_snapshot(&fixture.project).unwrap().messages;
+    let first_row = queued.iter().find(|row| row.client_message_id.as_deref() == Some("queued-first")).unwrap();
+    let second_row = queued.iter().find(|row| row.client_message_id.as_deref() == Some("queued-second")).unwrap();
+    let mut edited = first.clone();
+    edited.body = "Updated follow-up".into();
+    edited.participant_agent_ids = vec![fixture.agents[1].clone()];
+    store.change_queued_chat(&fixture.project, &running.conversation_id, &first_row.id, first_row.updated_at, None, Some(true)).unwrap();
+    assert!(store.change_queued_chat(&fixture.project, &running.conversation_id, &first_row.id, first_row.updated_at, None, None).is_err());
+    store.change_queued_chat(&fixture.project, &running.conversation_id, &second_row.id, second_row.updated_at, None, None).unwrap();
+    assert!(!store.enqueue_chat(second).unwrap());
+    store.finish_conversation(&running.id, "completed", None).unwrap();
+    assert!(store.start_queued_conversation(&fixture.project).unwrap().is_none(), "editing the head also holds later messages");
+    let held = store.next_waiting_message(&fixture.project).unwrap().unwrap();
+    store.change_queued_chat(&fixture.project, &running.conversation_id, &first_row.id, held.updated_at, Some(edited.clone()), Some(false)).unwrap();
+    let first_dispatched = store.start_queued_conversation(&fixture.project).unwrap().unwrap();
+    assert_eq!(first_dispatched.user_message_id, first_row.id);
+    assert_eq!(first_dispatched.participant_agent_ids, edited.participant_agent_ids);
+    assert!(store.change_queued_chat(&fixture.project, &running.conversation_id, &first_row.id, first_row.updated_at, Some(edited), Some(false)).is_err());
+    store.finish_conversation(&first_dispatched.id, "completed", None).unwrap();
+    let last = store.start_queued_conversation(&fixture.project).unwrap().unwrap();
+    assert_eq!(last.user_message_id, queued.iter().find(|row| row.client_message_id.as_deref() == Some("queued-third")).unwrap().id);
+    assert!(!store.conversation_snapshot(&fixture.project).unwrap().messages.iter().any(|row| row.id == second_row.id));
+}
+
+#[test]
+fn restart_preserves_a_followup_and_requires_an_explicit_send() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let (running, _) = store.begin_conversation(fixture.input()).unwrap();
+    let mut queued = fixture.input();
+    queued.client_message_id = "queued-restart".into();
+    queued.expected_conversation_id = Some(running.conversation_id);
+    store.enqueue_chat(queued.clone()).unwrap();
+    store.recover_conversations_at_startup().unwrap();
+    assert!(store.start_queued_conversation(&fixture.project).unwrap().is_none());
+    let snapshot = store.conversation_snapshot(&fixture.project).unwrap();
+    let message = snapshot.messages.iter().find(|row| row.kind == "queued_message").unwrap();
+    assert_eq!(message.status, "needs_decision");
+    assert_eq!(message.queued_input.as_ref(), Some(&queued));
+    let (resumed, started) = store.begin_conversation(queued).unwrap();
+    assert!(started);
+    assert_eq!(resumed.user_message_id, message.id);
+}
+
+#[test]
 fn group_permission_resumes_only_its_waiting_run_and_never_starts_the_project() {
     let fixture = Fixture::new();
     let (round, _) = fixture.store.begin_conversation(fixture.input()).unwrap();

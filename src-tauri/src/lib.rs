@@ -1460,6 +1460,43 @@ async fn ma_project_preview_stop(app: AppHandle, project_id: String, plan_id: St
 }
 
 #[tauri::command]
+fn ma_conversation_queue(input: multi_agent::ConversationSendInput,
+    state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
+    pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
+    admission: State<'_, runtime_admission::RuntimeAdmission>,
+) -> Result<multi_agent::ConversationSnapshot, String> {
+    let _admission = admission.admit().map_err(to_err)?;
+    let project_id = input.project_id.clone();
+    supervisor.queue_chat(state.inner().clone(), input,
+        multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone()).map_err(to_err)?;
+    state.conversation_snapshot(&project_id).map_err(to_err)
+}
+
+#[tauri::command]
+fn ma_conversation_change_queued(project_id: String, conversation_id: String, message_id: String,
+    expected_updated_at: i64, input: Option<multi_agent::ConversationSendInput>, hold: Option<bool>,
+    state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
+    pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
+    admission: State<'_, runtime_admission::RuntimeAdmission>,
+) -> Result<multi_agent::ConversationSnapshot, String> {
+    let _admission = admission.admit().map_err(to_err)?;
+    supervisor.change_queued_chat(state.inner().clone(), &project_id, &conversation_id, &message_id, expected_updated_at, input, hold,
+        multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone()).map_err(to_err)?;
+    state.conversation_snapshot(&project_id).map_err(to_err)
+}
+
+#[tauri::command(async)]
+fn ma_conversation_steer_queued(project_id: String, conversation_id: String, message_id: String,
+    expected_updated_at: i64, run_id: String,
+    state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
+    admission: State<'_, runtime_admission::RuntimeAdmission>,
+) -> Result<multi_agent::ConversationSnapshot, String> {
+    let _admission = admission.admit().map_err(to_err)?;
+    supervisor.steer_queued_chat(state.inner(), &project_id, &conversation_id, &message_id, expected_updated_at, &run_id).map_err(to_err)?;
+    state.conversation_snapshot(&project_id).map_err(to_err)
+}
+
+#[tauri::command]
 fn ma_conversation_interrupt(input: multi_agent::ConversationInterruptInput,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
@@ -6705,6 +6742,9 @@ pub fn run() {
             ma_project_preview_stop,
             ma_conversation_plan_retry_input,
             ma_conversation_interrupt,
+            ma_conversation_queue,
+            ma_conversation_change_queued,
+            ma_conversation_steer_queued,
             ma_conversation_control,
             ma_conversation_execute_plan,
             ma_send_direct_message,

@@ -38,7 +38,7 @@ export function patchAdapter(source, originalUrl) {
 function startCodexConnection(codexPath, env) {`);
   replaceOnce('return { type: "text", text: formatUriAsLink(block.name, block.uri), text_elements: [] };',
     'if (block.uri?.startsWith("plugin://")) { if (!/^plugin:\\/\\/[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/.test(block.uri)) throw new Error("Invalid plugin reference"); return { type: "mention", name: block.name, path: block.uri }; } return { type: "text", text: formatUriAsLink(block.name, block.uri), text_elements: [] };');
-  replaceOnce('goal: {\n          version: GOAL_EXTENSION_VERSION,', 'crewvelaPlugins: { version: 1, catalogMethod: "_crewvela/plugins", nativeMentions: true },\n        crewvelaGoal: { version: 1, nativeSubscriptions: true },\n        goal: {\n          version: GOAL_EXTENSION_VERSION,');
+  replaceOnce('goal: {\n          version: GOAL_EXTENSION_VERSION,', 'crewvelaPlugins: { version: 1, catalogMethod: "_crewvela/plugins", nativeMentions: true },\n        crewvelaGoal: { version: 1, nativeSubscriptions: true },\n        crewvelaSteering: { version: 1, activeTurnOnly: true },\n        goal: {\n          version: GOAL_EXTENSION_VERSION,');
   replaceOnce('.onRequest(methods.agent.session.prompt, (ctx) => getAgent().prompt(ctx.params, ctx.signal))',
     '.onRequest(methods.agent.session.prompt, async (ctx) => { await crewvelaValidatePlugins(ctx.params); return getAgent().prompt(ctx.params, ctx.signal); })');
   // Goal set/resume in 1.11.0 can cause native turns before any session event
@@ -52,8 +52,16 @@ function startCodexConnection(codexPath, env) {`);
   replaceOnce('async runGoalCommand(sessionState, rest, options) {',
     'async runGoalCommand(sessionState, rest, options) { if (!options.crewvelaGoalIsCurrent()) return { handled: true }; if (options.crewvelaGoal?.action === "set" || (rest.trim() && !["pause", "clear"].includes(rest.trim().toLowerCase()))) { await options.crewvelaGoalSync(); if (!options.crewvelaGoalIsCurrent()) return { handled: true }; }');
   replaceOnce('switch (argument.toLowerCase()) {', 'switch (options.crewvelaGoal?.action === "set" ? "__set_objective__" : argument.toLowerCase()) {');
-  replaceOnce('.connect(acpJsonStream);', '.onRequest("_crewvela/plugins", emptyExtensionParamsParser, (ctx) => crewvelaPluginCatalog(ctx.params.sessionId)).connect(acpJsonStream);');
+  replaceOnce('.connect(acpJsonStream);', '.onRequest("_crewvela/plugins", emptyExtensionParamsParser, (ctx) => crewvelaPluginCatalog(ctx.params.sessionId)).onRequest("_crewvela/steerActive", sessionSteerParamsParser, (ctx) => crewvelaSteerActive(ctx.params)).connect(acpJsonStream);');
   replaceOnce('  agent({ name: package_default.name }).onConnect', `
+  async function crewvelaSteerActive(params) {
+    const agent = getAgent();
+    const state = agent.getSessionState(params.sessionId);
+    const turnId = state.currentTurnId;
+    if (!turnId || !agent.activePrompts.has(params.sessionId) || agent.sessionIsClosing(params.sessionId)) return { injected: false };
+    agent.assertSteerInputSupported(params, state);
+    return { injected: await agent.injectSteerIntoActiveTurn(params, turnId, state) };
+  }
   async function crewvelaGoalControl(p, signal) {
     const a = getAgent();
     if (p.action !== "set" && p.action !== "resume") {

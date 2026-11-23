@@ -231,6 +231,21 @@
 .conversation-primary { display: inline-flex; justify-content: center; align-items: center; gap: 7px; min-height: 34px; padding: 7px 12px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg-hover); color: var(--text); font-weight: 600; }
 .conversation-primary:hover { border-color: var(--text-dim); }
 .conversation-footer { position: relative; z-index: 2; flex: none; min-width: 0; padding: 8px 26px 13px; }
+.conversation-queue { min-width: 0; margin-bottom: 6px; color: var(--text); font-size: 12px; }
+.conversation-queue > header { padding: 0 8px 3px; color: var(--text-dim); }
+.conversation-queue > header > span { margin-inline-start: 4px; }
+.conversation-queue > ol { display: grid; gap: 4px; max-height: min(260px, 28dvh); overflow: auto; margin: 0; padding: 0; list-style: none; }
+.conversation-queue-item { min-width: 0; padding: 5px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); }
+.conversation-queue-summary { display: flex; align-items: center; gap: 8px; }
+.conversation-queue-text { display: grid; flex: 1; min-width: 0; }
+.conversation-queue-text > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-queue-text > strong { font-weight: 500; }
+.conversation-queue-text > small { color: var(--text-dim); }
+.conversation-queue-actions, .conversation-queue-edit-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.conversation-queue button { display: inline-flex; align-items: center; gap: 4px; min-height: 25px; padding: 2px 5px; border: 0; border-radius: 5px; color: var(--text-dim); background: transparent; white-space: nowrap; }
+.conversation-queue button:hover:not(:disabled) { color: var(--text); background: var(--bg-hover); }
+.conversation-queue-edit { display: grid; gap: 4px; margin-top: 4px; }
+.conversation-queue-edit > textarea { box-sizing: border-box; width: 100%; min-height: 48px; resize: vertical; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text); background: var(--bg-elev); font: inherit; }
 .conversation-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 9px; padding: 7px 0; margin-bottom: 5px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-dim); }
 .conversation-progress .conversation-status-dot { margin: 0; }
 .conversation-export-status { display: block; flex: none; margin: 8px 26px 0; overflow-wrap: anywhere; }

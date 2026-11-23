@@ -1017,14 +1017,14 @@ export interface ConversationMessage {
   runId: string | null;
   agentId: string | null;
   senderType: "user" | "agent" | "system";
-  kind: "message" | "reply" | "status" | "plan" | "codex_login_required";
+  kind: "message" | "queued_message" | "reply" | "status" | "plan" | "codex_login_required";
   phase: ConversationPhase | null;
   body: string;
   attachments?: ConversationAttachment[];
   status: ConversationStatus;
   createdAt: number;
   updatedAt: number;
-  /** Durable interjection. queued waits for stop; needs_decision requires explicit retry. */
+  /** Durable follow-up or interjection awaiting dispatch. */
   queuedInput?: ConversationSendInput | null;
 }
 
@@ -1177,6 +1177,7 @@ export interface ConversationMigrationPreview {
   createdAt: number;
 }
 export interface ConversationSnapshot {
+  steerableRuns?: Record<string, string>;
   memberModelSummaries?: Record<string, ConversationMemberModelSummary>;
   delegations?: ConversationDesignDelegation[];
   /** Safe per-run metadata; never raw reasoning or tool results. */

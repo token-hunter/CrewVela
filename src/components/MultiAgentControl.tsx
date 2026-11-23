@@ -13,6 +13,7 @@ import { ConversationVideoAttachment } from "./ConversationVideoAttachment";
 import { ConversationApprovalRequests } from "./ConversationApprovalRequests";
 import { ConversationMemberActivity } from "./ConversationMemberActivity";
 import { ConversationMemberModels } from "./ConversationMemberModels";
+import { ConversationMessageQueue } from "./ConversationMessageQueue";
 import { conversationMemberActivity } from "../conversationActivity";
 import { ConversationPlanCard } from "./ConversationPlanCard";
 import { ConversationHistoryDialog, conversationTitle } from "./ConversationHistoryDialog";
@@ -54,7 +55,7 @@ const draftKey = (project: string, chat?: string) => `crewvela-conversation-draf
 const pendingKey = (project: string, chat?: string) => `crewvela-conversation-pending:${chat ? `${project}:${chat}` : project}`;
 function stored(key: string): string { try { return localStorage.getItem(key) ?? ""; } catch { return ""; } }
 function save(key: string, value: string) { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key); } catch { /* The current draft remains available in the editor. */ } }
-interface PendingSend extends ConversationSendInput { interrupt: boolean; preserveDraft?: boolean; rememberRecipientId?: string }
+interface PendingSend extends ConversationSendInput { interrupt: boolean; queue?: boolean; preserveDraft?: boolean; rememberRecipientId?: string }
 interface PlanIssue { kind: "git" | "member" | "codex_login"; message: string }
 const CODEX_LOGIN_REQUIRED = "CrewVela 的 Codex 专用目录尚未登录";
 const PLAN_VALIDATION_FAILURE = "真实成员已回复，但分工计划未通过校验：";
@@ -467,9 +468,12 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   }, [snapshot?.runtimeEvents, conversation?.activityEvents]);
   const managedTaskIds = new Set(conversation?.executionPlans.flatMap(plan => plan.managed ? plan.taskIds : []) ?? []);
   const conversationMessages = orderedConversationMessages(conversation?.messages ?? [], projectId ?? "");
+  const queuedMessages = conversationMessages.filter(message => message.kind === "queued_message");
+  const queueFollowup = discussing ? round?.mode === "discussion"
+    : queuedMessages.some(message => message.status === "queued" || message.status === "paused");
   const currentTitle = conversationTitle(conversation?.conversation.title,
-    conversationMessages.find(message => message.senderType === "user")?.body.trim().slice(0, 80));
-  const messages = conversationMessages.filter(message => !message.taskId || !managedTaskIds.has(message.taskId));
+    conversationMessages.find(message => message.senderType === "user" && message.kind !== "queued_message")?.body.trim().slice(0, 80));
+  const messages = conversationMessages.filter(message => message.kind !== "queued_message" && (!message.taskId || !managedTaskIds.has(message.taskId)));
   const newConversationBlocked = busy || !!pending || !healthy || !active || !conversation || !!conversation.rounds.some(conversationIsActive);
   const clearBlocked = newConversationBlocked || !conversationMessages.length;
   const deleteBlocked = newConversationBlocked || !!conversation?.executionPlans.some(plan => plan.status === "pending"
@@ -559,7 +563,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     if (!conversationId) return;
     try {
       const input = sendPayload(item);
-      const result = await mutationCall(item.interrupt ? "ma_conversation_interrupt" : "ma_conversation_send", { input });
+      const result = await mutationCall(item.queue ? "ma_conversation_queue" : item.interrupt ? "ma_conversation_interrupt" : "ma_conversation_send", { input });
       if (!result) return;
       if (item.rememberRecipientId) rememberChatRecipient(item.projectId, conversationId, item.rememberRecipientId);
       save(pendingKey(item.projectId, conversationId), "");
@@ -669,7 +673,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const routing = mode === "discussion"
         ? conversationChatDispatch(body, agents.filter(agent => ids.includes(agent.id)), rule?.agentId ?? undefined)
         : { intent: conversationRequestIntent(body) };
-      const item: PendingSend = { projectId, expectedConversationId: conversation.conversation.id, clientMessageId: crypto.randomUUID(), body, participantAgentIds: ids, mode, ...routing, managed, nativeCapabilities: !managed, taskRules: rule ? { tools: "research", archivedRuleId: rule.id } : undefined, interrupt: discussing };
+      const queue = queueFollowup && chat && !rule;
+      const item: PendingSend = { projectId, expectedConversationId: conversation.conversation.id, clientMessageId: crypto.randomUUID(), body, participantAgentIds: ids, mode, ...routing, managed, nativeCapabilities: !managed, taskRules: rule ? { tools: "research", archivedRuleId: rule.id } : undefined, interrupt: discussing && !queue, queue };
       if (chat && ids.length === 1 && mentionTokens.some(token => hasMentionToken(body, token))) item.rememberRecipientId = ids[0];
       setPlanIssues([]);
       if (mode === "execution_plan") {
@@ -721,6 +726,34 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       }
       save(pendingKey(projectId, item.expectedConversationId), JSON.stringify(item)); setPending(item); await deliver(item);
     } catch (reason) { if (stillOpen()) setOperationError(String(reason)); }
+  };
+  const updateQueued = async (message: ConversationMessage, body?: string, hold?: boolean) => {
+    if (!projectId || !message.queuedInput) return;
+    try {
+      let input: ConversationSendInput | undefined;
+      if (body !== undefined) {
+        const clean = body.trim();
+        if (!clean && !message.attachments?.length) throw Error("请输入消息或保留至少一个附件。");
+        // Editing plain text keeps the currently queued recipients. An explicit @ can change them.
+        const original = message.queuedInput.participantAgentIds;
+        const ids = conversationRecipients(clean, original.filter(id => availableRecipients.includes(id)), agents, projectId);
+        if (!mentionTokens.some(token => hasMentionToken(clean, token)) && ids.length !== original.length) {
+          throw Error("原收件成员不可用，请用 @ 指定收件成员。");
+        }
+        if (ids.some(id => !availableRecipients.includes(id))) throw Error("排队消息的收件成员不可用。");
+        const routing = conversationChatDispatch(clean, agents.filter(agent => ids.includes(agent.id)));
+        input = { ...message.queuedInput, body: clean, participantAgentIds: ids, ...routing,
+          chatDispatch: routing.chatDispatch, maxRounds: routing.intent === "exchange" ? 3 : 1 };
+      }
+      const result = await mutationCall("ma_conversation_change_queued", {
+        projectId, conversationId: message.conversationId, messageId: message.id,
+        expectedUpdatedAt: message.updatedAt, input, hold,
+      });
+      return result?.messages.find(item => item.id === message.id);
+    } catch (reason) {
+      setOperationError(String(reason));
+      void refresh();
+    }
   };
   const control = async (action: "pause" | "cancel") => {
     setHistoryMenuOpen(false);
@@ -941,7 +974,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     : mentionCount ? `已 @ ${mentionCount} 位`
     : showChatRecipient ? (chatRecipient ? `发给 ${chatRecipient.name}` : "收件成员不可用")
     : `发给全体 · ${availableRecipients.length} 位`;
-  const sendLabel = discussing ? "发送插话" : "发送消息";
+  const sendLabel = queueFollowup && !archivedRuleId && conversationRequestMode(draft, "discussion", mentionTokens) === "discussion"
+    ? "加入发送队列" : discussing ? "发送插话" : "发送消息";
   const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} snapshot={snapshot}
     blocked={busy || loggingIn || !healthy || discussing || !active} paused={snapshot?.project.status === "paused"}
     onCodexLogin={blockedPlanId === plan.id || plan.managed?.status === "waiting_login" ? () => void loginCodex(async () => {
@@ -1268,6 +1302,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       {active && workView === "chat" && projectId && modelMember && <ConversationMemberModels
         id={modelBarId} key={`${projectId}:${modelMember.id}`} projectId={projectId} member={modelMember} members={agents}
         onSelectMember={setModelMemberId} onClose={closeModelBar} onSaved={saveModelSummary} />}
+      {conversation && !!queuedMessages.length && <ConversationMessageQueue
+        key={conversation.conversation.id} messages={queuedMessages} members={agents} steerableRuns={conversation.steerableRuns}
+        disabled={busy || !!pending || !healthy || !active} discussing={discussing} onUpdate={updateQueued}
+        onResume={message => void mutationCall("ma_conversation_send", { input: message.queuedInput }).catch(() => {})}
+        onSteer={(message, runId) => void mutationCall("ma_conversation_steer_queued", {
+          projectId: message.projectId, conversationId: message.conversationId, messageId: message.id, expectedUpdatedAt: message.updatedAt, runId,
+        }).catch(() => {}).finally(() => void refresh())} />}
       <ResizableConversationComposer onSubmit={event => void submit(event)}>
          {!!draftFiles.length && <div className="conversation-attachments conversation-draft-attachments" aria-label="待发送附件">{draftFiles.map(path => {
            const name = fileName(path);

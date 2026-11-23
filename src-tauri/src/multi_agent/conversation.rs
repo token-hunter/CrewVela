@@ -111,7 +111,7 @@ pub struct ConversationMessage {
     pub status: String,
     pub created_at: i64,
     pub updated_at: i64,
-    /// An accepted human interjection awaiting confirmed stop. Never replayed on startup.
+    /// An accepted follow-up or interjection awaiting dispatch. Never replayed on startup.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queued_input: Option<ConversationSendInput>,
 }
@@ -176,6 +176,8 @@ pub struct ConversationExecutionPlan {
 #[serde(rename_all = "camelCase")]
 pub struct ConversationSnapshot {
     pub conversation: CollaborationConversation,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub steerable_runs: HashMap<String, String>,
     pub delegations: Vec<super::store::delegation::DesignDelegation>,
     pub messages: Vec<ConversationMessage>,
     pub activity_events: Vec<super::RuntimeEventRecord>,
@@ -626,6 +628,7 @@ fn message_with(connection: &Connection, message_id: &str) -> Result<Conversatio
 fn public_messages(connection: &Connection, project: &str) -> Result<Vec<ConversationMessage>> {
     let messages = rows::<ConversationMessage>(connection,"SELECT data_json FROM ma_conversation_messages WHERE project_id=?1 AND json_extract(data_json,'$.conversationId')=(SELECT id FROM ma_conversations WHERE project_id=?1) ORDER BY created_at,rowid",project)?;
     Ok(messages.into_iter().filter_map(|mut message| {
+        if message.kind == "queued_message" && message.status == "cancelled" { return None; }
         if message.sender_type == "agent" && message.task_id.as_deref().is_some_and(is_conversation_task) {
             if message.kind == "silent" { return None; }
             // Raw transport evidence stays in the run/message store. Neither partial
@@ -742,7 +745,10 @@ fn snapshot_with(connection: &Connection, project_id: &str) -> Result<Conversati
     let legacy_desktop = connection.query_row("SELECT EXISTS(SELECT 1 FROM ma_agents WHERE project_id=?1 AND runtime_kind='zcode')", [project_id], |row| row.get::<_,bool>(0))?;
     let runtime_capabilities = policy::runtime_capabilities(legacy_desktop);
     let delegations = super::store::delegation::conversation_designs(connection, project_id, &conversation.id)?;
-    Ok(ConversationSnapshot { conversation, delegations, messages, activity_events,
+    let steerable_runs = active_steering_runs(connection, project_id, &conversation.id)?.into_iter()
+        .filter(|(run, _, _)| crate::acp::conversation_steering_handle(run).is_some())
+        .map(|(run, agent, _)| (agent, run)).collect();
+    Ok(ConversationSnapshot { conversation, steerable_runs, delegations, messages, activity_events,
         rounds: rows(connection,"SELECT data_json FROM ma_conversation_rounds WHERE project_id=?1 AND json_extract(data_json,'$.conversationId')=(SELECT id FROM ma_conversations WHERE project_id=?1) ORDER BY created_at,rowid",project_id)?,
         execution_plans: rows(connection,"SELECT p.data_json FROM ma_conversation_plans p JOIN ma_conversation_rounds r ON r.id=p.round_id JOIN ma_conversations c ON c.project_id=r.project_id WHERE p.project_id=?1 AND json_extract(r.data_json,'$.conversationId')=c.id ORDER BY p.rowid",project_id)?,
         retained_execution_plans: rows(connection,
@@ -758,6 +764,18 @@ fn snapshot_with(connection: &Connection, project_id: &str) -> Result<Conversati
         runtime_capabilities,
         archived_task_rules: policy::archived_rules(connection, project_id)?,
         member_model_summaries: super::conversation_models::member_model_summaries(connection, project_id)? })
+}
+
+fn active_steering_runs(connection: &Connection, project: &str, conversation: &str) -> Result<Vec<(String, String, String)>> {
+    let mut statement = connection.prepare(
+        "SELECT r.id,r.agent_id,c.id FROM ma_runs r JOIN ma_conversation_turns t ON r.task_id=t.task_id
+         JOIN ma_conversation_rounds c ON c.id=t.round_id WHERE c.project_id=?1
+         AND json_extract(c.data_json,'$.conversationId')=?2 AND json_extract(c.data_json,'$.mode')='discussion'
+         AND c.status='running' AND r.status='running'
+         AND NOT EXISTS(SELECT 1 FROM ma_approvals a WHERE a.run_id=r.id AND a.status='pending')")?;
+    let rows = statement.query_map(params![project,conversation], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
 }
 fn bounded_text(value: &str, label: &str) -> Result<String> {
     let value = value.trim();
@@ -1050,11 +1068,13 @@ impl MultiAgentStore {
              )
              SELECT s.id,s.created_at,s.disposition,
                 (SELECT MAX(m.created_at) FROM ma_conversation_messages m
-                    WHERE m.project_id=?1 AND json_extract(m.data_json,'$.conversationId')=s.id) AS last_message_at,
+                    WHERE m.project_id=?1 AND json_extract(m.data_json,'$.conversationId')=s.id
+                    AND NOT (json_extract(m.data_json,'$.kind')='queued_message' AND json_extract(m.data_json,'$.status')='cancelled')) AS last_message_at,
                 (SELECT SUBSTR(TRIM(json_extract(m.data_json,'$.body')),1,80)
                     FROM ma_conversation_messages m WHERE m.project_id=?1
                     AND json_extract(m.data_json,'$.conversationId')=s.id
                     AND json_extract(m.data_json,'$.senderType')='user'
+                    AND json_extract(m.data_json,'$.kind')<>'queued_message'
                     ORDER BY m.created_at,m.rowid LIMIT 1) AS preview,
                 t.title
              FROM sessions s LEFT JOIN ma_conversation_titles t ON t.project_id=?1 AND t.conversation_id=s.id
@@ -1225,7 +1245,7 @@ impl MultiAgentStore {
             body: input.body,
             attachments,
             status: "completed".into(),
-            created_at: queued.as_ref().map_or(stamp, |message| message.created_at),
+            created_at: queued.as_ref().filter(|message| message.kind != "queued_message").map_or(stamp, |message| message.created_at),
             updated_at: stamp,
             queued_input: None,
         };
@@ -1235,6 +1255,9 @@ impl MultiAgentStore {
         }
         let source = format!("{}:{}", if queued.is_some() { "interrupt" } else { "human" }, input.client_message_id);
         save_message(&tx, &source, &message)?;
+        if queued.as_ref().is_some_and(|item| item.kind == "queued_message") {
+            tx.execute("UPDATE ma_conversation_messages SET created_at=?2 WHERE id=?1", params![message.id, stamp])?;
+        }
         // Chat follow-ups preserve a pending proposal. Only an explicit new plan replaces it.
         for mut plan in rows::<ConversationExecutionPlan>(
             &tx,
@@ -1297,6 +1320,23 @@ impl MultiAgentStore {
     }
 
     pub(crate) fn interrupt_conversation(&self, input: ConversationInterruptInput) -> Result<bool> {
+        self.store_waiting_message(input, true)
+    }
+
+    fn enqueue_chat(&self, input: ConversationSendInput) -> Result<bool> {
+        ensure!(input.mode == "discussion" && !input.managed && input.task_rules.is_none(), "只有普通聊天消息可以排队");
+        ensure!(input.expected_conversation_id.is_some(), "请指定排队消息所属的会话");
+        self.store_waiting_message(ConversationInterruptInput {
+            project_id: input.project_id, expected_conversation_id: input.expected_conversation_id,
+            client_message_id: input.client_message_id, body: input.body, attachment_ids: input.attachment_ids,
+            participant_agent_ids: Some(input.participant_agent_ids), chat_dispatch: input.chat_dispatch,
+            mode: Some(input.mode), intent: Some(input.intent), max_rounds: Some(input.max_rounds),
+            max_duration_seconds: Some(input.max_duration_seconds), task_rules: input.task_rules,
+            native_capabilities: Some(input.native_capabilities),
+        }, false)
+    }
+
+    fn store_waiting_message(&self, input: ConversationInterruptInput, interrupt: bool) -> Result<bool> {
         validate_client_id(&input.client_message_id)?;
         let body = message_body(&input.body, &input.attachment_ids, "人工插话")?;
         let queued_input = if let Some(participants) = input.participant_agent_ids {
@@ -1375,20 +1415,20 @@ impl MultiAgentStore {
             }
         }
         let active=rows::<ConversationRound>(&tx,"SELECT data_json FROM ma_conversation_rounds WHERE project_id=?1 AND status IN ('queued','running','waiting_approval','stopping','unconfirmed')",&input.project_id)?;
-        let round_id = active.first().map(|r| r.id.clone());
+        let previous_round = active.first().filter(|_| interrupt);
         let stamp = now();
         let message = ConversationMessage {
             id: id(),
             client_message_id: Some(input.client_message_id.clone()),
             project_id: input.project_id,
             conversation_id: conversation.id,
-            round_id,
-            reply_to_message_id: active.first().map(|r| r.user_message_id.clone()),
+            round_id: previous_round.map(|r| r.id.clone()),
+            reply_to_message_id: previous_round.map(|r| r.user_message_id.clone()),
             task_id: None,
             run_id: None,
             agent_id: None,
             sender_type: "user".into(),
-            kind: "message".into(),
+            kind: if interrupt { "message" } else { "queued_message" }.into(),
             phase: None,
             body,
             attachments,
@@ -1398,6 +1438,10 @@ impl MultiAgentStore {
             queued_input,
         };
         save_message(&tx, &source, &message)?;
+        if !interrupt {
+            tx.commit()?;
+            return Ok(true);
+        }
         for mut round in active {
             if round.status != "unconfirmed" {
                 round.status = "stopping".into();
@@ -1428,20 +1472,68 @@ impl MultiAgentStore {
         Ok(true)
     }
 
-    fn queued_conversation_input(&self, project: &str) -> Result<Option<ConversationSendInput>> {
+    fn next_waiting_message(&self, project: &str) -> Result<Option<ConversationMessage>> {
         let connection = self.connection.lock().unwrap();
-        // Public message order is the durable queue order, independent of UI lifetime.
+        // Explicit interventions keep priority. Ordinary follow-ups remain FIFO.
         Ok(public_messages(&connection, project)?.into_iter()
-            .find(|message| message.sender_type == "user" && message.status == "queued" && message.queued_input.is_some())
-            .and_then(|message| message.queued_input))
+            .filter(|message| message.sender_type == "user" && message.queued_input.is_some()
+                && (message.status == "queued" || (message.kind == "queued_message" && message.status == "paused")))
+            .min_by_key(|message| message.kind == "queued_message"))
+    }
+
+    fn change_queued_chat(&self, project: &str, conversation_id: &str, message_id: &str,
+        expected_updated_at: i64, replacement: Option<ConversationSendInput>, hold: Option<bool>) -> Result<()> {
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_active_conversation(Some(conversation_id), &conversation_with(&tx, project)?)?;
+        let mut message = message_with(&tx, message_id)?;
+        ensure!(message.project_id == project && message.conversation_id == conversation_id &&
+            message.kind == "queued_message", "该消息已发送或不属于当前会话");
+        if hold.is_none() && replacement.is_none() && message.status == "cancelled" { return Ok(()); }
+        ensure!(matches!(message.status.as_str(), "queued" | "needs_decision" | "paused") ||
+            (hold.is_none() && replacement.is_none() && message.status == "unconfirmed"), "该消息已发送或移除");
+        ensure!(message.updated_at == expected_updated_at, "排队消息已更新，请重新打开后再操作");
+        let previous = message.queued_input.as_ref().context("缺少排队消息原始内容")?;
+        if let Some(mut input) = replacement {
+            validate_send_input(&mut input)?;
+            ensure!(input.project_id == project && input.expected_conversation_id.as_deref() == Some(conversation_id)
+                && input.client_message_id == previous.client_message_id && input.mode == "discussion"
+                && !input.managed && input.task_rules.is_none() && input.attachment_ids == previous.attachment_ids
+                && input.native_capabilities == previous.native_capabilities, "排队编辑必须保留原会话、消息编号和附件");
+            for agent in &input.participant_agent_ids {
+                let available: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM ma_agents a WHERE a.project_id=?1 AND a.id=?2 AND a.enabled=1
+                      AND NOT EXISTS(SELECT 1 FROM ma_agent_sessions s WHERE s.project_id=a.project_id AND s.agent_id=a.id AND s.control_mode='manual'))",
+                    params![project,agent], |row| row.get(0))?;
+                ensure!(available, "排队消息的收件成员不可用");
+            }
+            message.body = input.body.clone();
+            message.queued_input = Some(input);
+        } else if hold.is_none() {
+            // Keep the original receipt so retransmission cannot recreate a deleted request.
+            message.status = "cancelled".into();
+        }
+        if let Some(hold) = hold {
+            if hold && message.status == "queued" { message.status = "paused".into(); }
+            if !hold && message.status == "paused" { message.status = "queued".into(); }
+        }
+        message.updated_at = now().max(message.updated_at + 1);
+        save_message(&tx, &format!("interrupt:{}", message.client_message_id.as_deref().unwrap_or_default()), &message)?;
+        tx.commit()?;
+        Ok(())
     }
 
     fn settle_queued_conversation_inputs(&self, project: &str, status: &str) -> Result<()> {
+        self.settle_waiting_messages(project, status, false)
+    }
+
+    fn settle_waiting_messages(&self, project: &str, status: &str, ordinary_only: bool) -> Result<()> {
         let connection = self.connection.lock().unwrap();
         for mut message in public_messages(&connection, project)? {
-            if message.status == "queued" && message.queued_input.is_some() {
-                message.status = status.into();
-                message.updated_at = now();
+            if (message.status == "queued" || (message.kind == "queued_message" && message.status == "paused"))
+                && message.queued_input.is_some() && (!ordinary_only || message.kind == "queued_message") {
+                message.status = if status == "cancelled" && message.kind == "queued_message" { "needs_decision" } else { status }.into();
+                message.updated_at = now().max(message.updated_at + 1);
                 save_message(&connection, &format!("interrupt:{}", message.client_message_id.as_deref().unwrap_or_default()), &message)?;
             }
         }
@@ -1449,7 +1541,9 @@ impl MultiAgentStore {
     }
 
     fn start_queued_conversation(&self, project: &str) -> Result<Option<ConversationRound>> {
-        let Some(input) = self.queued_conversation_input(project)? else { return Ok(None); };
+        let Some(message) = self.next_waiting_message(project)? else { return Ok(None); };
+        if message.status == "paused" { return Ok(None); }
+        let Some(input) = message.queued_input else { return Ok(None); };
         let blocked = {
             let connection = self.connection.lock().unwrap();
             let active: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM ma_conversation_rounds WHERE project_id=?1 AND status IN ('queued','running','waiting_approval','stopping','unconfirmed'))", [project], |row| row.get(0))?;
@@ -1458,7 +1552,12 @@ impl MultiAgentStore {
         };
         if blocked { return Ok(None); }
         match self.begin_conversation(input) {
-            Ok((round, true)) => Ok(Some(round)),
+            Ok((round, true)) => {
+                if message.kind == "queued_message" {
+                    crate::ai_memory::embedded::capture_team_prompt(project, &round.id, &message.body);
+                }
+                Ok(Some(round))
+            }
             Ok((_, false)) => Ok(None),
             Err(error) => {
                 self.settle_queued_conversation_inputs(project, "needs_decision")?;
@@ -1506,7 +1605,8 @@ impl MultiAgentStore {
             round.updated_at = now();
             save_round(&connection, &round)?;
         }
-        let mut statement = connection.prepare("SELECT data_json FROM ma_conversation_messages WHERE json_extract(data_json,'$.queuedInput') IS NOT NULL AND json_extract(data_json,'$.status')='queued'")?;
+        let mut statement = connection.prepare("SELECT data_json FROM ma_conversation_messages WHERE json_extract(data_json,'$.queuedInput') IS NOT NULL
+            AND (json_extract(data_json,'$.status')='queued' OR (json_extract(data_json,'$.kind')='queued_message' AND json_extract(data_json,'$.status')='paused'))")?;
         let pending = statement.query_map([], |row| row.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
         drop(statement);
         for raw in pending {
@@ -1652,6 +1752,79 @@ pub struct ConversationSupervisor {
     active: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
 }
 impl ConversationSupervisor {
+    pub(crate) fn steer_queued_chat(&self, store: &MultiAgentStore, project: &str, conversation: &str,
+        message_id: &str, expected_updated_at: i64, run_id: &str) -> Result<()> {
+        let _active = self.active.lock().unwrap();
+        let (mut message, handle, round_id) = {
+            let connection = store.connection.lock().unwrap();
+            ensure_active_conversation(Some(conversation), &conversation_with(&connection, project)?)?;
+            let mut message = message_with(&connection, message_id)?;
+            ensure!(message.project_id == project && message.conversation_id == conversation && message.kind == "queued_message"
+                && message.status == "queued" && message.updated_at == expected_updated_at, "排队消息已变化，请刷新后重试");
+            let input = message.queued_input.as_ref().context("缺少排队内容")?;
+            ensure!(input.participant_agent_ids.len() == 1 && message.attachments.is_empty(), "引导需要一位正在回复的成员和纯文本消息");
+            let handle = crate::acp::conversation_steering_handle(run_id).context("当前运行不支持引导，消息仍在队列中")?;
+            let (_, _, round_id) = active_steering_runs(&connection, project, conversation)?.into_iter()
+                .find(|(run, agent, _)| run == run_id && agent == &input.participant_agent_ids[0])
+                .context("指定运行已经结束或正在等待审批，消息仍在队列中")?;
+            // Reserve before writing to the runtime. Ambiguous transport failures must not resend.
+            message.status = "unconfirmed".into();
+            message.updated_at = now().max(message.updated_at + 1);
+            save_message(&connection, &format!("interrupt:{}", input.client_message_id), &message)?;
+            (message, handle, round_id)
+        };
+        let injected = handle.steer_active(&message.body).context("引导结果未确认，请核对原会话")?;
+        let connection = store.connection.lock().unwrap();
+        message.updated_at = now().max(message.updated_at + 1);
+        if injected {
+            message.kind = "message".into();
+            message.status = "completed".into();
+            message.round_id = Some(round_id);
+            message.queued_input = None;
+            message.created_at = now();
+        } else {
+            message.status = "queued".into();
+        }
+        save_message(&connection, &format!("interrupt:{}", message.client_message_id.as_deref().unwrap_or_default()), &message)?;
+        if injected {
+            connection.execute("UPDATE ma_conversation_messages SET created_at=?2 WHERE id=?1", params![message.id, message.created_at])?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn queue_chat(&self, store: MultiAgentStore, input: ConversationSendInput,
+        host: AgentTerminalHost, bridge: CollaborationBridge) -> Result<()> {
+        let project = input.project_id.clone();
+        let mut active = self.active.lock().unwrap();
+        if !store.enqueue_chat(input)? { return Ok(()); }
+        // The previous turn can finish while the client is submitting the follow-up.
+        self.kick_chat_queue(&mut active, store, &project, host, bridge)
+    }
+
+    fn kick_chat_queue(&self, active: &mut HashMap<String, Arc<AtomicBool>>, store: MultiAgentStore,
+        project: &str, host: AgentTerminalHost, bridge: CollaborationBridge) -> Result<()> {
+        if active.contains_key(project) { return Ok(()); }
+        match store.start_queued_conversation(project) {
+            Ok(Some(round)) => {
+                let flag = Arc::new(AtomicBool::new(false));
+                active.insert(project.into(), flag.clone());
+                self.spawn_round(store, round, flag, host, bridge, None, None);
+            }
+            Ok(None) if store.next_waiting_message(project)?.is_some_and(|message| message.status == "paused") => {},
+            Ok(None) | Err(_) => store.settle_waiting_messages(project, "needs_decision", true)?,
+        }
+        Ok(())
+    }
+
+    pub(crate) fn change_queued_chat(&self, store: MultiAgentStore, project: &str, conversation_id: &str,
+        message_id: &str, expected_updated_at: i64, input: Option<ConversationSendInput>, hold: Option<bool>,
+        host: AgentTerminalHost, bridge: CollaborationBridge) -> Result<()> {
+        let mut active = self.active.lock().unwrap();
+        store.change_queued_chat(project, conversation_id, message_id, expected_updated_at, input, hold)?;
+        if hold == Some(true) { return Ok(()); }
+        self.kick_chat_queue(&mut active, store, project, host, bridge)
+    }
+
     pub fn send(
         &self,
         store: MultiAgentStore,
@@ -1710,10 +1883,14 @@ impl ConversationSupervisor {
                     }
                 }
             }
-            let unconfirmed = store.conversation_round(&round.id).is_ok_and(|round| round.status == "unconfirmed");
+            let finished = store.conversation_round(&round.id);
+            let unconfirmed = finished.as_ref().is_ok_and(|round| round.status == "unconfirmed");
             if unconfirmed {
                 let _ = store.settle_queued_conversation_inputs(&round.project_id, "needs_decision");
             } else {
+                if flag.load(Ordering::Acquire) || !finished.as_ref().is_ok_and(|round| round.status == "completed" && round.mode == "discussion") {
+                    let _ = store.settle_waiting_messages(&round.project_id, "needs_decision", true);
+                }
                 // Serialize with send/interrupt/control so a late stop cannot cancel the
                 // newly promoted request, and no old request can steal a newer owner.
                 flag.store(false, Ordering::Release);

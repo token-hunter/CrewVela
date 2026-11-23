@@ -174,6 +174,7 @@ pub(crate) fn context_model(options: &[Value]) -> Option<&str> {
 }
 
 const CODEX_GOAL_METHOD: &str = "_session/goal";
+const CODEX_STEER_ACTIVE_METHOD: &str = "_crewvela/steerActive";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -230,6 +231,8 @@ pub(crate) struct AcpConnection {
     context_usage: Option<AcpContextUsage>,
     context_usage_reported: bool,
     goal_supported: bool,
+    steering_supported: bool,
+    steering_run: Option<String>,
     plugin_supported: bool,
     prompt_images_supported: bool,
     goal_reported: bool,
@@ -243,6 +246,12 @@ pub(crate) struct AcpConnection {
 }
 
 static QUARANTINED_ACP: std::sync::LazyLock<Mutex<Vec<AcpConnection>>> = std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
+static CONVERSATION_STEERING: std::sync::LazyLock<Mutex<HashMap<String, CodexGoalHandle>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+pub(crate) fn conversation_steering_handle(run_id: &str) -> Option<CodexGoalHandle> {
+    CONVERSATION_STEERING.lock().ok()?.get(run_id).cloned()
+}
 fn quarantine_acp_connection(connection: AcpConnection) {
     match QUARANTINED_ACP.lock() {
         Ok(mut owners) => owners.push(connection),
@@ -255,6 +264,7 @@ pub(crate) type ManagedPermissionHandler =
 
 impl Drop for AcpConnection {
     fn drop(&mut self) {
+        self.unregister_conversation_steering();
         if let Ok(mut replies) = self.goal_replies.lock() { replies.clear(); }
         if let Err(error) = self.stop_checked() {
             // Keep Atomic PID and the registered original identity on failure.
@@ -647,6 +657,8 @@ impl AcpConnection {
             context_usage: None,
             context_usage_reported: false,
             goal_supported: false,
+            steering_supported: false,
+            steering_run: None,
             plugin_supported: false,
             prompt_images_supported: false,
             goal_reported: false,
@@ -694,6 +706,9 @@ impl AcpConnection {
         connection.plugin_supported = adapter == ManagedAcpKind::Codex
             && initialized.pointer("/_meta/crewvelaPlugins/version").and_then(Value::as_u64) == Some(1)
             && initialized.pointer("/_meta/crewvelaPlugins/nativeMentions").and_then(Value::as_bool) == Some(true);
+        connection.steering_supported = adapter == ManagedAcpKind::Codex
+            && initialized.pointer("/_meta/crewvelaSteering/version").and_then(Value::as_u64) == Some(1)
+            && initialized.pointer("/_meta/crewvelaSteering/activeTurnOnly").and_then(Value::as_bool) == Some(true);
         // 只有 http 条目（如 crewvela 控制面）需要能力协商；stdio 条目
         // （浏览器控制等本地 server）由 Agent 直接 spawn，不受 http 能力限制。
         let has_http_mcp_entries = mcp_servers
@@ -970,7 +985,26 @@ impl AcpConnection {
     }
 
     pub(crate) fn goal_handle(&self) -> Option<CodexGoalHandle> {
-        self.goal_supported.then(|| CodexGoalHandle { stdin: Arc::clone(&self.stdin), session_id: self.session_id.clone(), replies: Arc::clone(&self.goal_replies) })
+        self.goal_supported.then(|| self.codex_control_handle())
+    }
+
+    fn codex_control_handle(&self) -> CodexGoalHandle {
+        CodexGoalHandle { stdin: Arc::clone(&self.stdin), session_id: self.session_id.clone(), replies: Arc::clone(&self.goal_replies) }
+    }
+
+    pub(crate) fn register_conversation_steering(&mut self, run_id: String) {
+        if self.steering_supported {
+            if let Ok(mut live) = CONVERSATION_STEERING.lock() {
+                live.insert(run_id.clone(), self.codex_control_handle());
+                self.steering_run = Some(run_id);
+            }
+        }
+    }
+
+    fn unregister_conversation_steering(&mut self) {
+        if let Some(run_id) = self.steering_run.take() {
+            if let Ok(mut live) = CONVERSATION_STEERING.lock() { live.remove(&run_id); }
+        }
     }
 
     pub(crate) fn commands(&self) -> &[AcpCommand] {
@@ -1682,13 +1716,25 @@ pub(crate) struct CodexGoalHandle {
 impl CodexGoalHandle {
     pub(crate) fn submit(&self, action: &str, objective: Option<&str>) -> Result<CodexGoalReply> {
         if !matches!(action, "set" | "pause" | "resume" | "clear") { return Err(anyhow!("不支持的 Codex 目标操作")); }
-        let id = format!("crewvela-goal-{}", uuid::Uuid::new_v4());
-        let (sender, receiver) = mpsc::sync_channel(1);
-        self.replies.lock().map_err(|_| anyhow!("Codex 目标响应锁已损坏"))?.insert(id.clone(), sender);
         let mut params = json!({ "sessionId": self.session_id, "action": action });
         if let Some(objective) = objective { params["objective"] = json!(objective); }
+        self.submit_request(CODEX_GOAL_METHOD, params)
+    }
+
+    pub(crate) fn steer_active(&self, body: &str) -> Result<bool> {
+        let reply = self.submit_request(CODEX_STEER_ACTIVE_METHOD, json!({
+            "sessionId": self.session_id, "prompt": [{ "type": "text", "text": body }]
+        }))?;
+        let frame = reply.receiver.recv_timeout(Duration::from_secs(3)).context("Codex 引导回执超时")?;
+        frame.pointer("/result/injected").and_then(Value::as_bool).context("Codex 引导缺少明确回执")
+    }
+
+    fn submit_request(&self, method: &str, params: Value) -> Result<CodexGoalReply> {
+        let id = format!("crewvela-codex-control-{}", uuid::Uuid::new_v4());
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.replies.lock().map_err(|_| anyhow!("Codex 请求响应锁已损坏"))?.insert(id.clone(), sender);
         let reply = CodexGoalReply { id: id.clone(), receiver, replies: Arc::clone(&self.replies) };
-        write_to_stdin(&self.stdin, json!({"jsonrpc":"2.0","id":id,"method":CODEX_GOAL_METHOD,"params":params}))?;
+        write_to_stdin(&self.stdin, json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))?;
         Ok(reply)
     }
 }
@@ -2164,6 +2210,7 @@ fn execute_managed_acp_inner(
         agent_version: connection.agent_version.clone(),
     }))
     })();
+    connection.unregister_conversation_steering();
     finish_managed_connection(connection, outcome)
 }
 

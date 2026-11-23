@@ -10,6 +10,26 @@ const original = (await readFile(new URL(import.meta.resolve('@agentclientprotoc
 const patched = patchAdapter(original, 'file:///native/package/dist/index.js');
 const promptStart = patched.indexOf('function buildPromptItems(prompt)');
 const build = Function('formatUriAsLink', patched.slice(promptStart, patched.indexOf('function imageDataUrl', promptStart)) + '; return buildPromptItems;')((name, uri) => `[${name}](${uri})`);
+test('steering uses only the live native turn and never starts another turn', async () => {
+  const functionStart = patched.indexOf('async function crewvelaSteerActive');
+  const source = patched.slice(functionStart, patched.indexOf('async function crewvelaGoalControl', functionStart));
+  const state = { currentTurnId: 'turn-active' };
+  const calls = [];
+  const params = { sessionId: 'thread', prompt: [{ type: 'text', text: 'Correction' }] };
+  const agent = {
+    getSessionState: () => state,
+    activePrompts: new Set(['thread']),
+    sessionIsClosing: () => false,
+    assertSteerInputSupported: () => {},
+    injectSteerIntoActiveTurn: async (input, turn) => { calls.push([input, turn]); return false; },
+  };
+  const steer = Function('getAgent', source + ';return crewvelaSteerActive;')(() => agent);
+  assert.deepEqual(await steer(params), { injected: false });
+  assert.deepEqual(calls, [[params, 'turn-active']]);
+  state.currentTurnId = null;
+  assert.deepEqual(await steer(params), { injected: false });
+  assert.equal(calls.length, 1);
+});
 test('locked bridge preserves native module URL and refuses incompatible markers', () => {
   assert(!patched.includes('import.meta.url'));
   assert(patched.includes('createRequire("file:///native/package/dist/index.js")'));

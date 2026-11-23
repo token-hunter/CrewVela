@@ -51,6 +51,12 @@ if (dualViews) {
 const emptyChat = (id: string): any => ({ conversation: { id: `conversation-${id}`, projectId: id, createdAt: clock }, messages: [], rounds: [], executionPlans: [], supportedDiscussionRuntimes: params.get("native") === "1" ? ["claude_code","codex","kimi_code","pi","opencode","deepseek_harness","zcode","zcode_cli"] : params.get("unsupported") === "1" ? ["claude_code", "codex"] : ["claude_code", "codex", "kimi_code", ...(params.get("header") === "1" ? ["zcode_cli"] : [])] });
 const message = (id: string, senderType: string, body: string, agentId: string | null = null, status = "completed", kind = "reply"): any => ({ id, projectId: "A", conversationId: "conversation-A", roundId: "round-1", replyToMessageId: "m1", taskId: null, runId: agentId ? `run-${agentId}` : null, agentId, senderType, kind, phase: "opinions", body, status, createdAt: clock + Number(id.slice(1) || 0) * 1000, updatedAt: clock });
 const chats: Record<string, any> = { A: emptyChat("A"), B: emptyChat("B") };
+if (params.has("busy-chat")) {
+  chats.A.rounds.push({id:"busy-chat-round",projectId:"A",conversationId:"conversation-A",userMessageId:"m0",
+    participantAgentIds:["codex"],mode:"discussion",intent:"chat",status:"running",phase:"chat",maxRounds:1,currentRound:0,createdAt:clock,updatedAt:clock});
+  chats.A.messages.push(message("m0","user","前一轮的请求",null,"completed","message"));
+  chats.A.steerableRuns = {codex:"run-codex"};
+}
 const memberModelSettings = new Map<string, {model: string | null; reasoning: string | null}>();
 const projectOverview = params.has("project-overview");
 if (projectOverview) {
@@ -376,6 +382,31 @@ const mock = {
       ? "/tests/fixtures/collaboration-conversation-ui.html"
       : "/tests/fixtures/conversation-preview.webm";
     if (command === "ma_conversation_open_video") return null;
+    if (command === "ma_conversation_queue") {
+      const input = args.input, chat = chats[input.projectId];
+      if (!chat.messages.some((item: any) => item.clientMessageId === input.clientMessageId)) {
+        chat.messages.push({...message(input.clientMessageId,"user",input.body,null,"queued","queued_message"),
+          projectId:input.projectId,conversationId:chat.conversation.id,clientMessageId:input.clientMessageId,
+          createdAt:clock+50_000+chat.messages.length,queuedInput:structuredClone(input)});
+      }
+      return structuredClone(chat);
+    }
+    if (command === "ma_conversation_change_queued" || command === "ma_conversation_steer_queued") {
+      const chat = chats[args.projectId];
+      const messageIndex = chat.messages.findIndex((item:any) => item.id === args.messageId);
+      const item = chat.messages[messageIndex];
+      if (!item || item.updatedAt !== args.expectedUpdatedAt || item.conversationId !== args.conversationId) throw Error("排队消息已变化");
+      if (command === "ma_conversation_steer_queued") {
+        if (chat.steerableRuns?.[item.queuedInput.participantAgentIds[0]] !== args.runId) throw Error("指定运行已结束");
+        Object.assign(item,{kind:"message",status:"completed",queuedInput:null});
+      } else if (args.input || typeof args.hold === "boolean") {
+        if (args.input) Object.assign(item,{body:args.input.body,queuedInput:structuredClone(args.input)});
+        if (args.hold === true && item.status === "queued") item.status = "paused";
+        if (args.hold === false && item.status === "paused") item.status = "queued";
+        item.updatedAt++;
+      } else chat.messages.splice(messageIndex,1);
+      return structuredClone(chat);
+    }
     if (["ma_conversation_send", "ma_conversation_interrupt"].includes(command)) {
       const input = args.input, chat = chats[input.projectId];
       if (params.get("natural") === "1") {
