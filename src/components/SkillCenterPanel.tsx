@@ -85,6 +85,8 @@ const previewRuntimes = [
   ["kimi_code", "Kimi Code", ".config/agents/skills"],
   ["pi", "Pi", ".pi/skills"],
   ["opencode", "OpenCode", ".opencode/skills"],
+  ["zcode_cli", "ZCode CLI", ".zcode/skills"],
+  ["antigravity", "Antigravity CLI", ".agents/skills"],
 ] as const;
 const PREVIEW_SNAPSHOT: Snapshot = {
   assets: [
@@ -98,7 +100,11 @@ const PREVIEW_SNAPSHOT: Snapshot = {
     { id: "d3", skillId: "review", runtime: "codex", scope: "global", projectPath: null, taskId: null, agentId: null, targetPath: "~/.codex/skills/code-review", mode: "copy", status: "runtime_newer", sourceHash: "1f9b782ec81e973a", targetHash: "changed", lastError: null, updatedAt: 0 },
   ],
   skillSets: [{ id: "set1", name: "前端开发", description: "Claude + Codex 前端协作", projectPath: null, agentRole: null, items: [], updatedAt: 0 }],
-  runtimes: previewRuntimes.map(([runtime, label, projectRoot]) => ({ runtime, label, projectRoot, globalRoot: `~/${projectRoot}`, discoveryRoots: [], recursiveScan: false, installed: true })),
+  runtimes: previewRuntimes.map(([runtime, label, projectRoot]) => ({
+    runtime, label, projectRoot,
+    globalRoot: runtime === "antigravity" ? "~/.gemini/antigravity-cli/skills" : `~/${projectRoot}`,
+    discoveryRoots: [], recursiveScan: false, installed: true,
+  })),
 };
 
 function positionSkillToolsMenu(details: HTMLDetailsElement | null) {

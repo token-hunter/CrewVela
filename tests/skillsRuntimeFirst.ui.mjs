@@ -11,6 +11,10 @@ try {
   const choose = name => page.getByRole("checkbox", { name: `选择 ${name}`, exact: true });
   const calls = async command => JSON.parse(await page.locator("#fixture-skills-log").innerText()).filter(c => c.command === command);
   await page.goto(url("theme=dark"));
+  const targets = page.getByRole("group", { name: "分发 Runtime" });
+  await targets.getByRole("button", { name: "Antigravity CLI", exact: true }).waitFor();
+  assert.deepEqual(await targets.getByRole("button").allTextContents(),
+    ["Claude Code", "Codex", "Kimi Code", "Pi", "OpenCode", "ZCode CLI", "Antigravity CLI"]);
   await page.locator(".skill-import-menu > summary").click();
   await page.locator(".skill-import-menu > summary").press("Escape");
   assert.equal(await page.locator(".settings-native").count(), 1);
@@ -85,6 +89,15 @@ try {
   await choose("agent-image").check(); await page.getByRole("button", { name: "部署到 Claude Code", exact: true }).click();
   assert.equal((await calls("fixture_confirmation")).at(-1).args.accepted, false);
   assert.equal((await calls("skill_center_deploy_batch")).length, 0);
+  await page.goto(url("theme=dark"));
+  await targets.getByRole("button", { name: "Claude Code", exact: true }).click();
+  await targets.getByRole("button", { name: "ZCode CLI", exact: true }).click();
+  await targets.getByRole("button", { name: "Antigravity CLI", exact: true }).click();
+  await choose("agent-reach").check();
+  await page.getByRole("button", { name: "部署到 2 个 Agent", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "安全分发" }).waitFor();
+  assert.deepEqual((await calls("skill_center_deploy_batch")).at(-1).args.inputs.map(i => [i.runtime, i.scope]),
+    [["zcode_cli", "global"], ["antigravity", "global"]]);
   await page.goto(url("fail=import"));
   await page.locator(".skill-import-menu > summary").click();
   await page.getByRole("button", { name: "Git 导入", exact: true }).click();
@@ -107,7 +120,7 @@ try {
     assert.notEqual(picker.buttons[0].background, picker.buttons[0].color, "selected Agent retains readable foreground");
     await page.locator('.skill-runtime-tabs [data-runtime="claude_code"]').focus();
     await page.keyboard.press("End");
-    assert.equal(await page.locator('.skill-runtime-tabs [data-runtime="opencode"]').evaluate(button => button === document.activeElement), true);
+    assert.equal(await page.locator('.skill-runtime-tabs [data-runtime="antigravity"]').evaluate(button => button === document.activeElement), true);
     await page.keyboard.press("Space");
     assert.equal(await page.locator('.skill-runtime-tabs [aria-pressed="true"]').count(), 2, "keyboard selection remains additive");
     await page.locator(".skill-tools-menu > summary").click();

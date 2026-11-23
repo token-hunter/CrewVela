@@ -11,7 +11,15 @@ export function installSkillRuntimeFixture(params: URLSearchParams) {
   deployments.push({ ...deployments[0], id: "conflict", runtime: "codex", status: "conflict", targetPath: "/fixture/codex/browser-control", lastError: "示例冲突：Runtime 副本已被修改" });
   if (cardDemo) deployments = [...deployments.slice(0,2), ...deployments.slice(0,2).map((d,i) => ({...d,id:`codex-${i}`,runtime:"codex",targetPath:`/fixture/codex/${d.skillId}`})), {...deployments[0],id:"browser",skillId:"browser-control"}, {...deployments[0],id:"doc-local",skillId:"doc-coauthoring",status:"runtime_newer"}];
   let sets: any[] = [];
-  const runtimes = [["claude_code", "Claude Code", ".claude/skills"], ["codex", "Codex", ".codex/skills"], ["kimi_code", "Kimi Code", ".kimi/skills"], ["pi", "Pi", ".pi/skills"], ["opencode", "OpenCode", ".opencode/skills"]].map(([runtime, label, projectRoot]) => ({ runtime, label, projectRoot, globalRoot: `/fixture/${runtime}/skills`, discoveryRoots: [], installed: runtime !== "opencode", recursiveScan: false }));
+  const runtimes = [
+    ["claude_code", "Claude Code", ".claude/skills"],
+    ["codex", "Codex", ".codex/skills"],
+    ["kimi_code", "Kimi Code", ".kimi/skills"],
+    ["pi", "Pi", ".pi/skills"],
+    ["opencode", "OpenCode", ".opencode/skills"],
+    ["zcode_cli", "ZCode CLI", ".zcode/skills"],
+    ["antigravity", "Antigravity CLI", ".agents/skills"],
+  ].map(([runtime, label, projectRoot]) => ({ runtime, label, projectRoot, globalRoot: `/fixture/${runtime}/skills`, discoveryRoots: [], installed: runtime !== "opencode", recursiveScan: false }));
   let failNext = params.get("fail");
   let failRead = params.get("failRead") === "1";
   const log: any[] = [];

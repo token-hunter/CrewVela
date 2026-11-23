@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use crate::multi_agent::{resolve_runtime_executable, AgentRuntimeKind};
+
 mod updates;
 pub use updates::{SkillUpdateCheck, SkillVersionInfo};
 
@@ -1202,7 +1204,7 @@ impl SkillCenter {
             if let Some(adapter) = adapters.iter().find(|item| item.runtime == input.runtime) {
                 if !adapter.installed {
                     eprintln!(
-                        "[crewvela] 警告：runtime「{}」未在 PATH 探测到，\
+                        "[crewvela] 警告：未检测到 runtime「{}」，\
                          本次部署的 skill 在该 runtime 安装前不会生效",
                         adapter.label
                     );
@@ -1528,6 +1530,25 @@ pub(crate) fn runtime_adapters() -> Result<Vec<RuntimeSkillAdapter>> {
             vec![],
             false,
         ),
+        adapter(
+            "zcode_cli",
+            "ZCode CLI",
+            path(&home, ".zcode/skills"),
+            ".zcode/skills",
+            vec![path(&home, ".agents/skills")],
+            false,
+        ),
+        adapter(
+            "antigravity",
+            "Antigravity CLI",
+            path(&home, ".gemini/antigravity-cli/skills"),
+            ".agents/skills",
+            vec![
+                path(&home, ".gemini/config/skills"),
+                path(&home, ".gemini/skills"),
+            ],
+            false,
+        ),
     ])
 }
 
@@ -1539,13 +1560,15 @@ fn adapter(
     discovery_roots: Vec<String>,
     recursive_scan: bool,
 ) -> RuntimeSkillAdapter {
-    let command = match runtime {
-        "claude_code" => "claude",
-        "codex" => "codex",
-        "kimi_code" => "kimi",
-        "pi" => "pi",
-        "opencode" => "opencode",
-        _ => "",
+    let installed = match runtime {
+        "claude_code" => which::which("claude").is_ok(),
+        "codex" => which::which("codex").is_ok(),
+        "kimi_code" => which::which("kimi").is_ok(),
+        "pi" => which::which("pi").is_ok(),
+        "opencode" => which::which("opencode").is_ok(),
+        "zcode_cli" => resolve_runtime_executable(AgentRuntimeKind::ZCodeCli).is_some(),
+        "antigravity" => resolve_runtime_executable(AgentRuntimeKind::Antigravity).is_some(),
+        _ => false,
     };
     RuntimeSkillAdapter {
         runtime: runtime.into(),
@@ -1554,7 +1577,7 @@ fn adapter(
         project_root: project_root.into(),
         discovery_roots,
         recursive_scan,
-        installed: !command.is_empty() && which::which(command).is_ok(),
+        installed,
     }
 }
 
@@ -2645,8 +2668,15 @@ mod tests {
     #[test]
     fn runtime_matrix_excludes_retired_cli() {
         let adapters = runtime_adapters().unwrap();
-        assert_eq!(adapters.iter().map(|item| item.runtime.as_str()).collect::<Vec<_>>(), vec!["claude_code", "codex", "kimi_code", "pi", "opencode"]);
-        assert!(!adapters.iter().any(|item| item.runtime == "minimax_code"));
+        assert_eq!(
+            adapters.iter().map(|item| item.runtime.as_str()).collect::<Vec<_>>(),
+            vec!["claude_code", "codex", "kimi_code", "pi", "opencode", "zcode_cli", "antigravity"]
+        );
+        let home = dirs::home_dir().unwrap();
+        let zcode = adapters.iter().find(|item| item.runtime == "zcode_cli").unwrap();
+        let antigravity = adapters.iter().find(|item| item.runtime == "antigravity").unwrap();
+        assert_eq!(Path::new(&zcode.global_root), home.join(".zcode/skills"));
+        assert_eq!(Path::new(&antigravity.global_root), home.join(".gemini/antigravity-cli/skills"));
     }
 
     #[test]
@@ -2672,7 +2702,8 @@ mod tests {
             .remove(0);
         let project = sandbox.join("project");
         fs::create_dir_all(&project).unwrap();
-        let inputs: Vec<_> = ["claude_code", "codex"].into_iter().map(|runtime| DeploySkillInput {
+        let runtimes = ["claude_code", "codex", "zcode_cli", "antigravity"];
+        let inputs: Vec<_> = runtimes.into_iter().map(|runtime| DeploySkillInput {
                 skill_id: asset.id.clone(),
                 runtime: runtime.into(),
                 scope: "project".into(),
@@ -2682,14 +2713,16 @@ mod tests {
                 trust_confirmed: true,
             }).collect();
         let deployed = center.deploy_batch(inputs.clone()).unwrap();
-        assert_eq!(deployed.len(), 2);
+        assert_eq!(deployed.len(), runtimes.len());
         for deployment in &deployed {
             assert_eq!(fs::read_to_string(Path::new(&deployment.target_path).join("SKILL.md")).unwrap(), "---\nname: frontend-test\ndescription: test\n---\n# Test");
         }
         assert!(project.join(".claude/skills/frontend-test/SKILL.md").exists());
         assert!(project.join(".codex/skills/frontend-test/SKILL.md").exists());
+        assert!(project.join(".zcode/skills/frontend-test/SKILL.md").exists());
+        assert!(project.join(".agents/skills/frontend-test/SKILL.md").exists());
         center.deploy_batch(inputs).unwrap();
-        assert_eq!(center.list_deployments().unwrap().len(), 2);
+        assert_eq!(center.list_deployments().unwrap().len(), runtimes.len());
         center.undeploy_batch(deployed.iter().map(|item| item.id.clone()).collect()).unwrap();
         for deployment in &deployed {
             assert!(!Path::new(&deployment.target_path).exists());
