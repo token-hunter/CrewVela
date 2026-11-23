@@ -860,6 +860,10 @@ async fn ma_upgrade_runtime(kind: AgentRuntimeKind) -> Result<RuntimeUpgradeRece
 #[tauri::command]
 async fn runtime_install_environment(kind: AgentRuntimeKind) -> Result<runtime_installation::Environment, String> { runtime_installation::environment(kind).await }
 #[tauri::command]
+async fn runtime_set_zcode_cli_path(path: Option<std::path::PathBuf>) -> Result<runtime_installation::Environment, String> {
+    blocking_command(move || runtime_installation::zcode_cli::configure(path).map_err(to_err)).await
+}
+#[tauri::command]
 async fn runtime_chat_dependencies() -> Result<HashMap<String, runtime_installation::ChatDependencySummary>, String> { runtime_installation::chat_dependencies().await }
 #[tauri::command]
 async fn runtime_install_latest_version(kind: AgentRuntimeKind) -> Result<String, String> { runtime_installation::latest_version(kind).await }
@@ -3520,6 +3524,7 @@ fn open_runtime_session_checked(
         multi_agent::command_for_path(&executable)
     };
     let runtime_cwd = multi_agent::external_command_path(std::path::Path::new(&record.cwd));
+    if kind == AgentRuntimeKind::Antigravity { runtime_installation::configure_managed_antigravity(&mut command, &executable); }
     command.current_dir(&runtime_cwd);
     command.env("TERM", "xterm-256color");
     if kind == AgentRuntimeKind::Codex && record.multi_agent_agent_id.is_some() {
@@ -6654,6 +6659,7 @@ pub fn run() {
             ma_check_runtime_updates,
             ma_upgrade_runtime,
             runtime_install_environment,
+            runtime_set_zcode_cli_path,
             runtime_chat_dependencies,
             runtime_install_latest_version,
             runtime_install_start,

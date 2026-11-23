@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ArrowLeft, CheckCircle, Circle, WarningCircle, CaretDown, ArrowClockwise } from "@phosphor-icons/react";
 import type { AgentRuntimeKind } from "../types";
@@ -22,6 +23,7 @@ export function RuntimeInstallWizard({ kind, onBack, onComplete = onBack }: {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [loginOpened, setLoginOpened] = useState(false);
   const [loginBusy, setLoginBusy] = useState(false);
+  const [selectingCli, setSelectingCli] = useState(false);
   const alive = useRef(true);
   const generation = useRef(0);
   const completed = useRef<string | null>(null);
@@ -32,6 +34,7 @@ export function RuntimeInstallWizard({ kind, onBack, onComplete = onBack }: {
   const lastPolledJob = useRef<RuntimeInstallJob | null>(null);
   const label = RUNTIME_LABELS[kind];
   const isChat = supportsChatInstallation(kind);
+  const isLocalCli = kind === "zcode_cli";
   const chat = environment?.chat;
   const info = runtimeInstallationInfo(kind);
   const running = installationRunning(job);
@@ -59,7 +62,7 @@ export function RuntimeInstallWizard({ kind, onBack, onComplete = onBack }: {
     return pending;
   }, [kind, isChat]);
   const refreshLatest = useCallback(() => {
-    if (isChat) return;
+    if (isChat || isLocalCli) return;
     if (latestRequest.current) return latestRequest.current;
     setLatestLoading(true);
     const pending = invoke<string>("runtime_install_latest_version", { kind })
@@ -68,7 +71,7 @@ export function RuntimeInstallWizard({ kind, onBack, onComplete = onBack }: {
       .finally(() => { if (latestRequest.current === pending) latestRequest.current = null; if (alive.current) setLatestLoading(false); });
     latestRequest.current = pending;
     return pending;
-  }, [kind, isChat]);
+  }, [kind, isChat, isLocalCli]);
   useEffect(() => {
     alive.current = true;
     let firstFrame = 0, backgroundFrame = 0, timer = 0;
@@ -99,13 +102,28 @@ export function RuntimeInstallWizard({ kind, onBack, onComplete = onBack }: {
     // Give the dialog a painted frame before starting CLI processes or IPC.
     firstFrame = requestAnimationFrame(() => {
       backgroundFrame = requestAnimationFrame(() => {
+        if (isLocalCli) { void refresh(); return; }
         void refreshLatest();
         void poll().finally(() => { if (alive.current && !installationRunning(lastPolledJob.current)) void refresh(); });
         timer = window.setInterval(() => void poll(), 600);
       });
     });
     return () => { alive.current = false; generation.current += 1; environmentRequest.current = null; latestRequest.current = null; window.cancelAnimationFrame(firstFrame); window.cancelAnimationFrame(backgroundFrame); window.clearInterval(timer); };
-  }, [kind, refresh, refreshLatest]);
+  }, [kind, isLocalCli, refresh, refreshLatest]);
+  const changeLocalCli = async (reset = false) => {
+    if (requestPending.current || loading || !environment?.localCli?.canSelect) return;
+    requestPending.current = true;
+    setSelectingCli(true);
+    setError(null);
+    try {
+      const path = reset ? null : await open({ title: "选择已有 ZCode CLI", multiple: false, directory: false,
+        filters: [{ name: "ZCode CLI", extensions: ["exe", "cmd", "bat", "cjs", "js"] }] });
+      if (!alive.current || (!reset && typeof path !== "string")) return;
+      const result = await invoke<RuntimeEnvironment>("runtime_set_zcode_cli_path", { path });
+      if (alive.current) setEnvironment(result);
+    } catch (reason) { if (alive.current) setError(String(reason)); }
+    finally { requestPending.current = false; if (alive.current) setSelectingCli(false); }
+  };
   const start = async () => {
     if (requestPending.current || running) return;
     operationRevision.current += 1;
@@ -141,6 +159,9 @@ export function RuntimeInstallWizard({ kind, onBack, onComplete = onBack }: {
     : loading ? "正在检测本机 CLI 与官方版本…" : "验证通过后才切换入口，原安装保留。现有会话可继续运行。");
   const authLabel = environment?.auth === "authenticated" ? "已登录（未验证额度）" : environment?.auth === "login_required" ? "待登录" : "请在原生运行程序中确认";
   const officialUrl = chat?.officialUrl;
+  const installAction = failed || job?.phase === "cancelled" ? "重试安装" : !installed ? "开始安装"
+    : kind !== "antigravity" || latestVersion == null ? "升级或修复安装"
+    : latestVersion === environment?.version ? "修复安装" : "更新";
   let chatAction;
   if (chat?.canInstall && !installed) {
     chatAction = <button type="button" className="btn runtime-install-primary" disabled={loading} onClick={() => void start()}>{failed || job?.phase === "cancelled" ? "重试安装" : "安装并验证"}</button>;
@@ -151,6 +172,23 @@ export function RuntimeInstallWizard({ kind, onBack, onComplete = onBack }: {
   } else if (installed) {
     chatAction = <button type="button" className="btn runtime-install-primary" onClick={onComplete}>完成</button>;
   }
+  if (isLocalCli) return <div className="runtime-installer" aria-busy={loading || selectingCli}>
+    <button type="button" className="runtime-install-back" onClick={onBack}><ArrowLeft size={19} />返回 Runtime 列表</button>
+    <div className="runtime-install-identity"><img src={RUNTIME_LOGOS[kind]} alt="" /><div><h2>管理 {label}</h2><p>使用本机 ZCode CLI</p></div></div>
+    <dl className="runtime-install-facts">
+      <div><dt>当前版本</dt><dd>{loading ? "正在检查…" : environment?.version ?? "尚未确认"}</dd></div>
+      <div><dt>当前来源</dt><dd>{environment?.source ?? "尚未确认"}</dd></div>
+      <div><dt>启动路径</dt><dd>{environment?.executable ?? "未检测到可用 CLI"}</dd></div>
+      <div><dt>诊断结果</dt><dd>{loading ? "正在检查…" : environment?.localCli?.diagnosis ?? environment?.error ?? "尚未完成"}</dd></div>
+    </dl>
+    {error && <p role="alert" className="runtime-install-error"><WarningCircle size={18} />{error}</p>}
+    {environment?.localCli?.canSelect === false && <p className="runtime-install-note">当前路径由 CREWVELA_ZCODE_CLI_EXECUTABLE 指定。</p>}
+    <footer className="runtime-install-footer">
+      <button type="button" className="btn secondary" disabled={loading || selectingCli} onClick={() => void refresh()}><ArrowClockwise size={16} />重新检查</button>
+      {environment?.localCli?.canSelect && environment.localCli.hasSelection && <button type="button" className="btn secondary" disabled={loading || selectingCli} onClick={() => void changeLocalCli(true)}>恢复自动检测</button>}
+      {environment?.localCli?.canSelect && <button type="button" className="btn runtime-install-primary" disabled={loading || selectingCli} onClick={() => void changeLocalCli()}>选择已有 CLI</button>}
+    </footer>
+  </div>;
   return <div className="runtime-installer" aria-busy={busy}>
     <button type="button" className="runtime-install-back" disabled={busy} onClick={onBack}><ArrowLeft size={19} />返回 Runtime 列表</button>
     <div className="runtime-install-identity"><img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><div><h2>{isChat || environment?.executable ? "管理" : "安装"} {label}</h2><p>{isChat ? "沿用本机配置、账号和模型" : "使用本机 CLI 配置，保留现有账号与模型"}</p></div></div>
@@ -200,9 +238,9 @@ export function RuntimeInstallWizard({ kind, onBack, onComplete = onBack }: {
       </>}
     </footer> : <footer className="runtime-install-footer">
       {busy ? <button className="btn secondary" disabled={starting || cancelling} onClick={() => void cancel()}>{cancelling ? "正在取消…" : "取消安装"}</button>
-        : <button className="btn secondary" disabled={loading || !environment?.supported} onClick={() => void start()}>{failed || job?.phase === "cancelled" ? "重试安装" : installed ? "升级或修复安装" : "开始安装"}</button>}
+        : <button className="btn secondary" disabled={loading || !environment?.supported} onClick={() => void start()}>{installAction}</button>}
       <span>{busy ? "关闭面板后继续，可返回查看" : installed ? "安装与登录状态分别确认" : "验证通过后可登录"}</span>
-      {!busy && <button className="btn secondary" disabled={loading} onClick={() => { void refresh(); void refreshLatest(); }}><ArrowClockwise size={16} />重新检查</button>}
+      {!busy && <button className="btn secondary" disabled={loading} onClick={() => { void refresh(); void refreshLatest(); }}><ArrowClockwise size={16} />{kind === "antigravity" ? "检查更新" : "重新检查"}</button>}
       <button className="btn runtime-install-primary" disabled={!installed || busy || loginBusy} onClick={() => void login()}>{loginBusy ? "正在打开…" : info.loginLabel}</button>
     </footer>}
   </div>;

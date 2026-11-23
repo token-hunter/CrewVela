@@ -161,3 +161,30 @@ fn additional_live_official_packages_work_in_isolated_storage() {
     eprintln!("official native packages verified: {}", records.join(", "));
     fs::remove_dir_all(base).unwrap();
 }
+#[test]
+fn antigravity_manifest_requires_the_requested_windows_artifact_and_sha512() {
+    let mut manifest = serde_json::json!({
+        "version": "1.5.15",
+        "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.15-123456789/windows-x64/cli_windows_x64.exe",
+        "sha512": "00".repeat(64)
+    });
+    let release = parse_antigravity_release(&manifest, "win32-x64").unwrap();
+    assert_eq!(release.version, "1.5.15");
+    assert!(matches!(release.archive, ArchiveFormat::File));
+    assert_eq!(release.integrity, format!("sha512-{}", base64::engine::general_purpose::STANDARD.encode([0u8; 64])));
+    assert!(parse_antigravity_release(&manifest, "win32-arm64").is_err());
+    manifest["url"] = serde_json::json!("https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.15-123456789/windows-arm/cli_windows_arm64.exe");
+    assert!(parse_antigravity_release(&manifest, "win32-arm64").is_ok());
+    for url in [
+        "http://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.15-123/windows-arm/cli_windows_arm64.exe",
+        "https://storage.googleapis.com/unrelated/antigravity-cli/1.5.15-123/windows-arm/cli_windows_arm64.exe",
+        "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.150-123/windows-arm/cli_windows_arm64.exe",
+        "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.15-123/windows-arm/cli_windows_arm64.exe?redirect=1",
+    ] {
+        let mut invalid = manifest.clone();
+        invalid["url"] = serde_json::json!(url);
+        assert!(parse_antigravity_release(&invalid, "win32-arm64").is_err());
+    }
+    manifest["sha512"] = serde_json::json!("zz".repeat(64));
+    assert!(parse_antigravity_release(&manifest, "win32-arm64").is_err());
+}

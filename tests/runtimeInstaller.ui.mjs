@@ -6,11 +6,11 @@ const base = process.env.CREWVELA_UI_URL || 'http://127.0.0.1:1437';
 const out = '.scratch/runtime-install-three-20261116/ui';
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome' }), errors = [], results = [];
-const labels = { claude_code: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', kimi_code: 'Kimi Code', pi: 'Pi' };
+const labels = { claude_code: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', kimi_code: 'Kimi Code', pi: 'Pi', antigravity: 'Antigravity CLI' };
 async function open(page, kind, query = '') {
   await page.goto(`${base}/tests/fixtures/runtime-installer-ui.html?${query}`);
   const dialog = page.getByRole('dialog', { name: '管理 Runtime', exact: true });
-  assert.equal(await dialog.getByRole('button', { name: '安装与版本', exact: true }).count(), 12);
+  assert.equal(await dialog.getByRole('button', { name: '安装与版本', exact: true }).count(), 14);
   const row = dialog.locator('[data-runtime-order]').filter({ has: page.getByRole('checkbox', { name: `启用 ${labels[kind]}`, exact: true }) });
   await row.getByRole('button', { name: '安装与版本' }).click();
   await dialog.getByRole('button', { name: '开始安装', exact: true }).waitFor();
@@ -29,7 +29,7 @@ try {
     await page.evaluate(() => window.runtimeInstallerFixture.finish('failed'));
     await dialog.getByRole('heading', { name: '安装未完成', exact: true }).waitFor();
     await dialog.getByText('安装详情', { exact: true }).click();
-    await dialog.getByText(kind === 'opencode' || kind === 'codex' ? '官方 npm 平台包 SHA512' : kind === 'claude_code' ? '官方发行清单 SHA256' : '官方 GitHub 发行包 SHA256', { exact: true }).waitFor();
+    await dialog.getByText(kind === 'antigravity' ? 'Google 官方发行清单 SHA-512' : kind === 'opencode' || kind === 'codex' ? '官方 npm 平台包 SHA512' : kind === 'claude_code' ? '官方发行清单 SHA256' : '官方 GitHub 发行包 SHA256', { exact: true }).waitFor();
     await dialog.getByRole('button', { name: '重试安装', exact: true }).click();
     await dialog.getByRole('progressbar', { name: '下载进度' }).waitFor();
     await dialog.getByRole('button', { name: '取消安装', exact: true }).click();
@@ -41,7 +41,7 @@ try {
     await login.click();
     await dialog.getByText(/已打开原生 CLI 登录窗口/).waitFor();
     if (kind === 'pi') await dialog.getByText(/进入 Pi 后输入 \/login/).waitFor();
-    await dialog.getByRole('button', { name: '重新检查', exact: true }).click();
+    await dialog.getByRole('button', { name: kind === 'antigravity' ? '检查更新' : '重新检查', exact: true }).click();
     if (['opencode', 'kimi_code', 'pi'].includes(kind)) await dialog.getByText('未验证，请在原生 CLI 中确认', { exact: true }).waitFor();
     await dialog.getByText('安装详情', { exact: true }).click();
     const metrics = await dialog.evaluate(el => {
@@ -59,6 +59,40 @@ try {
     assert.equal(await page.getByRole('dialog').count(), 0);
     results.push({ kind, theme, ...metrics }); await page.close();
   }
+  const updatePage = await browser.newPage({ viewport: { width: 760, height: 650 } });
+  await updatePage.goto(`${base}/tests/fixtures/runtime-installer-ui.html?installed=1&old-agy=1&scenario=success`);
+  const update = updatePage.getByRole('dialog', { name: '管理 Runtime', exact: true });
+  await update.locator('[data-runtime-order="antigravity"]').getByRole('button', {name:'安装与版本'}).click();
+  await update.getByText('1.5.14', { exact: false }).waitFor();
+  await update.getByRole('button', { name: '更新', exact: true }).click();
+  await update.getByRole('button', { name: '修复安装', exact: true }).waitFor();
+  await updatePage.close();
+  const zcodePage = await browser.newPage({ viewport: { width: 600, height: 650 } });
+  await zcodePage.goto(`${base}/tests/fixtures/runtime-installer-ui.html?theme=light&no-zcode=1`);
+  const zcode = zcodePage.getByRole('dialog', { name: '管理 Runtime', exact: true });
+  await zcode.locator('[data-runtime-order="zcode_cli"]').getByRole('button', {name:'安装与版本'}).click();
+  const select = zcode.getByRole('button', {name:'选择已有 CLI',exact:true});
+  await select.click();
+  await zcodePage.evaluate(() => { window.runtimeInstallerFixture.selectedFile = 'C:/fixture/新路径/ZCode CLI/zcode.cjs'; });
+  await select.click();
+  await zcode.getByText('CLI 自检通过 · win32 x64 · Node.js v24.14.0', {exact:true}).waitFor();
+  await zcode.getByText('0.16.9', {exact:true}).waitFor();
+  await zcode.getByText('手动选择', {exact:true}).waitFor();
+  await zcode.screenshot({path:`${out}/zcode-local-light.png`});
+  await zcodePage.evaluate(() => {
+    window.runtimeInstallerFixture.selectedFile = 'C:/fixture/not-zcode.exe';
+    window.runtimeInstallerFixture.rejectPath = true;
+  });
+  await select.click();
+  await zcode.getByRole('alert').getByText(/身份或版本与 ZCode CLI 不符/).waitFor();
+  await zcode.getByText('C:/fixture/新路径/ZCode CLI/zcode.cjs', {exact:true}).waitFor();
+  await zcodePage.evaluate(() => { window.runtimeInstallerFixture.rejectPath = false; });
+  await zcode.getByRole('button', {name:'恢复自动检测',exact:true}).click();
+  await zcode.getByText('未找到 zcode CLI', {exact:true}).waitFor();
+  const zcodeCalls = await zcodePage.evaluate(() => window.runtimeInstallerFixture.calls);
+  assert.equal(zcodeCalls.filter(call => ['runtime_install_start','runtime_install_latest_version'].includes(call.command)).length, 0);
+  assert.equal(zcodeCalls.filter(call => call.command === 'runtime_set_zcode_cli_path').length, 3);
+  await zcodePage.close();
   const page = await browser.newPage({ viewport: { width: 760, height: 650 } });
   const dialog = await open(page, 'kimi_code', 'scenario=dependency');
   await dialog.getByText(/Kimi Code 需要 Git for Windows/).waitFor();
@@ -73,7 +107,7 @@ try {
   await chatRow('claude_chat').getByText('缺少兼容的 Node.js', { exact: true }).waitFor();
   await chatRow('pi_chat').getByText('缺少兼容的 Node.js', { exact: true }).waitFor();
   await chatRow('kimi_chat').getByText('已检测到启动依赖', { exact: true }).waitFor();
-  const cliToggle = chatDialog.getByRole('button', { name: 'CLI 终端 Agent（6）', exact: true });
+  const cliToggle = chatDialog.getByRole('button', { name: 'CLI 终端 Agent（7）', exact: true });
   const chatToggle = chatDialog.getByRole('button', { name: '原生聊天 Agent（7）', exact: true });
   assert.equal(await chatToggle.getAttribute('aria-expanded'), 'true');
   await chatToggle.press('Space');

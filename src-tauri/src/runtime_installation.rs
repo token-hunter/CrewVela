@@ -8,6 +8,7 @@ use std::{collections::HashMap, fs, io::{Read, Write}, path::{Component, Path, P
 use crate::multi_agent::AgentRuntimeKind;
 mod additional;
 mod chat;
+pub(crate) mod zcode_cli;
 pub(crate) use chat::ChatDependencySummary;
 
 const CLAUDE_BASE: &str = "https://downloads.claude.ai/claude-code-releases";
@@ -37,6 +38,8 @@ pub(crate) struct Environment {
     pub dependency_message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat: Option<chat::ChatEnvironment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_cli: Option<zcode_cli::Details>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -47,7 +50,7 @@ struct Release { version: String, url: String, integrity: String, archive: Archi
 #[derive(Clone, Copy, Debug)]
 enum ArchiveFormat { File, TarGz, Zip }
 
-fn supported_kind(kind: AgentRuntimeKind) -> bool { matches!(kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex | AgentRuntimeKind::OpenCode | AgentRuntimeKind::KimiCode | AgentRuntimeKind::Pi) }
+fn supported_kind(kind: AgentRuntimeKind) -> bool { matches!(kind, AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::Codex | AgentRuntimeKind::OpenCode | AgentRuntimeKind::KimiCode | AgentRuntimeKind::Pi | AgentRuntimeKind::Antigravity) }
 fn platform() -> Result<(&'static str, &'static str)> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => Ok(("win32-x64", "x86_64-pc-windows-msvc")),
@@ -62,6 +65,7 @@ fn valid_version(value: &str) -> bool {
 }
 fn relative_executable(kind: AgentRuntimeKind) -> Result<PathBuf> {
     if kind == AgentRuntimeKind::ClaudeCode { return Ok("claude.exe".into()); }
+    if kind == AgentRuntimeKind::Antigravity { return Ok("agy.exe".into()); }
     if kind == AgentRuntimeKind::KimiCode { return Ok("kimi.exe".into()); }
     if kind == AgentRuntimeKind::Pi { return Ok("pi.exe".into()); }
     if kind == AgentRuntimeKind::OpenCode { return Ok("package/bin/opencode.exe".into()); }
@@ -88,6 +92,12 @@ fn installed_at(base: &Path, kind: AgentRuntimeKind) -> Result<Option<PathBuf>> 
 pub(crate) fn managed_executable(kind: AgentRuntimeKind) -> Result<Option<PathBuf>> {
     if !supported_kind(kind) || platform().is_err() { return Ok(None); }
     installed_at(&root()?, kind)
+}
+
+pub(crate) fn configure_managed_antigravity(command: &mut Command, executable: &Path) {
+    if managed_executable(AgentRuntimeKind::Antigravity).ok().flatten().as_deref() == Some(executable) {
+        command.env("AGY_CLI_DISABLE_AUTO_UPDATE", "true");
+    }
 }
 
 fn output(executable: &Path, args: &[&str], limit: usize) -> Result<std::process::Output> {
@@ -177,6 +187,7 @@ pub(crate) async fn environment(kind: AgentRuntimeKind) -> Result<Environment, S
 
 fn inspect_environment(kind: AgentRuntimeKind) -> Result<Environment, String> {
     if chat::supports(kind) { return chat::environment(kind).map_err(|error| error.to_string()); }
+    if kind == AgentRuntimeKind::ZCodeCli { return zcode_cli::inspect().map_err(|error| error.to_string()); }
     if !supported_kind(kind) { return Err("此 Runtime 保留现有官方安装方式".into()); }
     let dependency = additional::dependencies(kind);
     let supported = platform().is_ok() && dependency.is_ok();
@@ -193,7 +204,7 @@ fn inspect_environment(kind: AgentRuntimeKind) -> Result<Environment, String> {
     Ok(Environment { kind, supported, executable, version, auth, error, source,
         dependency_message: dependency.unwrap_or_else(|error| error.to_string()),
         install_directory: root().map_err(|e| e.to_string())?.join(kind.as_str()).display().to_string(),
-        latest_version: None, update_error: None, chat: None })
+        latest_version: None, update_error: None, chat: None, local_cli: None })
 }
 
 pub(crate) async fn chat_dependencies() -> Result<HashMap<String, ChatDependencySummary>, String> {
@@ -265,7 +276,7 @@ impl Drop for Staging { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0)
 
 async fn install_cli(base: &Path, kind: AgentRuntimeKind, id: &str, cancel: &Arc<AtomicBool>, wake: &tokio::sync::Notify, only_if_missing: bool) -> Result<(String, PathBuf)> {
     use AgentRuntimeKind::*;
-    let locks = CLI_INSTALL_LOCKS.get_or_init(|| [ClaudeCode, Codex, KimiCode, OpenCode, Pi].into_iter()
+    let locks = CLI_INSTALL_LOCKS.get_or_init(|| [ClaudeCode, Codex, KimiCode, OpenCode, Pi, Antigravity].into_iter()
         .map(|kind| (kind.as_str(), tokio::sync::Mutex::new(()))).collect());
     let lock = locks.get(kind.as_str()).context("此 CLI 暂不支持安装")?;
     let _guard = tokio::select! { lock = lock.lock() => lock, _ = wake.notified() => bail!("安装已取消") };
@@ -294,18 +305,20 @@ async fn install(base: &Path, kind: AgentRuntimeKind, id: &str, cancel: &Arc<Ato
     check_cancel(cancel)?;
     change(id, "installing", "完整性校验通过，正在准备官方 CLI…", 0, None);
     let prepared = staging.0.join("prepared"); fs::create_dir(&prepared)?;
+    let relative = relative_executable(kind)?;
+    let direct_file = relative.clone();
     let extract_path = prepared.clone(); let archive_path = archive.clone(); let archive_format = release.archive; let cancel_copy = cancel.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<()> {
         match archive_format {
             ArchiveFormat::TarGz => extract_archive(&archive_path, &extract_path, &cancel_copy)?,
             ArchiveFormat::Zip => additional::extract_zip(&archive_path, &extract_path, &cancel_copy)?,
-            ArchiveFormat::File => fs::rename(&archive_path, extract_path.join("claude.exe"))?,
+            ArchiveFormat::File => fs::rename(&archive_path, extract_path.join(direct_file))?,
         }
         Ok(())
     }).await??;
     check_cancel(cancel)?;
     change(id, "verifying", "正在验证版本与 CLI 启动能力…", 0, None);
-    let executable = prepared.join(relative_executable(kind)?);
+    let executable = prepared.join(relative);
     let copy = executable.clone(); let expected = release.version.clone();
     tauri::async_runtime::spawn_blocking(move || verify(&copy, kind, Some(&expected))).await??;
     check_cancel(cancel)?;
@@ -502,6 +515,38 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    #[ignore = "downloads the official Antigravity CLI into an isolated CrewVela profile and probes existing ZCode without model calls"]
+    fn antigravity_and_zcode_live_installation_in_isolated_profile() {
+        let profile = temporary("agy-zcode-live");
+        crate::test_profile::initialize(&profile).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let base = root().unwrap();
+        let kind = AgentRuntimeKind::Antigravity;
+        let id = uuid::Uuid::new_v4().to_string();
+        let (version, path) = runtime.block_on(install(&base, kind, &id,
+            &Arc::new(AtomicBool::new(false)), &Arc::new(tokio::sync::Notify::new()))).unwrap();
+        assert_eq!(crate::multi_agent::resolve_runtime_executable_checked(kind).unwrap(), path);
+        assert_eq!(verify(&path, kind, Some(&version)).unwrap(), version);
+        let mut command = crate::multi_agent::command_for_path(&path);
+        configure_managed_antigravity(&mut command, &path);
+        assert!(command.get_envs().any(|(key, value)| key == "AGY_CLI_DISABLE_AUTO_UPDATE" && value == Some(std::ffi::OsStr::new("true"))));
+        eprintln!("official isolated Antigravity CLI installed and resolved: {version}");
+
+        let zcode = crate::multi_agent::zcode::cli_executable().unwrap();
+        let selected = zcode_cli::configure(Some(zcode.clone())).unwrap_or_else(|error| panic!("{}: {error:#}", zcode.display()));
+        assert!(selected.version.is_some() && selected.error.is_none());
+        assert_eq!(selected.source, "手动选择");
+        assert_eq!(crate::multi_agent::zcode::cli_executable().unwrap(), zcode);
+        assert!(crate::multi_agent::zcode::cli_tui_command().is_ok());
+        assert!(zcode_cli::configure(Some(profile.join("missing.exe"))).is_err());
+        assert_eq!(crate::multi_agent::zcode::cli_executable().unwrap(), zcode);
+        assert_eq!(zcode_cli::configure(None).unwrap().source, "本机 PATH");
+        eprintln!("real ZCode CLI selected, verified and restored: {:?}", selected.version);
+        fs::remove_dir_all(profile).unwrap();
+    }
+
+    #[test]
     fn runtime_install_cancel_interrupts_a_stalled_download_without_switching_the_old_entry() {
         use std::{net::TcpListener, sync::mpsc};
         let root = temporary("cancel-download");
@@ -535,6 +580,7 @@ pub(crate) fn open_login(kind: AgentRuntimeKind) -> Result<(), String> {
         let encoded = base64::engine::general_purpose::STANDARD.encode(script.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>());
         let mut command = Command::new("powershell.exe");
         if for_chat { crate::runtime_dependencies::with_managed_node(&mut command); }
+        if kind == AgentRuntimeKind::Antigravity { configure_managed_antigravity(&mut command, &executable); }
         command.args(["-NoLogo", "-NoProfile", "-NoExit", "-EncodedCommand", &encoded]).creation_flags(0x00000010).spawn().map_err(|e| format!("无法打开 CLI 登录窗口：{e}"))?;
         Ok(())
     }

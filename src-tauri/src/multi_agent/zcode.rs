@@ -248,16 +248,26 @@ pub(crate) fn executable() -> Result<PathBuf> {
     bail!("未找到 ZCode Desktop Agent；请安装 ZCode Desktop，或指定 CREWVELA_ZCODE_EXECUTABLE / CREWVELA_ZCODE_ROOT")
 }
 
-/// zcode CLI runtime：仅解析本地 CLI（显式 env → PATH shim 解析出真实 cjs）。
-/// 与 ZCode Desktop 是两个独立 Runtime，不共享解析顺序。
-pub(crate) fn cli_executable() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("CREWVELA_ZCODE_CLI_EXECUTABLE") {
+fn cli_override() -> Result<Option<PathBuf>> {
+    use crate::runtime_installation::zcode_cli::{stored_executable, OVERRIDE_ENV};
+    if let Some(path) = std::env::var_os(OVERRIDE_ENV) {
         let path = PathBuf::from(path);
         if !path.is_absolute() || !path.is_file() {
             bail!("CREWVELA_ZCODE_CLI_EXECUTABLE 必须指向现有的绝对 CLI 可执行文件或预构建 cjs 文件");
         }
-        return Ok(path);
+        return Ok(Some(path));
     }
+    let selected = stored_executable()?;
+    if selected.as_ref().is_some_and(|path| !path.is_absolute() || !path.is_file()) {
+        bail!("手动选择的 ZCode CLI 已不可用，请重新选择或恢复自动检测");
+    }
+    Ok(selected)
+}
+
+/// zcode CLI runtime：显式 env → CrewVela 选定路径 → PATH 自动检测。
+/// 与 ZCode Desktop 是两个独立 Runtime，不共享解析顺序。
+pub(crate) fn cli_executable() -> Result<PathBuf> {
+    if let Some(path) = cli_override()? { return Ok(path); }
     if let Ok(path) = which::which("zcode") {
         if let Some(resolved) = resolve_path_cli(&path) {
             return Ok(resolved);
@@ -324,8 +334,7 @@ fn configure_tui_compatibility(command: &mut Command, inherited: Option<&str>) {
 }
 
 fn cli_tui_command_inner() -> Result<Command> {
-    if std::env::var_os("CREWVELA_ZCODE_CLI_EXECUTABLE").is_some() {
-        let path = cli_executable()?;
+    if let Some(path) = cli_override()? {
         return if is_script_entry(&path) { cli_script_tui_command(&path) } else { Ok(super::runtime::command_for_path(&path)) };
     }
     if let Ok(path) = which::which("zcode") {
@@ -537,6 +546,12 @@ fn installed_desktop_agent() -> Option<PathBuf> {
 }
 
 pub(crate) fn launch(path: &Path) -> Result<Command> {
+    let mut command = command_for_entry(path)?;
+    command.args(["app-server", "--stdio"]);
+    Ok(command)
+}
+
+pub(crate) fn command_for_entry(path: &Path) -> Result<Command> {
     #[cfg(target_os = "macos")]
     let mac_bundle = macos::bundle_root(path)
         .filter(|root| path == *root || path == root.join("Contents/Resources/glm/zcode.cjs"))
@@ -614,7 +629,6 @@ pub(crate) fn launch(path: &Path) -> Result<Command> {
             command.env("CREWVELA_ZCODE_APP_VERSION", version);
         }
     }
-    command.args(["app-server", "--stdio"]);
     Ok(command)
 }
 

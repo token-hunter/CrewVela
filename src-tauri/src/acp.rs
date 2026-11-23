@@ -2389,6 +2389,7 @@ pub(crate) fn adapter_command(adapter: ManagedAcpKind) -> Result<Command> {
         let executable = crate::multi_agent::resolve_runtime_executable_checked(crate::multi_agent::AgentRuntimeKind::Antigravity)
             .map_err(anyhow::Error::msg)?;
         let mut command = crate::multi_agent::command_for_path(&executable);
+        crate::runtime_installation::configure_managed_antigravity(&mut command, &executable);
         command.arg("acp");
         return Ok(command);
     }

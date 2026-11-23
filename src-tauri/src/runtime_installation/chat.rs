@@ -284,6 +284,7 @@ pub(super) fn environment(kind: AgentRuntimeKind) -> Result<Environment> {
         error,
         update_error: None,
         dependency_message: String::new(),
+        local_cli: None,
         chat: Some(ChatEnvironment {
             node_required: required,
             node_version: node.map(|(_, version)| version),

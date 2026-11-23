@@ -2,6 +2,12 @@
 use super::*;
 
 pub(super) async fn release(client: &reqwest::Client, kind: AgentRuntimeKind, platform: &str) -> Result<Release> {
+    if kind == AgentRuntimeKind::Antigravity {
+        let (manifest, _, _) = antigravity_platform(platform)?;
+        let url = format!("https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/{manifest}.json");
+        let metadata = serde_json::from_str(&text(client, &url).await?)?;
+        return parse_antigravity_release(&metadata, platform);
+    }
     if kind == AgentRuntimeKind::OpenCode {
         // Stay on the same upstream channel as the existing run --format json / ACP adapters.
         let main: serde_json::Value = serde_json::from_str(&text(client, "https://registry.npmjs.org/opencode-ai/latest").await?)?;
@@ -14,6 +20,37 @@ pub(super) async fn release(client: &reqwest::Client, kind: AgentRuntimeKind, pl
     let (repo, _) = github_spec(kind, platform)?;
     let metadata: serde_json::Value = serde_json::from_str(&text(client, &format!("https://api.github.com/repos/{repo}/releases/latest")).await?)?;
     parse_github_release(&metadata, kind, platform)
+}
+
+fn antigravity_platform(platform: &str) -> Result<(&'static str, &'static str, &'static str)> {
+    match platform {
+        "win32-x64" => Ok(("windows_amd64", "windows-x64", "cli_windows_x64.exe")),
+        "win32-arm64" => Ok(("windows_arm64", "windows-arm", "cli_windows_arm64.exe")),
+        _ => bail!("Antigravity CLI 未提供此平台安装包"),
+    }
+}
+
+fn parse_antigravity_release(value: &serde_json::Value, platform: &str) -> Result<Release> {
+    let (_, directory, filename) = antigravity_platform(platform)?;
+    let version = value["version"].as_str().filter(|version| valid_version(version)).context("Antigravity CLI 官方版本号无效")?;
+    let url = value["url"].as_str().context("官方发行缺少下载地址")?;
+    let parsed = reqwest::Url::parse(url)?;
+    let segments: Vec<_> = parsed.path_segments().context("Antigravity CLI 下载路径无效")?.collect();
+    let valid_path = matches!(segments.as_slice(), ["antigravity-public", "antigravity-cli", build, dir, name]
+        if *dir == directory && *name == filename && build.strip_prefix(version)
+            .and_then(|suffix| suffix.strip_prefix('-'))
+            .is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit())));
+    if parsed.scheme() != "https" || parsed.host_str() != Some("storage.googleapis.com")
+        || !parsed.username().is_empty() || parsed.password().is_some() || parsed.port().is_some()
+        || parsed.query().is_some() || parsed.fragment().is_some() || !valid_path {
+        bail!("下载地址不属于预期 Antigravity CLI 官方平台包");
+    }
+    let digest = value["sha512"].as_str().filter(|digest| digest.len() == 128 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .context("Antigravity CLI 官方发行缺少有效 SHA512")?;
+    let bytes = (0..digest.len()).step_by(2).map(|index| u8::from_str_radix(&digest[index..index + 2], 16))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(Release { version: version.into(), url: url.into(),
+        integrity: format!("sha512-{}", base64::engine::general_purpose::STANDARD.encode(bytes)), archive: ArchiveFormat::File })
 }
 
 fn opencode_package(platform: &str) -> Result<&'static str> {
@@ -85,6 +122,7 @@ pub(super) fn verify_help(kind: AgentRuntimeKind, help: &str) -> Result<()> {
         AgentRuntimeKind::OpenCode => lower.contains("opencode") && lower.contains("run") && lower.contains("acp"),
         AgentRuntimeKind::KimiCode => lower.contains("kimi") && lower.contains("--output-format") && lower.contains("--prompt") && lower.contains("acp"),
         AgentRuntimeKind::Pi => lower.contains("pi") && lower.contains("--mode") && lower.contains("rpc"),
+        AgentRuntimeKind::Antigravity => lower.contains("agy") && lower.contains("--print") && lower.split_whitespace().any(|word| word == "acp"),
         _ => false,
     };
     if !valid { bail!("CLI 帮助与现有 Runtime 协议不匹配，原安装已保留"); }
@@ -95,7 +133,7 @@ pub(super) fn login_script(kind: AgentRuntimeKind, quoted_path: &str) -> Result<
     let args = match kind {
         AgentRuntimeKind::ClaudeCode | AgentRuntimeKind::OpenCode => "auth login",
         AgentRuntimeKind::Codex | AgentRuntimeKind::KimiCode => "login",
-        AgentRuntimeKind::Pi => "",
+        AgentRuntimeKind::Pi | AgentRuntimeKind::Antigravity => "",
         _ => return Err("不支持此 CLI 的登录引导".into()),
     };
     let hint = if kind == AgentRuntimeKind::Pi { "Write-Host '进入 Pi 后输入 /login，选择需要登录的 Provider。'\n" } else { "" };
