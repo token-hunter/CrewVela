@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import type { Dispatch, SetStateAction } from "react";
 import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
 import { Switch } from "./ui/Switch";
@@ -426,6 +427,7 @@ function StartStylePreview({ style }: { style: RightSidebarStartStyle }) {
 }
 
 export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
+  const t = useTranslation();
   const selectTheme = (theme: AppearanceTheme) => {
     onChange((current) => ({ ...current, theme, followSystem: false }));
   };
@@ -575,7 +577,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
 
   return (
     <div className="appearance-settings-panel">
-      <SettingsSection className="appearance-settings-section appearance-theme-section" title="主题" description="选择深色或浅色界面调色板，切换后立即应用至全局工作区。">
+      <SettingsSection className="appearance-settings-section appearance-theme-section" title={t("主题")} description={t("选择深色或浅色界面调色板，切换后立即应用至全局工作区。")}>
         <div className="appearance-theme-grid">
           {THEME_OPTIONS.map((option) => {
             const selected =
@@ -585,7 +587,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                 className={`appearance-theme-option${selected ? " selected" : ""}`}
                 type="button"
                 key={option.id}
-                aria-label={option.label}
+                aria-label={t(option.label)}
                 aria-pressed={selected}
                 onClick={() => selectTheme(option.id)}
               >
@@ -610,7 +612,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                     </span>
                   )}
                 </span>
-                <strong>{option.label}</strong>
+                <strong>{t(option.label)}</strong>
               </button>
             );
           })}
@@ -618,7 +620,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
       </SettingsSection>
 
       <div className="appearance-dual-sections">
-        <SettingsSection className="appearance-settings-section appearance-background-section" title="背景" description="调整主工作区画布的光学质感。">
+        <SettingsSection className="appearance-settings-section appearance-background-section" title={t("背景")} description={t("调整主工作区画布的光学质感。")}>
           <div className="appearance-background-grid">
             {BACKGROUND_OPTIONS.map((option) => {
               const selected = appearance.background === option.id;
@@ -627,7 +629,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                   className={`appearance-background-option ${option.id}${selected ? " selected" : ""}`}
                   type="button"
                   key={option.id}
-                  aria-label={option.label}
+                  aria-label={t(option.label)}
                   aria-pressed={selected}
                   onClick={() =>
                     onChange((current) => ({ ...current, background: option.id }))
@@ -641,7 +643,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                       </i>
                     )}
                   </span>
-                  <strong>{option.label}</strong>
+                  <strong>{t(option.label)}</strong>
                 </button>
               );
             })}
@@ -650,11 +652,11 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
 
         <SettingsSection
           className="appearance-settings-section appearance-accent-section"
-          title={<span className="appearance-accent-heading"><span>强调色</span><em className="appearance-accent-current" aria-hidden="true">{currentAccent.label}</em></span>}
-          description="用于主按钮、焦点环、激活导航与状态高亮。"
+          title={<span className="appearance-accent-heading"><span>{t("强调色")}</span><em className="appearance-accent-current" aria-hidden="true">{t(currentAccent.label)}</em></span>}
+          description={t("用于主按钮、焦点环、激活导航与状态高亮。")}
         >
           <div className="appearance-accent-footer-row">
-            <div className="appearance-accent-list" role="radiogroup" aria-label="强调色">
+            <div className="appearance-accent-list" role="radiogroup" aria-label={t("强调色")}>
               {ACCENT_OPTIONS.map((option) => (
                 <button
                   type="button"
@@ -662,9 +664,9 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                   key={option.id}
                   className={appearance.accent === option.id ? "selected" : ""}
                   data-accent={option.id}
-                  aria-label={option.label}
+                  aria-label={t(option.label)}
                   aria-checked={appearance.accent === option.id}
-                  title={option.label}
+                  title={t(option.label)}
                   onClick={() =>
                     onChange((current) => ({ ...current, accent: option.id }))
                   }
@@ -677,7 +679,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
               onClick={() => onChange(DEFAULT_APPEARANCE)}
             >
               <ArrowCounterClockwiseIcon size={14} />
-              恢复默认
+              {t("恢复默认")}
             </button>
           </div>
         </SettingsSection>
@@ -691,8 +693,8 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
           childrenPosition="before"
         >
           <span>
-            <strong>会话通信动效</strong>
-            <small>两个 Agent 终端同屏通信时，用强调色连线显示消息方向。</small>
+            <strong>{t("会话通信动效")}</strong>
+            <small>{t("两个 Agent 终端同屏通信时，用强调色连线显示消息方向。")}</small>
           </span>
         </Switch>
       </section>
@@ -710,8 +712,8 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
           childrenPosition="before"
         >
           <span>
-            <strong>全局透明模式</strong>
-            <small>调节界面各区域的背景透明度，文字、图标和边框保持清晰。</small>
+            <strong>{t("全局透明模式")}</strong>
+            <small>{t("调节界面各区域的背景透明度，文字、图标和边框保持清晰。")}</small>
           </span>
         </Switch>
 
@@ -722,7 +724,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
         >
           <div className="appearance-opacity-controls">
             <div className="appearance-terminal-opacity-copy">
-              <span>页面底板不透明度</span>
+              <span>{t("页面底板不透明度")}</span>
               <div className="appearance-terminal-opacity-actions">
                 <output>
                   {Math.round((appearance.terminalOpacity ?? 0.65) * 100)}%
@@ -739,7 +741,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                     }))
                   }
                 >
-                  完全透明
+                  {t("完全透明")}
                 </button>
               </div>
             </div>
@@ -750,7 +752,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
               step="5"
               value={Math.round((appearance.terminalOpacity ?? 0.65) * 100)}
               disabled={!appearance.terminalTransparent}
-              aria-label="页面底板不透明度"
+              aria-label={t("页面底板不透明度")}
               onChange={(event) =>
                 onChange((current) => ({
                   ...current,
@@ -840,7 +842,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
               </span>
               <div className="appearance-more-style-copy">
                 <strong>
-                  工作区开始页
+                  {t("工作区开始页")}
                   {isStartStyleCreative && <em>创意中</em>}
                 </strong>
                 <small>{currentStartStyleOption.hint}</small>
@@ -868,7 +870,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                     }
                   >
                     <StartStylePillSwatch style={option.id} />
-                    <span>{option.label}</span>
+                    <span>{t(option.label)}</span>
                   </button>
                 );
               })}
@@ -884,7 +886,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
               </span>
               <div className="appearance-more-style-copy">
                 <strong>
-                  项目管理
+                  {t("项目管理")}
                   {isProjectStyleCreative && <em>创意中</em>}
                 </strong>
                 <small>{currentProjectStyleOption.hint}</small>
@@ -912,7 +914,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                     }
                   >
                     <ProjectStylePillSwatch style={option.id} />
-                    <span>{option.label}</span>
+                    <span>{t(option.label)}</span>
                   </button>
                 );
               })}
@@ -952,7 +954,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                         aria-pressed={selected}
                         onClick={() => mod.onSelect(opt.id)}
                       >
-                        {opt.label}
+                        {t(opt.label)}
                       </button>
                     );
                   })}

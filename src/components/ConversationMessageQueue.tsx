@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useState } from "react";
 import { ArrowBendDownRight, DotsThree, Trash } from "@phosphor-icons/react";
 import type { AgentProfile, ConversationMessage } from "../types";
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function ConversationMessageQueue({ messages, members, steerableRuns, disabled, discussing, onUpdate, onResume, onSteer }: Props) {
+  const t = useTranslation();
   const [editing, setEditing] = useState<{ message: ConversationMessage; body: string }>();
   const [menuId, setMenuId] = useState<string>();
   const activeEditing = editing && messages.some(message => message.id === editing.message.id) ? editing : undefined;
@@ -39,10 +41,10 @@ export function ConversationMessageQueue({ messages, members, steerableRuns, dis
             </div>
             <div className="conversation-queue-actions">
               {message.status === "needs_decision"
-                ? <button type="button" disabled={disabled || discussing} onClick={() => onResume(message)}>继续发送</button>
+                ? <button type="button" disabled={disabled || discussing} onClick={() => onResume(message)}>{t("继续发送")}</button>
                 : <button type="button" disabled={disabled || !runId || uncertain}
                     title={runId ? "将消息交给该成员正在处理的这一轮" : "当前仅支持向正在回复的 Codex 成员引导纯文本"}
-                    onClick={() => { if (runId) onSteer(message, runId); }}><ArrowBendDownRight size={15} aria-hidden="true" />引导</button>}
+                    onClick={() => { if (runId) onSteer(message, runId); }}><ArrowBendDownRight size={15} aria-hidden="true" />{t("引导")}</button>}
               <button type="button" aria-label="移除排队消息" title="移除排队消息" disabled={disabled}
                 onClick={() => void onUpdate(message)}><Trash size={15} aria-hidden="true" /></button>
               <button type="button" aria-label="排队消息操作" aria-expanded={menuId === message.id} disabled={disabled || uncertain}
@@ -54,7 +56,7 @@ export function ConversationMessageQueue({ messages, members, steerableRuns, dis
               const held = await onUpdate(message, undefined, true);
               if (held) setEditing({ message: held, body: held.body });
               setMenuId(undefined);
-            }}>编辑消息</button>
+            }}>{t("编辑消息")}</button>
           </div>}
           {activeEditing?.message.id === message.id && <form className="conversation-queue-edit" onSubmit={async event => {
             event.preventDefault();
@@ -65,8 +67,8 @@ export function ConversationMessageQueue({ messages, members, steerableRuns, dis
             <div className="conversation-queue-edit-actions">
               <button type="button" disabled={disabled} onClick={async () => {
                 if (message.updatedAt !== activeEditing.message.updatedAt || await onUpdate(message, undefined, false)) setEditing(undefined);
-              }}>取消</button>
-              <button type="submit" disabled={disabled || (!activeEditing.body.trim() && !message.attachments?.length)}>保存</button>
+              }}>{t("取消")}</button>
+              <button type="submit" disabled={disabled || (!activeEditing.body.trim() && !message.attachments?.length)}>{t("保存")}</button>
             </div>
           </form>}
         </li>;

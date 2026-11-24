@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { terminalShells, shellLabel } from "../platform";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { useEffect, useRef, useState } from "react";
@@ -137,6 +138,7 @@ interface Props extends Pick<ComponentProps<typeof SessionList>, "onOpenProject"
 }
 
 export function AppSidebar(props: Props) {
+  const t = useTranslation();
   const { isRuntimeEnabled } = useRuntimeAvailability();
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
@@ -210,8 +212,8 @@ export function AppSidebar(props: Props) {
           <button
             ref={toolsButtonRef}
             type="button"
-            aria-label="更多工具"
-            title="更多工具"
+            aria-label={t("更多工具")}
+            title={t("更多工具")}
             aria-haspopup="menu"
             aria-expanded={toolsMenuOpen}
             onClick={() => {
@@ -228,19 +230,19 @@ export function AppSidebar(props: Props) {
           </button>
           <button
             type="button"
-            aria-label="收起侧栏"
-            title="收起侧栏"
+            aria-label={t("收起侧栏")}
+            title={t("收起侧栏")}
             onClick={props.onCollapse}
           >
             <SidebarSimpleIcon size={18} />
           </button>
-          <span className="unified-sidebar-view-switch" aria-label="视图切换">
+          <span className="unified-sidebar-view-switch" aria-label={t("视图切换")}>
             <button
               className={props.viewFocused ? "active" : ""}
               type="button"
               disabled={props.viewSwitchDisabled}
-              aria-label="聚焦"
-              title="聚焦"
+              aria-label={t("聚焦")}
+              title={t("聚焦")}
               aria-pressed={props.viewFocused}
               onClick={props.onFocusView}
             >
@@ -251,8 +253,8 @@ export function AppSidebar(props: Props) {
             <button
               className={props.viewFocused ? "" : "active"}
               type="button"
-              aria-label="总览"
-              title="总览"
+              aria-label={t("总览")}
+              title={t("总览")}
               aria-pressed={!props.viewFocused}
               onClick={props.onOverviewView}
             >
@@ -283,17 +285,17 @@ export function AppSidebar(props: Props) {
           }}
         >
           <span className="sidebar-new-session-icon" aria-hidden="true"><PlusIcon size={12} weight="bold" /></span>
-          <span>新建会话</span>
+          <span>{t("新建会话")}</span>
         </button>
       </div>
       {newMenuOpen && !toolsMenuOpen && <div className="menu-backdrop" onClick={closeToolsMenus} />}
-      <nav className="unified-sidebar-nav" aria-label="主导航">
+      <nav className="unified-sidebar-nav" aria-label={t("主导航")}>
         <div className="unified-sidebar-nav-head">
-          <span>快捷入口</span>
+          <span>{t("快捷入口")}</span>
           <button
             type="button"
-            aria-label="自定义快捷入口"
-            title="自定义快捷入口"
+            aria-label={t("自定义快捷入口")}
+            title={t("自定义快捷入口")}
             aria-expanded={shortcutsMenuOpen}
             onClick={() => setShortcutsMenuOpen((current) => !current)}
           >
@@ -315,7 +317,7 @@ export function AppSidebar(props: Props) {
               ) : (
                 <GearSixIcon size={17} />
               )}
-              <span>{option.label}</span>
+              <span>{t(option.label)}</span>
             </button>
           );
         })}
@@ -328,20 +330,20 @@ export function AppSidebar(props: Props) {
             <div
               className="sidebar-shortcut-picker"
               role="group"
-              aria-label="自定义快捷入口"
+              aria-label={t("自定义快捷入口")}
             >
               <header className="sidebar-shortcut-picker-head">
-                <strong>显示哪些设置入口</strong>
+                <strong>{t("显示哪些设置入口")}</strong>
                 <button type="button" onClick={resetShortcuts}>
-                  恢复默认
+                  {t("恢复默认")}
                 </button>
               </header>
               <p className="sidebar-shortcut-picker-hint">
-                勾选后显示在左侧栏，全部取消即全部隐藏。
+                {t("勾选后显示在左侧栏，全部取消即全部隐藏。")}
               </p>
               {(["通用", "智能体", "集成", "数据"] as const).map((group) => (
                 <div className="sidebar-shortcut-picker-group" key={group}>
-                  <span>{group}</span>
+                  <span>{t(group)}</span>
                   {SIDEBAR_SHORTCUT_OPTIONS.filter(
                     (option) => option.group === group,
                   ).map((option) => (
@@ -351,7 +353,7 @@ export function AppSidebar(props: Props) {
                         checked={shortcuts.includes(option.id)}
                         onChange={() => toggleShortcut(option.id)}
                       />
-                      <span>{option.label}</span>
+                      <span>{t(option.label)}</span>
                     </label>
                   ))}
                 </div>
@@ -397,7 +399,7 @@ export function AppSidebar(props: Props) {
       <div className="unified-header-new-action">
         <div className="unified-new-action">
           {newMenuOpen && (
-              <div ref={newSessionMenuRef} id="sidebar-new-session-menu" className={`rail-new-menu unified-new-menu runtime-submenu${toolsMenuOpen ? "" : " direct-new-menu"}`} role="menu" aria-label="新建 Runtime 会话">
+              <div ref={newSessionMenuRef} id="sidebar-new-session-menu" className={`rail-new-menu unified-new-menu runtime-submenu${toolsMenuOpen ? "" : " direct-new-menu"}`} role="menu" aria-label={t("新建 Runtime 会话")}>
                 {isRuntimeEnabled("claude_code") && <button type="button" role="menuitem" onClick={() => runNewAction(props.onNewClaudeSession)}>
                   <img src={claudeIcon} alt="" aria-hidden="true" />
                   <span><strong>Claude Code</strong></span>
@@ -452,11 +454,11 @@ export function AppSidebar(props: Props) {
                 </button>)}
                 <button type="button" role="menuitem" onClick={() => runNewAction(props.onAddProject)}>
                   <FolderPlusIcon size={20} />
-                  <span><strong>项目</strong></span>
+                  <span><strong>{t("项目")}</strong></span>
                 </button>
                 {props.presets.length > 0 && (
                   <div className="rail-new-presets">
-                    <div className="rail-new-presets-head">预设</div>
+                    <div className="rail-new-presets-head">{t("预设")}</div>
                     {props.presets.filter(() => isRuntimeEnabled("claude_code")).map((preset) => {
                       const providerName = "Claude Code（本地配置）";
                       return (
@@ -480,7 +482,7 @@ export function AppSidebar(props: Props) {
                             type="button"
                             className="rail-new-preset-delete"
                             aria-label={`删除预设 ${preset.name}`}
-                            title="删除预设"
+                            title={t("删除预设")}
                             onClick={() => props.onDeletePreset(preset)}
                           >
                             <TrashIcon size={13} />
@@ -498,7 +500,7 @@ export function AppSidebar(props: Props) {
       <footer className="unified-sidebar-footer">
         <button className="unified-sidebar-settings-button" type="button" onClick={props.onOpenSettings}>
           <GearSixIcon size={17} />
-          <span>设置</span>
+          <span>{t("设置")}</span>
         </button>
         <SidebarAttention sessions={props.sessions} onOpenSession={props.onOpenAttentionSession} />
       </footer>
@@ -506,11 +508,11 @@ export function AppSidebar(props: Props) {
       {deleteRequest?.workspaceId === props.workspaceId && createPortal(
           <Modal overlayClassName="editor-overlay" className="confirm-dialog" ariaLabel="删除当前工作区全部会话" initialFocusRef={deleteCancelButton} closeOnOverlayClick onClose={() => setDeleteRequest(null)}>
             <div className="confirm-dialog-icon"><TrashIcon size={26} /></div>
-            <h2>删除当前工作区全部会话</h2>
+            <h2>{t("删除当前工作区全部会话")}</h2>
             <p>将删除「{props.workspaceName}」中的全部 {deleteRequest.sessionIds.length} 个会话，包含当前筛选中未显示的记录。此操作不可撤销。</p>
-            {!deleteScopeCurrent && <p role="alert">会话列表已变化，请取消并重新选择删除操作。</p>}
+            {!deleteScopeCurrent && <p role="alert">{t("会话列表已变化，请取消并重新选择删除操作。")}</p>}
             <div className="actions">
-              <button ref={deleteCancelButton} className="btn" onClick={() => setDeleteRequest(null)}>取消</button>
+              <button ref={deleteCancelButton} className="btn" onClick={() => setDeleteRequest(null)}>{t("取消")}</button>
               <button
                 className="btn danger-solid"
                 disabled={!deleteScopeCurrent || props.deleteAllDisabled}
@@ -521,7 +523,7 @@ export function AppSidebar(props: Props) {
                   props.onDeleteAll();
                 }}
               >
-                确认删除
+                {t("确认删除")}
               </button>
             </div>
           </Modal>, document.body

@@ -23,7 +23,7 @@ test("多智能体、项目文件和 Git 统一进入右侧栏页签", () => {
 });
 
 test("标题栏开关恢复最近使用的右侧页签", () => {
-  assert.match(tabs, /aria-label="切换右侧栏"/);
+  assert.match(tabs, /aria-label=\{t\("切换右侧栏"\)\}/);
   assert.match(app, /lastRightSidebarTab/);
   assert.match(app, /RIGHT_SIDEBAR_TAB_STORAGE_KEY/);
   assert.match(app, /closeRightSidebar/);

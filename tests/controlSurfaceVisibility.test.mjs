@@ -12,14 +12,14 @@ test('多智能体入口只挂载一个公共协作会话，不再混合普通�
 });
 test('聊天和任务视图独立，读写采用独立协作IPC而非总控解释',()=>{
  for(const command of ['ma_conversation_snapshot','ma_conversation_send','ma_conversation_interrupt','ma_conversation_control','ma_conversation_execute_plan']) assert.ok(control.includes(command),command);
- assert.match(control,/role="tablist" aria-label="协作视图"/);
+ assert.match(control,/role="tablist" aria-label=\{t\("协作视图"\)\}/);
  assert.match(control,/<ConversationTaskView/);
  assert.match(control,/requestPlan \? "execution_plan" : "discussion"/);
  assert.doesNotMatch(control,/control_interpret|ma_interpret_message|optimize_prompt|自动批准/);
 });
 test('接收对象仅为本项目具体成员，任务详情和人工处理仍可访问',()=>{
  assert.match(control,/agent\.projectId === projectId && agent\.enabled/);
- assert.match(control,/aria-label="选择参与成员"/);
+ assert.match(control,/aria-label=\{t\("选择参与成员"\)\}/);
  assert.match(control,/onOpenProjectSettings\?\.\(projectId, "tasks"\)/);
  assert.match(settings,/ariaLabel="协作任务详情"/);
  assert.match(taskDetails,/<UnverifiedRunNotice/);

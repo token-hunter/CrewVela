@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { Switch } from "./ui/Switch";
 import { Modal } from "./ui/Modal";
@@ -127,6 +128,7 @@ export function SettingsDialog({
   initialCollaborationProjectId,
   initialCollaborationTasksRequest,
 }: Props) {
+  const t = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     String(initialSection) === "mcp" ? "generalSettings" : initialSection,
   );
@@ -340,8 +342,8 @@ export function SettingsDialog({
       labelledBy="settings-dialog-title"
     >
         <header className="settings-window-header">
-          <span id="settings-dialog-title">设置</span>
-          <button type="button" className="dialog-close" aria-label="关闭设置" onClick={onClose}>
+          <span id="settings-dialog-title">{t("设置")}</span>
+          <button type="button" className="dialog-close" aria-label={t("关闭设置")} onClick={onClose}>
             <XIcon size={18} aria-hidden="true" />
           </button>
         </header>
@@ -352,16 +354,16 @@ export function SettingsDialog({
               type="search"
               value={navQuery}
               onChange={(event) => setNavQuery(event.target.value)}
-              placeholder="搜索设置"
-              aria-label="搜索设置"
+              placeholder={t("搜索设置")}
+              aria-label={t("搜索设置")}
             />
           </label>
-          <nav className="settings-nav-list" aria-label="设置分类">
+          <nav className="settings-nav-list" aria-label={t("设置分类")}>
             {settingsNavGroups.map((group) => {
               const items = group.items.filter(
                 (item) =>
                   !normalizedNavQuery ||
-                  `${item.label} ${item.keywords}`
+                  `${t(item.label)} ${item.label} ${item.keywords}`
                     .toLocaleLowerCase()
                     .includes(normalizedNavQuery),
               );
@@ -369,13 +371,13 @@ export function SettingsDialog({
               return (
                 <section className="settings-nav-group" key={group.label}>
                   <span className="settings-nav-group-label">
-                    {group.label}
+                    {t(group.label)}
                   </span>
                   {items.map((item) => (
                     <button
                       type="button"
                       className={`settings-nav-item${activeSection === item.id ? " active" : ""}`}
-                      aria-label={item.label}
+                      aria-label={t(item.label)}
                       aria-current={
                         activeSection === item.id ? "page" : undefined
                       }
@@ -385,7 +387,7 @@ export function SettingsDialog({
                       <span className="settings-nav-icon" aria-hidden="true">
                         {item.icon}
                       </span>
-                      <span className="settings-nav-label">{item.label}</span>
+                      <span className="settings-nav-label">{t(item.label)}</span>
                     </button>
                   ))}
                 </section>
@@ -395,11 +397,11 @@ export function SettingsDialog({
               settingsNavGroups.every((group) =>
                 group.items.every(
                   (item) =>
-                    !`${item.label} ${item.keywords}`
+                    !`${t(item.label)} ${item.label} ${item.keywords}`
                       .toLocaleLowerCase()
                       .includes(normalizedNavQuery),
                 ),
-              ) && <p className="settings-search-empty">没有匹配的设置</p>}
+              ) && <p className="settings-search-empty">{t("没有匹配的设置")}</p>}
           </nav>
         </aside>
 
@@ -410,13 +412,13 @@ export function SettingsDialog({
           >
             {activeSection !== "skills" && activeSection !== "git" && activeSection !== "companionship" && activeSection !== "sharedMemory" && (activeSection !== "automation" || automationEditing) && <div className="dialog-heading settings-heading">
                 <div>
-                  <h2 id="settings-title">{activeSection === "automation" && automationEditing ? automationEditing === "edit" ? "编辑定时任务" : "创建自动化" : sectionCopy.title}</h2>
-                  {!(activeSection === "automation" && automationEditing) && <p>{sectionCopy.description}</p>}
+                  <h2 id="settings-title">{t(activeSection === "automation" && automationEditing ? automationEditing === "edit" ? "编辑定时任务" : "创建自动化" : sectionCopy.title)}</h2>
+                  {!(activeSection === "automation" && automationEditing) && <p>{t(sectionCopy.description)}</p>}
                 </div>
               <div className="settings-heading-actions">
                 {activeSection === "generalSettings" && (
                   <SettingsStyleMenu
-                    label="常规页面模式"
+                    label={t("常规页面模式")}
                     value={resolveGeneralSettingsStyle(appearance)}
                     options={[
                       { id: "classic", label: "经典布局" },
@@ -430,7 +432,7 @@ export function SettingsDialog({
                 )}
                 {activeSection === "worktrees" && (
                   <SettingsStyleMenu
-                    label="Worktrees 页面模式"
+                    label={t("Worktrees 页面模式")}
                     value={resolveWorktreeSettingsStyle(appearance)}
                     options={[
                       { id: "classic", label: "极简细线流" },
@@ -444,7 +446,7 @@ export function SettingsDialog({
                 )}
                 {activeSection === "notifications" && (
                   <SettingsStyleMenu
-                    label="通知页面模式"
+                    label={t("通知页面模式")}
                     value={resolveNotificationSettingsStyle(appearance)}
                     options={[
                       { id: "classic", label: "经典列表" },
@@ -458,7 +460,7 @@ export function SettingsDialog({
                 )}
                 {activeSection === "browserControl" && (
                   <SettingsStyleMenu
-                    label="浏览器控制页面模式"
+                    label={t("浏览器控制页面模式")}
                     value={resolveBrowserControlSettingsStyle(appearance)}
                     options={[
                       { id: "classic", label: "经典布局" },
@@ -475,7 +477,7 @@ export function SettingsDialog({
                 )}
                 {activeSection === "archivedSessions" && (
                   <SettingsStyleMenu
-                    label="归档会话页面模式"
+                    label={t("归档会话页面模式")}
                     value={resolveArchivedSessionsSettingsStyle(appearance)}
                     options={[
                       { id: "classic", label: "经典列表" },
@@ -492,7 +494,7 @@ export function SettingsDialog({
                 )}
                 {activeSection === "privacy" && (
                   <SettingsStyleMenu
-                    label="隐私页面模式"
+                    label={t("隐私页面模式")}
                     value={resolvePrivacySettingsStyle(appearance)}
                     options={[
                       { id: "classic", label: "经典布局" },
@@ -517,11 +519,11 @@ export function SettingsDialog({
                       childrenPosition="before"
                     >
                       <span>
-                        跟随系统
+                        {t("跟随系统")}
                         <small>
                           {resolveBaseTheme(resolvedAppearanceTheme) === "light"
-                            ? "浅色"
-                            : "深色"}
+                            ? t("浅色")
+                            : t("深色")}
                         </small>
                       </span>
                     </Switch>

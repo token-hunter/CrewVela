@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { EmptyState } from "./ui/EmptyState";
@@ -136,6 +137,7 @@ export function GitSourceControlPanel({
   onClose,
   preview = false,
 }: Props) {
+  const t = useTranslation();
   const { isRuntimeEnabled, error: runtimeError } = useRuntimeAvailability();
   const [agentProjects, setAgentProjects] = useState<MultiAgentProject[]>([]);
   const [agentSnapshots, setAgentSnapshots] = useState<MultiAgentSnapshot[]>([]);
@@ -596,7 +598,7 @@ export function GitSourceControlPanel({
               <ArrowClockwise size={15} className={busy ? "spin" : ""} />
             </button>
             {onClose && (
-              <button type="button" aria-label="关闭源代码控制" title="关闭" onClick={onClose}>
+              <button type="button" aria-label="关闭源代码控制" title={t("关闭")} onClick={onClose}>
                 <X size={15} />
               </button>
             )}
@@ -792,7 +794,7 @@ export function GitSourceControlPanel({
                 </div>
               )}
               <footer>
-                <button type="button" className="btn" onClick={() => setMergeDialogOpen(false)}>取消</button>
+                <button type="button" className="btn" onClick={() => setMergeDialogOpen(false)}>{t("取消")}</button>
                 <button
                   type="button"
                   className="btn primary"
@@ -829,7 +831,7 @@ export function GitSourceControlPanel({
     <div className="git-workbench">
       <div className="git-command-bar">
         <label>
-          <span>工作区</span>
+          <span>{t("工作区")}</span>
           <select value={selectedWorkspaceId ?? ""} onChange={(event) => setSelectedWorkspaceId(event.target.value)}>
             {workspaces.map((workspace) => <option value={workspace.id} key={workspace.id}>{workspace.label} · {workspace.detail}</option>)}
           </select>
@@ -859,7 +861,7 @@ export function GitSourceControlPanel({
 
       <div className="git-workbench-grid">
         <aside className="git-workspace-rail">
-          <header><span>工作区</span><em>{workspaces.length}</em></header>
+          <header><span>{t("工作区")}</span><em>{workspaces.length}</em></header>
           <div className="git-workspace-list">
             {workspaces.map((workspace) => (
               <button
@@ -1067,6 +1069,7 @@ export function GitSettingsPanel({
   onViewStyleChange?: (next: GitSettingsStyle) => void;
   onOpenAppearanceSettings?: () => void;
 } = {}) {
+  const t = useTranslation();
   const [settings, setSettings] = useState<GitSettings>(DEFAULT_SETTINGS);
   const [savedSnapshot, setSavedSnapshot] = useState<GitSettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1159,8 +1162,8 @@ export function GitSettingsPanel({
     <div className="git-settings-only">
       <div className="dialog-heading settings-heading git-settings-heading">
         <div>
-          <h2 id="settings-title">Git 设置</h2>
-          <p>配置分支、比较基准、提交信息和安全同步策略。</p>
+          <h2 id="settings-title">{t("Git 设置")}</h2>
+          <p>{t("配置分支、比较基准、提交信息和安全同步策略。")}</p>
         </div>
         <div className="settings-heading-actions git-settings-actions">
           {onViewStyleChange && (
@@ -1174,7 +1177,7 @@ export function GitSettingsPanel({
           )}
           {!loading && !savedSnapshot && (
             <button type="button" className="btn" onClick={() => setReload((value) => value + 1)}>
-              重新读取
+              {t("重新读取")}
             </button>
           )}
           {dirty && (

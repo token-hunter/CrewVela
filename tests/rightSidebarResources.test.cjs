@@ -22,6 +22,7 @@ for (const platform of ['Win32', 'MacIntel']) test(`${platform} 开始页完整�
   const opened = [];
   const scope = {
     ...platformModule(platform),
+    useTranslation: () => source => source,
     React: { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }) },
     FolderSimpleIcon: 'folder', TerminalIcon: 'terminal', GlobeIcon: 'globe',
     GitBranchIcon: 'git-branch', RobotIcon: 'robot', HouseIcon: 'house', CaretRightIcon: 'caret-right',
@@ -141,7 +142,9 @@ for (const platform of ['Win32', 'MacIntel']) test(`${platform} 新建菜单自�
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(js, { exports: module.exports, require: name => name === 'react'
     ? { useRef: () => ({ current: null }), useEffect: effect => effects.push(effect) }
-    : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === '../platform' ? platformModule(platform) : {}, document: {} });
+    : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx }
+    : name === '../useInterfaceLanguage' ? { useTranslation: () => source => source }
+    : name === '../platform' ? platformModule(platform) : {}, document: {} });
   const root = module.exports.RightSidebarActivityBar({ activeTab: 'start', tabs: [{ id: 'start', label: '开始' }], menuOpen: true,
     hasWorkspace: false, onMenuChange: open => menuChanges.push(open) });
   effects.forEach(effect => effect()); assert.deepEqual(focus, ['first-enabled']);

@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { BellRingingIcon, CheckIcon, TrashIcon } from "@phosphor-icons/react";
@@ -60,6 +61,7 @@ function NotificationHistoryView({ records, onReadAll, onClear, onOpenUrl }: {
   onClear: () => void;
   onOpenUrl: (url: string) => void;
 }) {
+  const t = useTranslation();
   const [categoryFilter, setCategoryFilter] = useState<"all" | NotificationHistoryRecord["category"]>("all");
   const filteredRecords = categoryFilter === "all"
     ? records
@@ -68,7 +70,7 @@ function NotificationHistoryView({ records, onReadAll, onClear, onOpenUrl }: {
   return (
     <section className="notification-history-panel">
       <header>
-        <div><strong>通知历史</strong><small>完整消息持久化保存在本机，默认保留30天。</small></div>
+        <div><strong>{t("通知历史")}</strong><small>完整消息持久化保存在本机，默认保留30天。</small></div>
         <div>
           <button className="btn ghost" disabled={!records.some((item) => !item.read)} onClick={onReadAll}><CheckIcon size={14} />全部已读</button>
           <button className="btn ghost" disabled={records.length === 0} onClick={onClear}><TrashIcon size={14} />清空记录</button>
@@ -95,7 +97,7 @@ function NotificationHistoryView({ records, onReadAll, onClear, onOpenUrl }: {
         </div>
       )}
       {records.length === 0 ? (
-        <EmptyState className="notification-history-empty" icon={<BellRingingIcon size={24} />} title="暂无通知" description="任务状态和测试通知会显示在这里。" />
+        <EmptyState className="notification-history-empty" icon={<BellRingingIcon size={24} />} title={t("暂无通知")} description="任务状态和测试通知会显示在这里。" />
       ) : filteredRecords.length === 0 ? (
         <EmptyState className="notification-history-empty" icon={<BellRingingIcon size={24} />} title="该分类下暂无通知" description="切换到“全部”可查看其他类别的历史通知。" />
       ) : (
@@ -120,6 +122,7 @@ function NotificationHistoryView({ records, onReadAll, onClear, onOpenUrl }: {
 const EQ_BAR_WEIGHTS = [0.46, 0.72, 0.58, 0.92, 0.68, 0.86, 0.52, 0.96, 0.76, 0.62, 0.88, 0.7, 0.54, 0.42];
 
 export function NotificationSettingsPanel({ settings, onChange, viewStyle = "classic" }: Props) {
+  const t = useTranslation();
   const [activeView, setActiveView] = useState<NotificationSettingsView>("notifications");
   const [history, setHistory] = useState<NotificationHistoryRecord[]>([]);
   const [feedback, setFeedback] = useState<{ error: boolean; text: string } | null>(null);
@@ -170,8 +173,8 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
   return (
     <div className="notification-settings-panel">
       <div className="notification-view-tabs" role="tablist" aria-label="通知功能">
-        <button type="button" role="tab" aria-selected={activeView === "notifications"} className={activeView === "notifications" ? "active" : ""} onClick={() => setActiveView("notifications")}>通知设置</button>
-        <button type="button" role="tab" aria-selected={activeView === "history"} className={activeView === "history" ? "active" : ""} onClick={() => setActiveView("history")}>通知历史{unreadCount > 0 && <span className="notification-unread-count">{unreadCount}</span>}</button>
+        <button type="button" role="tab" aria-selected={activeView === "notifications"} className={activeView === "notifications" ? "active" : ""} onClick={() => setActiveView("notifications")}>{t("通知设置")}</button>
+        <button type="button" role="tab" aria-selected={activeView === "history"} className={activeView === "history" ? "active" : ""} onClick={() => setActiveView("history")}>{t("通知历史")}{unreadCount > 0 && <span className="notification-unread-count">{unreadCount}</span>}</button>
       </div>
 
       {feedback && <p role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
@@ -240,7 +243,7 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
               <div className="noti-fader-row">
                 <span>提示音通道</span>
                 <select
-                  aria-label="通知声音"
+                  aria-label={t("通知声音")}
                   value={settings.sound}
                   disabled={!settings.enabled}
                   onChange={(event) => update({ sound: event.target.value as NotificationSettings["sound"] })}
@@ -253,7 +256,7 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
               </div>
               <div className="noti-fader-row">
                 <span>音量推子</span>
-                <strong>{settings.sound === "none" ? "静音" : settings.sound === "system" ? "跟随系统" : `${settings.volume}%`}</strong>
+                <strong>{settings.sound === "none" ? "静音" : settings.sound === "system" ? t("跟随系统") : `${settings.volume}%`}</strong>
               </div>
               <input
                 aria-label="通知音量"
@@ -345,7 +348,7 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
         </section>
 
         <section className="notification-card notification-sound-card">
-          <div><strong>通知声音</strong><small>选择 CrewVela 弹出通知时播放的提示音。</small></div>
+          <div><strong>{t("通知声音")}</strong><small>选择 CrewVela 弹出通知时播放的提示音。</small></div>
           <div className="notification-controls">
             <select value={settings.sound} disabled={!settings.enabled} onChange={(event) => update({ sound: event.target.value as NotificationSettings["sound"] })}>
               <option value="system">系统默认</option><option value="soft">柔和双音</option><option value="bell">清脆铃声</option><option value="none">静音</option>

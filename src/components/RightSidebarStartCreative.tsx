@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
 import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
@@ -46,6 +47,7 @@ export function RightSidebarStartStyleCorner({
   onStartStyleChange: (style: RightSidebarStartStyle) => void;
   onOpenAppearanceSettings?: () => void;
 }) {
+  const t = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -70,8 +72,8 @@ export function RightSidebarStartStyleCorner({
   return (
     <div className="rs-start-diy-corner" ref={rootRef}>
       {open && (
-        <div className="rs-start-diy-popover" role="menu" aria-label="切换开始页模式">
-          <div className="rs-start-diy-popover-title">开始页模式</div>
+        <div className="rs-start-diy-popover" role="menu" aria-label={t("切换开始页模式")}>
+          <div className="rs-start-diy-popover-title">{t("开始页模式")}</div>
           {START_STYLE_MENU.map((option) => {
             const active = startStyle === option.id;
             return (
@@ -86,7 +88,7 @@ export function RightSidebarStartStyleCorner({
                   setOpen(false);
                 }}
               >
-                <span>{option.label}</span>
+                <span>{t(option.label)}</span>
                 {active && <CheckIcon size={13} weight="bold" aria-hidden="true" />}
               </button>
             );
@@ -103,7 +105,7 @@ export function RightSidebarStartStyleCorner({
                   onOpenAppearanceSettings();
                 }}
               >
-                <span>前往「外观」设置</span>
+                <span>{t("前往「外观」设置")}</span>
                 <span aria-hidden="true">↗</span>
               </button>
             </>
@@ -113,14 +115,14 @@ export function RightSidebarStartStyleCorner({
       <button
         type="button"
         className="rs-start-diy-trigger"
-        aria-label="切换开始页模式"
-        title="切换开始页模式"
+        aria-label={t("切换开始页模式")}
+        title={t("切换开始页模式")}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
         <PaletteIcon size={13} aria-hidden="true" />
-        <span>模式</span>
+        <span>{t("模式")}</span>
       </button>
     </div>
   );
@@ -139,6 +141,7 @@ export function RightSidebarStartCreative({
   onStartStyleChange?: (style: RightSidebarStartStyle) => void;
   onOpenAppearanceSettings?: () => void;
 }) {
+  const t = useTranslation();
   const defaultShell = terminalShells()[0];
   const tools: StartToolEntry[] = [
     {
@@ -304,7 +307,7 @@ export function RightSidebarStartCreative({
     return (
       <nav
         className={`right-sidebar-start right-sidebar-start--lamp${lampOn ? " is-lights-on" : " is-lights-off"}`}
-        aria-label="工作区工具"
+        aria-label={t("工作区工具")}
         data-workspace-root={root ?? undefined}
         data-start-style="lamp"
       >
@@ -340,8 +343,8 @@ export function RightSidebarStartCreative({
             role="button"
             tabIndex={0}
             aria-pressed={lampOn}
-            aria-label={lampOn ? "拉绳熄灯" : "拉绳开灯"}
-            title={lampOn ? "点击或下拉熄灯" : "点击或下拉开灯"}
+            aria-label={lampOn ? t("拉绳熄灯") : t("拉绳开灯")}
+            title={lampOn ? t("点击或下拉熄灯") : t("点击或下拉开灯")}
             onPointerDown={handleCordPointerDown}
             onPointerMove={handleCordPointerMove}
             onPointerUp={(event) => finishCordDrag(event.clientY)}
@@ -363,12 +366,12 @@ export function RightSidebarStartCreative({
                 key={item.key}
                 type="button"
                 disabled={item.disabled}
-                title={item.title}
+                title={t(item.title)}
                 onMouseEnter={() => setBeamShift((index - 2) * 3.2)}
                 onClick={() => onOpenTool(item.tool)}
               >
                 <i className="right-sidebar-start-icon" aria-hidden="true">{item.icon}</i>
-                <span>{item.label}</span>
+                <span>{t(item.label)}</span>
                 <i className="right-sidebar-start-arrow-pill" aria-hidden="true">
                   <CaretRightIcon className="right-sidebar-start-arrow" size={14} />
                 </i>
@@ -377,7 +380,7 @@ export function RightSidebarStartCreative({
           </div>
 
           <div className="rs-lamp-status" aria-live="polite">
-            {lampOn ? "已开灯 · 下拉拉绳熄灯" : "已关灯 · 下拉拉绳开灯"}
+            {lampOn ? t("已开灯 · 下拉拉绳熄灯") : t("已关灯 · 下拉拉绳开灯")}
           </div>
         </div>
         {corner}
@@ -402,7 +405,7 @@ export function RightSidebarStartCreative({
           type="button"
           className="rs-hanger-btn"
           disabled={item.disabled}
-          title={item.title}
+          title={t(item.title)}
           onClick={() => onOpenTool(item.tool)}
         >
           <svg className="rs-hanger-svg" width="74" height="40" viewBox="0 0 74 40" fill="none" aria-hidden="true">
@@ -412,7 +415,7 @@ export function RightSidebarStartCreative({
           </svg>
           <span className="rs-hanger-tag">
             <i className="right-sidebar-start-icon rs-hanger-icon" style={{ color: item.accentColor }} aria-hidden="true">{item.icon}</i>
-            <span className="rs-hanger-label">{item.label}</span>
+            <span className="rs-hanger-label">{t(item.label)}</span>
             <em className="rs-hanger-code">{item.disabled ? "LOCKED" : item.code}</em>
           </span>
         </button>
@@ -422,7 +425,7 @@ export function RightSidebarStartCreative({
     return (
       <nav
         className={`right-sidebar-start right-sidebar-start--clothesline${breezeOn ? " is-breeze-on" : ""}`}
-        aria-label="工作区工具"
+        aria-label={t("工作区工具")}
         data-workspace-root={root ?? undefined}
         data-start-style="clothesline"
       >
@@ -468,7 +471,7 @@ export function RightSidebarStartCreative({
   return (
     <nav
       className="right-sidebar-start right-sidebar-start--cassette"
-      aria-label="工作区工具"
+      aria-label={t("工作区工具")}
       data-workspace-root={root ?? undefined}
       data-start-style="cassette"
     >
@@ -488,7 +491,7 @@ export function RightSidebarStartCreative({
                 className={`rs-tape-item${playing ? " is-playing" : ""}`}
                 style={{ "--rs-tape-accent": item.accentColor } as CSSProperties}
                 disabled={item.disabled}
-                title={item.title}
+                title={t(item.title)}
                 onClick={() => {
                   setLoadedTape(item.key);
                   onOpenTool(item.tool);
@@ -500,10 +503,10 @@ export function RightSidebarStartCreative({
                 </i>
                 <span className="rs-tape-copy">
                   <strong>
-                    {item.label}
+                    {t(item.label)}
                     <em>A·{item.num}</em>
                   </strong>
-                  <small>{item.disabled ? "打开工作区后可用" : item.title}</small>
+                  <small>{item.disabled ? t("打开工作区后可用") : t(item.title)}</small>
                 </span>
                 <span className="rs-tape-spools" aria-hidden="true">
                   <i />
@@ -530,7 +533,7 @@ export function RightSidebarStartCreative({
           </div>
           <div className="rs-walkman-readout">
             <em>▶ DECK LOADED</em>
-            <strong>{activeTape.label} · {activeTape.code}</strong>
+            <strong>{t(activeTape.label)} · {activeTape.code}</strong>
           </div>
         </div>
       </div>

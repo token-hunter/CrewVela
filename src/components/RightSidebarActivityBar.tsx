@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
@@ -46,6 +47,7 @@ function ResourceIcon({ id }: { id: string }) {
   return <HouseIcon size={16} />;
 }
 export function RightSidebarActivityBar(props: Props) {
+  const t = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const addRef = useRef<HTMLButtonElement>(null);
   const isCollaboration = sidebarTabKind(props.activeTab) === "multi_agent";
@@ -60,7 +62,7 @@ export function RightSidebarActivityBar(props: Props) {
     <header className="right-sidebar-activity-bar" onKeyDown={event => {
       if (props.menuOpen && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMenu(); }
     }}>
-      <div className="right-sidebar-resource-tabs" role="tablist" aria-label="工作面板标签">
+      <div className="right-sidebar-resource-tabs" role="tablist" aria-label={t("工作面板标签")}>
         {props.tabs.map(tab => (
           <div className={`right-sidebar-resource-tab${props.activeTab === tab.id ? " selected" : ""}`} key={tab.id}>
             <button type="button" role="tab" aria-selected={props.activeTab === tab.id} title={tab.label}
@@ -71,16 +73,16 @@ export function RightSidebarActivityBar(props: Props) {
         ))}
       </div>
       <div className="right-sidebar-actions">
-        <button ref={addRef} type="button" aria-label="新建工作面板标签" title="新建标签" aria-expanded={props.menuOpen}
+        <button ref={addRef} type="button" aria-label={t("新建工作面板标签")} title={t("新建标签")} aria-expanded={props.menuOpen}
           aria-haspopup="menu" onClick={() => props.onMenuChange(!props.menuOpen)}><PlusIcon size={18} /></button>
         <button ref={props.modeButtonRef} type="button" aria-label={maximizeLabel}
           title={isCollaboration ? maximizeLabel : (props.maximized ? "恢复" : "最大化")} onClick={props.onToggleMaximize}>
           {props.maximized ? <CornersInIcon size={17} /> : <CornersOutIcon size={17} />}</button>
-        <button type="button" aria-label="收起工作面板" title="收起" onClick={props.onClose}><SidebarSimpleIcon size={17} /></button>
+        <button type="button" aria-label={t("收起工作面板")} title={t("收起")} onClick={props.onClose}><SidebarSimpleIcon size={17} /></button>
       </div>
       {props.menuOpen && <>
-        <button className="right-sidebar-menu-backdrop" aria-label="关闭新建标签菜单" onClick={closeMenu} />
-        <div ref={menuRef} className="right-sidebar-new-menu" role="menu" aria-label="新建标签" onKeyDown={event => {
+        <button className="right-sidebar-menu-backdrop" aria-label={t("关闭新建标签菜单")} onClick={closeMenu} />
+        <div ref={menuRef} className="right-sidebar-new-menu" role="menu" aria-label={t("新建标签")} onKeyDown={event => {
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
           event.preventDefault();
           const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
@@ -113,6 +115,7 @@ export function RightSidebarStart({
   onStartStyleChange?: (style: RightSidebarStartStyle) => void;
   onOpenAppearanceSettings?: () => void;
 }) {
+  const t = useTranslation();
   if (startStyle !== "minimal") {
     return (
       <RightSidebarStartCreative
@@ -125,13 +128,13 @@ export function RightSidebarStart({
     );
   }
   return (
-    <nav className="right-sidebar-start right-sidebar-start--minimal" aria-label="工作区工具" data-workspace-root={root ?? undefined} data-start-style="minimal">
+    <nav className="right-sidebar-start right-sidebar-start--minimal" aria-label={t("工作区工具")} data-workspace-root={root ?? undefined} data-start-style="minimal">
       <div className="right-sidebar-start-tools">
-        <button type="button" disabled={!root} title="浏览工作区文件" onClick={() => onOpenTool("files")}><i className="right-sidebar-start-icon" aria-hidden="true"><FolderSimpleIcon size={17} /></i><span>文件</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-        <button type="button" disabled={!root} title={`在当前工作区运行 ${shellLabel(terminalShells()[0])}`} onClick={() => onOpenTool(terminalShells()[0])}><i className="right-sidebar-start-icon" aria-hidden="true"><TerminalIcon size={17} /></i><span>终端</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-        <button type="button" title="打开网页或搜索内容" onClick={() => onOpenTool("browser")}><i className="right-sidebar-start-icon" aria-hidden="true"><GlobeIcon size={17} /></i><span>浏览器</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-        <button type="button" title="查看 Git 更改与提交记录" onClick={() => onOpenTool("git")}><i className="right-sidebar-start-icon" aria-hidden="true"><GitBranchIcon size={17} weight="regular" /></i><span>Git</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-        <button type="button" title="协调智能体任务与协作进度" onClick={() => onOpenTool("multi_agent")}><i className="right-sidebar-start-icon" aria-hidden="true"><RobotIcon size={17} /></i><span>多智能体</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" disabled={!root} title={t("浏览工作区文件")} onClick={() => onOpenTool("files")}><i className="right-sidebar-start-icon" aria-hidden="true"><FolderSimpleIcon size={17} /></i><span>{t("文件")}</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" disabled={!root} title={`在当前工作区运行 ${shellLabel(terminalShells()[0])}`} onClick={() => onOpenTool(terminalShells()[0])}><i className="right-sidebar-start-icon" aria-hidden="true"><TerminalIcon size={17} /></i><span>{t("终端")}</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" title={t("打开网页或搜索内容")} onClick={() => onOpenTool("browser")}><i className="right-sidebar-start-icon" aria-hidden="true"><GlobeIcon size={17} /></i><span>{t("浏览器")}</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" title={t("查看 Git 更改与提交记录")} onClick={() => onOpenTool("git")}><i className="right-sidebar-start-icon" aria-hidden="true"><GitBranchIcon size={17} weight="regular" /></i><span>Git</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" title={t("协调智能体任务与协作进度")} onClick={() => onOpenTool("multi_agent")}><i className="right-sidebar-start-icon" aria-hidden="true"><RobotIcon size={17} /></i><span>{t("多智能体")}</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
       </div>
       {onStartStyleChange && (
         <RightSidebarStartStyleCorner

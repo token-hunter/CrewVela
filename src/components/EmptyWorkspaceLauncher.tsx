@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { createPortal } from "react-dom";
 import { RuntimeManagementDialog } from "./RuntimeManagementDialog";
 import { open as openDirectory } from "@tauri-apps/plugin-dialog";
@@ -37,6 +38,7 @@ interface Props {
  * 先勾选工作目录，再从「选择 Agent」下拉里选一个，选完即在该目录开始会话。
  */
 export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange, onLaunch }: Props) {
+  const t = useTranslation();
   const { isRuntimeEnabled, ready, error } = useRuntimeAvailability();
   // 与启动弹窗和 Runtime 管理共用排序。
   const terminalPreferences = useRuntimeOrder(TERMINAL_AGENTS, NEW_SESSION_TERMINAL_ORDER_STORAGE_KEY);
@@ -181,8 +183,8 @@ export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange,
 
   return (
     <div className="empty-state">
-      <section ref={cardRef} className="ews-card" aria-label="新建会话">
-        <div className="ews-projects" role="radiogroup" aria-label="工作目录">
+      <section ref={cardRef} className="ews-card" aria-label={t("新建会话")}>
+        <div className="ews-projects" role="radiogroup" aria-label={t("工作目录")}>
           {projects.map((project) => (
             <label key={project.id} className="ews-row" title={project.path}>
               <input
@@ -207,7 +209,7 @@ export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange,
           )}
           <button type="button" className="ews-row is-other" disabled={picking} onClick={() => void pickDirectory()}>
             <FolderSimplePlusIcon size={16} aria-hidden="true" />
-            <span className="ews-row-label">{picking ? "正在选择目录…" : "选择其他目录…"}</span>
+            <span className="ews-row-label">{picking ? "正在选择目录…" : t("选择其他目录…")}</span>
           </button>
         </div>
         {directoryError && <div role="alert">{directoryError}</div>}
@@ -222,7 +224,7 @@ export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange,
           aria-controls={open ? "ews-agent-popover" : undefined}
           onClick={() => (open ? close(false) : setOpen(true))}
         >
-          <span>选择 Agent</span>
+          <span>{t("选择 Agent")}</span>
           <CaretDownIcon size={12} weight="bold" aria-hidden="true" />
         </button>
         {open && (
@@ -231,15 +233,15 @@ export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange,
             id="ews-agent-popover"
             className="ews-popover"
             role="dialog"
-            aria-label="选择 Agent"
+            aria-label={t("选择 Agent")}
             onKeyDown={onPopoverKeyDown}
           >
             <label className="ews-search">
               <MagnifyingGlassIcon size={14} aria-hidden="true" />
               <input
                 ref={searchRef}
-                aria-label="搜索 Agent"
-                placeholder="搜索 Agent"
+                aria-label={t("搜索 Agent")}
+                placeholder={t("搜索 Agent")}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
@@ -282,7 +284,7 @@ export function EmptyWorkspaceLauncher({ projects, directory, onDirectoryChange,
               }}
             >
               <GearSixIcon size={15} aria-hidden="true" />
-              <span className="ews-row-label">管理 Agent</span>
+              <span className="ews-row-label">{t("管理 Agent")}</span>
             </button>
           </div>
         )}

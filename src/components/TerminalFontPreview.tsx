@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { CanvasAddon } from "@xterm/addon-canvas";
@@ -30,6 +31,7 @@ function sampleLines(columns: number): string[] {
 }
 
 export function TerminalFontPreview({ fontFamily, fontSize, theme }: { fontFamily: string; fontSize: number; theme: AppTheme }) {
+  const t = useTranslation();
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const redraw = useRef<() => void>(() => {});
@@ -78,7 +80,7 @@ export function TerminalFontPreview({ fontFamily, fontSize, theme }: { fontFamil
     redraw.current();
   }, [family, size, theme]);
 
-  return <section className="terminal-font-preview" aria-label="终端字体预览">
+  return <section className="terminal-font-preview" aria-label={t("终端字体预览")}>
     <header><span>预览</span><small>保存后应用到终端</small></header>
     <div className="terminal-font-preview-sample">
       <div ref={host} aria-hidden="true" style={{ minHeight: Math.ceil(size * 1.18) * 4 }} />

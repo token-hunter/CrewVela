@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -89,6 +90,7 @@ function previewMessages(messages: HarnessChatMessage[], id: string, text: strin
 }
 
 export function DeepSeekHarnessChat({ session, preview = false, onSessionRecord, active = true, ...switchProps }: Props) {
+  const t = useTranslation();
   const emptyPreview = preview && (new URLSearchParams(window.location.search).get("harness") === "empty" || new URLSearchParams(window.location.search).get("chat") === "empty");
   const [snapshot, setSnapshot] = useState<HarnessSessionSnapshot | null>(preview ? emptyPreview ? { ...previewSnapshot, history: [], toolCalls: [], pendingPermission: null } : previewSnapshot : null);
   const [draft, setDraft] = useState("");
@@ -425,11 +427,11 @@ export function DeepSeekHarnessChat({ session, preview = false, onSessionRecord,
   };
 
   return (
-    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label="DeepSeek Harness 会话">
+    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label={t("DeepSeek Harness 会话")}>
       <header className="harness-chat-header">
-        <div className="harness-chat-controls"><span className="harness-workspace" title={session.cwd}><FolderSimple size={17} />工作目录：{session.cwd.split(/[\\/]/).filter(Boolean).pop() || session.cwd}</span><span className={`harness-connection${snapshot?.connected ? " connected" : ""}`}><i />{connecting ? "连接中" : snapshot?.connected ? "已连接" : "未连接"}</span>
-          {snapshot?.connected && !preview && <button type="button" onClick={() => void stop()}>停止会话</button>}
-          {!snapshot?.connected && !connecting && <button type="button" onClick={() => void connect()}>恢复会话</button>}
+        <div className="harness-chat-controls"><span className="harness-workspace" title={session.cwd}><FolderSimple size={17} />{t("工作目录：")}{session.cwd.split(/[\\/]/).filter(Boolean).pop() || session.cwd}</span><span className={`harness-connection${snapshot?.connected ? " connected" : ""}`}><i />{connecting ? t("连接中") : snapshot?.connected ? t("已连接") : t("未连接")}</span>
+          {snapshot?.connected && !preview && <button type="button" onClick={() => void stop()}>{t("停止会话")}</button>}
+          {!snapshot?.connected && !connecting && <button type="button" onClick={() => void connect()}>{t("恢复会话")}</button>}
         </div>
       </header>
       {preview && <div className="harness-chat-preview-banner">UI 预览：不会连接真实 Agent、调用模型或执行工具。可交互内容为演示数据。</div>}
@@ -446,7 +448,7 @@ export function DeepSeekHarnessChat({ session, preview = false, onSessionRecord,
 
         {messages.map((message) => <article className={`harness-message ${message.role}`} key={`${message.role}-${message.id}`}>
           <strong>{message.role === "user" ? "你" : "DeepSeek Harness"}</strong>
-          {message.reasoning && <details className="harness-reasoning" open={message.streamStatus === "streaming"}><summary>{message.streamStatus === "streaming" ? "正在思考" : "思考过程"}</summary><p>{message.reasoning}</p></details>}
+          {message.reasoning && <details className="harness-reasoning" open={message.streamStatus === "streaming"}><summary>{message.streamStatus === "streaming" ? "正在思考" : t("思考过程")}</summary><p>{message.reasoning}</p></details>}
           {(message.text || !message.reasoning) && <p>{message.text || "…"}</p>}
           {message.streamStatus && message.streamStatus !== "completed" && <small className="harness-stream-status">{({ streaming: "生成中…", interrupted: "已取消，显示部分内容", failed: "本次尝试失败", abandoned: "本次尝试未完成" } as Record<string, string>)[message.streamStatus]}</small>}
           {(message.attachments ?? []).map((file) => <div className="harness-attachment" key={file.uri} title={file.path}><Paperclip size={14} /> {file.name}</div>)}
@@ -458,25 +460,25 @@ export function DeepSeekHarnessChat({ session, preview = false, onSessionRecord,
           </article>)}
         </div>}
         {permission && <article className="harness-permission">
-          <strong>需要确认：{permission.toolCall.title ?? "工具调用"}</strong>
+          <strong>{t("需要确认：")}{permission.toolCall.title ?? "工具调用"}</strong>
           {permission.toolCall.rawInput !== undefined && <pre>{typeof permission.toolCall.rawInput === "string" ? permission.toolCall.rawInput : JSON.stringify(permission.toolCall.rawInput, null, 2)}</pre>}
-          <div><button type="button" onClick={() => void answerPermission(true)}>允许一次</button><button type="button" onClick={() => void answerPermission(false)}>拒绝</button></div>
+          <div><button type="button" onClick={() => void answerPermission(true)}>{t("允许一次")}</button><button type="button" onClick={() => void answerPermission(false)}>{t("拒绝")}</button></div>
         </article>}
-        {!connecting && !snapshot?.connected && <div className="harness-chat-info">会话已停止或未连接。点击“恢复会话”继续原会话。</div>}
+        {!connecting && !snapshot?.connected && <div className="harness-chat-info">{t("会话已停止或未连接。点击“恢复会话”继续原会话。")}</div>}
         <div ref={messagesEnd} />
       </div>
       {error && <pre className="harness-chat-error" role="alert">{error}</pre>}
       <form className="harness-chat-composer" onSubmit={(event) => void send(event)}>
         {commandMenu && <div className="harness-command-menu" role="menu" aria-label="Harness 命令">
-          <button type="button" role="menuitem" onClick={() => { setCommandMenu(false); void addFiles(); }}>文件 file <small>添加本地文件引用</small></button>
-          {(snapshot?.controlState?.commands ?? []).map((command) => <button type="button" role="menuitem" key={command.name} onClick={() => { setCommandMenu(false); if (command.name === "goal") beginGoal(); else { setGoalMode(false); setDraft(`/${command.name}`); } }}>{command.name === "goal" ? "目标" : "压缩"} {command.name}<small>{command.description}</small></button>)}
-          <div className="harness-skill-menu" aria-label="Harness 技能"><strong>技能 <span className="harness-skill-key-hint">↑↓ 选择 · Tab 补全</span></strong>{matchingSkills.map((skill, index) => <button type="button" role="menuitem" id={`harness-skill-${session.id}-${index}`} className={index === activeSkillIndex ? "harness-skill-active" : ""} key={skill.name} onMouseEnter={() => setActiveSkillIndex(index)} onClick={() => completeSkill(skill.name)}><span aria-hidden="true">✨</span><span className="harness-skill-name">/{skill.name}</span><small>{!skill.invocation.modelInvocable && "仅用户 · "}{skill.description}</small></button>)}{matchingSkills.length === 0 && <small>{snapshot?.controlState?.skills?.length ? "没有匹配技能" : "当前会话没有可供用户调用的技能"}</small>}</div>
+          <button type="button" role="menuitem" onClick={() => { setCommandMenu(false); void addFiles(); }}>{t("文件 file")} <small>{t("添加本地文件引用")}</small></button>
+          {(snapshot?.controlState?.commands ?? []).map((command) => <button type="button" role="menuitem" key={command.name} onClick={() => { setCommandMenu(false); if (command.name === "goal") beginGoal(); else { setGoalMode(false); setDraft(`/${command.name}`); } }}>{command.name === "goal" ? t("目标") : "压缩"} {command.name}<small>{command.description}</small></button>)}
+          <div className="harness-skill-menu" aria-label="Harness 技能"><strong>{t("技能")} <span className="harness-skill-key-hint">{t("↑↓ 选择 · Tab 补全")}</span></strong>{matchingSkills.map((skill, index) => <button type="button" role="menuitem" id={`harness-skill-${session.id}-${index}`} className={index === activeSkillIndex ? "harness-skill-active" : ""} key={skill.name} onMouseEnter={() => setActiveSkillIndex(index)} onClick={() => completeSkill(skill.name)}><span aria-hidden="true">✨</span><span className="harness-skill-name">/{skill.name}</span><small>{!skill.invocation.modelInvocable && "仅用户 · "}{skill.description}</small></button>)}{matchingSkills.length === 0 && <small>{snapshot?.controlState?.skills?.length ? "没有匹配技能" : "当前会话没有可供用户调用的技能"}</small>}</div>
         </div>}
         {attachments.length > 0 && <div className="harness-attachments">{attachments.map((path) => <button type="button" key={path} title={path} aria-label={`移除附件 ${path.split(/[\\/]/).pop()}`} onClick={() => setAttachments((current) => current.filter((item) => item !== path))}><Paperclip size={14} /><span>{path.split(/[\\/]/).pop()}</span><X size={12} /></button>)}</div>}
         <div className={invokedSkill ? "harness-composer-input harness-composer-input-command" : "harness-composer-input"}>
         {goalMode && <span className="harness-goal-prefix" aria-label="目标模式"><Target size={18} aria-hidden="true" />Goal</span>}
-        {invokedSkill && <span className="harness-input-command-chip" title={invokedSkill.description || invokedSkill.name} aria-label="已识别技能"><span aria-hidden="true">✨</span>/{invokedSkill.name}</span>}
-        <textarea ref={composerInput} aria-label="发送给 DeepSeek Harness" aria-controls={commandMenu ? `harness-skill-${session.id}-${activeSkillIndex}` : undefined} value={invokedSkill ? draftRemainder : draft} onChange={(event) => { const value = event.target.value; setBrowseAllSkills(false); setDraft(invokedSkill ? `/${invokedSkill.name} ${value}` : value); setCommandMenu(!goalMode && !invokedSkill && /^\/[^\s]*$/.test(value)); }} placeholder={goalMode || invokedSkill ? "" : "描述你想完成的任务，输入 / 调用技能…"} disabled={!snapshot?.connected || snapshot.busy || connecting || controlling} onKeyDown={(event) => {
+        {invokedSkill && <span className="harness-input-command-chip" title={invokedSkill.description || invokedSkill.name} aria-label={t("已识别技能")}><span aria-hidden="true">✨</span>/{invokedSkill.name}</span>}
+        <textarea ref={composerInput} aria-label={t("发送给 DeepSeek Harness")} aria-controls={commandMenu ? `harness-skill-${session.id}-${activeSkillIndex}` : undefined} value={invokedSkill ? draftRemainder : draft} onChange={(event) => { const value = event.target.value; setBrowseAllSkills(false); setDraft(invokedSkill ? `/${invokedSkill.name} ${value}` : value); setCommandMenu(!goalMode && !invokedSkill && /^\/[^\s]*$/.test(value)); }} placeholder={goalMode || invokedSkill ? "" : t("描述你想完成的任务，输入 / 调用技能…")} disabled={!snapshot?.connected || snapshot.busy || connecting || controlling} onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || event.keyCode === 229) return;
           if (commandMenu && activeSkill && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -494,26 +496,26 @@ export function DeepSeekHarnessChat({ session, preview = false, onSessionRecord,
         </div>
         <div className="harness-composer-toolbar"><div className="harness-composer-left">
           <button type="button" className="harness-icon-button" aria-label="功能菜单" title="功能菜单" aria-expanded={commandMenu} disabled={!snapshot?.connected || controlling} onClick={() => { setBrowseAllSkills(false); setCommandMenu((current) => !current); }}><Plus size={21} /></button>
-          <button type="button" className="harness-icon-button" aria-label="添加文件" title="添加文件" disabled={!snapshot?.connected || snapshot.busy || connecting} onClick={() => void addFiles()}><Paperclip size={21} /></button>
+          <button type="button" className="harness-icon-button" aria-label={t("添加文件")} title={t("添加文件")} disabled={!snapshot?.connected || snapshot.busy || connecting} onClick={() => void addFiles()}><Paperclip size={21} /></button>
           <label className="harness-picker harness-permission-picker"><FolderSimple size={18} /><select aria-label="DeepSeek Harness 权限" value={snapshot?.controlState?.permission?.currentValue ?? ""} disabled={!snapshot?.connected || snapshot.busy || controlling} onChange={(event) => void runControl("permission", event.target.value)}>
             {(snapshot?.controlState?.permission?.options ?? []).map((option) => <option key={option.value} value={option.value}>{option.name}</option>)}
             {!snapshot?.controlState?.permission?.options.some((option) => option.value === "auto") && <option value="auto" disabled>Auto review（需兼容插件）</option>}
           </select></label>
         </div><div className="harness-composer-right">
           {choices.length > 0 && <label className="harness-picker harness-model-picker">
-            <select aria-label="DeepSeek Harness 模型" value={selectedModel || currentModel(snapshot?.configOptions ?? [])} disabled={!snapshot?.connected || snapshot.busy || savingModel} onChange={(event) => void changeModel(event.target.value)}>
+            <select aria-label={t("DeepSeek Harness 模型")} value={selectedModel || currentModel(snapshot?.configOptions ?? [])} disabled={!snapshot?.connected || snapshot.busy || savingModel} onChange={(event) => void changeModel(event.target.value)}>
               {choices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
             </select>
           </label>}
           {(snapshot?.configOptions ?? []).filter((option) => (option as ConfigOption)?.id !== "model").map((raw) => {
             const option = raw as ConfigOption;
             const options = modelChoices(snapshot?.configOptions ?? [], option.id);
-            return option.id && options.length > 0 ? <label className="harness-picker harness-reasoning-picker" key={option.id}><span className="harness-reasoning-tooltip" role="tooltip" id={`harness-reasoning-tooltip-${session.id}-${option.id}`}>思考级别</span><Cpu size={17} /><select aria-describedby={`harness-reasoning-tooltip-${session.id}-${option.id}`} aria-label={`DeepSeek Harness ${option.id}`} value={option.currentValue ?? ""} disabled={!snapshot?.connected || snapshot.busy || savingModel || controlling} onChange={(event) => void changeModel(event.target.value, option.id)}>{options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label> : null;
+            return option.id && options.length > 0 ? <label className="harness-picker harness-reasoning-picker" key={option.id}><span className="harness-reasoning-tooltip" role="tooltip" id={`harness-reasoning-tooltip-${session.id}-${option.id}`}>{t("思考级别")}</span><Cpu size={17} /><select aria-describedby={`harness-reasoning-tooltip-${session.id}-${option.id}`} aria-label={`DeepSeek Harness ${option.id}`} value={option.currentValue ?? ""} disabled={!snapshot?.connected || snapshot.busy || savingModel || controlling} onChange={(event) => void changeModel(event.target.value, option.id)}>{options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label> : null;
           })}
-          {(snapshot?.busy || controlling) && <button type="button" className="harness-cancel-button" onClick={() => void cancel()}>取消本轮</button>}
-          <button type="submit" className="harness-send-button" aria-label="发送" title="发送" disabled={sending || (!draft.trim() && (goalMode || attachments.length === 0)) || !snapshot?.connected || snapshot.busy || connecting || controlling}><ArrowUp size={24} /></button>
+          {(snapshot?.busy || controlling) && <button type="button" className="harness-cancel-button" onClick={() => void cancel()}>{t("取消本轮")}</button>}
+          <button type="submit" className="harness-send-button" aria-label={t("发送")} title={t("发送")} disabled={sending || (!draft.trim() && (goalMode || attachments.length === 0)) || !snapshot?.connected || snapshot.busy || connecting || controlling}><ArrowUp size={24} /></button>
         </div></div>
-        <div className="harness-composer-hint">{snapshot?.busy ? "正在执行" : snapshot?.connected ? "Enter 发送 · Shift+Enter 换行" : "恢复会话后开始任务"}</div>
+        <div className="harness-composer-hint">{snapshot?.busy ? t("正在执行") : snapshot?.connected ? "Enter 发送 · Shift+Enter 换行" : t("恢复会话后开始任务")}</div>
       </form>
     </section>
   );

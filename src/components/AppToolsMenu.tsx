@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { CaretRight, Question, ShieldCheck, ArrowClockwise, Info, Eye, CornersOut, CornersIn, GearSix } from "@phosphor-icons/react";
@@ -26,6 +27,7 @@ export function AppToolsIcon() {
 }
 
 export function AppToolsMenu(props: Props) {
+  const t = useTranslation();
   const root = useRef<HTMLDivElement>(null), sectionMenu = useRef<HTMLDivElement>(null);
   const sidebarSpacer = useRef<HTMLDivElement>(null);
   const helpButton = useRef<HTMLButtonElement>(null), viewButton = useRef<HTMLButtonElement>(null);
@@ -101,17 +103,17 @@ export function AppToolsMenu(props: Props) {
   const { view, onSettings } = props;
   const menu = createPortal(<>
     <div className="menu-backdrop app-tools-backdrop" onClick={() => close()} />
-    <div className="unified-tools-menu app-tools-menu" role="menu" aria-label="更多工具" ref={root} style={{left:position.left,top:position.top}} onKeyDown={event=>navigate(event)}>
-      {view && <button ref={viewButton} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={section === "view"} aria-controls={section === "view"?"app-view-submenu":undefined} className="app-help-root" onMouseEnter={()=>openSection("view",false)} onClick={()=>openSection("view",true)}><Eye size={17} /><span>视图</span><CaretRight size={13} /></button>}
-      <button ref={helpButton} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={section === "help"} aria-controls={section === "help"?"app-help-submenu":undefined} className="app-help-root" onMouseEnter={()=>openSection("help",false)} onClick={()=>openSection("help",true)}><Question size={17} /><span>帮助</span><CaretRight size={13} /></button>
-      {onSettings && <button type="button" role="menuitem" className="app-help-root" onMouseEnter={() => setSection(null)} onClick={() => act(onSettings)}><GearSix size={17} /><span>设置</span></button>}
+    <div className="unified-tools-menu app-tools-menu" role="menu" aria-label={t("更多工具")} ref={root} style={{left:position.left,top:position.top}} onKeyDown={event=>navigate(event)}>
+      {view && <button ref={viewButton} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={section === "view"} aria-controls={section === "view"?"app-view-submenu":undefined} className="app-help-root" onMouseEnter={()=>openSection("view",false)} onClick={()=>openSection("view",true)}><Eye size={17} /><span>{t("视图")}</span><CaretRight size={13} /></button>}
+      <button ref={helpButton} type="button" role="menuitem" aria-haspopup="menu" aria-expanded={section === "help"} aria-controls={section === "help"?"app-help-submenu":undefined} className="app-help-root" onMouseEnter={()=>openSection("help",false)} onClick={()=>openSection("help",true)}><Question size={17} /><span>{t("帮助")}</span><CaretRight size={13} /></button>
+      {onSettings && <button type="button" role="menuitem" className="app-help-root" onMouseEnter={() => setSection(null)} onClick={() => act(onSettings)}><GearSix size={17} /><span>{t("设置")}</span></button>}
     </div>
-    {section === "help" && <div ref={sectionMenu} id="app-help-submenu" className="app-help-submenu" role="menu" aria-label="帮助" style={{left:position.sectionLeft,top:position.sectionTop}} onKeyDown={event=>navigate(event,1)}>
-      <button type="button" role="menuitem" onClick={()=>choose("privacy")}><ShieldCheck size={17}/><span>隐私政策</span></button>
-      <button type="button" role="menuitem" onClick={()=>choose("updates")}><ArrowClockwise size={17}/><span>检查更新…</span></button>
-      <button type="button" role="menuitem" onClick={()=>choose("about")}><Info size={17}/><span>关于 CrewVela</span></button>
+    {section === "help" && <div ref={sectionMenu} id="app-help-submenu" className="app-help-submenu" role="menu" aria-label={t("帮助")} style={{left:position.sectionLeft,top:position.sectionTop}} onKeyDown={event=>navigate(event,1)}>
+      <button type="button" role="menuitem" onClick={()=>choose("privacy")}><ShieldCheck size={17}/><span>{t("隐私政策")}</span></button>
+      <button type="button" role="menuitem" onClick={()=>choose("updates")}><ArrowClockwise size={17}/><span>{t("检查更新…")}</span></button>
+      <button type="button" role="menuitem" onClick={()=>choose("about")}><Info size={17}/><span>{t("关于 CrewVela")}</span></button>
     </div>}
-    {section === "view" && view && <div ref={sectionMenu} id="app-view-submenu" className="app-help-submenu app-view-submenu" role="menu" aria-label="视图" style={{left:position.sectionLeft,top:position.sectionTop}} onKeyDown={event=>navigate(event,1)}>
+    {section === "view" && view && <div ref={sectionMenu} id="app-view-submenu" className="app-help-submenu app-view-submenu" role="menu" aria-label={t("视图")} style={{left:position.sectionLeft,top:position.sectionTop}} onKeyDown={event=>navigate(event,1)}>
       <button type="button" role="menuitem" disabled={!view.fullscreenAvailable || view.fullscreenPending} onClick={()=>act(view.onFullscreen)}>{view.fullscreen ? <CornersIn size={17} /> : <CornersOut size={17} />}<span>{view.fullscreen ? "退出全屏" : "全屏"}</span></button>
     </div>}
   </>,document.body);
@@ -123,11 +125,12 @@ export function AppToolsMenu(props: Props) {
 
 /** 左侧栏隐藏后仍保留相同工具菜单，不依赖隐藏栏内的触发按钮。 */
 export function CollapsedAppTools({ view, onSettings }: { view?: AppViewMenuProps; onSettings?: () => void }) {
+  const t = useTranslation();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [help, setHelp] = useState<AppHelpSection | null>(null);
   return <>
-    <button ref={trigger} type="button" className="workspace-sidebar-expand" aria-label="更多工具" title="更多工具" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(current=>!current)}><AppToolsIcon /></button>
+    <button ref={trigger} type="button" className="workspace-sidebar-expand" aria-label={t("更多工具")} title={t("更多工具")} aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(current=>!current)}><AppToolsIcon /></button>
     {open && <AppToolsMenu trigger={trigger} view={view} onClose={()=>setOpen(false)} onHelp={setHelp} onSettings={onSettings} />}
     {help && <AppHelpDialog key={help} section={help} onClose={()=>setHelp(null)} />}
   </>;

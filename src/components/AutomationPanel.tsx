@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { activeRun, currentRun, matchesRunFilter, planState, runStage, RUN_LABELS, type RunFilter } from "../automationExecution";
 import "../styles/automation-execution.css";
 import "../styles/automation-design.css";
@@ -115,6 +116,7 @@ export function AutomationPanel({
   onViewStyleChange,
   onOpenAppearanceSettings,
 }: Props) {
+  const t = useTranslation();
   const panelRoot = useRef<HTMLElement>(null);
   useEffect(() => {
     const dismissCardMenus = (event: PointerEvent) => {
@@ -497,7 +499,7 @@ export function AutomationPanel({
             <div className="automation-heading-copy">
               <div className="automation-title-row">
                 <GearSixIcon size={24} weight="regular" aria-hidden="true" />
-                <h2 id={headingId}>{formOpen ? editing ? "编辑定时任务" : "创建自动化" : "自动化"}</h2>
+                <h2 id={headingId}>{formOpen ? editing ? t("编辑定时任务") : t("创建自动化") : t("自动化")}</h2>
               </div>
               <p>{formOpen ? "选择 Agent 与执行任务，按时间或指定事件派发；记录保存在本机。" : "按计划运行任务，或在需要时随时执行。"}</p>
             </div>
@@ -512,11 +514,11 @@ export function AutomationPanel({
                 />
               )}
               {!formOpen && <div className="automation-calendar"><span><CalendarBlank size={18} aria-hidden="true" /><time>{`${localToday.getFullYear()}-${pad(localToday.getMonth()+1)}-${pad(localToday.getDate())}`}</time></span><span title={nextPlan ? nextPlan.name : undefined}><ClockIcon size={18} aria-hidden="true" />{nextPlan ? `下次计划：${formatDateTime(nextPlan.nextRunAt!)}` : "暂无待触发计划"}</span></div>}
-              {onClose && <button className="btn-icon" aria-label="关闭" title="关闭" disabled={busy} onClick={onClose}>
+              {onClose && <button className="btn-icon" aria-label={t("关闭")} title={t("关闭")} disabled={busy} onClick={onClose}>
                 <XIcon size={15} />
               </button>}
               <button className="btn automation-primary" disabled={busy} onClick={() => formOpen ? setFormOpen(false) : openCreate()}>
-                <PlusIcon size={13} weight="bold" /> {formOpen ? "收起表单" : "新建自动化"}
+                <PlusIcon size={13} weight="bold" /> {formOpen ? "收起表单" : t("新建自动化")}
               </button>
             </div>
           </div>
@@ -527,9 +529,9 @@ export function AutomationPanel({
             {formOpen && (
               <fieldset className="automation-form" disabled={busy} style={{ minWidth: 0, border: 0, margin: 0 }}>
                 <section className="automation-section">
-                  <h3><FileTextIcon size={18} aria-hidden="true" />基本信息</h3>
+                  <h3><FileTextIcon size={18} aria-hidden="true" />{t("基本信息")}</h3>
               <label>
-                名称
+                {t("名称")}
                 <input
                   ref={nameInput}
                   value={name}
@@ -541,53 +543,53 @@ export function AutomationPanel({
                 </section>
 
                 <section className="automation-section automation-agent-section">
-                  <h3><StackIcon size={18} aria-hidden="true" />执行 Agent</h3>
+                  <h3><StackIcon size={18} aria-hidden="true" />{t("执行 Agent")}</h3>
                   {probeError && <p role="alert" className="automation-error">检测 Agent 失败：{probeError}</p>}
-                  <label className="automation-setting-row"><span>执行 Agent</span><select aria-label="执行 Agent" value={form.runtime} disabled={!availabilityReady || probeLoading} onChange={e => {
+                  <label className="automation-setting-row"><span>{t("执行 Agent")}</span><select aria-label={t("执行 Agent")} value={form.runtime} disabled={!availabilityReady || probeLoading} onChange={e => {
                     const runtime = e.target.value as AgentRuntimeKind;
                     patchForm({ runtime, source: "local", providerId: "", model: "", sessionId: "", agentId: "", mode: (!TERMINAL_RUNTIMES.includes(runtime) && form.mode === "new") || (!automationProjectRuntime(runtime) && form.mode === "member") ? "session" : form.mode });
-                  }}><option value="">{probeLoading ? "正在检测本机 Agent…" : "请选择 Agent"}</option>{form.runtime && !runtimeOptions.some(([kind]) => kind === form.runtime) && <option value={form.runtime} disabled>当前选择不可用</option>}{runtimeOptions.map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select><small>仅列出本机已安装、已启用的 Agent。<button type="button" className="automation-inline" disabled={probeLoading} onClick={() => setProbeRevision(n => n + 1)}>重新检测</button></small></label>
+                  }}><option value="">{probeLoading ? "正在检测本机 Agent…" : "请选择 Agent"}</option>{form.runtime && !runtimeOptions.some(([kind]) => kind === form.runtime) && <option value={form.runtime} disabled>当前选择不可用</option>}{runtimeOptions.map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select><small>仅列出本机已安装、已启用的 Agent。<button type="button" className="automation-inline" disabled={probeLoading} onClick={() => setProbeRevision(n => n + 1)}>{t("重新检测")}</button></small></label>
                 </section>
                 <section className="automation-section">
-                  <h3><LightningIcon size={18} aria-hidden="true" />执行任务</h3>
-                  <label className="automation-setting-row"><span>运行方式</span><select aria-label="运行方式" value={form.mode} onChange={e => patchForm({ mode: e.target.value as AutomationFormAction["mode"], sessionId: "", agentId: "" })}>
-                    <option value="new" disabled={!form.runtime || !TERMINAL_RUNTIMES.includes(form.runtime)}>每次新建会话</option><option value="session">复用指定会话</option><option value="member" disabled={!automationProjectRuntime(form.runtime)}>交给项目指定成员</option><option value="broadcast">发送到此 Agent 的全部运行会话</option>
+                  <h3><LightningIcon size={18} aria-hidden="true" />{t("执行任务")}</h3>
+                  <label className="automation-setting-row"><span>{t("运行方式")}</span><select aria-label={t("运行方式")} value={form.mode} onChange={e => patchForm({ mode: e.target.value as AutomationFormAction["mode"], sessionId: "", agentId: "" })}>
+                    <option value="new" disabled={!form.runtime || !TERMINAL_RUNTIMES.includes(form.runtime)}>{t("每次新建会话")}</option><option value="session">{t("复用指定会话")}</option><option value="member" disabled={!automationProjectRuntime(form.runtime)}>交给项目指定成员</option><option value="broadcast">发送到此 Agent 的全部运行会话</option>
                   </select><small>启动和排队不代表任务完成。</small></label>
-                  {form.mode === "new" && <label className="automation-setting-row"><span>工作目录</span><div className="automation-directory"><input aria-label="工作目录" value={form.cwd} placeholder="选择项目目录的完整路径" onChange={e => patchForm({ cwd: e.target.value })} /><button type="button" aria-label="选择工作目录" onClick={() => void selectDirectory()}><FolderOpenIcon size={18} /></button></div></label>}
-                  {form.mode === "session" && <label className="automation-setting-row"><span>目标会话</span><select aria-label="目标会话" value={form.sessionId} onChange={e => patchForm({ sessionId: e.target.value })}><option value="">请选择具体会话</option>{availableSessions.map(s => <option key={s.id} value={s.id}>{s.title} · {s.cwd} · {s.status}</option>)}</select><small>已停止的会话需先恢复；执行时会再次核对身份。</small></label>}
+                  {form.mode === "new" && <label className="automation-setting-row"><span>{t("工作目录")}</span><div className="automation-directory"><input aria-label={t("工作目录")} value={form.cwd} placeholder="选择项目目录的完整路径" onChange={e => patchForm({ cwd: e.target.value })} /><button type="button" aria-label={t("选择工作目录")} onClick={() => void selectDirectory()}><FolderOpenIcon size={18} /></button></div></label>}
+                  {form.mode === "session" && <label className="automation-setting-row"><span>{t("目标会话")}</span><select aria-label={t("目标会话")} value={form.sessionId} onChange={e => patchForm({ sessionId: e.target.value })}><option value="">{t("请选择具体会话")}</option>{availableSessions.map(s => <option key={s.id} value={s.id}>{s.title} · {s.cwd} · {s.status}</option>)}</select><small>已停止的会话需先恢复；执行时会再次核对身份。</small></label>}
                   {form.mode === "member" && <>
-                    <label className="automation-setting-row"><span>目标项目</span><select aria-label="目标项目" value={form.projectId} onChange={e => patchForm({ projectId: e.target.value, agentId: "" })}><option value="">请选择项目</option>{targetProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-                    <label className="automation-setting-row"><span>目标成员</span><select aria-label="目标成员" value={form.agentId} onChange={e => patchForm({ agentId: e.target.value })}><option value="">请选择匹配该 Agent 的成员</option>{availableAgents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><small>沿用成员目录；未运行成员交项目调度器执行，已有交互会话保留当前配置。</small></label>
+                    <label className="automation-setting-row"><span>{t("目标项目")}</span><select aria-label={t("目标项目")} value={form.projectId} onChange={e => patchForm({ projectId: e.target.value, agentId: "" })}><option value="">{t("请选择项目")}</option>{targetProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+                    <label className="automation-setting-row"><span>{t("目标成员")}</span><select aria-label={t("目标成员")} value={form.agentId} onChange={e => patchForm({ agentId: e.target.value })}><option value="">请选择匹配该 Agent 的成员</option>{availableAgents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><small>沿用成员目录；未运行成员交项目调度器执行，已有交互会话保留当前配置。</small></label>
                   </>}
                   {form.mode === "broadcast" && <p className="automation-scope-note">仅发送到所选 Agent 类型的未归档运行会话；执行时解析目标，包含其他工作区。不会广播给普通 Shell。</p>}
-                  <label className="automation-setting-row automation-prompt-row"><span>Prompt</span><textarea aria-label="执行任务" rows={3} value={form.prompt} placeholder="检查当前项目的代码改动、测试与依赖，汇总问题和下一步建议。" onChange={e => patchForm({ prompt: e.target.value })} /></label>
+                  <label className="automation-setting-row automation-prompt-row"><span>Prompt</span><textarea aria-label={t("执行任务")} rows={3} value={form.prompt} placeholder="检查当前项目的代码改动、测试与依赖，汇总问题和下一步建议。" onChange={e => patchForm({ prompt: e.target.value })} /></label>
                 </section>
                 <section className="automation-section">
-                  <h3><ClockIcon size={18} aria-hidden="true" />触发与运行</h3>
+                  <h3><ClockIcon size={18} aria-hidden="true" />{t("触发与运行")}</h3>
               <div className="automation-form-row">
                 <label>
-                  触发
+                  {t("触发")}
                   <select
                     value={triggerKind}
                     onChange={(event) => setTriggerKind(event.target.value as typeof triggerKind)}
                   >
-                    <option value="once">一次性</option>
+                    <option value="once">{t("一次性")}</option>
                     <option value="interval">每隔 N 分钟</option>
-                    <option value="daily">每天</option>
-                    <option value="weekly">每周 / 工作日</option>
+                    <option value="daily">{t("每天")}</option>
+                    <option value="weekly">{t("每周 / 工作日")}</option>
                     <option value="cron">cron 表达式</option>
-                    <option value="on_completed">会话完成时</option>
-                    <option value="on_failed">会话失败时</option>
+                    <option value="on_completed">{t("会话完成时")}</option>
+                    <option value="on_failed">{t("会话失败时")}</option>
                   </select>
                 </label>
                 {(triggerKind === "on_completed" || triggerKind === "on_failed") && (
                   <p className="hint" style={{ margin: 0, alignSelf: "end" }}>
-                    所选来源的会话{triggerKind === "on_completed" ? "执行完成" : "失败"}时触发；一批事件合并为一次
+                    所选来源的会话{triggerKind === "on_completed" ? "执行完成" : t("失败")}时触发；一批事件合并为一次
                   </p>
                 )}
                 {triggerKind === "once" && (
                   <label>
-                    时间
+                    {t("时间")}
                     <input
                       type="datetime-local"
                       step="0.001"
@@ -610,7 +612,7 @@ export function AutomationPanel({
                 )}
                 {triggerKind === "daily" && (
                   <label>
-                    时间
+                    {t("时间")}
                     <input
                       type="time"
                       value={dailyTime}
@@ -620,7 +622,7 @@ export function AutomationPanel({
                 )}
                 {triggerKind === "weekly" && (
                   <label>
-                    时间
+                    {t("时间")}
                     <input
                       type="time"
                       value={weeklyTime}
@@ -675,7 +677,7 @@ export function AutomationPanel({
                     <p>只响应所选来源的状态事件；请避免任务自身的完成事件不断触发下一轮，可在高级设置中限制次数。</p>
                   </div>}
                   <label className="automation-setting-row"><span>上一轮未结束</span><select aria-label="上一轮未结束" value={overlap} onChange={e => setOverlap(e.target.value as "skip" | "allow")}><option value="skip">跳过本轮</option><option value="allow">允许继续派发</option></select><small>{overlap === "skip" ? "任务或发送队列仍未结束时不重复启动。" : "可能并行新建会话；复用目标仍按其原生队列执行。"}</small></label>
-                  <details className="automation-options"><summary>高级设置（最大次数、连续失败熔断）</summary><div className="automation-form-row"><label>最大触发次数（留空不限）<input aria-label="最大触发次数" type="number" min={1} value={maxRuns} onChange={e => setMaxRuns(e.target.value)} /></label><label>连续失败熔断<input aria-label="连续失败熔断" type="number" min={1} max={10} value={maxFailures} onChange={e => setMaxFailures(e.target.value)} /></label></div></details>
+                  <details className="automation-options"><summary>{t("高级设置（最大次数、连续失败熔断）")}</summary><div className="automation-form-row"><label>最大触发次数（留空不限）<input aria-label="最大触发次数" type="number" min={1} value={maxRuns} onChange={e => setMaxRuns(e.target.value)} /></label><label>连续失败熔断<input aria-label="连续失败熔断" type="number" min={1} max={10} value={maxFailures} onChange={e => setMaxFailures(e.target.value)} /></label></div></details>
                 </section>
 
               </fieldset>
@@ -684,7 +686,7 @@ export function AutomationPanel({
             {!formOpen && <section className="automation-list-section automation-executions">
               <nav className="automation-filters" aria-label="执行状态筛选">
                 {([["all", "全部"], ["active", "进行中"], ["completed", "已完成"], ["failed", "失败"], ["attention", "待处理"]] as const).map(([key, label]) => <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}<span>{automations.filter(a => matchesRunFilter(a, key)).length}</span></button>)}
-                <button className="automation-refresh" aria-label="刷新自动化" title="刷新自动化" disabled={busy} onClick={() => void refresh()}><ArrowClockwise size={18} /></button>
+                <button className="automation-refresh" aria-label={t("刷新自动化")} title={t("刷新自动化")} disabled={busy} onClick={() => void refresh()}><ArrowClockwise size={18} /></button>
               </nav>
               {viewStyle === "sundial" ? (() => {
                 const filtered = automations.filter((a) => matchesRunFilter(a, filter));
@@ -749,7 +751,7 @@ export function AutomationPanel({
                       <div className="auto-sundial-legend">
                         <span><i style={{ background: "var(--accent)" }} />外环定时</span>
                         <span><i style={{ background: "#6aa6f8" }} />内环事件</span>
-                        <span><i style={{ background: "var(--text-dim)" }} />已暂停</span>
+                        <span><i style={{ background: "var(--text-dim)" }} />{t("已暂停")}</span>
                       </div>
                     </section>
 
@@ -763,7 +765,7 @@ export function AutomationPanel({
                           {!automations.length && (
                             <div>
                               <button type="button" className="btn automation-primary" disabled={busy} onClick={() => openCreate()}>
-                                <PlusIcon size={13} weight="bold" /> 新建自动化
+                                <PlusIcon size={13} weight="bold" /> {t("新建自动化")}
                               </button>
                             </div>
                           )}
@@ -811,12 +813,12 @@ export function AutomationPanel({
                               <div className="auto-sundial-bar-primary">
                                 {focusedActive && focusedTargetSession && (
                                   <button type="button" className="btn automation-primary" onClick={() => openSession(focusedTargetSession)}>
-                                    <ArrowSquareOut size={15} /> 打开会话
+                                    <ArrowSquareOut size={15} /> {t("打开会话")}
                                   </button>
                                 )}
                                 {focusedActive && focusedRun?.id && focusedStage !== "unconfirmed" && (
                                   <button type="button" className="btn" disabled={busy || focusedStage === "dispatching"} onClick={() => void runAction(focused, focusedRun, true)}>
-                                    <Stop size={15} /> 停止本轮
+                                    <Stop size={15} /> {t("停止本轮")}
                                   </button>
                                 )}
                                 {!focusedActive && (
@@ -835,7 +837,7 @@ export function AutomationPanel({
                               <div className="auto-sundial-bar-secondary">
                                 <button type="button" className="auto-sundial-ghost-btn" disabled={busy} onClick={() => void openEdit(focused)}>
                                   <PencilSimpleIcon size={14} aria-hidden="true" />
-                                  <span>编辑</span>
+                                  <span>{t("编辑")}</span>
                                 </button>
                                 <button
                                   type="button"
@@ -846,7 +848,7 @@ export function AutomationPanel({
                                   onClick={() => setConfirmDeleteId(focused.id)}
                                 >
                                   <TrashIcon size={14} aria-hidden="true" />
-                                  <span>删除</span>
+                                  <span>{t("删除")}</span>
                                 </button>
                               </div>
                             </div>
@@ -855,8 +857,8 @@ export function AutomationPanel({
                           {confirmDeleteId === focused.id && (
                             <div className="automation-delete-confirm">
                               <span>确认删除此计划及其记录？</span>
-                              <button type="button" className="btn danger-solid" disabled={busy || focusedActive} onClick={() => void remove(focused.id)}>确认删除</button>
-                              <button type="button" className="btn" onClick={() => setConfirmDeleteId(null)}>取消</button>
+                              <button type="button" className="btn danger-solid" disabled={busy || focusedActive} onClick={() => void remove(focused.id)}>{t("确认删除")}</button>
+                              <button type="button" className="btn" onClick={() => setConfirmDeleteId(null)}>{t("取消")}</button>
                             </div>
                           )}
 
@@ -893,32 +895,32 @@ export function AutomationPanel({
                     if (window.getSelection()?.toString()) return;
                     void openEdit(item);
                   }} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); void openEdit(item); } }}>
-                    <header><div className="automation-card-title"><span className="automation-task-icon"><Icon size={25} weight="regular" aria-hidden="true" /></span><div><h3><button type="button" title="编辑定时任务" disabled={busy} onClick={() => void openEdit(item)}>{item.name}</button></h3><p title={actionText(item.action)}>{compactAction(item.action)}</p></div></div>
+                    <header><div className="automation-card-title"><span className="automation-task-icon"><Icon size={25} weight="regular" aria-hidden="true" /></span><div><h3><button type="button" title={t("编辑定时任务")} disabled={busy} onClick={() => void openEdit(item)}>{item.name}</button></h3><p title={actionText(item.action)}>{compactAction(item.action)}</p></div></div>
                       <Switch className="automation-toggle" label={`${item.enabled ? "暂停后续计划" : "开启计划"} ${item.name}`} checked={item.enabled} disabled={busy} onChange={() => void toggle(item)} childrenPosition="before"><span title={planState(item)}>{planState(item)}</span></Switch>
                     </header>
                     <p className="automation-card-schedule">{item.enabled ? <CalendarBlank size={17} aria-hidden="true" /> : <PauseCircle size={17} aria-hidden="true" />}<span>{item.enabled ? `计划：${triggerText(item.trigger)} · 下次 ${nextRunText(item)}` : "已暂停：暂不触发后续计划"}</span></p>
-                    <div className={`automation-run-status tone-${stage}`}><StateIcon className="automation-state-icon" size={21} aria-hidden="true" /><span className={`automation-status status-${stage}`}>{displayStage(stage)}</span><span className="automation-run-description" title={run?.detail}>{run?.id && <span className="automation-execution-id" title={run.id}>执行 {shortId(run)} · </span>}{run ? run.detail : "到点后执行，也可手动运行一次"}</span></div>
+                    <div className={`automation-run-status tone-${stage}`}><StateIcon className="automation-state-icon" size={21} aria-hidden="true" /><span className={`automation-status status-${stage}`}>{displayStage(stage)}</span><span className="automation-run-description" title={run?.detail}>{run?.id && <span className="automation-execution-id" title={run.id}>{t("执行")} {shortId(run)} · </span>}{run ? run.detail : "到点后执行，也可手动运行一次"}</span></div>
                     <footer><div className="automation-card-buttons">
-                      {!item.enabled && stage === "unconfirmed" && <button className="btn" disabled={busy} onClick={() => void toggle(item)}><Play size={16} />开启计划</button>}
-                      {active && targetSession && <button className={`btn${stage === "running" ? " automation-primary" : ""}`} onClick={() => openSession(targetSession)}><ArrowSquareOut size={16} />打开会话</button>}
-                      {active && run?.id && stage !== "unconfirmed" && <button className="btn" disabled={busy || stage === "dispatching"} onClick={() => void runAction(item, run, true)}><Stop size={16} />停止本轮</button>}
+                      {!item.enabled && stage === "unconfirmed" && <button className="btn" disabled={busy} onClick={() => void toggle(item)}><Play size={16} />{t("开启计划")}</button>}
+                      {active && targetSession && <button className={`btn${stage === "running" ? " automation-primary" : ""}`} onClick={() => openSession(targetSession)}><ArrowSquareOut size={16} />{t("打开会话")}</button>}
+                      {active && run?.id && stage !== "unconfirmed" && <button className="btn" disabled={busy || stage === "dispatching"} onClick={() => void runAction(item, run, true)}><Stop size={16} />{t("停止本轮")}</button>}
                       {stage === "failed" && <button className="btn" aria-label={`执行记录 ${item.recentRuns.length}`} aria-expanded={selectedHistory === item.id} onClick={() => viewHistory(item)}><FileTextIcon size={16} />查看原因</button>}
                       {!active && <button className="btn automation-primary" disabled={busy} onClick={() => void runAction(item, stage === "failed" || stage === "cancelled" ? run : undefined)}>{stage === "failed" || stage === "cancelled" ? <ArrowClockwise size={16} /> : <Play size={16} />}{stage === "failed" || stage === "cancelled" ? "失败重试" : "立即执行"}</button>}
-                      {stage !== "failed" && <button className={`btn automation-record-button${active ? " compact" : ""}`} aria-label={`执行记录 ${item.recentRuns.length}`} aria-expanded={selectedHistory === item.id} title="执行记录" onClick={() => viewHistory(item)}><FileTextIcon size={16} />{!active && "记录"}</button>}
+                      {stage !== "failed" && <button className={`btn automation-record-button${active ? " compact" : ""}`} aria-label={`执行记录 ${item.recentRuns.length}`} aria-expanded={selectedHistory === item.id} title={t("执行记录")} onClick={() => viewHistory(item)}><FileTextIcon size={16} />{!active && "记录"}</button>}
                     </div>
                     <details className="automation-card-menu" onKeyDown={event => {if(event.key === "Escape"){event.preventDefault();event.stopPropagation();event.currentTarget.open=false;event.currentTarget.querySelector("summary")?.focus();}}}>
-                      <summary aria-label={`${item.name} 更多操作`} title="更多操作"><DotsThree size={20} /></summary>
+                      <summary aria-label={`${item.name} 更多操作`} title={t("更多操作")}><DotsThree size={20} /></summary>
                       <div onClick={event => { const details=event.currentTarget.closest("details"); if(details)details.open=false; }}>
                         <p>计划触发 {item.runCount}{item.maxRuns ? `/${item.maxRuns}` : ""} 次{item.consecutiveFailures > 0 && ` · 连续失败 ${item.consecutiveFailures} 次`}</p>
-                        <button className="btn" disabled={busy} onClick={() => void openEdit(item)}><PencilSimpleIcon size={15} aria-hidden="true" />编辑定时任务</button>
+                        <button className="btn" disabled={busy} onClick={() => void openEdit(item)}><PencilSimpleIcon size={15} aria-hidden="true" />{t("编辑定时任务")}</button>
                         {targetSession && <button className="btn" onClick={() => openSession(targetSession)}><ArrowSquareOut size={15} />打开原会话</button>}
                         <button className="btn" onClick={() => setSelectedHistory(item.id)}><FileTextIcon size={15} />查看全部执行记录</button>
-                        {stage === "unconfirmed" && run?.id && <><button className="btn" disabled={busy} onClick={() => void runAction(item,run,true)}><Stop size={15} />停止本轮</button><button className="btn" disabled={busy} onClick={() => setConfirmUnknownId(run.id!)}><CheckSquareIcon size={15} aria-hidden="true" />已核对原会话</button></>}
+                        {stage === "unconfirmed" && run?.id && <><button className="btn" disabled={busy} onClick={() => void runAction(item,run,true)}><Stop size={15} />{t("停止本轮")}</button><button className="btn" disabled={busy} onClick={() => setConfirmUnknownId(run.id!)}><CheckSquareIcon size={15} aria-hidden="true" />已核对原会话</button></>}
                         <button className="btn" disabled={busy || active} title={active ? "先核对或停止本轮" : "删除计划"} aria-label={`删除 ${item.name}`} onClick={() => setConfirmDeleteId(item.id)}><TrashIcon size={15} />删除计划</button>
                       </div>
                     </details></footer>
-                    {confirmUnknownId === run?.id && <div className="automation-state-note" role="group" aria-label="确认核对"><p>请先检查原会话，确认原任务不再执行。此操作仅解除待核对状态，不代表成功，不会重发任务。</p><button className="btn" disabled={busy} onClick={() => void runAction(item,run,false,true)}>确认原任务不再执行</button><button className="btn" onClick={() => setConfirmUnknownId(null)}>取消</button></div>}
-                    {confirmDeleteId === item.id && <div className="automation-delete-confirm"><span>确认删除此计划及其记录？</span><button className="btn danger-solid" disabled={busy || active} onClick={() => void remove(item.id)}>确认删除</button><button className="btn" onClick={() => setConfirmDeleteId(null)}>取消</button></div>}
+                    {confirmUnknownId === run?.id && <div className="automation-state-note" role="group" aria-label="确认核对"><p>请先检查原会话，确认原任务不再执行。此操作仅解除待核对状态，不代表成功，不会重发任务。</p><button className="btn" disabled={busy} onClick={() => void runAction(item,run,false,true)}>确认原任务不再执行</button><button className="btn" onClick={() => setConfirmUnknownId(null)}>{t("取消")}</button></div>}
+                    {confirmDeleteId === item.id && <div className="automation-delete-confirm"><span>确认删除此计划及其记录？</span><button className="btn danger-solid" disabled={busy || active} onClick={() => void remove(item.id)}>{t("确认删除")}</button><button className="btn" onClick={() => setConfirmDeleteId(null)}>{t("取消")}</button></div>}
                   </article>;
                 })}
               </div>
@@ -926,11 +928,11 @@ export function AutomationPanel({
               {!selectedHistory && <p className="automation-state-note"><Info size={16} aria-hidden="true" />暂停计划不停止当前执行；已入队不代表已完成。打开执行记录核对实际结果。</p>}
               {automations.filter(a => a.id === selectedHistory).map(item => <section className="automation-execution-history" key={item.id} aria-label={`执行记录 ${item.name}`}>
                 <header><h3>执行记录 · {item.name}</h3><p><Info size={16} aria-hidden="true" />暂停计划不停止当前执行；已入队不代表已完成。</p></header>
-                {!item.recentRuns.length && <p>尚无执行记录。</p>}
+                {!item.recentRuns.length && <p>{t("尚无执行记录。")}</p>}
                 {[...item.recentRuns].reverse().map((run,index) => {
                   const stage=runStage(run), StateIcon=statusIcon(stage);
                   const target=run.targets?.find(t => sessions.some(s => s.id === t.sessionId));
-                  return <details key={run.id ?? index}><summary><span className="automation-history-id" title={run.id}>{shortId(run)}</span><time>{formatDateTime(run.at)}</time><span className={`automation-history-stage tone-${stage}`}><StateIcon size={17} aria-hidden="true" />{displayStage(stage)}</span><span className="automation-history-origin">{({manual:"手动执行",retry:"重试",event:"事件触发",schedule:"计划触发"} as Record<string,string>)[run.origin ?? ""] ?? "历史记录"}</span><span className="automation-history-detail" title={run.detail}>{run.detail}</span>{target && <button className="automation-history-session" aria-label={`打开执行 ${shortId(run)} 的会话`} onClick={event => {event.preventDefault();event.stopPropagation();openSession(target.sessionId);}}><ArrowSquareOut size={15} />打开会话</button>}</summary><p>执行编号：{run.id ?? "旧记录未提供"}{run.retryOf && ` · 重试自 ${run.retryOf}`}</p><p>{run.detail}</p>{run.targets?.map(target => <div className="automation-target-receipt" key={target.messageId}><strong>{displayStage(target.stage)}</strong><span>{target.detail}</span><code>消息 {target.messageId}</code><code>任务 {target.taskId ?? "无项目任务"} · Run {target.runId ?? "未取得"}</code>{sessions.some(s => s.id === target.sessionId) && <button className="btn" onClick={() => openSession(target.sessionId)}>打开会话</button>}</div>)}</details>;
+                  return <details key={run.id ?? index}><summary><span className="automation-history-id" title={run.id}>{shortId(run)}</span><time>{formatDateTime(run.at)}</time><span className={`automation-history-stage tone-${stage}`}><StateIcon size={17} aria-hidden="true" />{displayStage(stage)}</span><span className="automation-history-origin">{({manual:"手动执行",retry:"重试",event:"事件触发",schedule:"计划触发"} as Record<string,string>)[run.origin ?? ""] ?? t("历史记录")}</span><span className="automation-history-detail" title={run.detail}>{run.detail}</span>{target && <button className="automation-history-session" aria-label={`打开执行 ${shortId(run)} 的会话`} onClick={event => {event.preventDefault();event.stopPropagation();openSession(target.sessionId);}}><ArrowSquareOut size={15} />{t("打开会话")}</button>}</summary><p>{t("执行编号：")}{run.id ?? "旧记录未提供"}{run.retryOf && ` · 重试自 ${run.retryOf}`}</p><p>{run.detail}</p>{run.targets?.map(target => <div className="automation-target-receipt" key={target.messageId}><strong>{displayStage(target.stage)}</strong><span>{target.detail}</span><code>{t("消息")} {target.messageId}</code><code>{t("任务")} {target.taskId ?? "无项目任务"} · Run {target.runId ?? "未取得"}</code>{sessions.some(s => s.id === target.sessionId) && <button className="btn" onClick={() => openSession(target.sessionId)}>{t("打开会话")}</button>}</div>)}</details>;
                 })}
               </section>)}
             </section>}
@@ -938,7 +940,7 @@ export function AutomationPanel({
 
           {formOpen && (
             <div className={`automation-form-actions${error ? " has-error" : ""}`}>{error && <p className="automation-error" role="alert">{error}</p>}<span className="automation-execution-summary">{AUTOMATION_LABELS[form.runtime as AgentRuntimeKind] ?? "未选择 Agent"} · {form.mode === "new" ? "本地配置" : "沿用目标配置"} · {({ new: "新建会话", session: "指定会话", member: "项目成员", broadcast: "此 Agent 全部运行会话" })[form.mode]} · {triggerKind === "daily" ? `每天 ${dailyTime}` : triggerKind === "interval" ? `每 ${intervalMinutes} 分钟` : triggerKind === "weekly" ? `每周 ${weeklyTime}` : triggerKind === "cron" ? "cron 触发" : triggerKind === "once" ? "一次性触发" : "指定会话事件"} · {overlap === "skip" ? "未结束则跳过" : "允许继续派发"}</span>
-              <button className="btn" disabled={busy} onClick={() => setFormOpen(false)}>取消</button>
+              <button className="btn" disabled={busy} onClick={() => setFormOpen(false)}>{t("取消")}</button>
               <button className="btn automation-primary" disabled={busy} onClick={() => void create()}>
                 {editing ? "保存修改" : "保存自动化"}
               </button>

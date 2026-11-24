@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useState } from "react";
 import { ArrowRight, ArrowsLeftRight } from "@phosphor-icons/react";
 import { RUNTIME_LOGOS, RUNTIME_LABELS } from "../runtimeLogos";
@@ -8,15 +9,16 @@ import { NativeClawd } from "./NativeClawd";
 import { NativeZCodeArcade } from "./NativeZCodeArcade";
 
 export function NativeAgentSelector({ kind, switching, enabledAgents, onSwitchAgent, onHandoffAgent, managedToolbar }: NativeAgentSwitchProps & { kind: NativeAgentKind }) {
+  const t = useTranslation();
   if (managedToolbar) return null;
-  return <div className="native-agent-toolbar"><nav className="native-agent-selector" aria-label="打开 Agent 聊天">{(["claude_chat", "codex_chat", "kimi_chat", "zcode", "deepseek_harness", "opencode_chat", "pi_chat"] as const).map(agent => <button
+  return <div className="native-agent-toolbar"><nav className="native-agent-selector" aria-label={t("打开 Agent 聊天")}>{(["claude_chat", "codex_chat", "kimi_chat", "zcode", "deepseek_harness", "opencode_chat", "pi_chat"] as const).map(agent => <button
     type="button" key={agent} className={agent === kind ? "selected" : ""}
     aria-label={`打开 ${RUNTIME_LABELS[agent]} 聊天`} aria-pressed={agent === kind}
     title={enabledAgents?.[agent] === false ? `${RUNTIME_LABELS[agent]} 未启用` : `打开 ${RUNTIME_LABELS[agent]} 聊天`}
     disabled={switching || enabledAgents?.[agent] === false || !onSwitchAgent}
     onClick={() => { if (agent !== kind) onSwitchAgent?.(agent); }}>
     <img src={RUNTIME_LOGOS[agent]} data-runtime={agent} alt="" />
-  </button>)}</nav>{onHandoffAgent && <button type="button" className="btn secondary native-agent-handoff" title="把当前工作交接给其它Agent" aria-label="把当前工作交接给其它Agent" disabled={switching} onClick={onHandoffAgent}><ArrowsLeftRight size={17} aria-hidden="true" /></button>}</div>
+  </button>)}</nav>{onHandoffAgent && <button type="button" className="btn secondary native-agent-handoff" title={t("把当前工作交接给其它Agent")} aria-label={t("把当前工作交接给其它Agent")} disabled={switching} onClick={onHandoffAgent}><ArrowsLeftRight size={17} aria-hidden="true" /></button>}</div>
 }
 
 export function NativeAgentWelcome({ kind, active = true, skillsDisabled, onSkills }: { kind: NativeAgentKind; active?: boolean; skillsDisabled: boolean; onSkills: () => void }) {

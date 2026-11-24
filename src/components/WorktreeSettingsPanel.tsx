@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -84,6 +85,7 @@ export function WorktreeSettingsPanel({
 }: {
   viewStyle?: WorktreeSettingsStyle;
 } = {}) {
+  const t = useTranslation();
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -199,7 +201,7 @@ export function WorktreeSettingsPanel({
             >
               <code>{overview.root}</code>
               <span className="worktree-copy-hint" aria-hidden="true">
-                {copiedKey === "root" ? <><CheckIcon size={12} weight="bold" /> 已复制</> : <><CopyIcon size={12} /> 复制</>}
+                {copiedKey === "root" ? <><CheckIcon size={12} weight="bold" /> 已复制</> : <><CopyIcon size={12} /> {t("复制")}</>}
               </span>
             </button>
           </div>
@@ -219,7 +221,7 @@ export function WorktreeSettingsPanel({
                   className={`worktree-filter-tab${filter === "all" ? " active" : ""}`}
                   onClick={() => setFilter("all")}
                 >
-                  全部 {allEntries.length}
+                  {t("全部")} {allEntries.length}
                 </button>
                 <button
                   type="button"
@@ -228,7 +230,7 @@ export function WorktreeSettingsPanel({
                   className={`worktree-filter-tab${filter === "session" ? " active" : ""}`}
                   onClick={() => setFilter("session")}
                 >
-                  会话 {sessionCount}
+                  {t("会话")} {sessionCount}
                 </button>
                 <button
                   type="button"
@@ -244,7 +246,7 @@ export function WorktreeSettingsPanel({
           </div>
           <button type="button" className="btn secondary worktree-btn-quiet" disabled={busy} onClick={() => void reload()}>
             <ArrowsClockwiseIcon size={13} aria-hidden="true" />
-            <span>刷新</span>
+            <span>{t("刷新")}</span>
           </button>
         </div>
 
@@ -274,7 +276,7 @@ export function WorktreeSettingsPanel({
                   <div className="wt-pot-top">
                     <span className={`wt-pot-pill ${pot.toneClass}`}>{pot.label}</span>
                     <span className="wt-pot-kind">
-                      {entry.project || "未分组"} · {entry.runtime ? RUNTIME_LABELS[entry.runtime] : "协作任务"}
+                      {entry.project || t("未分组")} · {entry.runtime ? RUNTIME_LABELS[entry.runtime] : "协作任务"}
                     </span>
                   </div>
 
@@ -310,7 +312,7 @@ export function WorktreeSettingsPanel({
                       >
                         <code>{entry.path}</code>
                         <span className="worktree-copy-hint" aria-hidden="true">
-                          {isCopied ? <><CheckIcon size={12} weight="bold" /> 已复制</> : <><CopyIcon size={12} /> 复制</>}
+                          {isCopied ? <><CheckIcon size={12} weight="bold" /> 已复制</> : <><CopyIcon size={12} /> {t("复制")}</>}
                         </span>
                       </button>
                       {subdir && (
@@ -359,7 +361,7 @@ export function WorktreeSettingsPanel({
                         <p>清理「{entry.title}」的检出目录？将先保存恢复快照，并保留 Git 分支与会话记录。</p>
                         <div className="worktree-actions">
                           <button type="button" className="btn primary" disabled={busy} onClick={() => void clean(entry)}>确认清理</button>
-                          <button type="button" className="btn secondary worktree-btn-quiet" disabled={busy} onClick={() => setConfirming(null)}>取消</button>
+                          <button type="button" className="btn secondary worktree-btn-quiet" disabled={busy} onClick={() => setConfirming(null)}>{t("取消")}</button>
                         </div>
                       </div>
                     )}
@@ -399,7 +401,7 @@ export function WorktreeSettingsPanel({
                       >
                         <code>{entry.path}</code>
                         <span className="worktree-copy-hint" aria-hidden="true">
-                          {isCopied ? <><CheckIcon size={12} weight="bold" /> 已复制</> : <><CopyIcon size={12} /> 复制</>}
+                          {isCopied ? <><CheckIcon size={12} weight="bold" /> 已复制</> : <><CopyIcon size={12} /> {t("复制")}</>}
                         </span>
                       </button>
                       {subdir && (
@@ -450,7 +452,7 @@ export function WorktreeSettingsPanel({
                       <p>清理「{entry.title}」的检出目录？将先保存恢复快照，并保留 Git 分支与会话记录。</p>
                       <div className="worktree-actions">
                         <button type="button" className="btn primary" disabled={busy} onClick={() => void clean(entry)}>确认清理</button>
-                        <button type="button" className="btn secondary worktree-btn-quiet" disabled={busy} onClick={() => setConfirming(null)}>取消</button>
+                        <button type="button" className="btn secondary worktree-btn-quiet" disabled={busy} onClick={() => setConfirming(null)}>{t("取消")}</button>
                       </div>
                     </div>
                   )}

@@ -19,7 +19,7 @@ test("首页快捷入口路由到设置分区，多智能体打开右侧总控",
 });
 
 test("侧栏快捷入口可自定义，且默认保留自动化", () => {
-  assert.match(sidebarSource, /aria-label="自定义快捷入口"/);
+  assert.match(sidebarSource, /aria-label=\{t\("自定义快捷入口"\)\}/);
   assert.match(sidebarSource, /sidebar-shortcut-picker/);
   assert.match(sidebarSource, /SIDEBAR_SHORTCUT_OPTIONS\.filter/);
   assert.match(

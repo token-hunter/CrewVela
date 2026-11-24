@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -9,6 +10,7 @@ import "../styles/communication-guide.css";
 import { SessionMessageReceipts } from "./ConversationReceiptPopover";
 
 export function CommunicationDiscoveryHint({ suppressed = false, projectId }: { suppressed?: boolean; projectId?: string }) {
+  const t = useTranslation();
   const [seen, setSeen] = useState(communicationGuideSeen);
   const [warning, setWarning] = useState("");
   useEffect(() => {
@@ -19,12 +21,12 @@ export function CommunicationDiscoveryHint({ suppressed = false, projectId }: { 
   }, []);
   const dismiss = () => { setSeen(true); try { markCommunicationGuideSeen(); } catch { setWarning("本次已收起提示，但无法保存偏好，下次启动可能再次显示。"); } };
   if (suppressed) return null;
-  return <>{!seen && <section className="communication-hint" aria-label="发现会话通信">
-    <button type="button" className="communication-icon-button communication-hint-close" aria-label="关闭通信提示" onClick={dismiss}><XIcon size={15} /></button>
-    <strong>{projectId ? "项目成员也可以互相联系" : "Agent 之间可以互相通信"}</strong>
-    <p>{projectId ? "同一项目的成员可以互发消息、核对结果。" : "打开 Claude Code、Codex 等会话后，可以让它们互发消息、协作完成任务。"}</p>
-    <button type="button" className="communication-text-button" onClick={() => requestCommunicationGuide({ scope: projectId ? "project" : "sessions", projectId })}>查看教程</button>
-    <small>关闭后，可从「会话通信」再次查看。</small>
+  return <>{!seen && <section className="communication-hint" aria-label={t("发现会话通信")}>
+    <button type="button" className="communication-icon-button communication-hint-close" aria-label={t("关闭通信提示")} onClick={dismiss}><XIcon size={15} /></button>
+    <strong>{projectId ? t("项目成员也可以互相联系") : t("Agent 之间可以互相通信")}</strong>
+    <p>{projectId ? t("同一项目的成员可以互发消息、核对结果。") : t("打开 Claude Code、Codex 等会话后，可以让它们互发消息、协作完成任务。")}</p>
+    <button type="button" className="communication-text-button" onClick={() => requestCommunicationGuide({ scope: projectId ? "project" : "sessions", projectId })}>{t("查看教程")}</button>
+    <small>{t("关闭后，可从「会话通信」再次查看。")}</small>
   </section>}{warning && <p className="communication-notice" role="status">{warning}</p>}</>;
 }
 
@@ -43,6 +45,7 @@ interface Props {
   sessionName?: (sessionId: string) => string | undefined;
 }
 export function CommunicationGuide({ initialScope, initialProjectId, sessions, selectedSessionId, preview = false, hidden = false, onClose, onDiagnostics, onOpenCollaboration, onOpenSession, sessionName }: Props) {
+  const t = useTranslation();
   const [scope, setScope] = useState(initialScope);
   const [projects, setProjects] = useState<MultiAgentProject[]>([]);
   const [projectId, setProjectId] = useState(initialProjectId ?? "");
@@ -108,23 +111,23 @@ export function CommunicationGuide({ initialScope, initialProjectId, sessions, s
     finally { copyPending.current = false; setCopyBusy(false); }
   };
   return <aside className="communication-guide" hidden={hidden} aria-labelledby="communication-guide-title" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); } }}>
-    <header><h2 id="communication-guide-title">会话通信</h2><button ref={closeRef} type="button" className="communication-icon-button" onClick={onClose} aria-label="关闭通信指南"><XIcon size={19} /></button></header>
+    <header><h2 id="communication-guide-title">{t("会话通信")}</h2><button ref={closeRef} type="button" className="communication-icon-button" onClick={onClose} aria-label="关闭通信指南"><XIcon size={19} /></button></header>
     <div className="communication-guide-body">
       <div className="communication-scopes" role="group" aria-label="通信场景">{([["sessions", "独立会话"], ["project", "项目成员"]] as const).map(([id, label]) => <button type="button" key={id} aria-pressed={scope === id} onClick={() => setScope(id)}>{label}</button>)}</div>
       <p className="communication-intro">复制后粘贴到发送方会话。</p>
       <div className="communication-fields">
-      {scope === "project" && <label className="communication-field"><span>项目</span><select aria-label="通信示例项目" value={projectId} disabled={loading && projects.length === 0} onChange={event => { if (event.target.value === projectId) return; setProjectId(event.target.value); setMembers([]); setSourceId(""); setTargetId(""); }}><option value="">选择协作项目</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
+      {scope === "project" && <label className="communication-field"><span>{t("项目")}</span><select aria-label="通信示例项目" value={projectId} disabled={loading && projects.length === 0} onChange={event => { if (event.target.value === projectId) return; setProjectId(event.target.value); setMembers([]); setSourceId(""); setTargetId(""); }}><option value="">{t("选择协作项目")}</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
       {([['source', '发送方', source], ['target', '接收方', target]] as const).map(([role, label, participant]) => <label className="communication-field" key={role}>
         <span>{label}</span><span className={`communication-select${participant && !loading && !error ? " has-logo" : ""}`}>
           {participant && !loading && !error && <img src={RUNTIME_LOGOS[participant.family as keyof typeof RUNTIME_LOGOS]} data-runtime={participant.family} alt="" />}
           <select aria-label={role === 'source' ? '示例发送方' : '示例接收方'} title={participant ? `${participant.name} · ${participant.runtime}` : undefined} value={participant?.id ?? ''} disabled={loading || Boolean(error) || (role === 'source' ? participants.length === 0 : participants.length < 2)} onChange={event => { if (role === 'source') { setSourceId(event.target.value); setTargetId(''); } else setTargetId(event.target.value); }}>
-            {!participant && <option value="">{loading ? '正在读取…' : scope === 'project' && !projectId ? '先选择项目' : '暂无可选对象'}</option>}
+            {!participant && <option value="">{loading ? t("正在读取…") : scope === 'project' && !projectId ? '先选择项目' : '暂无可选对象'}</option>}
             {participants.filter(item => role === 'source' || item.id !== source?.id).map(item => <option key={item.id} value={item.id}>{item.name}{scope === 'project' && item.name !== item.runtime ? ` · ${item.runtime}` : ''}</option>)}
           </select>
         </span>
       </label>)}
       </div>
-      {error && <div role="alert" className="communication-error"><p>{error}</p><button type="button" className="communication-text-button" onClick={() => setRetry(value => value + 1)}>重新读取</button></div>}
+      {error && <div role="alert" className="communication-error"><p>{error}</p><button type="button" className="communication-text-button" onClick={() => setRetry(value => value + 1)}>{t("重新读取")}</button></div>}
       {loading ? <p role="status" className="communication-muted">正在读取项目成员…</p> : !error && participants.length < 2 && <p className="communication-empty" role="status">{scope === "project" ? projectId ? "当前项目至少需要两位已启用成员。" : "先选择协作项目，再选择通信对象。" : "打开两个受支持的 Agent 会话后，即可生成示例。"}</p>}
       <section className="communication-example-section" aria-label="通信示例">
         <h3>通信示例</h3><p className={`communication-example${!example || loading || error ? " is-empty" : ""}`}>{!loading && !error && example ? example : '选择发送方和接收方后生成示例。'}</p>
@@ -145,5 +148,6 @@ export function CommunicationGuide({ initialScope, initialProjectId, sessions, s
 }
 
 export function CommunicationGuideButton({ projectId, scope, className }: { projectId?: string | null; scope?: CommunicationScope; className?: string }) {
-  return <button type="button" className={className} data-communication-trigger title="会话通信" aria-label="会话通信" onClick={() => requestCommunicationGuide(scope || projectId ? { scope: scope ?? "project", projectId } : {})}><ChatCircleTextIcon size={18} aria-hidden="true" /><span>会话通信</span></button>;
+  const t = useTranslation();
+  return <button type="button" className={className} data-communication-trigger title={t("会话通信")} aria-label={t("会话通信")} onClick={() => requestCommunicationGuide(scope || projectId ? { scope: scope ?? "project", projectId } : {})}><ChatCircleTextIcon size={18} aria-hidden="true" /><span>{t("会话通信")}</span></button>;
 }

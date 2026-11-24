@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Switch } from "./ui/Switch";
@@ -71,16 +72,17 @@ export function useEmbeddedMemory(preview: boolean) {
 }
 
 export function EmbeddedMemoryToggle({ memory }: { memory: ReturnType<typeof useEmbeddedMemory> }) {
+  const t = useTranslation();
   const { status, busy, checking, statusText, error, statusError, refresh, setEnabled } = memory;
   const needsRestart = Boolean(status?.available && status.enabled && !status.running);
   const unavailable = status && !status.available && !status.enabled;
-  return <section className="sm-card sm-embedded-card" aria-label="内置共享记忆">
+  return <section className="sm-card sm-embedded-card" aria-label={t("内置共享记忆")}>
     <div className="sm-embedded-row">
       <div>
-        <h3>内置共享记忆</h3>
+        <h3>{t("内置共享记忆")}</h3>
         <p className="sm-muted">记忆保存在本机，已打开的会话将在下次启动或恢复时接入。</p>
       </div>
-      <Switch className="pet-switch sm-embedded-switch" label="内置共享记忆" checked={Boolean(status?.enabled)}
+      <Switch className="pet-switch sm-embedded-switch" label={t("内置共享记忆")} checked={Boolean(status?.enabled)}
         disabled={busy || checking || Boolean(statusError) || !status || Boolean(unavailable)}
         onChange={checked => void setEnabled(checked)} />
     </div>
@@ -88,7 +90,7 @@ export function EmbeddedMemoryToggle({ memory }: { memory: ReturnType<typeof use
     <p role="status" className={busy || needsRestart || unavailable ? "sm-muted" : "sm-sr-only"}>{statusText}</p>
     {(statusError || needsRestart) && <div className="sm-actions sm-embedded-recovery">
       <button className="sm-button" type="button" disabled={busy || checking}
-        onClick={statusError ? refresh : () => void setEnabled(true)}>{statusError ? "重新检测" : "重试启动"}</button>
+        onClick={statusError ? refresh : () => void setEnabled(true)}>{statusError ? t("重新检测") : t("重试启动")}</button>
     </div>}
   </section>;
 }

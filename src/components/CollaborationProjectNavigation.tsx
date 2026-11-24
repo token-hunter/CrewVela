@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
@@ -40,6 +41,7 @@ interface Props {
 }
 
 export function CollaborationProjectNavigation({ active, projects, projectId, onSelect, onCreate, onRename }: Props) {
+  const t = useTranslation();
   const [railCollapsed, setRailCollapsed] = useState<boolean>(loadMultiAgentRailCollapsed);
   const toggleRailCollapsed = () => {
     setRailCollapsed(current => {
@@ -137,17 +139,17 @@ export function CollaborationProjectNavigation({ active, projects, projectId, on
   return <nav className={`collaboration-project-navigation${railCollapsed ? " is-rail-collapsed" : ""}`}
     data-multi-agent-style="grok_noir"
     data-rail-collapsed={railCollapsed ? "true" : "false"}
-    aria-label="协作项目列表">
+    aria-label={t("协作项目列表")}>
     <button ref={drawerTrigger} type="button" className="collaboration-project-drawer" aria-controls={id} aria-expanded={drawerOpen}
       onClick={() => setDrawerOpen(value => !value)}>
-      <FolderSimple size={17} aria-hidden="true" />协作项目<CaretDown size={13} aria-hidden="true" />
+      <FolderSimple size={17} aria-hidden="true" />{t("协作项目")}<CaretDown size={13} aria-hidden="true" />
     </button>
     {railCollapsed && (
       <div className="collaboration-slim-rail" aria-label="极简协作项目图标轨">
-        <button type="button" className="collaboration-rail-icon-btn" aria-label="展开协作项目列表" title="展开协作项目列表" onClick={toggleRailCollapsed}>
+        <button type="button" className="collaboration-rail-icon-btn" aria-label={t("展开协作项目列表")} title={t("展开协作项目列表")} onClick={toggleRailCollapsed}>
           <SidebarSimple size={16} aria-hidden="true" />
         </button>
-        <button type="button" className="collaboration-rail-icon-btn is-create" aria-label="新建协作" title="新建协作" onClick={onCreate}>
+        <button type="button" className="collaboration-rail-icon-btn is-create" aria-label={t("新建协作")} title={t("新建协作")} onClick={onCreate}>
           <Plus size={16} weight="bold" aria-hidden="true" />
         </button>
         <span className="collaboration-rail-divider" aria-hidden="true" />
@@ -174,22 +176,22 @@ export function CollaborationProjectNavigation({ active, projects, projectId, on
     )}
     <div id={id} className={`collaboration-project-navigation-body${drawerOpen ? " is-open" : ""}`}>
       <div className="collaboration-project-navigation-heading">
-        <h2>协作项目</h2>
+        <h2>{t("协作项目")}</h2>
         <div className="collaboration-project-heading-actions">
           <button type="button" className="collaboration-rail-toggle" aria-label="收起为极简图标轨" title="收起为极简图标轨" onClick={toggleRailCollapsed}>
             <SidebarSimple size={16} aria-hidden="true" />
           </button>
-          <button type="button" className="collaboration-project-add" aria-label="新建协作" title="新建协作" onClick={onCreate}>
-            <Plus size={16} aria-hidden="true" />新建
+          <button type="button" className="collaboration-project-add" aria-label={t("新建协作")} title={t("新建协作")} onClick={onCreate}>
+            <Plus size={16} aria-hidden="true" />{t("新建")}
           </button>
         </div>
       </div>
       <label className="collaboration-project-search">
         <MagnifyingGlass size={16} aria-hidden="true" />
-        <input type="search" aria-label="搜索协作项目" placeholder="搜索协作项目" value={query} onChange={event => setQuery(event.target.value)} />
+        <input type="search" aria-label={t("搜索协作项目")} placeholder={t("搜索协作项目")} value={query} onChange={event => setQuery(event.target.value)} />
       </label>
       <div ref={projectGroups} className="collaboration-project-groups">
-        {error && <p role="status">项目状态暂不可用，正在重试。</p>}
+        {error && <p role="status">{t("项目状态暂不可用，正在重试。")}</p>}
         {!results.length && <p>{trimmed ? "没有匹配的协作项目" : activity || error ? "暂无协作项目" : "正在读取协作项目…"}</p>}
         {groups.map(group => {
           const rows = results.filter(item => group.activities.includes(item.activity));
@@ -201,7 +203,7 @@ export function CollaborationProjectNavigation({ active, projects, projectId, on
               aria-expanded={open} aria-controls={groupId} disabled={Boolean(trimmed)}
               onClick={() => setCollapsed(current => open ? [...current, group.id] : current.filter(item => item !== group.id))}>
               <span className="collaboration-project-status-dot" aria-hidden="true" />
-              <span>{group.label} {rows.length}</span><CaretDown size={15} aria-hidden="true" />
+              <span>{t(group.label)} {rows.length}</span><CaretDown size={15} aria-hidden="true" />
             </button>
             <ul id={groupId} hidden={!open}>
               {rows.map(({ project, activity: status }) => <li className="collaboration-project-list-item" key={project.id}>
@@ -245,18 +247,18 @@ export function CollaborationProjectNavigation({ active, projects, projectId, on
         setMenu(null);
         setRenameError("");
         setRename({ project: menu.project, name: menu.project.name });
-      }}><PencilSimple size={16} aria-hidden="true" />重命名项目</button>
+      }}><PencilSimple size={16} aria-hidden="true" />{t("重命名项目")}</button>
     </div>, document.body)}
     {rename && createPortal(<Modal className="conversation-clear-dialog conversation-session-dialog" ariaLabel="重命名项目"
       onClose={() => { if (!inFlight.current) setRename(null); }}>
-      <h2>重命名项目</h2>
+      <h2>{t("重命名项目")}</h2>
       <form onSubmit={event => void saveRename(event)}>
-        <label>项目名称<input value={rename.name} required disabled={saving} onFocus={event => event.currentTarget.select()}
+        <label>{t("项目名称")}<input value={rename.name} required disabled={saving} onFocus={event => event.currentTarget.select()}
           onChange={event => setRename({ ...rename, name: event.target.value })} /></label>
         {renameError && <p className="conversation-clear-error" role="alert">{renameError}</p>}
         <div className="conversation-session-dialog-actions">
-          <button type="button" disabled={saving} onClick={() => setRename(null)}>取消</button>
-          <button type="submit" className="conversation-clear-confirm" disabled={saving || !rename.name.trim() || rename.name.trim() === rename.project.name}>{saving ? "正在保存…" : "保存"}</button>
+          <button type="button" disabled={saving} onClick={() => setRename(null)}>{t("取消")}</button>
+          <button type="submit" className="conversation-clear-confirm" disabled={saving || !rename.name.trim() || rename.name.trim() === rename.project.name}>{saving ? "正在保存…" : t("保存")}</button>
         </div>
       </form>
     </Modal>, document.body)}

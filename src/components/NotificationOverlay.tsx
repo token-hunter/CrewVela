@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -38,6 +39,7 @@ function readInitialNotice(): NotificationOverlayPayload | null {
 }
 
 export function NotificationOverlay() {
+  const t = useTranslation();
   const preview =
     new URLSearchParams(window.location.search).get("view") ===
     "notification-preview";
@@ -145,13 +147,13 @@ export function NotificationOverlay() {
       <section className="notification-overlay-card" key={notice.revision}>
         <div className="notification-overlay-copy">
           <div className="notification-overlay-title">
-            <h1>{notice.title || "通知"}</h1>
+            <h1>{notice.title || t("通知")}</h1>
             <CheckCircleIcon size={20} weight="fill" aria-hidden="true" />
           </div>
           <p>{notice.body}</p>
           {error && <p role="alert">{error}</p>}
           <button type="button" disabled={busy} onClick={() => void view()}>
-            查看
+            {t("查看")}
             <span aria-hidden="true">›</span>
           </button>
         </div>

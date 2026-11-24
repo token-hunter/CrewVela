@@ -1,3 +1,5 @@
+import { useInterfaceLanguage, useTranslation } from "../useInterfaceLanguage";
+import { setInterfaceLanguage } from "../interfaceLanguage";
 import { IS_MAC } from "../platform";
 import "../styles/settings-workspace.css";
 import { useEffect, useRef, useState } from "react";
@@ -45,6 +47,9 @@ export function GeneralSettingsPanel({
   theme?: AppTheme;
   viewStyle?: GeneralSettingsStyle;
 }) {
+  const t = useTranslation();
+  const interfaceLanguage = useInterfaceLanguage();
+  const [languageSaveFailed, setLanguageSaveFailed] = useState(false);
   const [status, setStatus] = useState<GeneralSettingsStatus | null>(
     UI_PREVIEW ? GENERAL_SETTINGS_PREVIEW : null,
   );
@@ -52,7 +57,7 @@ export function GeneralSettingsPanel({
     UI_PREVIEW ? GENERAL_SETTINGS_PREVIEW.settings : DEFAULT_GENERAL_SETTINGS,
   );
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; reason?: string } | null>(null);
   const [loading, setLoading] = useState(!UI_PREVIEW);
   const [reload, setReload] = useState(0);
   const [sampleTab, setSampleTab] = useState<CoffeeSampleKey>("terminal");
@@ -68,7 +73,7 @@ export function GeneralSettingsPanel({
         setStatus(latest);
         setDraft(latest.settings);
       })
-      .catch((reason) => { if (!disposed) setNotice(`读取常规设置失败：${String(reason)}`); })
+      .catch((reason) => { if (!disposed) setNotice({ text: "读取常规设置失败：{reason}", reason: String(reason) }); })
       .finally(() => { if (!disposed) setLoading(false); });
     return () => { disposed = true; };
   }, [reload]);
@@ -84,9 +89,9 @@ export function GeneralSettingsPanel({
       const latest = await invoke<GeneralSettingsStatus>("general_settings_save", { settings: draft });
       setStatus(latest);
       setDraft(latest.settings);
-      setNotice("已保存并应用（终端字体即时生效，网络类设置对新会话立即生效）");
+      setNotice({ text: "已保存并应用（终端字体即时生效，网络类设置对新会话立即生效）" });
     } catch (reason) {
-      setNotice(`保存失败：${String(reason)}`);
+      setNotice({ text: "保存失败：{reason}", reason: String(reason) });
     } finally {
       saveInFlight.current = false;
       setBusy(false);
@@ -97,17 +102,28 @@ export function GeneralSettingsPanel({
 
   return (
     <div className="runtime-settings settings-workspace general-settings-panel">
+      <label className="general-interface-language">
+        <span>{t("界面语言")}</span>
+        <select value={interfaceLanguage} onChange={(event) => {
+          const value = event.currentTarget.value;
+          if (value === "zh-CN" || value === "en") setLanguageSaveFailed(!setInterfaceLanguage(value));
+        }}>
+          <option value="zh-CN">简体中文</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      {languageSaveFailed && <p role="alert">{t("无法保存界面语言，请检查本地存储。")}</p>}
       {viewStyle === "coffee" ? (
         <fieldset className="general-coffee-layout" disabled={busy || !status} style={{ border: 0, padding: 0, margin: 0 }}>
-          <section className="general-coffee-card general-coffee-cup-card" aria-label="防休眠咖啡杯与系统开关">
-            <span className="general-coffee-kicker">电源与防休眠</span>
+          <section className="general-coffee-card general-coffee-cup-card" aria-label={t("防休眠咖啡杯与系统开关")}>
+            <span className="general-coffee-kicker">{t("电源与防休眠")}</span>
             <button
               type="button"
               className="general-coffee-cup-btn"
               disabled={IS_MAC || busy || !status}
               aria-pressed={awakeActive}
-              aria-label="保持电脑运行"
-              title={IS_MAC ? "macOS 暂不支持保持电脑运行" : awakeActive ? "点击盖上杯盖，允许休眠" : "点击掀盖冲泡，阻止系统休眠"}
+              aria-label={t("保持电脑运行")}
+              title={IS_MAC ? t("macOS 暂不支持保持电脑运行") : awakeActive ? "点击盖上杯盖，允许休眠" : "点击掀盖冲泡，阻止系统休眠"}
               onClick={() => setDraft((current) => ({ ...current, keepAwake: !current.keepAwake }))}
             >
               <svg viewBox="0 0 128 124" width="118" height="114" aria-hidden="true">
@@ -138,29 +154,29 @@ export function GeneralSettingsPanel({
                     ? "防休眠咖啡 · 温热在线"
                     : "已盖上杯盖 · 允许休眠"}
               </strong>
-              <p>{IS_MAC ? "此项仅在 Windows 平台生效。" : GENERAL_KEEP_AWAKE_DESCRIPTION}</p>
+              <p>{IS_MAC ? t("此项仅在 Windows 平台生效。") : t(GENERAL_KEEP_AWAKE_DESCRIPTION)}</p>
             </div>
             <div className="general-coffee-switches">
               <div className="general-coffee-switch-row">
                 <div>
-                  <strong>关闭窗口时隐藏到托盘</strong>
-                  <small>{GENERAL_TRAY_DESCRIPTION}</small>
+                  <strong>{t("关闭窗口时隐藏到托盘")}</strong>
+                  <small>{t(GENERAL_TRAY_DESCRIPTION)}</small>
                 </div>
                 <Switch
                   className="pet-switch"
-                  label="关闭窗口时隐藏到托盘"
+                  label={t("关闭窗口时隐藏到托盘")}
                   checked={draft.closeToTray}
                   onChange={(closeToTray) => setDraft({ ...draft, closeToTray })}
                 />
               </div>
               <div className="general-coffee-switch-row">
                 <div>
-                  <strong>WebView2 硬件加速</strong>
-                  <small>{IS_MAC ? "仅适用于 Windows WebView2" : GENERAL_HW_ACCEL_DESCRIPTION}</small>
+                  <strong>{t("WebView2 硬件加速")}</strong>
+                  <small>{IS_MAC ? t("仅适用于 Windows WebView2") : t(GENERAL_HW_ACCEL_DESCRIPTION)}</small>
                 </div>
                 <Switch
                   className="pet-switch"
-                  label="WebView2 硬件加速"
+                  label={t("WebView2 硬件加速")}
                   disabled={IS_MAC}
                   checked={!IS_MAC && draft.webview2HardwareAcceleration}
                   onChange={(webview2HardwareAcceleration) =>
@@ -172,13 +188,13 @@ export function GeneralSettingsPanel({
           </section>
 
           <div className="general-coffee-right">
-            <section className="general-coffee-card" aria-label="终端活字试字台">
+            <section className="general-coffee-card" aria-label={t("终端活字试字台")}>
               <div className="general-coffee-head">
                 <div>
-                  <strong>终端活字试字台</strong>
+                  <strong>{t("终端活字试字台")}</strong>
                   <small>边滑字号边核对真实终端、代码与中文对齐，保存后即时生效。</small>
                 </div>
-                <div className="general-coffee-sample-tabs" role="tablist" aria-label="试字样张">
+                <div className="general-coffee-sample-tabs" role="tablist" aria-label={t("试字样张")}>
                   {([
                     ["terminal", "真实终端"],
                     ["code", "代码样张"],
@@ -193,7 +209,7 @@ export function GeneralSettingsPanel({
                       className={sampleTab === key ? "active" : ""}
                       onClick={() => setSampleTab(key)}
                     >
-                      {label}
+                      {t(label)}
                     </button>
                   ))}
                 </div>
@@ -208,10 +224,10 @@ export function GeneralSettingsPanel({
                   }
                 />
                 <label className="general-coffee-size-slider">
-                  <span>字号</span>
+                  <span>{t("字号")}</span>
                   <input
                     type="range"
-                    aria-label="终端字号"
+                    aria-label={t("终端字号")}
                     min={MIN_TERMINAL_FONT_SIZE}
                     max={MAX_TERMINAL_FONT_SIZE}
                     value={draft.terminalFontSize}
@@ -242,22 +258,22 @@ export function GeneralSettingsPanel({
               )}
             </section>
 
-            <section className="general-coffee-card" aria-label="网络代理">
+            <section className="general-coffee-card" aria-label={t("网络代理")}>
               <div className="general-coffee-head">
                 <div>
-                  <strong>网络代理</strong>
-                  <small>配置模型请求与 Agent 会话的网络出口。</small>
+                  <strong>{t("网络代理")}</strong>
+                  <small>{t("配置模型请求与 Agent 会话的网络出口。")}</small>
                 </div>
                 {status && (
                   <span className={`general-status-badge${status.proxyEnvActive ? " active" : ""}`}>
                     <i />
-                    {status.proxyEnvActive ? "已按配置覆盖" : "沿用系统环境"}
+                    {status.proxyEnvActive ? t("已按配置覆盖") : t("沿用系统环境")}
                   </span>
                 )}
               </div>
               <div className="general-coffee-proxy-grid">
                 <label className="general-coffee-proxy-field">
-                  HTTP 代理
+                  {t("HTTP 代理")}
                   <input
                     id="general-http-proxy"
                     value={draft.httpProxy}
@@ -266,7 +282,7 @@ export function GeneralSettingsPanel({
                   />
                 </label>
                 <label className="general-coffee-proxy-field">
-                  不使用代理的地址
+                  {t("不使用代理的地址")}
                   <input
                     id="general-http-no-proxy"
                     value={draft.httpNoProxy}
@@ -275,11 +291,11 @@ export function GeneralSettingsPanel({
                   />
                 </label>
                 <label className="general-coffee-proxy-field">
-                  CA 证书路径（PEM）
+                  {t("CA 证书路径（PEM）")}
                   <input
                     id="general-http-ca-cert"
                     value={draft.httpCaCertPath}
-                    placeholder="可选 · PEM 绝对路径"
+                    placeholder={t("可选 · PEM 绝对路径")}
                     onChange={(e) => setDraft({ ...draft, httpCaCertPath: e.target.value })}
                   />
                 </label>
@@ -290,42 +306,42 @@ export function GeneralSettingsPanel({
       ) : (
         <fieldset className="workspace-general-grid" disabled={busy || !status}>
         <div className="workspace-section workspace-network">
-          <SettingsGroup title="网络代理" description="配置模型请求与 Agent 会话的网络出口。">
+          <SettingsGroup title={t("网络代理")} description={t("配置模型请求与 Agent 会话的网络出口。")}>
             {status && (
               <div className="general-network-status-bar" aria-hidden="true">
                 <span className={`general-status-badge${status.proxyEnvActive ? " active" : ""}`}>
                   <i />
                   {status.proxyEnvActive ? "出口状态：已按配置覆盖" : "出口状态：沿用系统环境"}
                 </span>
-                <span className="general-status-meta">对新启动会话立即生效</span>
+                <span className="general-status-meta">{t("对新启动会话立即生效")}</span>
               </div>
             )}
             <div className="general-network-fields">
               <div className="runtime-field">
-                <div><label htmlFor="general-http-proxy">HTTP 代理</label><small id="general-proxy-hint">留空时沿用系统环境变量。</small></div>
+                <div><label htmlFor="general-http-proxy">{t("HTTP 代理")}</label><small id="general-proxy-hint">{t("留空时沿用系统环境变量。")}</small></div>
                 <input id="general-http-proxy" aria-describedby="general-proxy-hint" value={draft.httpProxy} placeholder="http://127.0.0.1:7890" onChange={e => setDraft({ ...draft, httpProxy: e.target.value })} />
               </div>
               <div className="runtime-field">
-                <label htmlFor="general-http-no-proxy">不使用代理的地址<small>多个地址用逗号分隔，本机回环始终直连。</small></label>
+                <label htmlFor="general-http-no-proxy">{t("不使用代理的地址")}<small>{t("多个地址用逗号分隔，本机回环始终直连。")}</small></label>
                 <input id="general-http-no-proxy" value={draft.httpNoProxy} placeholder="localhost, 127.0.0.1, .internal" onChange={e => setDraft({ ...draft, httpNoProxy: e.target.value })} />
               </div>
               <div className="runtime-field">
-                <label htmlFor="general-http-ca-cert">CA 证书路径<small>可选，用于信任企业代理的 PEM 根证书。</small></label>
-                <input id="general-http-ca-cert" value={draft.httpCaCertPath} placeholder="PEM 文件的绝对路径" onChange={e => setDraft({ ...draft, httpCaCertPath: e.target.value })} />
+                <label htmlFor="general-http-ca-cert">{t("CA 证书路径")}<small>{t("可选，用于信任企业代理的 PEM 根证书。")}</small></label>
+                <input id="general-http-ca-cert" value={draft.httpCaCertPath} placeholder={t("PEM 文件的绝对路径")} onChange={e => setDraft({ ...draft, httpCaCertPath: e.target.value })} />
               </div>
             </div>
           </SettingsGroup>
         </div>
         <div className="workspace-section workspace-terminal">
-          <SettingsGroup title="终端" description="定制终端工作区的等宽字体与字号排版，保存后即时生效。">
+          <SettingsGroup title={t("终端")} description={t("定制终端工作区的等宽字体与字号排版，保存后即时生效。")}>
             <div className="general-terminal-controls">
               <div className="runtime-field">
-                <label htmlFor="general-terminal-font">字体<small>留空使用默认字体，备用字体以逗号分隔。</small></label>
+                <label htmlFor="general-terminal-font">{t("字体")}<small>{t("留空使用默认字体，备用字体以逗号分隔。")}</small></label>
                 <TerminalFontPicker value={draft.terminalFontFamily} preview={UI_PREVIEW}
                   onChange={terminalFontFamily => setDraft(current => ({ ...current, terminalFontFamily }))} />
               </div>
               <div className="runtime-field general-font-size-field">
-                <label htmlFor="general-terminal-font-size">字号<small>保存后即时应用到终端。</small></label>
+                <label htmlFor="general-terminal-font-size">{t("字号")}<small>{t("保存后即时应用到终端。")}</small></label>
                 <select id="general-terminal-font-size" value={draft.terminalFontSize} onChange={e => setDraft({ ...draft, terminalFontSize: Number(e.target.value) })}>
                   {FONT_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size} px</option>)}
                 </select>
@@ -335,28 +351,28 @@ export function GeneralSettingsPanel({
           </SettingsGroup>
         </div>
         <div className="workspace-section workspace-window">
-          <SettingsGroup title="窗口与电源" description="控制系统托盘驻留与长任务休眠策略。">
-            <SettingSwitch title="关闭窗口时隐藏到托盘" hint={GENERAL_TRAY_DESCRIPTION} checked={draft.closeToTray} onChange={closeToTray => setDraft({ ...draft, closeToTray })} />
-            <SettingSwitch title="保持电脑运行" hint={IS_MAC ? "macOS 暂不支持保持电脑运行" : GENERAL_KEEP_AWAKE_DESCRIPTION} disabled={IS_MAC} checked={!IS_MAC && draft.keepAwake} onChange={keepAwake => setDraft({ ...draft, keepAwake })} />
+          <SettingsGroup title={t("窗口与电源")} description={t("控制系统托盘驻留与长任务休眠策略。")}>
+            <SettingSwitch title={t("关闭窗口时隐藏到托盘")} hint={t(GENERAL_TRAY_DESCRIPTION)} checked={draft.closeToTray} onChange={closeToTray => setDraft({ ...draft, closeToTray })} />
+            <SettingSwitch title={t("保持电脑运行")} hint={IS_MAC ? t("macOS 暂不支持保持电脑运行") : t(GENERAL_KEEP_AWAKE_DESCRIPTION)} disabled={IS_MAC} checked={!IS_MAC && draft.keepAwake} onChange={keepAwake => setDraft({ ...draft, keepAwake })} />
           </SettingsGroup>
         </div>
         <div className="workspace-section workspace-advanced">
-          <SettingsGroup title="高级" description="底层 WebView 硬件渲染加速选项。">
-            <SettingSwitch title="WebView2 硬件加速" hint={IS_MAC ? "macOS 使用系统 WebKit，此项仅适用于 Windows WebView2" : GENERAL_HW_ACCEL_DESCRIPTION}
+          <SettingsGroup title={t("高级")} description={t("底层 WebView 硬件渲染加速选项。")}>
+            <SettingSwitch title={t("WebView2 硬件加速")} hint={IS_MAC ? t("macOS 使用系统 WebKit，此项仅适用于 Windows WebView2") : t(GENERAL_HW_ACCEL_DESCRIPTION)}
               disabled={IS_MAC} checked={!IS_MAC && draft.webview2HardwareAcceleration} onChange={webview2HardwareAcceleration => setDraft({ ...draft, webview2HardwareAcceleration })} />
           </SettingsGroup>
         </div>
       </fieldset>
       )}
       {status && <details className="runtime-details general-runtime-details">
-        <summary>查看运行状态</summary>
-        <dl><div><dt>代理出口</dt><dd>{status.proxyEnvActive ? "已按配置覆盖" : "沿用系统环境变量"}</dd></div>
-          <div><dt>保持运行</dt><dd>{IS_MAC || status.keepAwakeActive === null ? "当前平台不支持" : status.keepAwakeActive ? "正在阻止休眠" : "待命"}</dd></div>
-          <div><dt>关闭行为</dt><dd>{status.settings.closeToTray ? "隐藏到托盘" : "退出应用"}</dd></div></dl>
-        <p>{GENERAL_PROXY_COVERAGE} {GENERAL_PROXY_RESTART_HINT}</p>
+        <summary>{t("查看运行状态")}</summary>
+        <dl><div><dt>{t("代理出口")}</dt><dd>{status.proxyEnvActive ? t("已按配置覆盖") : "沿用系统环境变量"}</dd></div>
+          <div><dt>{t("保持运行")}</dt><dd>{IS_MAC || status.keepAwakeActive === null ? "当前平台不支持" : status.keepAwakeActive ? "正在阻止休眠" : "待命"}</dd></div>
+          <div><dt>{t("关闭行为")}</dt><dd>{status.settings.closeToTray ? "隐藏到托盘" : "退出应用"}</dd></div></dl>
+        <p>{t(GENERAL_PROXY_COVERAGE)} {t(GENERAL_PROXY_RESTART_HINT)}</p>
       </details>}
       {status?.warning && <p className="runtime-warning" role="alert">{status.warning}</p>}
-      <SettingsActions ready={!!status} loading={loading} busy={busy} dirty={dirty} invalid={errors.length > 0} message={errors[0] || notice} onSave={save} onRetry={() => setReload(n => n + 1)} />
+      <SettingsActions ready={!!status} loading={loading} busy={busy} dirty={dirty} invalid={errors.length > 0} message={errors[0] ? t(errors[0]) : notice && t(notice.text, { reason: notice.reason ?? "" })} onSave={save} onRetry={() => setReload(n => n + 1)} />
     </div>
   );
 }

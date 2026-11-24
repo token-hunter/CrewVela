@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -103,6 +104,7 @@ function commandBareName(name: string): string {
 }
 
 export function CodexChat({ session, preview = false, onSessionRecord, active = true, ...switchProps }: Props) {
+  const t = useTranslation();
   const [snapshot, setSnapshot] = useState<HarnessSessionSnapshot | null>(preview ? new URLSearchParams(location.search).get("chat") === "empty" ? { ...previewSnapshot, history: [], toolCalls: [], pendingPermission: null } : previewSnapshot : null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -419,11 +421,11 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
   };
 
   return (
-    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label="Codex Chat 会话">
+    <section className={`harness-chat native-agent-chat${empty ? " harness-chat-empty" : ""}`} aria-label={t("Codex Chat 会话")}>
       <header className="harness-chat-header">
-        <div className="harness-chat-controls"><span className="harness-workspace" title={session.cwd}><FolderSimple size={17} />工作目录：{session.cwd.split(/[\\/]/).filter(Boolean).pop() || session.cwd}</span><span className={`harness-connection${snapshot?.connected ? " connected" : ""}`}><i />{connecting ? "连接中" : snapshot?.connected ? "已连接" : "未连接"}</span>
-          {snapshot?.connected && !preview && <button type="button" onClick={() => void stop()}>停止会话</button>}
-          {!snapshot?.connected && !connecting && <button type="button" onClick={() => void connect()}>恢复会话</button>}
+        <div className="harness-chat-controls"><span className="harness-workspace" title={session.cwd}><FolderSimple size={17} />{t("工作目录：")}{session.cwd.split(/[\\/]/).filter(Boolean).pop() || session.cwd}</span><span className={`harness-connection${snapshot?.connected ? " connected" : ""}`}><i />{connecting ? t("连接中") : snapshot?.connected ? t("已连接") : t("未连接")}</span>
+          {snapshot?.connected && !preview && <button type="button" onClick={() => void stop()}>{t("停止会话")}</button>}
+          {!snapshot?.connected && !connecting && <button type="button" onClick={() => void connect()}>{t("恢复会话")}</button>}
         </div>
       </header>
       {preview && <div className="harness-chat-preview-banner">UI 预览：不会连接真实 Agent、调用模型或执行工具。可交互内容为演示数据。</div>}
@@ -434,7 +436,7 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
 
         {messages.map((message) => <article className={`harness-message ${message.role}`} key={`${message.role}-${message.id}`}>
           <strong>{message.role === "user" ? "你" : "Codex"}</strong>
-          {message.reasoning && <details className="harness-reasoning" open={message.streamStatus === "streaming"}><summary>{message.streamStatus === "streaming" ? "正在思考" : "思考过程"}</summary><p>{message.reasoning}</p></details>}
+          {message.reasoning && <details className="harness-reasoning" open={message.streamStatus === "streaming"}><summary>{message.streamStatus === "streaming" ? "正在思考" : t("思考过程")}</summary><p>{message.reasoning}</p></details>}
           {(message.text || !message.reasoning) && <p>{message.text || "…"}</p>}
           {message.streamStatus && message.streamStatus !== "completed" && <small className="harness-stream-status">{({ streaming: "生成中…", interrupted: "已取消，显示部分内容", failed: "本次尝试失败", abandoned: "本次尝试未完成" } as Record<string, string>)[message.streamStatus]}</small>}
           {(message.attachments ?? []).map((file) => <div className="harness-attachment" key={file.uri} title={file.path}><Paperclip size={14} /> {file.name}</div>)}
@@ -453,27 +455,27 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
           </article>)}
         </div>}
         {permission && <article className="harness-permission">
-          <strong>需要确认：{permission.toolCall.title ?? "工具调用"}</strong>
+          <strong>{t("需要确认：")}{permission.toolCall.title ?? "工具调用"}</strong>
           {permission.toolCall.rawInput !== undefined && <pre>{typeof permission.toolCall.rawInput === "string" ? permission.toolCall.rawInput : JSON.stringify(permission.toolCall.rawInput, null, 2)}</pre>}
-          <div><button type="button" onClick={() => void answerPermission(true)}>允许一次</button><button type="button" onClick={() => void answerPermission(false)}>拒绝</button></div>
+          <div><button type="button" onClick={() => void answerPermission(true)}>{t("允许一次")}</button><button type="button" onClick={() => void answerPermission(false)}>{t("拒绝")}</button></div>
         </article>}
-        {!connecting && !snapshot?.connected && <div className="harness-chat-info">会话已停止或未连接。点击“恢复会话”继续原会话。</div>}
+        {!connecting && !snapshot?.connected && <div className="harness-chat-info">{t("会话已停止或未连接。点击“恢复会话”继续原会话。")}</div>}
         <div ref={messagesEnd} />
       </div>
       {error && <pre className="harness-chat-error" role="alert">{error}</pre>}
       <CodexGoalPanel snapshot={snapshot} open={goalOpen} onClose={() => { setGoalOpen(false); composerInput.current?.focus(); }} onEdit={() => setGoalOpen(true)} onControl={controlGoal} />
       <CodexPluginPicker sessionId={session.id} preview={preview} open={pluginOpen} selected={plugins} onClose={() => { setPluginOpen(false); composerInput.current?.focus(); }} onSelect={plugin => setPlugins(current => current.some(item => item.id === plugin.id) ? current : [...current, plugin])} />
       <form className="harness-chat-composer" onSubmit={(event) => void send(event)}>
-        {commandMenu && <div className="harness-command-menu codex-command-menu" role="menu" aria-label="Codex 命令">
-          <button className="codex-menu-action" type="button" role="menuitem" onClick={() => { setCommandMenu(false); setGoalOpen(true); }}><Target size={20} /><span><strong>目标</strong><small>设置要持续追求的目标</small></span></button>
-          <button className="codex-menu-action" type="button" role="menuitem" onClick={() => { setCommandMenu(false); setPluginOpen(true); }}><PuzzlePiece size={20} /><span><strong>插件</strong><small>添加已安装的 Codex 插件</small></span></button>
-          <button className="codex-menu-action" type="button" role="menuitem" onClick={() => { setCommandMenu(false); void addFiles(); }}><Paperclip size={20} /><span><strong>文件</strong><small>添加本地文件引用</small></span></button>
-          <div className="harness-skill-menu" aria-label="Codex 命令与技能"><strong>命令 <span className="harness-skill-key-hint">↑↓ 选择 · Tab 补全</span></strong>{matchingCommands.map((command, index) => <button type="button" role="menuitem" id={`codex-command-${session.id}-${index}`} className={index === activeCommandIndex ? "harness-skill-active" : ""} key={command.name} onMouseEnter={() => setActiveCommandIndex(index)} onClick={() => completeCommand(command.name)}><span className="harness-skill-name">{commandInvocation(command.name)}</span><small>{command.description}</small></button>)}{matchingCommands.length === 0 && <small>{commands.length ? "没有匹配命令" : "当前会话没有可用的命令或技能"}</small>}</div>
+        {commandMenu && <div className="harness-command-menu codex-command-menu" role="menu" aria-label={t("Codex 命令")}>
+          <button className="codex-menu-action" type="button" role="menuitem" onClick={() => { setCommandMenu(false); setGoalOpen(true); }}><Target size={20} /><span><strong>{t("目标")}</strong><small>设置要持续追求的目标</small></span></button>
+          <button className="codex-menu-action" type="button" role="menuitem" onClick={() => { setCommandMenu(false); setPluginOpen(true); }}><PuzzlePiece size={20} /><span><strong>{t("插件")}</strong><small>添加已安装的 Codex 插件</small></span></button>
+          <button className="codex-menu-action" type="button" role="menuitem" onClick={() => { setCommandMenu(false); void addFiles(); }}><Paperclip size={20} /><span><strong>{t("文件")}</strong><small>{t("添加本地文件引用")}</small></span></button>
+          <div className="harness-skill-menu" aria-label="Codex 命令与技能"><strong>{t("命令")} <span className="harness-skill-key-hint">{t("↑↓ 选择 · Tab 补全")}</span></strong>{matchingCommands.map((command, index) => <button type="button" role="menuitem" id={`codex-command-${session.id}-${index}`} className={index === activeCommandIndex ? "harness-skill-active" : ""} key={command.name} onMouseEnter={() => setActiveCommandIndex(index)} onClick={() => completeCommand(command.name)}><span className="harness-skill-name">{commandInvocation(command.name)}</span><small>{command.description}</small></button>)}{matchingCommands.length === 0 && <small>{commands.length ? t("没有匹配命令") : "当前会话没有可用的命令或技能"}</small>}</div>
         </div>}
         {attachments.length > 0 && <div className="harness-attachments">{attachments.map((path) => <button type="button" key={path} title={path} aria-label={`移除附件 ${path.split(/[\\/]/).pop()}`} onClick={() => setAttachments((current) => current.filter((item) => item !== path))}><Paperclip size={14} /><span>{path.split(/[\\/]/).pop()}</span><X size={12} /></button>)}</div>}
-        {plugins.length > 0 && <div className="codex-plugin-chips" aria-label="已选择插件">{plugins.map(plugin => <button type="button" key={plugin.id} aria-label={`移除插件 ${plugin.displayName}`} title={plugin.displayName} onClick={() => setPlugins(current => current.filter(item => item.id !== plugin.id))}><PuzzlePiece size={15} /><span>{plugin.displayName}</span><X size={12} /></button>)}</div>}
+        {plugins.length > 0 && <div className="codex-plugin-chips" aria-label={t("已选择插件")}>{plugins.map(plugin => <button type="button" key={plugin.id} aria-label={`移除插件 ${plugin.displayName}`} title={plugin.displayName} onClick={() => setPlugins(current => current.filter(item => item.id !== plugin.id))}><PuzzlePiece size={15} /><span>{plugin.displayName}</span><X size={12} /></button>)}</div>}
         <div className="harness-composer-input">
-        <textarea ref={composerInput} aria-label="发送给 Codex" aria-controls={commandMenu ? `codex-command-${session.id}-${activeCommandIndex}` : undefined} value={draft} onChange={(event) => { setBrowseAllCommands(false); setDraft(event.target.value); setCommandMenu(/^[$/][^\s]*$/.test(event.target.value)); }} placeholder={goalActive ? "暂停或清除当前目标后可发送新任务" : "描述你想完成的任务，输入 / 或 $ 调用命令与技能…"} disabled={!snapshot?.connected || snapshot.busy || goalActive || connecting} onKeyDown={(event) => {
+        <textarea ref={composerInput} aria-label={t("发送给 Codex")} aria-controls={commandMenu ? `codex-command-${session.id}-${activeCommandIndex}` : undefined} value={draft} onChange={(event) => { setBrowseAllCommands(false); setDraft(event.target.value); setCommandMenu(/^[$/][^\s]*$/.test(event.target.value)); }} placeholder={goalActive ? "暂停或清除当前目标后可发送新任务" : "描述你想完成的任务，输入 / 或 $ 调用命令与技能…"} disabled={!snapshot?.connected || snapshot.busy || goalActive || connecting} onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || event.keyCode === 229) return;
           if (commandMenu && activeCommand && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -488,8 +490,8 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
         }} />
         </div>
         <div className="harness-composer-toolbar"><div className="harness-composer-left">
-          <button type="button" className="harness-icon-button" aria-label="命令菜单" title="命令菜单" aria-expanded={commandMenu} disabled={!snapshot?.connected} onClick={() => { setBrowseAllCommands(false); setCommandMenu((current) => !current); }}><Plus size={21} /></button>
-          <button type="button" className="harness-icon-button" aria-label="添加文件" title="添加文件" disabled={!snapshot?.connected || snapshot.busy || connecting} onClick={() => void addFiles()}><Paperclip size={21} /></button>
+          <button type="button" className="harness-icon-button" aria-label={t("命令菜单")} title={t("命令菜单")} aria-expanded={commandMenu} disabled={!snapshot?.connected} onClick={() => { setBrowseAllCommands(false); setCommandMenu((current) => !current); }}><Plus size={21} /></button>
+          <button type="button" className="harness-icon-button" aria-label={t("添加文件")} title={t("添加文件")} disabled={!snapshot?.connected || snapshot.busy || connecting} onClick={() => void addFiles()}><Paperclip size={21} /></button>
         </div><div className="harness-composer-right">
           {otherConfigOptions.map((raw) => {
             const option = raw as ConfigOption;
@@ -498,14 +500,14 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
           })}
           <CodexContextUsage usage={snapshot?.contextUsage} />
           {modelList.length > 0 && <label className="harness-picker harness-model-picker">
-            <select aria-label="Codex 模型" value={selectedModel || currentModel(snapshot?.configOptions ?? [])} disabled={!snapshot?.connected || snapshot.busy || savingModel} onChange={(event) => void changeConfig(event.target.value)}>
+            <select aria-label={t("Codex 模型")} value={selectedModel || currentModel(snapshot?.configOptions ?? [])} disabled={!snapshot?.connected || snapshot.busy || savingModel} onChange={(event) => void changeConfig(event.target.value)}>
               {modelList.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}
             </select>
           </label>}
-          {snapshot?.busy && <button type="button" className="harness-cancel-button" onClick={() => void cancel()}>取消本轮</button>}
-          <button type="submit" className="harness-send-button" aria-label="发送" title="发送" disabled={sending || (!draft.trim() && attachments.length === 0 && plugins.length === 0) || !snapshot?.connected || snapshot.busy || goalActive || connecting}><ArrowUp size={24} /></button>
+          {snapshot?.busy && <button type="button" className="harness-cancel-button" onClick={() => void cancel()}>{t("取消本轮")}</button>}
+          <button type="submit" className="harness-send-button" aria-label={t("发送")} title={t("发送")} disabled={sending || (!draft.trim() && attachments.length === 0 && plugins.length === 0) || !snapshot?.connected || snapshot.busy || goalActive || connecting}><ArrowUp size={24} /></button>
         </div></div>
-        <div className="harness-composer-hint">{snapshot?.busy ? "正在执行" : snapshot?.connected ? "Enter 发送 · Shift+Enter 换行" : "恢复会话后开始任务"}</div>
+        <div className="harness-composer-hint">{snapshot?.busy ? t("正在执行") : snapshot?.connected ? "Enter 发送 · Shift+Enter 换行" : t("恢复会话后开始任务")}</div>
       </form>
     </section>
   );

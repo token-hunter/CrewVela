@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { sessionDisplayTitle, sessionDisplayProvider } from "../sessionCapabilities";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { sessionSwitchReason } from "../sessionSwitch";
@@ -153,6 +154,7 @@ export function SessionList({
   onArchiveProjectSessions,
   onCollapse,
 }: Props) {
+  const t = useTranslation();
   const [filter, setFilter] = useState<SessionFilter>("running");
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -525,11 +527,11 @@ export function SessionList({
           <span className="session-title">
             {loadingId === session.id ? "正在恢复…" : sessionDisplayTitle(session)}
           </span>
-          {isPinned && <PushPinIcon className="session-pin-mark" size={12} weight="fill" aria-label="已置顶会话" />}
+          {isPinned && <PushPinIcon className="session-pin-mark" size={12} weight="fill" aria-label={t("已置顶会话")} />}
           {isFavorite && <StarIcon className="session-favorite-mark" size={12} weight="fill" />}
         </div>
         <div className="session-meta">
-          <span>{STATUS_LABELS[session.status]}</span>
+          <span>{t(STATUS_LABELS[session.status])}</span>
           <span>·</span>
           <span>{session.agentRuntimeKind === "oh_my_pi" ? RUNTIME_LABELS.oh_my_pi : sessionDisplayProvider(session)}</span>
           <span>·</span>
@@ -562,7 +564,7 @@ export function SessionList({
             type="button"
             className="session-actions-trigger"
             aria-label={`${sessionDisplayTitle(session)}更多操作`}
-            title="更多操作"
+            title={t("更多操作")}
             aria-haspopup="menu"
             aria-expanded={actionMenuSessionId === session.id}
             aria-controls={actionMenuSessionId === session.id ? "session-action-menu" : undefined}
@@ -590,7 +592,7 @@ export function SessionList({
             type="button"
             className="session-project-toggle"
             aria-expanded={!collapsed}
-            title={collapsed ? "展开项目会话" : "折叠项目会话"}
+            title={collapsed ? t("展开项目会话") : t("折叠项目会话")}
             onClick={() => toggleProjectCollapsed(project.id)}
           >
             {collapsed ? <CaretRightIcon size={13} /> : <CaretDownIcon size={13} />}
@@ -611,7 +613,7 @@ export function SessionList({
           {onOpenProject ? <button className="session-project-name session-project-open" type="button" title={project.path}
             onClick={() => onOpenProject(project)}>{project.name}</button> :
             <span className="session-project-name" title={project.path}>{project.name}</span>}
-          {pinnedProjects.has(project.id) && <PushPinIcon className="session-pin-mark" size={12} weight="fill" aria-label="已置顶项目" />}
+          {pinnedProjects.has(project.id) && <PushPinIcon className="session-pin-mark" size={12} weight="fill" aria-label={t("已置顶项目")} />}
           <span className="section-count">{groupSessions.length}</span>
           <div className="session-project-actions">
             {onContinueProject && projectResumeIds?.has(project.id) && <button type="button" title={`继续「${project.name}」的会话`}
@@ -640,7 +642,7 @@ export function SessionList({
             {onRenameProject && (
               <button
                 type="button"
-                title="重命名项目"
+                title={t("重命名项目")}
                 onClick={() => onRenameProject(project)}
               >
                 <PencilSimpleIcon size={12} />
@@ -649,7 +651,7 @@ export function SessionList({
             {onDeleteProject && (
               <button
                 type="button"
-                title="删除项目（会话保留并回到未分组）"
+                title={t("删除项目（会话保留并回到未分组）")}
                 onClick={() => onDeleteProject(project)}
               >
                 <TrashIcon size={12} />
@@ -668,7 +670,7 @@ export function SessionList({
         </div>
         {!collapsed && groupSessions.map(renderSessionItem)}
         {!collapsed && groupSessions.length === 0 && (
-          <div className="session-project-empty">暂无会话，点 + 在项目下新建</div>
+          <div className="session-project-empty">{t("暂无会话，点 + 在项目下新建")}</div>
         )}
       </div>
     );
@@ -756,14 +758,14 @@ export function SessionList({
     <>
     <section className="session-section">
       <div className="sidebar-section-head">
-        <span>会话</span>
+        <span>{t("会话")}</span>
         <span className="section-count">{sessions.length}</span>
         {onCollapse && (
           <button
             className="btn-icon sidebar-section-collapse"
             type="button"
-            aria-label="收起会话列表"
-            title="收起会话列表"
+            aria-label={t("收起会话列表")}
+            title={t("收起会话列表")}
             onClick={onCollapse}
           >
             <CaretDoubleLeftIcon size={16} />
@@ -775,7 +777,7 @@ export function SessionList({
         <MagnifyingGlassIcon size={13} aria-hidden="true" />
         <input
           value={query}
-          placeholder="搜索标题 / 目录 / provider"
+          placeholder={t("搜索标题 / 目录 / provider")}
           spellCheck={false}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -788,8 +790,8 @@ export function SessionList({
         {query && (
           <button
             type="button"
-            aria-label="清空搜索"
-            title="清空搜索"
+            aria-label={t("清空搜索")}
+            title={t("清空搜索")}
             onClick={() => setQuery("")}
           >
             ×
@@ -797,7 +799,7 @@ export function SessionList({
         )}
       </div>
 
-      <div className="session-type-filters" role="group" aria-label="会话类型">
+      <div className="session-type-filters" role="group" aria-label={t("会话类型")}>
         {([
           ["all", "全部", sessions.length],
           ["claude", "会话", claudeCount],
@@ -825,7 +827,7 @@ export function SessionList({
           ref={filterTriggerRef}
           className="session-filter-trigger"
           type="button"
-          aria-label={`会话状态：${selectedFilter.label}`}
+          aria-label={t("会话状态：{status}", { status: t(selectedFilter.label) })}
           aria-haspopup="menu"
           aria-controls={filterMenuOpen ? filterMenuId : undefined}
           aria-expanded={filterMenuOpen}
@@ -843,7 +845,7 @@ export function SessionList({
               weight={selectedFilter.id === "running" ? "fill" : "regular"}
             />
           )}
-          <span>{selectedFilter.label}</span>
+          <span>{t(selectedFilter.label)}</span>
           <strong className={`filter-count ${selectedFilter.tone}`}>
             {selectedFilter.count}
           </strong>
@@ -851,8 +853,8 @@ export function SessionList({
         </button>
 
         {filterMenuOpen && createPortal(
-          <div ref={filterMenuRef} id={filterMenuId} className="session-filter-menu" role="menu" aria-label="会话管理" style={filterMenuPosition}>
-            <div role="group" aria-label="查看范围">
+          <div ref={filterMenuRef} id={filterMenuId} className="session-filter-menu" role="menu" aria-label={t("会话管理")} style={filterMenuPosition}>
+            <div role="group" aria-label={t("查看范围")}>
             {filters.map((item) => (
               <button
                 key={item.id}
@@ -873,14 +875,14 @@ export function SessionList({
                 ) : (
                   <CircleIcon size={16} weight="regular" aria-hidden="true" />
                 )}
-                <span>{item.label}</span>
+                <span>{t(item.label)}</span>
                 <strong className={`filter-count ${item.tone}`}>{item.count}</strong>
               </button>
             ))}
             </div>
-            {bulkActions && <div role="group" aria-label="批量操作" aria-description={`仅作用于当前工作区「${bulkActions.workspaceName}」`}>
-                <button className="session-filter-option session-filter-action" type="button" role="menuitem" disabled={bulkActions.stopDisabled} title={`当前工作区「${bulkActions.workspaceName}」 · ${bulkActions.stopDisabled ? liveCount ? "操作暂不可用" : "暂无运行会话" : "停止运行中的会话"}`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onStop(); }}><StopIcon size={16} aria-hidden="true" /><span>停止运行会话</span></button>
-                <button className="session-filter-option session-filter-action" type="button" role="menuitem" disabled={bulkActions.deleteDisabled} title={`删除当前工作区「${bulkActions.workspaceName}」的全部会话`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onDelete(); }}><TrashIcon size={16} aria-hidden="true" /><span>删除全部会话</span></button>
+            {bulkActions && <div role="group" aria-label={t("批量操作")} aria-description={`仅作用于当前工作区「${bulkActions.workspaceName}」`}>
+                <button className="session-filter-option session-filter-action" type="button" role="menuitem" disabled={bulkActions.stopDisabled} title={`当前工作区「${bulkActions.workspaceName}」 · ${bulkActions.stopDisabled ? liveCount ? "操作暂不可用" : "暂无运行会话" : "停止运行中的会话"}`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onStop(); }}><StopIcon size={16} aria-hidden="true" /><span>{t("停止运行会话")}</span></button>
+                <button className="session-filter-option session-filter-action" type="button" role="menuitem" disabled={bulkActions.deleteDisabled} title={`删除当前工作区「${bulkActions.workspaceName}」的全部会话`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onDelete(); }}><TrashIcon size={16} aria-hidden="true" /><span>{t("删除全部会话")}</span></button>
               </div>
             }
           </div>
@@ -896,13 +898,13 @@ export function SessionList({
 
       {groupByProject && (
         <div className="session-projects-toolbar">
-          <span>项目</span>
-          {onManageProjects && <button type="button" aria-label="项目管理" title="项目管理" onClick={onManageProjects}><DotsThreeIcon size={16} /></button>}
+          <span>{t("项目")}</span>
+          {onManageProjects && <button type="button" aria-label={t("项目管理")} title={t("项目管理")} onClick={onManageProjects}><DotsThreeIcon size={16} /></button>}
           {onAddProject && (
             <button
               type="button"
-              aria-label="添加项目"
-              title="添加项目"
+              aria-label={t("添加项目")}
+              title={t("添加项目")}
               onClick={onAddProject}
             >
               <PlusIcon size={14} weight="bold" />
@@ -932,7 +934,7 @@ export function SessionList({
             {projectGroups.ungrouped.length > 0 && (
               <div className="session-project-group">
                 <div className="session-project-head session-project-head-plain">
-                  <span className="session-project-name">未分组</span>
+                  <span className="session-project-name">{t("未分组")}</span>
                   <span className="section-count">{projectGroups.ungrouped.length}</span>
                 </div>
                 {projectGroups.ungrouped.map(renderSessionItem)}
@@ -971,7 +973,7 @@ export function SessionList({
             onClick={(event) => runActionMenuItem(event, item.action)}
           >
             {item.icon}
-            <span>{item.label}</span>
+            <span>{t(item.label)}</span>
           </button>
         ))}
       </div>,

@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -60,6 +61,7 @@ export function MultiAgentWorkspace({
   onCloseSession,
   onClose,
 }: Props) {
+  const t = useTranslation();
   const [snapshot, setSnapshot] = useState<MultiAgentSnapshot | null>(null);
   const [membersExpanded, setMembersExpanded] = useState(false);
   const [focusedAgentId, setFocusedAgentId] = useState<string | null>(null);
@@ -211,7 +213,7 @@ export function MultiAgentWorkspace({
   return (
     <section className="multi-agent-workspace">
       <header className="ma-workspace-header">
-        <button type="button" onClick={onClose}>返回会话总览</button>
+        <button type="button" onClick={onClose}>{t("返回会话总览")}</button>
         <CommunicationGuideButton projectId={projectId} className="btn secondary communication-workspace-entry" />
       </header>
 
@@ -220,7 +222,7 @@ export function MultiAgentWorkspace({
       {snapshot.runs.filter(run => run.sessionLocator?.stopUnverified === true).map(run => <UnverifiedRunNotice key={run.id} run={run} taskTitle={snapshot.tasks.find(task => task.id === run.taskId)?.title} onConfirmed={refresh} />)}
       <div className="ma-workspace-body">
         <div className="ma-visible-terminal-stage">
-          <div className="ma-participation-summary"><span>参与 <b>{participation.participating.size}</b> · 执行中 <b>{participation.executing.size}</b> · 待处理 <b>{participation.pending.size}</b></span><button type="button" aria-expanded={membersExpanded} onClick={() => setMembersExpanded((value) => !value)}>成员{membersExpanded ? " ▴" : " ▾"}</button>{focusedAgentId && <button type="button" onClick={() => setFocusedAgentId(null)}>显示全部终端</button>}</div>
+          <div className="ma-participation-summary"><span>参与 <b>{participation.participating.size}</b> · 执行中 <b>{participation.executing.size}</b> · 待处理 <b>{participation.pending.size}</b></span><button type="button" aria-expanded={membersExpanded} onClick={() => setMembersExpanded((value) => !value)}>{t("成员")}{membersExpanded ? " ▴" : " ▾"}</button>{focusedAgentId && <button type="button" onClick={() => setFocusedAgentId(null)}>{t("显示全部终端")}</button>}</div>
           {membersExpanded && <div className="ma-agent-strip">
             {participatingAgents.map((agent) => {
               const session = sessionByAgent.get(agent.id) ?? null;
@@ -238,9 +240,9 @@ export function MultiAgentWorkspace({
                     <em>{STATUS_LABELS[session?.status ?? "idle"]}</em>
                   </button>
                   {session?.controlMode === "manual" ? (
-                    <button type="button" disabled={controlBusy} onClick={() => void changeControl(agent.id, false)}>交还总控</button>
+                    <button type="button" disabled={controlBusy} onClick={() => void changeControl(agent.id, false)}>{t("交还总控")}</button>
                   ) : (
-                    <button type="button" disabled={controlBusy} onClick={() => void changeControl(agent.id, true)}>人工接管</button>
+                    <button type="button" disabled={controlBusy} onClick={() => void changeControl(agent.id, true)}>{t("人工接管")}</button>
                   )}
                 </div>
               );

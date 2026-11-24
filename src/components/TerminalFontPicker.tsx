@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CaretDown } from "@phosphor-icons/react";
@@ -12,6 +13,7 @@ const sampleFonts: InstalledTerminalFont[] = [
 const byName = new Intl.Collator("zh-CN", { sensitivity: "base", numeric: true });
 
 export function TerminalFontPicker({ value, onChange, preview }: { value: string; onChange: (value: string) => void; preview: boolean }) {
+  const t = useTranslation();
   const listId = useId();
   const hintId = useId();
   const [open, setOpen] = useState(false);
@@ -131,7 +133,7 @@ export function TerminalFontPicker({ value, onChange, preview }: { value: string
             <button type="button" className="conversation-text-button" onClick={() => {
               search.current?.focus();
               setAttempt(value => value + 1);
-            }}>重试</button>
+            }}>{t("重试")}</button>
           </p> : !fonts ? <p className="terminal-font-empty" role="status">正在读取本机字体…</p>
             : shownFonts.length === 0 && <p className="terminal-font-empty">没有匹配的字体</p>}
         </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -8,6 +9,7 @@ interface Props { hidden: boolean; disabled: boolean; onRunningChange: (running:
 const labels: Record<string, string> = { "claude-code": "Claude Code", codex: "Codex" };
 
 export function SharedMemoryQuickSetup({ hidden, disabled, onRunningChange, onComplete, onVerify }: Props) {
+  const t = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [info, setInfo] = useState<Info | null>(null);
   const [job, setJob] = useState<Job | null>(null);
@@ -120,7 +122,7 @@ export function SharedMemoryQuickSetup({ hidden, disabled, onRunningChange, onCo
 
   return <section hidden={hidden} className="sm-card sm-quick" aria-labelledby="sm-quick-title">
     <div className="sm-quick-heading"><div><h3 id="sm-quick-title">共享记忆服务与接入</h3><p className="sm-muted">独立更新本地服务，或为项目配置智能体接入。</p></div>
-      <div className="sm-actions"><button type="button" className="sm-button" disabled={locked} onClick={() => void load()}>检查更新</button><button type="button" className="sm-button" disabled={loading || disabled || running} aria-expanded={expanded} onClick={() => { if (expanded && info) setExpanded(false); else void load(); }}>{loading ? "检查环境中…" : expanded && info ? "收起向导" : "开始配置"}</button></div>
+      <div className="sm-actions"><button type="button" className="sm-button" disabled={locked} onClick={() => void load()}>{t("检查更新")}</button><button type="button" className="sm-button" disabled={loading || disabled || running} aria-expanded={expanded} onClick={() => { if (expanded && info) setExpanded(false); else void load(); }}>{loading ? "检查环境中…" : expanded && info ? "收起向导" : "开始配置"}</button></div>
     </div>
     {expanded && <div className="sm-quick-content">
       {error && <p role="alert" className="sm-error">{error}</p>}

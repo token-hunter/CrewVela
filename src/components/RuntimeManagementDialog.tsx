@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowDown, ArrowUp, CaretDown, CaretRight, DotsSixVertical, X } from "@phosphor-icons/react";
@@ -20,6 +21,7 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose,
   onClose: () => void;
   initialInstaller?: AgentRuntimeKind;
 }) {
+  const t = useTranslation();
   const availability = useRuntimeAvailability();
   const [pending, setPending] = useState<AgentRuntimeKind | null>(null);
   const [installing, setInstalling] = useState<AgentRuntimeKind | null>(initialInstaller ?? null);
@@ -116,31 +118,31 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose,
       if (dragSource.current || Date.now() < suppressClickUntil.current) { event.preventDefault(); event.stopPropagation(); }
     }}
   >
-    <span className="collab-runtime-drag-handle" aria-hidden="true" title="按住拖动，调整上下顺序"><DotsSixVertical size={17} /></span>
+    <span className="collab-runtime-drag-handle" aria-hidden="true" title={t("按住拖动，调整上下顺序")}><DotsSixVertical size={17} /></span>
     <label className="collab-runtime-toggle">
       <img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" draggable={false} />
-      <span>{RUNTIME_LABELS[kind]}<small className="collab-runtime-scope">{COLLABORATION_RUNTIMES.includes(kind) ? "CLI 协作执行" : isLegacyCollaborationRuntime(kind) ? "原生聊天 · 已有协作成员兼容" : "仅原生聊天"}</small>
-        {supportsChatInstallation(kind) && <small className="runtime-chat-dependency" data-missing={chatDependencies?.[kind]?.needsSetup || undefined}>{chatDependencies?.[kind]?.label ?? (chatDependencies ? "打开详情检查启动依赖" : "正在检查启动依赖…")}</small>}
+      <span>{RUNTIME_LABELS[kind]}<small className="collab-runtime-scope">{COLLABORATION_RUNTIMES.includes(kind) ? t("CLI 协作执行") : isLegacyCollaborationRuntime(kind) ? t("原生聊天 · 已有协作成员兼容") : t("仅原生聊天")}</small>
+        {supportsChatInstallation(kind) && <small className="runtime-chat-dependency" data-missing={chatDependencies?.[kind]?.needsSetup || undefined}>{t(chatDependencies?.[kind]?.label ?? (chatDependencies ? "打开详情检查启动依赖" : "正在检查启动依赖…"))}</small>}
       </span>
-      <small>{pending === kind ? "保存中…" : availability.ready ? availability.isRuntimeEnabled(kind) ? "已启用" : "已禁用" : "加载中…"}</small>
-      <input type="checkbox" aria-label={`启用 ${RUNTIME_LABELS[kind]}`} checked={availability.ready && availability.isRuntimeEnabled(kind)} disabled={!availability.ready || pending !== null} onChange={(event) => void toggle(kind, event.target.checked)} />
+      <small>{pending === kind ? "保存中…" : availability.ready ? availability.isRuntimeEnabled(kind) ? t("已启用") : "已禁用" : t("加载中…")}</small>
+      <input type="checkbox" aria-label={t("启用 {runtime}", { runtime: RUNTIME_LABELS[kind] })} checked={availability.ready && availability.isRuntimeEnabled(kind)} disabled={!availability.ready || pending !== null} onChange={(event) => void toggle(kind, event.target.checked)} />
     </label>
-    {isCliRuntime(kind) && <select className="runtime-default-mode" aria-label={`默认启动模式 · ${RUNTIME_LABELS[kind]}`} value={availability.prefs.defaultLaunchModes?.[kind] ?? "cli_default"} disabled={!availability.ready || pending !== null} onChange={event => void saveMode(kind, event.target.value)}>
-      {!launchChoices(kind).some(choice => choice.id === (availability.prefs.defaultLaunchModes?.[kind] ?? "cli_default")) && <option disabled value={availability.prefs.defaultLaunchModes?.[kind]}>已保存模式不可用</option>}
-      {launchChoices(kind).map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
+    {isCliRuntime(kind) && <select className="runtime-default-mode" aria-label={t("默认启动模式 · {runtime}", { runtime: RUNTIME_LABELS[kind] })} value={availability.prefs.defaultLaunchModes?.[kind] ?? "cli_default"} disabled={!availability.ready || pending !== null} onChange={event => void saveMode(kind, event.target.value)}>
+      {!launchChoices(kind).some(choice => choice.id === (availability.prefs.defaultLaunchModes?.[kind] ?? "cli_default")) && <option disabled value={availability.prefs.defaultLaunchModes?.[kind]}>{t("已保存模式不可用")}</option>}
+      {launchChoices(kind).map(choice => <option key={choice.id} value={choice.id}>{t(choice.label)}</option>)}
     </select>}
-    {supportsRuntimeInstallation(kind) && <button type="button" className="btn secondary collab-runtime-install-entry" onClick={() => setInstalling(kind)}>安装与版本</button>}
-    <div className="collab-runtime-order-actions" role="group" aria-label={`调整 ${RUNTIME_LABELS[kind]} 顺序`}>
-      <button type="button" aria-label={`上移 ${RUNTIME_LABELS[kind]}`} title="上移" disabled={index === 0} onClick={() => onReorder(kind, group[index - 1], "before")}><ArrowUp size={14} aria-hidden="true" /></button>
-      <button type="button" aria-label={`下移 ${RUNTIME_LABELS[kind]}`} title="下移" disabled={index === group.length - 1} onClick={() => onReorder(kind, group[index + 1], "after")}><ArrowDown size={14} aria-hidden="true" /></button>
+    {supportsRuntimeInstallation(kind) && <button type="button" className="btn secondary collab-runtime-install-entry" onClick={() => setInstalling(kind)}>{t("安装与版本")}</button>}
+    <div className="collab-runtime-order-actions" role="group" aria-label={t("调整 {runtime} 顺序", { runtime: RUNTIME_LABELS[kind] })}>
+      <button type="button" aria-label={t("上移 {runtime}", { runtime: RUNTIME_LABELS[kind] })} title={t("上移")} disabled={index === 0} onClick={() => onReorder(kind, group[index - 1], "before")}><ArrowUp size={14} aria-hidden="true" /></button>
+      <button type="button" aria-label={t("下移 {runtime}", { runtime: RUNTIME_LABELS[kind] })} title={t("下移")} disabled={index === group.length - 1} onClick={() => onReorder(kind, group[index + 1], "after")}><ArrowDown size={14} aria-hidden="true" /></button>
     </div>
   </div>;
-  return <Modal className={`collab-runtime-management${installing ? " runtime-installation-modal" : ""}`} ariaLabel="管理 Runtime" onClose={onClose}>
-    <header><h3>管理 Runtime</h3><button type="button" className="btn secondary" aria-label="关闭" onClick={onClose}>{installing ? <X size={21} /> : "关闭"}</button></header>
+  return <Modal className={`collab-runtime-management${installing ? " runtime-installation-modal" : ""}`} ariaLabel={t("管理 Runtime")} onClose={onClose}>
+    <header><h3>{t("管理 Runtime")}</h3><button type="button" className="btn secondary" aria-label={t("关闭")} onClick={onClose}>{installing ? <X size={21} /> : t("关闭")}</button></header>
     {installing ? <RuntimeInstallWizard key={installing} kind={installing} onBack={() => setInstalling(null)} onComplete={installing === initialInstaller ? onClose : undefined} /> : <>
     {(error || availability.error) && <p role="alert" className="collaboration-settings-error">{error || availability.error}</p>}
     {orderError && <p role="alert" className="collaboration-settings-error">{orderError}</p>}
-    {!availability.ready && <button type="button" className="btn secondary" onClick={() => void availability.refresh()}>重新加载配置</button>}
+    {!availability.ready && <button type="button" className="btn secondary" onClick={() => void availability.refresh()}>{t("重新加载配置")}</button>}
     <div className="collab-runtime-management-list" onDragOver={(event) => {
       if (!dragSource.current) return;
       event.preventDefault();
@@ -152,14 +154,14 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose,
         <h4 className="collab-runtime-management-group">
           <button type="button" className="runtime-group-toggle" aria-expanded={!collapsed}
             onClick={() => setCollapsedGroups(current => ({ ...current, [category]: !current[category] }))}>
-            {collapsed ? <CaretRight size={14} aria-hidden="true" /> : <CaretDown size={14} aria-hidden="true" />}{title}（{items.length}）
+            {collapsed ? <CaretRight size={14} aria-hidden="true" /> : <CaretDown size={14} aria-hidden="true" />}{t("{title}（{count}）", { title: t(title), count: items.length })}
           </button>
         </h4>
         {!collapsed && items.map(renderItem)}
       </section>;
     })}
     </div>
-    <p className="runtime-launch-footnote">默认模式用于之后新建的 CLI 会话；已打开的会话保持原设置。</p>
+    <p className="runtime-launch-footnote">{t("默认模式用于之后新建的 CLI 会话；已打开的会话保持原设置。")}</p>
     </>}
   </Modal>;
 }

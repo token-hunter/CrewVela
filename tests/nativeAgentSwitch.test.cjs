@@ -71,6 +71,7 @@ test('selector icons navigate while only the separate handoff button starts a ha
   const runtimes = ['claude_chat', 'codex_chat', 'kimi_chat', 'zcode', 'deepseek_harness', 'opencode_chat', 'pi_chat'];
   const runtimeLabels = Object.fromEntries(runtimes.map(kind => [kind, kind]));
   const load = name => name === '../runtimeLogos' ? { RUNTIME_LABELS: runtimeLabels, RUNTIME_LOGOS: runtimeLabels }
+    : name === '../useInterfaceLanguage' ? { useTranslation: () => source => source }
     : name === '@phosphor-icons/react' ? { ArrowsLeftRight: () => null }
     : name.startsWith('./Native') ? {} : require(name);
   new Function('require', 'module', 'exports', js)(load, componentModule, componentModule.exports);
@@ -170,6 +171,7 @@ test('new chat menu Escape consumes the global shortcut and restores focus; trig
   const refs = [{ current: { querySelectorAll: () => buttons } }, { current: trigger }, { current: { querySelector: () => ({ closest: () => ({ scrollIntoView: options => { scrollOptions = options; } }) }) } }];
   const load = name => name === 'react' ? { useState: initial => [stateIndex++ === 0 ? true : initial, value => { if (typeof value === 'boolean') states.push(value); }], useEffect: callback => effects.push(callback), useLayoutEffect: callback => effects.push(callback), useRef: () => refs.shift() }
     : name === '../runtimeLogos' ? { RUNTIME_LABELS: {}, RUNTIME_LOGOS: {} }
+    : name === '../useInterfaceLanguage' ? { useTranslation: () => source => source }
     : name === '../sessionCapabilities' ? { sessionDisplayTitle: item => item.title }
     : name === '@phosphor-icons/react' ? { Plus: 'span', X: 'span', ArrowsLeftRight: 'span' } : require(name);
   new Function('require', 'module', 'exports', js)(load, componentModule, componentModule.exports);
@@ -205,6 +207,7 @@ test('compact native chat tabs capture pointer on the tab button and retain ordi
     ? { useState: initial => [initial, () => {}], useEffect: () => {}, useLayoutEffect: () => {}, useRef: () => ({ current: null }) }
     : name === 'react-dom' ? { createPortal: () => null }
     : name === '../runtimeLogos' ? { RUNTIME_LABELS: {}, RUNTIME_LOGOS: { codex_chat: 'codex', pi_chat: 'pi' } }
+    : name === '../useInterfaceLanguage' ? { useTranslation: () => source => source }
     : name === '../sessionCapabilities' ? { sessionDisplayTitle: item => item.title }
     : name === '@phosphor-icons/react' ? { Plus: 'span', X: 'span', ArrowsLeftRight: 'span' }
     : require(name);

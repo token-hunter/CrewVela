@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { CaretDown, CheckCircle, Clock, ArrowSquareOut } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -23,6 +24,7 @@ const labels: Record<string, string> = {
 };
 
 function ReceiptPopover({ receipt, onOpen }: { receipt: Receipt; onOpen?: () => void }) {
+  const t = useTranslation();
   const id = useId();
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ function ReceiptPopover({ receipt, onOpen }: { receipt: Receipt; onOpen?: () => 
       </li>)}</ol>
       {receipt.reply && <p>{receipt.reply}</p>}
       {onOpen && <button type="button" className="communication-text-button" onClick={onOpen}>
-        <ArrowSquareOut size={15} />查看原会话
+        <ArrowSquareOut size={15} />{t("查看原会话")}
       </button>}
     </section>}
   </div>;

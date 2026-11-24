@@ -26,6 +26,9 @@ function harness() {
         useRef(value) { const index = hookIndex++; return hooks[index] ??= { current: value }; },
       };
       if (id === "react/jsx-runtime") return { jsx, jsxs: jsx };
+      if (id === "../useInterfaceLanguage") return {
+        useTranslation: () => (source, values) => source.replace(/\{(\w+)\}/g, (token, key) => values?.[key] ?? token),
+      };
       if (id === "@phosphor-icons/react") return { ArrowUp: "up-icon", ArrowDown: "down-icon", DotsSixVertical: "drag-icon", X: "close-icon" };
       if (id === "./RuntimeInstallWizard") return { RuntimeInstallWizard: "runtime-installer" };
       if (id === "../runtimeInstallation") return installation;

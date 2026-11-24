@@ -1,3 +1,4 @@
+import { useTranslation } from "./useInterfaceLanguage";
 import { attentionOpenMode, type AttentionKind } from "./sidebarAttention";
 import { IS_MAC, isTerminalShell, shellLabel, terminalShells } from "./platform";
 import { existingViewPanel, type AppViewMenuProps, type ViewPanel } from "./appView";
@@ -355,6 +356,7 @@ const PREVIEW_PROJECTS: Project[] = [
 ];
 
 export default function App() {
+  const t = useTranslation();
   const [testProfile, setTestProfile] = useState<{dataDir: string} | null>(null);
   useEffect(() => {
     if (UI_PREVIEW) return;
@@ -2489,7 +2491,7 @@ export default function App() {
         <div
           className="left-sidebar-resizer"
           role="separator"
-          aria-label="调整左侧栏宽度"
+          aria-label={t("调整左侧栏宽度")}
           aria-orientation="vertical"
           aria-valuemin={0}
           aria-valuemax={window.innerWidth}
@@ -2607,7 +2609,7 @@ export default function App() {
                       className="btn primary"
                       onClick={() => selectSession(selectedSession.id)}
                     >
-                      恢复会话
+                      {t("恢复会话")}
                     </button>}
                     {selectedSession.lastError && (
                       <pre className="session-error">
@@ -2671,14 +2673,14 @@ export default function App() {
                 )}
                 <aside
                   className={`unified-right-sidebar${activeRightSidebarTab ? "" : " is-closed"}${sidebarMaximized ? " is-maximized" : ""}`}
-                  aria-label="右侧栏"
+                  aria-label={t("右侧栏")}
                   aria-hidden={!activeRightSidebarTab}
                 >
                   {!collaborationOverviewOpen && <RightSidebarActivityBar
                     activeTab={activeRightSidebarTab ?? lastRightSidebarTab}
                     onSelect={(tab) => void selectRightSidebarTab(tab)}
                     onClose={closeRightSidebar}
-                    tabs={openRightSidebarTabs.map(id => ({ id, label: id === "start" ? "开始" : sidebarTabKind(id ?? "") === "files" ? "文件" : sidebarTabKind(id ?? "") === "browser" ? "浏览器" : sidebarTabKind(id ?? "") === "git" ? "Git" : sidebarTabKind(id ?? "") === "multi_agent" ? "多智能体" : shellLabel(sessions.find(item => item.id === id.slice(9))?.shell) }))}
+                    tabs={openRightSidebarTabs.map(id => ({ id, label: id === "start" ? t("开始") : sidebarTabKind(id ?? "") === "files" ? t("文件") : sidebarTabKind(id ?? "") === "browser" ? t("浏览器") : sidebarTabKind(id ?? "") === "git" ? "Git" : sidebarTabKind(id ?? "") === "multi_agent" ? t("多智能体") : shellLabel(sessions.find(item => item.id === id.slice(9))?.shell) }))}
                     onCloseTab={tab => void closeSidebarResource(tab)}
                     maximized={sidebarMaximized}
                     onToggleMaximize={toggleSidebarMaximized}
@@ -2708,7 +2710,7 @@ export default function App() {
                         {session.ptyId !== null ? <TerminalPane sessionId={session.ptyId} title={session.title} providerName={session.providerName}
                           kind={session.kind} shell={session.shell} cwd={session.cwd} status={session.status} theme={theme}
                           preview={UI_PREVIEW} hidden={activeRightSidebarTab !== tab} onClose={() => void closeSidebarResource(tab)} />
-                          : <div className="right-sidebar-loading">终端已停止。通过「＋」新建终端。</div>}
+                          : <div className="right-sidebar-loading">{t("终端已停止。通过「＋」新建终端。")}</div>}
                       </div>;
                     })}
                     {[...mountedRightSidebarTabs].filter(tab => sidebarTabKind(tab) === "multi_agent").map(tab => (
@@ -2763,7 +2765,7 @@ export default function App() {
                       </div>
                     ))}
                     {activeRightSidebarTab && !mountedRightSidebarTabs.has(activeRightSidebarTab) && (
-                      <div className="right-sidebar-loading">正在打开…</div>
+                      <div className="right-sidebar-loading">{t("正在打开…")}</div>
                     )}
                   </div>
                 </aside>

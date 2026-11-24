@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { Check, Palette } from "@phosphor-icons/react";
 import "../styles/settings-creative-modes.css";
@@ -22,6 +23,7 @@ export function SettingsStyleMenu<T extends string>({
   onChange,
   onOpenAppearanceSettings,
 }: Props<T>) {
+  const t = useTranslation();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -53,19 +55,19 @@ export function SettingsStyleMenu<T extends string>({
       <button
         type="button"
         className={`cv-style-trigger${open ? " open" : ""}${value !== "classic" ? " is-creative" : ""}`}
-        aria-label={`切换${label}（当前：${current?.label ?? ""}）`}
+        aria-label={t("切换{layout}（当前：{current}）", { layout: t(label), current: t(current?.label ?? "") })}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={`${label}：${current?.label ?? ""}`}
+        title={t("{layout}：{current}", { layout: t(label), current: t(current?.label ?? "") })}
         onClick={() => setOpen((prev) => !prev)}
       >
         <Palette size={13} aria-hidden="true" />
-        <span>模式</span>
+        <span>{t("模式")}</span>
       </button>
 
       {open && (
-        <div className="cv-style-popover" role="menu" aria-label={label}>
-          <div className="cv-style-popover-title">{label}</div>
+        <div className="cv-style-popover" role="menu" aria-label={t(label)}>
+          <div className="cv-style-popover-title">{t(label)}</div>
           {options.map((option) => {
             const selected = option.id === value;
             return (
@@ -80,7 +82,7 @@ export function SettingsStyleMenu<T extends string>({
                   setOpen(false);
                 }}
               >
-                <span>{option.label}</span>
+                <span>{t(option.label)}</span>
                 {selected && <Check size={13} weight="bold" aria-hidden="true" />}
               </button>
             );
@@ -94,7 +96,7 @@ export function SettingsStyleMenu<T extends string>({
                 onOpenAppearanceSettings();
               }}
             >
-              前往外观设置
+              {t("前往外观设置")}
             </button>
           )}
         </div>

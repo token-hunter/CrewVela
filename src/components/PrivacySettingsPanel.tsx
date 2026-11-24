@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,6 +13,7 @@ import "../styles/privacy-settings.css";
 import "../styles/settings-creative-modes.css";
 
 function PrivacyDirectoryDialog({onClose}:{onClose:()=>void}) {
+  const t = useTranslation();
   const [directory,setDirectory]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false),[revision,setRevision]=useState(0);
   const mounted=useRef(true),inFlight=useRef(false);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
@@ -33,14 +35,14 @@ function PrivacyDirectoryDialog({onClose}:{onClose:()=>void}) {
     finally{inFlight.current=false;if(mounted.current)setBusy(false);}
   };
   return <Modal className="privacy-dialog" overlayClassName="dialog-overlay privacy-overlay" labelledBy="privacy-location-title" onClose={onClose} closeOnOverlayClick>
-    <header><h2 id="privacy-location-title">应用数据目录</h2><button className="btn-icon" aria-label="关闭数据目录" onClick={onClose}><X size={19}/></button></header>
+    <header><h2 id="privacy-location-title">{t("应用数据目录")}</h2><button className="btn-icon" aria-label="关闭数据目录" onClick={onClose}><X size={19}/></button></header>
     <div className="privacy-dialog-content"><p>这是当前 CrewVela 实际使用的应用数据目录。</p>
       {loading&&<p role="status">正在读取目录…</p>}{directory&&<code className="privacy-directory-path">{directory}</code>}
       <p className="privacy-note">CLI 原生历史与共享记忆服务数据可能位于其他位置，需要分别管理。</p>
       {error&&<p className="privacy-error" role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
       {!loading&&!directory&&<button className="btn" onClick={()=>setRevision(value=>value+1)}>重新读取目录</button>}
     </div>
-    <footer>{directory&&<><button className="btn" disabled={busy} onClick={()=>void act(true)}><Copy size={15}/>复制路径</button><button className="btn" disabled={busy} onClick={()=>void act(false)}><FolderOpen size={15}/>打开目录</button></>}<button className="btn" onClick={onClose}>关闭</button></footer>
+    <footer>{directory&&<><button className="btn" disabled={busy} onClick={()=>void act(true)}><Copy size={15}/>复制路径</button><button className="btn" disabled={busy} onClick={()=>void act(false)}><FolderOpen size={15}/>打开目录</button></>}<button className="btn" onClick={onClose}>{t("关闭")}</button></footer>
   </Modal>;
 }
 
@@ -72,6 +74,7 @@ export function PrivacySettingsPanel({
   onNavigate: (destination: PrivacyDestination) => void;
   viewStyle?: PrivacySettingsStyle;
 }) {
+  const t = useTranslation();
   const [detail, setDetail] = useState<PrivacyExplanation | "directory" | null>(null);
   const [activeLockId, setActiveLockId] = useState<(typeof VAULT_LOCKS)[number]["id"]>("local");
   const explanation = detail && detail !== "directory" ? PRIVACY_EXPLANATIONS[detail] : null;
@@ -188,7 +191,7 @@ export function PrivacySettingsPanel({
     {explanation&&createPortal(<Modal className="privacy-dialog privacy-explanation" overlayClassName="dialog-overlay privacy-overlay" labelledBy="privacy-explanation-title" onClose={()=>setDetail(null)} closeOnOverlayClick>
       <header><h2 id="privacy-explanation-title">{explanation.title}</h2><button className="btn-icon" aria-label="关闭隐私说明" onClick={()=>setDetail(null)}><X size={19}/></button></header>
       <article className="privacy-dialog-content">{sections.length?sections.map(section=><section key={section.title}><h3>{section.title}</h3>{section.paragraphs.map((p,i)=><p key={i}>{p}</p>)}</section>):<p>请通过左上角“帮助 → 隐私政策”查看完整的数据说明。</p>}</article>
-      <footer><button className="btn" onClick={()=>setDetail(null)}>关闭</button></footer>
+      <footer><button className="btn" onClick={()=>setDetail(null)}>{t("关闭")}</button></footer>
     </Modal>,document.body)}
   </section>;
 }

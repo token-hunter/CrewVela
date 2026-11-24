@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -37,6 +38,7 @@ const labels: Record<LocalProjectServiceStatus["state"], string> = {
 function ProjectEditDialog({ project, kind, onSaved, onClose }: {
   project: Project; kind: EditKind; onSaved: (project: Project) => void; onClose: () => void;
 }) {
+  const t = useTranslation();
   const [name, setName] = useState(project.name);
   const [path, setPath] = useState(project.path);
   const [linked, setLinked] = useState(project.collaborationProjectIds ?? []);
@@ -89,10 +91,10 @@ function ProjectEditDialog({ project, kind, onSaved, onClose }: {
     onClose={() => { if (!inFlight.current) onClose(); }}>
     <form onSubmit={event => void save(event)}>
       <h3>{title}</h3>
-      {kind === "rename" && <label>项目名称<input required maxLength={120} disabled={saving} value={name} onChange={event => setName(event.target.value)} /></label>}
+      {kind === "rename" && <label>{t("项目名称")}<input required maxLength={120} disabled={saving} value={name} onChange={event => setName(event.target.value)} /></label>}
       {kind === "directory" && <>
-        <label>项目目录<input required disabled={saving} value={path} onChange={event => setPath(event.target.value)} /></label>
-        <button className="btn secondary" type="button" disabled={saving} onClick={() => void pickDirectory()}><FolderSimple size={16} />选择目录</button>
+        <label>{t("项目目录")}<input required disabled={saving} value={path} onChange={event => setPath(event.target.value)} /></label>
+        <button className="btn secondary" type="button" disabled={saving} onClick={() => void pickDirectory()}><FolderSimple size={16} />{t("选择目录")}</button>
         <p>新会话使用新目录，已有会话保留原工作目录。</p>
       </>}
       {kind === "archive" && <p>{project.archivedAt == null ? `归档「${project.name}」并从主界面项目列表收起。已有会话和项目文件会保留。` : `将「${project.name}」恢复到主界面项目列表。`}</p>}
@@ -106,14 +108,15 @@ function ProjectEditDialog({ project, kind, onSaved, onClose }: {
       </div>}
       {error && <p className="project-management-error" role="alert">{error}</p>}
       <footer>
-        <button ref={cancel} className="btn secondary" type="button" disabled={saving} onClick={onClose}>取消</button>
-        <button className="btn" type="submit" disabled={saving || (kind === "rename" && !name.trim()) || (kind === "directory" && !path.trim()) || (kind === "collaboration" && !available)}>{saving ? "处理中…" : kind === "archive" ? title : "保存"}</button>
+        <button ref={cancel} className="btn secondary" type="button" disabled={saving} onClick={onClose}>{t("取消")}</button>
+        <button className="btn" type="submit" disabled={saving || (kind === "rename" && !name.trim()) || (kind === "directory" && !path.trim()) || (kind === "collaboration" && !available)}>{saving ? "处理中…" : kind === "archive" ? title : t("保存")}</button>
       </footer>
     </form>
   </Modal>;
 }
 
 function ServiceLog({ project, onClose }: { project: Project; onClose: () => void }) {
+  const t = useTranslation();
   const [log, setLog] = useState<string | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -133,7 +136,7 @@ function ServiceLog({ project, onClose }: { project: Project; onClose: () => voi
     return () => { active = false; window.clearInterval(timer); };
   }, [project.id]);
   return <Modal className="project-management-dialog project-management-log" ariaLabel={`${project.name}的开发服务日志`} onClose={onClose}>
-    <header><h3>{project.name} · 服务日志</h3><button type="button" className="icon-button" aria-label="关闭日志" onClick={onClose}><X size={18} /></button></header>
+    <header><h3>{project.name} · 服务日志</h3><button type="button" className="icon-button" aria-label={t("关闭日志")} onClick={onClose}><X size={18} /></button></header>
     {error && <p className="project-management-error" role="alert">{error}</p>}
     <pre tabIndex={0}>{log === null ? "正在读取日志…" : log || "本次运行暂无日志。"}</pre>
   </Modal>;
@@ -152,6 +155,7 @@ export function ProjectManagementPanel({
   onViewStyleChange,
   onOpenAppearanceSettings,
 }: Props) {
+  const t = useTranslation();
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ project: Project; kind: EditKind } | null>(null);
@@ -196,9 +200,9 @@ export function ProjectManagementPanel({
         <button type="button" className="project-management-card-toggle" aria-label={project.name} aria-expanded={isOpen} aria-controls={details} onClick={() => setExpanded(isOpen ? null : project.id)}>
           <span className="project-management-folder"><FolderSimple size={23} /></span>
           <span><strong>{project.name}</strong><small title={project.path}>{project.path}</small></span>
-          {status?.state === "running" && !isOpen && <span className="project-management-dot" title="运行中" />}
+          {status?.state === "running" && !isOpen && <span className="project-management-dot" title={t("运行中")} />}
         </button>
-        {!archived && onOpen && <button className={`btn${isOpen ? " primary" : ""}`} type="button" disabled={opening !== null} onClick={() => void openProject(project)}><ArrowSquareOut size={17} />打开工作区</button>}
+        {!archived && onOpen && <button className={`btn${isOpen ? " primary" : ""}`} type="button" disabled={opening !== null} onClick={() => void openProject(project)}><ArrowSquareOut size={17} />{t("打开工作区")}</button>}
         <details className="project-management-menu">
           <summary aria-label={`${project.name}的项目操作`}><DotsThree size={21} /></summary>
           <div>
@@ -220,22 +224,22 @@ export function ProjectManagementPanel({
       </header>
       <div id={details} hidden={!isOpen}>
         <div className="project-management-service">
-          <strong>本地开发服务</strong>
+          <strong>{t("本地开发服务")}</strong>
           <div className="project-management-actions">
             {!archived && <span className="project-management-status" data-state={status?.state ?? "idle"}>{status?.state === "running" && <span className="project-management-dot" />}{working && !running ? "正在准备启动" : labels[status?.state ?? "idle"]}</span>}
-            {status?.state === "running" && status.url && onBrowse && <button type="button" className="btn secondary" onClick={() => { if (status.url) onBrowse(status.url); }}><ArrowSquareOut size={16} />打开页面</button>}
-            {status && <button type="button" className="btn secondary" onClick={() => setLogs(project)}><FileText size={16} />日志</button>}
+            {status?.state === "running" && status.url && onBrowse && <button type="button" className="btn secondary" onClick={() => { if (status.url) onBrowse(status.url); }}><ArrowSquareOut size={16} />{t("打开页面")}</button>}
+            {status && <button type="button" className="btn secondary" onClick={() => setLogs(project)}><FileText size={16} />{t("日志")}</button>}
             {!archived && services && <button type="button" className="btn secondary project-management-primary" disabled={working} onClick={() => void changeService(project.id, running ? "stop" : "start")}>
-              {running ? <Stop size={16} /> : <Play size={16} />}{running ? "停止项目" : "启动项目"}
+              {running ? <Stop size={16} /> : <Play size={16} />}{running ? t("停止项目") : t("启动项目")}
             </button>}
           </div>
         </div>
         {serviceError && <div>
           <p className="project-management-error" role="alert">{serviceError}</p>
-          {!archived && !running && services && <button className="btn secondary" type="button" disabled={working} onClick={() => void changeService(project.id, "recheck")}>重新识别启动方式</button>}
+          {!archived && !running && services && <button className="btn secondary" type="button" disabled={working} onClick={() => void changeService(project.id, "recheck")}>{t("重新识别启动方式")}</button>}
         </div>}
         <div className="project-management-association">
-          <button type="button" onClick={() => setDialog({ project, kind: "collaboration" })}><LinkSimple size={17} />关联协作<CaretRight size={14} /></button>
+          <button type="button" onClick={() => setDialog({ project, kind: "collaboration" })}><LinkSimple size={17} />{t("关联协作")}<CaretRight size={14} /></button>
           {collaboration.filter(item => project.collaborationProjectIds?.includes(item.id)).map(item =>
             <button key={item.id} type="button" onClick={() => onOpenCollaboration?.(item.id)}>{item.name}<ArrowSquareOut size={14} /></button>)}
         </div>
@@ -250,7 +254,7 @@ export function ProjectManagementPanel({
   }}>
     <div className={`project-management-toolbar${onViewStyleChange ? " has-mode-switcher" : ""}`}>
       <label className="project-management-search"><MagnifyingGlass size={17} aria-hidden="true" />
-        <input type="search" aria-label="搜索项目名或目录" placeholder="搜索项目名或目录" value={query} onChange={event => setQuery(event.target.value)} />
+        <input type="search" aria-label={t("搜索项目名或目录")} placeholder={t("搜索项目名或目录")} value={query} onChange={event => setQuery(event.target.value)} />
       </label>
       {onViewStyleChange && (
         <ProjectManagementStyleSwitcher
@@ -259,7 +263,7 @@ export function ProjectManagementPanel({
           onOpenAppearanceSettings={onOpenAppearanceSettings}
         />
       )}
-      {onAdd && <button type="button" className="btn primary" onClick={onAdd}><Plus size={18} />添加项目</button>}
+      {onAdd && <button type="button" className="btn primary" onClick={onAdd}><Plus size={18} />{t("添加项目")}</button>}
     </div>
     {(error || services?.readError) && <p className="project-management-error" role="alert">{error || `读取服务状态失败：${services?.readError}`}</p>}
     {!matches.length && <p className="project-management-empty">{search ? "没有匹配的项目。" : "添加本地目录后即可管理项目。"}</p>}
@@ -267,7 +271,7 @@ export function ProjectManagementPanel({
       <>
         {active.map(renderProject)}
         {archived.length > 0 && <details className="project-management-archived" open={search ? true : undefined}>
-          <summary>已归档</summary>{archived.map(renderProject)}
+          <summary>{t("已归档")}</summary>{archived.map(renderProject)}
         </details>}
       </>
     )}

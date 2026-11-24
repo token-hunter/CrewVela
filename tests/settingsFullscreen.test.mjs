@@ -23,9 +23,9 @@ test("所有设置分类共用同一个窗口和遮罩", () => {
 });
 
 test("统一设置提供固定关闭入口、搜索和分组导航", () => {
-  assert.match(settingsSource, /aria-label="关闭设置"/);
-  assert.equal(settingsSource.match(/aria-label="关闭设置"/g)?.length, 1);
-  assert.match(settingsSource, /aria-label="搜索设置"/);
+  assert.match(settingsSource, /aria-label=\{t\("关闭设置"\)\}/);
+  assert.equal(settingsSource.match(/aria-label=\{t\("关闭设置"\)\}/g)?.length, 1);
+  assert.match(settingsSource, /aria-label=\{t\("搜索设置"\)\}/);
   assert.match(settingsSource, /settings-nav-group/);
   assert.doesNotMatch(settingsSource, /工作流画布|Benchmark|赛博女友/);
   assert.deepEqual(
@@ -47,7 +47,7 @@ test("窄屏仍保留窗口关闭入口和可访问的图标导航", () => {
     stylesSource,
     /@media \(max-width:\s*720px\)[\s\S]*?\.settings-dialog.settings-native \.settings-nav\s*\{[^}]*display:\s*flex;/,
   );
-  assert.match(settingsSource, /aria-label=\{item\.label\}/);
+  assert.match(settingsSource, /aria-label=\{t\(item\.label\)\}/);
 });
 
 test("移除功能不再出现在设置路由中", () => {

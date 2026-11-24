@@ -313,3 +313,22 @@
 .external-control-status { margin-top: 20px; }
 .external-control-status h4 { margin: 0 0 8px; }
 .runtime-inline-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.general-interface-language {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.general-interface-language select {
+  min-width: 118px;
+  max-width: 100%;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+}

@@ -1,3 +1,5 @@
+import { getInterfaceLanguage } from "../interfaceLanguage";
+import { useTranslation } from "../useInterfaceLanguage";
 import { sessionDisplayTitle, sessionDisplayProvider } from "../sessionCapabilities";
 import { useMemo, useState } from "react";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
@@ -23,14 +25,19 @@ interface Props {
   viewStyle?: ArchivedSessionsSettingsStyle;
 }
 
-const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
+const dateOptions: Intl.DateTimeFormatOptions = {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
-});
+};
+const dateFormatters = {
+  "zh-CN": new Intl.DateTimeFormat("zh-CN", dateOptions),
+  en: new Intl.DateTimeFormat("en", dateOptions),
+};
+const formatDate = (time: number) => dateFormatters[getInterfaceLanguage()].format(time);
 
 function formatTinNumber(index: number): string {
   return String(index + 1).padStart(2, "0");
@@ -44,6 +51,7 @@ export function ArchivedSessionsPanel({
   onViewTranscript,
   viewStyle = "classic",
 }: Props) {
+  const t = useTranslation();
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -117,7 +125,7 @@ export function ArchivedSessionsPanel({
                   {project.name}
                 </option>
               ))}
-            {hasUngrouped && <option value={UNGROUPED_ARCHIVE_PROJECT_ID}>未分组</option>}
+            {hasUngrouped && <option value={UNGROUPED_ARCHIVE_PROJECT_ID}>{t("未分组")}</option>}
           </select>
         </div>
 
@@ -184,7 +192,7 @@ export function ArchivedSessionsPanel({
                   >
                     {selectedProviderLabel}
                   </em>
-                  <span>封存于 {dateFormatter.format(selectedSession.archivedAt ?? selectedSession.updatedAt)}</span>
+                  <span>封存于 {formatDate(selectedSession.archivedAt ?? selectedSession.updatedAt)}</span>
                 </div>
                 <small className="archived-tea-path" title={selectedSession.cwd}>
                   {selectedSession.cwd}
@@ -197,7 +205,7 @@ export function ArchivedSessionsPanel({
                       onClick={() => onViewTranscript(selectedSession)}
                     >
                       <FileTextIcon size={14} aria-hidden="true" />
-                      查看记录
+                      {t("查看记录")}
                     </button>
                   )}
                   <button
@@ -279,7 +287,7 @@ export function ArchivedSessionsPanel({
                             </strong>
                             <span className="archived-tea-card-sub">
                               <em className="archived-provider-badge">{providerLabel}</em>
-                              <span>{dateFormatter.format(session.archivedAt ?? session.updatedAt)}</span>
+                              <span>{formatDate(session.archivedAt ?? session.updatedAt)}</span>
                             </span>
                           </span>
                         </button>
@@ -320,7 +328,7 @@ export function ArchivedSessionsPanel({
                 {project.name}
               </option>
             ))}
-          {hasUngrouped && <option value={UNGROUPED_ARCHIVE_PROJECT_ID}>未分组</option>}
+          {hasUngrouped && <option value={UNGROUPED_ARCHIVE_PROJECT_ID}>{t("未分组")}</option>}
         </select>
       </div>
 
@@ -357,7 +365,7 @@ export function ArchivedSessionsPanel({
                           <em className="archived-provider-badge">{providerLabel}</em>
                         </div>
                         <span>
-                          {providerLabel} · {dateFormatter.format(session.archivedAt ?? session.updatedAt)}
+                          {providerLabel} · {formatDate(session.archivedAt ?? session.updatedAt)}
                         </span>
                         <small title={session.cwd}>{session.cwd}</small>
                       </div>
@@ -365,7 +373,7 @@ export function ArchivedSessionsPanel({
                         {session.kind === "claude" && (
                           <button type="button" className="archived-action-view" onClick={() => onViewTranscript(session)}>
                             <FileTextIcon size={14} aria-hidden="true" />
-                            查看记录
+                            {t("查看记录")}
                           </button>
                         )}
                         <button type="button" className="archived-action-restore" onClick={() => void onRestore(session)}>

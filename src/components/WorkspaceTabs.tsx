@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { MinusIcon } from "@phosphor-icons/react/dist/csr/Minus";
@@ -41,6 +42,7 @@ export function WorkspaceTabs({
   onToggleRightSidebar,
   viewMenu,
 }: Props) {
+  const t = useTranslation();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -74,7 +76,7 @@ export function WorkspaceTabs({
     <div
       className="workspace-tabs"
       role="tablist"
-      aria-label="工作区页签"
+      aria-label={t("工作区页签")}
       data-tauri-drag-region
     >
       {sidebarCollapsed && <CollapsedAppTools view={viewMenu} onSettings={onOpenSettings} />}
@@ -82,8 +84,8 @@ export function WorkspaceTabs({
         <button
           type="button"
           className="workspace-sidebar-expand"
-          aria-label="展开侧栏"
-          title="展开侧栏"
+          aria-label={t("展开侧栏")}
+          title={t("展开侧栏")}
           onClick={onToggleSidebar}
         >
           <SidebarSimpleIcon size={18} />
@@ -120,7 +122,7 @@ export function WorkspaceTabs({
               <button
                 type="button"
                 className="workspace-tab-title"
-                title="双击重命名"
+                title={t("双击重命名")}
                 onClick={() => onSelect(tab.id)}
                 onDoubleClick={() => startRename(tab)}
               >
@@ -131,7 +133,7 @@ export function WorkspaceTabs({
               <button
                 type="button"
                 className="workspace-tab-close"
-                aria-label={`关闭页签 ${tab.title}`}
+                aria-label={t("关闭页签 {title}", { title: tab.title })}
                 title={canClose ? `关闭页签 ${tab.title}` : "会话数据正在加载"}
                 disabled={!canClose}
                 onClick={() => onClose(tab)}
@@ -145,8 +147,8 @@ export function WorkspaceTabs({
       <button
         type="button"
         className="workspace-tab-add"
-        aria-label="新增页签"
-        title="新增页签"
+        aria-label={t("新增页签")}
+        title={t("新增页签")}
         onClick={onAdd}
       >
         <PlusIcon size={13} weight="bold" />
@@ -154,8 +156,8 @@ export function WorkspaceTabs({
       <button
         type="button"
         className={`workspace-right-sidebar-toggle${rightSidebarOpen ? " active" : ""}`}
-        aria-label="切换右侧栏"
-        title="切换右侧栏"
+        aria-label={t("切换右侧栏")}
+        title={t("切换右侧栏")}
         aria-pressed={rightSidebarOpen}
         onClick={onToggleRightSidebar}
       >
@@ -166,8 +168,8 @@ export function WorkspaceTabs({
         <button
           type="button"
           className="window-control"
-          aria-label="最小化"
-          title="最小化"
+          aria-label={t("最小化")}
+          title={t("最小化")}
           onClick={() =>
             void appWindow?.minimize().catch(reportWindowError("最小化"))
           }
@@ -177,8 +179,8 @@ export function WorkspaceTabs({
         <button
           type="button"
           className="window-control"
-          aria-label="最大化 / 还原"
-          title="最大化 / 还原"
+          aria-label={t("最大化 / 还原")}
+          title={t("最大化 / 还原")}
           onClick={() =>
             void appWindow
               ?.toggleMaximize()
@@ -190,8 +192,8 @@ export function WorkspaceTabs({
         <button
           type="button"
           className="window-control window-control-close"
-          aria-label="关闭"
-          title="关闭"
+          aria-label={t("关闭")}
+          title={t("关闭")}
           onClick={() =>
             void appWindow?.close().catch(reportWindowError("关闭"))
           }

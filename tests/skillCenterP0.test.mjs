@@ -34,8 +34,8 @@ test("多 Runtime 卡片分发保留当前支持的 Runtime 与批量事务入�
 });
 
 test("P0 支持全局、项目、任务作用域和多个配置集", () => {
-  assert.match(panel, /option value="global">全局/);
-  assert.match(panel, /option value="project">项目/);
+  assert.match(panel, /option value="global">\{t\("全局"\)\}/);
+  assert.match(panel, /option value="project">\{t\("项目"\)\}/);
   assert.match(panel, /option value="task">任务 \/ Agent/);
   assert.match(panel, /skill_center_save_set/);
   assert.match(panel, /skill_center_apply_set/);

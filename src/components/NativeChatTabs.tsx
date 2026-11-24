@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X, ArrowsLeftRight } from "@phosphor-icons/react";
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export function NativeChatTabs({ sessions, selectedId, creating, enabledAgents, canCreate, onSelect, onClose, onCreate, onHandoff, onReorder, orderError }: Props) {
+  const t = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -98,7 +100,7 @@ export function NativeChatTabs({ sessions, selectedId, creating, enabledAgents, 
     };
   }, [tabTooltip]);
   return <><div className="native-chat-navigation">
-    <div ref={tabs} className="native-chat-tabs" role="tablist" aria-label="已打开的聊天" onScroll={clearTabTooltip}>
+    <div ref={tabs} className="native-chat-tabs" role="tablist" aria-label={t("已打开的聊天")} onScroll={clearTabTooltip}>
       {sessions.map(session => {
         const displayTitle = sessionDisplayTitle(session);
         const statusLabel = statusLabels[session.status] ?? session.status;
@@ -171,7 +173,7 @@ export function NativeChatTabs({ sessions, selectedId, creating, enabledAgents, 
           <span className="native-chat-tab-title">{displayTitle}</span>
           <i className={`native-chat-status ${session.status}`} aria-label={`状态：${statusLabel}`} />
         </button>
-        <button type="button" className="native-chat-tab-close" aria-label={`关闭「${displayTitle}」标签`} title="关闭标签，保留会话和运行任务；可从左侧重新打开" onClick={() => onClose(session.id)}><X size={14} /></button>
+        <button type="button" className="native-chat-tab-close" aria-label={`关闭「${displayTitle}」标签`} title={t("关闭标签，保留会话和运行任务；可从左侧重新打开")} onClick={() => onClose(session.id)}><X size={14} /></button>
       </div>;
       })}
     </div>
@@ -185,15 +187,15 @@ export function NativeChatTabs({ sessions, selectedId, creating, enabledAgents, 
         buttons[next]?.focus();
       }
     }}>
-      <button ref={trigger} type="button" className="btn secondary" aria-label={creating ? "正在新建聊天" : "新建聊天"} title="新建聊天" aria-expanded={menuOpen} aria-controls="native-chat-create-menu" disabled={creating || !canCreate} onClick={() => setMenuOpen(value => !value)}><Plus size={17} /></button>
-      {menuOpen && <div className="native-chat-create-menu" id="native-chat-create-menu" aria-label="选择 Agent，新建独立聊天">
-        <p>选择 Agent，新建独立聊天</p>
+      <button ref={trigger} type="button" className="btn secondary" aria-label={creating ? "正在新建聊天" : t("新建聊天")} title={t("新建聊天")} aria-expanded={menuOpen} aria-controls="native-chat-create-menu" disabled={creating || !canCreate} onClick={() => setMenuOpen(value => !value)}><Plus size={17} /></button>
+      {menuOpen && <div className="native-chat-create-menu" id="native-chat-create-menu" aria-label={t("选择 Agent，新建独立聊天")}>
+        <p>{t("选择 Agent，新建独立聊天")}</p>
         {agents.map(kind => <button type="button" key={kind} disabled={!enabledAgents[kind] || creating} onClick={() => { setMenuOpen(false); trigger.current?.focus(); onCreate(kind); }}>
-          <img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><span>{RUNTIME_LABELS[kind]}</span>{!enabledAgents[kind] && <small>未启用</small>}
+          <img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><span>{RUNTIME_LABELS[kind]}</span>{!enabledAgents[kind] && <small>{t("未启用")}</small>}
         </button>)}
       </div>}
     </div>
-    {current && onHandoff && <button type="button" className="btn secondary native-chat-handoff" title="把当前工作交接给其它Agent" aria-label="把当前工作交接给其它Agent" disabled={creating} onClick={onHandoff}><ArrowsLeftRight size={17} aria-hidden="true" /></button>}
+    {current && onHandoff && <button type="button" className="btn secondary native-chat-handoff" title={t("把当前工作交接给其它Agent")} aria-label={t("把当前工作交接给其它Agent")} disabled={creating} onClick={onHandoff}><ArrowsLeftRight size={17} aria-hidden="true" /></button>}
   </div>
     {orderError && <p className="native-chat-tab-order-error" role="alert">{orderError}</p>}
     {tabTooltip && createPortal(
