@@ -1135,24 +1135,431 @@
   border-color: transparent;
 }
 
+/* ==================== Delivery Receipt Card (方案 1 · 极简发布票据) ==================== */
 .collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-delivery-card {
+  width: 100%;
+  max-width: 540px;
+  padding: 0;
   border-radius: 14px;
   border: 1px solid var(--gn-border-strong);
   background: var(--gn-surface);
-  padding: 14px 16px;
+  box-shadow: var(--shadow-sm, 0 8px 24px rgba(0, 0, 0, 0.24));
+  overflow: hidden;
+  container: team-delivery-card / inline-size;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .team-delivery-heading {
+  padding: 13px 15px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .delivery-heading-main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .delivery-heading-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gn-ok-soft);
+  border: 1px solid color-mix(in srgb, var(--gn-ok) 30%, transparent);
+  color: var(--gn-ok);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .delivery-heading-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-delivery-card .team-delivery-heading h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 680;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .delivery-heading-sub {
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--gn-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state {
+  flex: none;
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--gn-sunken);
+  border: 1px solid var(--gn-border);
+  color: var(--gn-text-2);
+  font-size: 11.5px;
+  font-weight: 560;
+  line-height: 1.3;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state::before {
+  width: 6.5px;
+  height: 6.5px;
+  background: var(--gn-muted);
+  opacity: 0.72;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state[data-state="starting"] {
+  background: var(--gn-warn-soft);
+  border-color: color-mix(in srgb, var(--gn-warn) 32%, transparent);
+  color: var(--gn-warn);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state[data-state="starting"]::before {
+  background: var(--gn-warn);
+  opacity: 1;
+  box-shadow: 0 0 0 2.5px var(--gn-warn-soft);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state[data-state="running"] {
+  background: var(--gn-ok-soft);
+  border-color: color-mix(in srgb, var(--gn-ok) 32%, transparent);
+  color: var(--gn-ok);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state[data-state="running"]::before {
+  background: var(--gn-ok);
+  opacity: 1;
+  box-shadow: 0 0 0 2.5px var(--gn-ok-soft);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state[data-state="failed"],
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state[data-state="stopFailed"] {
+  background: var(--gn-danger-soft);
+  border-color: color-mix(in srgb, var(--gn-danger) 32%, transparent);
+  color: var(--gn-danger);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state[data-state="failed"]::before,
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-state[data-state="stopFailed"]::before {
+  background: var(--gn-danger);
+  opacity: 1;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .delivery-actions-bar {
+  padding: 0 15px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-buttons button {
+  min-height: 33px;
+  height: 33px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 640;
+  line-height: 1;
+  padding: 0 14px;
+  white-space: nowrap;
+  transition: opacity 130ms ease, background 130ms ease, border-color 130ms ease, color 130ms ease, transform 130ms ease;
 }
 
 .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-open {
-  border-radius: 999px;
   background: var(--gn-cta-bg);
   color: var(--gn-cta-fg);
+  border: 1px solid transparent;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-open:hover:not(:disabled) {
+  background: var(--gn-cta-bg);
   border-color: transparent;
+  opacity: 0.9;
+  transform: translateY(-0.5px);
 }
 
 .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-stop {
-  border-radius: 999px;
-  border-color: var(--gn-border-strong);
+  background: transparent;
+  border: 1px solid var(--gn-border-strong);
+  color: var(--gn-text-2);
+  font-weight: 560;
+  padding: 0 12px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-stop:hover:not(:disabled) {
+  background: var(--gn-danger-soft);
+  border-color: color-mix(in srgb, var(--gn-danger) 35%, transparent);
+  color: var(--gn-danger);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-stop[data-compact="true"] {
+  width: 33px;
+  padding: 0;
+  opacity: 0.38;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-stop[data-compact="true"] .delivery-stop-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-links {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-links button {
+  min-height: 29px;
+  height: 29px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--gn-muted);
+  font-size: 12px;
+  font-weight: 550;
+  gap: 5px;
+  white-space: nowrap;
+  transition: background 130ms ease, border-color 130ms ease, color 130ms ease;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-links button + button {
+  border-top: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-links button:hover:not(:disabled) {
+  background: var(--gn-surface-2);
+  border-color: var(--gn-border);
   color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .delivery-sunken-panel {
+  border-top: 1px solid var(--gn-border);
+  background: var(--gn-sunken);
+  padding: 11px 15px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .team-work-views .grok-delivery-card .grok-delivery-receipt {
+  margin: 0;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-checks {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-check-pills {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-check-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-check-pill.is-ok {
+  background: var(--gn-ok-soft);
+  color: var(--gn-ok);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-check-pill.is-muted {
+  background: var(--gn-surface-2);
+  color: var(--gn-muted);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-cmd {
+  padding: 5px 7px 5px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--gn-bg) 58%, var(--gn-sunken));
+  font-size: 11.5px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-cmd code {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-git {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 6px;
+  font-size: 11.5px;
+  color: var(--gn-muted);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-git-branch {
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--gn-surface-2);
+  border: 1px solid var(--gn-border);
+  font-family: var(--mono-font, ui-monospace, Consolas, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gn-text);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-git-commit {
+  font-family: var(--mono-font, ui-monospace, Consolas, monospace);
+  font-size: 11.5px;
+  color: var(--gn-text-2);
+  background: transparent;
+  padding: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-feedback {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--gn-muted);
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-feedback[role="alert"] {
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--gn-danger-soft);
+  border: 1px solid color-mix(in srgb, var(--gn-danger) 28%, transparent);
+  color: var(--gn-danger);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-feedback[role="alert"] > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-footer {
+  margin-top: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--gn-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--gn-bg) 52%, var(--gn-sunken));
+  font-size: 11.5px;
+  color: var(--gn-muted);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-url {
+  font-family: var(--mono-font, ui-monospace, Consolas, monospace);
+  font-size: 11.5px;
+  color: var(--gn-ok);
+  background: transparent;
+  padding: 0;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-logs summary {
+  color: var(--gn-muted);
+  font-size: 11.5px;
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-logs summary:hover {
+  color: var(--gn-text-2);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-logs pre {
+  margin-top: 7px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--gn-border);
+  background: var(--gn-bg);
+  color: var(--gn-text-2);
+  font: 11px/1.6 var(--mono-font, ui-monospace, Consolas, monospace);
+}
+
+@container team-delivery-card (max-width: 410px) {
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .delivery-actions-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-buttons {
+    width: 100%;
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-open {
+    flex: 1;
+    justify-content: center;
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-links {
+    width: 100%;
+    justify-content: space-between;
+    padding-top: 7px;
+    border-top: 1px solid var(--gn-border);
+  }
+}
+
+@container team-delivery-card (max-width: 280px) {
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-footer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-delivery-card .project-preview-logs {
+    grid-column: 1;
+  }
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-raw-plan {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--gn-muted);
+}
+
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .conversation-raw-plan summary:hover {
+  color: var(--gn-text-2);
 }
 
 /* ==================== Right Execution Canvas Drawer ==================== */

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { CaretRight, FileText, ListBullets, Play, Square, Stack } from "@phosphor-icons/react";
+import { CaretRight, Check, FileText, ListBullets, Play, SlidersHorizontal, Square, WarningCircle } from "@phosphor-icons/react";
 import type { DeliveryDemo, ProjectPreviewConfig } from "../types";
 import { Modal } from "./ui/Modal";
 
@@ -20,13 +20,15 @@ function browse(url: string) {
   window.dispatchEvent(new CustomEvent("crewvela:browse", { detail: { url } }));
 }
 
-export function ProjectPreviewActions({ projectId, planId, config, demo, root, onTasks }: {
+export function ProjectPreviewActions({ projectId, planId, config, demo, root, onTasks, subtitle, children }: {
   projectId: string;
   planId: string;
   config?: ProjectPreviewConfig;
   demo?: DeliveryDemo;
   root: string;
   onTasks?: () => void;
+  subtitle?: string;
+  children?: ReactNode;
 }) {
   const [saved, setSaved] = useState<ProjectPreviewConfig>();
   const [status, setStatus] = useState<PreviewStatus>({ state: "idle" });
@@ -45,6 +47,7 @@ export function ProjectPreviewActions({ projectId, planId, config, demo, root, o
   const feedback = error || status.error || demoError;
   const demoAction = preparing ? "正在准备 Demo…" : demo?.state === "ready" || status.state === "running" ? "打开 Demo" : "重试 Demo";
   const stateLabel = preparing ? "启动中" : status.state === "running" ? "运行中" : feedback ? "不可用" : "未运行";
+  const visualState = preparing ? "starting" : status.state === "running" ? "running" : feedback ? "failed" : status.state;
   const showLogs = status.state !== "idle" || !!feedback;
 
   useEffect(() => {
@@ -118,35 +121,49 @@ export function ProjectPreviewActions({ projectId, planId, config, demo, root, o
 
   return <>
     <header className="team-plan-heading team-delivery-heading">
-      <Stack size={23} aria-hidden="true" /><h3>成品已交付</h3>
-      <span className="project-preview-state" data-state={status.state} role="status">{stateLabel}</span>
+      <div className="delivery-heading-main">
+        <span className="delivery-heading-badge" aria-hidden="true"><Check size={14} weight="bold" /></span>
+        <div className="delivery-heading-text">
+          <h3>成品已交付</h3>
+          {subtitle && <span className="delivery-heading-sub">{subtitle}</span>}
+        </div>
+      </div>
+      <span className="project-preview-state" data-state={visualState} role="status">{stateLabel}</span>
     </header>
-    {(!demo || stored || !editable) && <div className="project-preview-buttons">
-      {demo ? (stored && <button type="button" className="project-preview-open" disabled={busy || preparing || status.state === "stopFailed"}
-        onClick={() => void withAction(launch)}><Play size={17} aria-hidden="true" /><span>{demoAction}</span></button>)
-        : status.state === "running" && status.url ? <button type="button" className="project-preview-open" onClick={() => browse(status.url!)}><Play size={17} aria-hidden="true" /><span>打开网页</span></button>
-        : <button type="button" className="project-preview-open" disabled={busy || !editable}
-          onClick={() => stored ? void withAction(launch) : showConfig()}><Play size={17} aria-hidden="true" /><span>{status.state === "starting" ? "启动中…" : "启动项目"}</span></button>}
-      {(!!(demo && stored) || !editable) && <button type="button" className="project-preview-stop" disabled={busy || editable} onClick={() => void withAction(async () => {
-        openAfterStart.current = false;
-        setStatus(await invoke<PreviewStatus>("ma_project_preview_stop", { projectId, planId }));
-      })}><Square size={17} aria-hidden="true" /><span>{demo ? "停止 Demo" : "停止项目"}</span></button>}
-    </div>}
-    <div className="project-preview-links">
-      <button type="button" onClick={() => void withAction(async () => {
-        await invoke("workspace_reveal_path", { root, relativePath: "README.md" });
-      })}><FileText size={18} aria-hidden="true" /><span>查看启动说明</span><CaretRight size={16} aria-hidden="true" /></button>
-      {!demo && stored && editable && <button type="button" disabled={busy} onClick={showConfig}><FileText size={18} aria-hidden="true" /><span>配置启动</span><CaretRight size={16} aria-hidden="true" /></button>}
-      {onTasks && <button type="button" onClick={onTasks}><ListBullets size={18} aria-hidden="true" /><span>查看任务执行</span><CaretRight size={16} aria-hidden="true" /></button>}
+    <div className="delivery-actions-bar">
+      {(!demo || stored || !editable) && <div className="project-preview-buttons">
+        {demo ? (stored && <button type="button" className="project-preview-open" disabled={busy || preparing || status.state === "stopFailed"}
+          onClick={() => void withAction(launch)}><Play size={13} weight="fill" aria-hidden="true" /><span>{demoAction}</span></button>)
+          : status.state === "running" && status.url ? <button type="button" className="project-preview-open" onClick={() => browse(status.url!)}><Play size={13} weight="fill" aria-hidden="true" /><span>打开网页</span></button>
+          : <button type="button" className="project-preview-open" disabled={busy || !editable}
+            onClick={() => stored ? void withAction(launch) : showConfig()}><Play size={13} weight="fill" aria-hidden="true" /><span>{status.state === "starting" ? "启动中…" : "启动项目"}</span></button>}
+        {(!!(demo && stored) || !editable) && <button type="button" className="project-preview-stop"
+          data-compact={editable ? "true" : undefined}
+          title={editable ? "当前未运行" : (demo ? "停止 Demo" : "停止项目")}
+          disabled={busy || editable} onClick={() => void withAction(async () => {
+          openAfterStart.current = false;
+          setStatus(await invoke<PreviewStatus>("ma_project_preview_stop", { projectId, planId }));
+        })}><Square size={12} weight="fill" aria-hidden="true" /><span className="delivery-stop-label">{demo ? "停止 Demo" : "停止项目"}</span></button>}
+      </div>}
+      <div className="project-preview-links">
+        <button type="button" onClick={() => void withAction(async () => {
+          await invoke("workspace_reveal_path", { root, relativePath: "README.md" });
+        })}><FileText size={14} aria-hidden="true" /><span>查看启动说明</span></button>
+        {!demo && stored && editable && <button type="button" disabled={busy} onClick={showConfig}><SlidersHorizontal size={14} aria-hidden="true" /><span>配置启动</span></button>}
+        {onTasks && <button type="button" onClick={onTasks}><ListBullets size={14} aria-hidden="true" /><span>查看任务执行</span></button>}
+      </div>
     </div>
-    {preparing && <p className="project-preview-feedback" role="status">正在等待本地服务响应…</p>}
-    {feedback && <p className="project-preview-feedback" role="alert">{demo && "Demo 暂不可用。"}{feedback}</p>}
-    {showLogs && <footer className="project-preview-footer">
-      {status.state === "running" && status.url && <code className="project-preview-url">{status.url}</code>}
-      <details className="project-preview-logs" onToggle={event => setLogsOpen(event.currentTarget.open)}>
-        <summary><CaretRight size={14} aria-hidden="true" />启动日志</summary><pre>{status.logs || "暂无启动输出"}</pre>
-      </details>
-    </footer>}
+    {(children || preparing || feedback || showLogs) && <div className="delivery-sunken-panel">
+      {children}
+      {preparing && <p className="project-preview-feedback" role="status">正在等待本地服务响应…</p>}
+      {feedback && <p className="project-preview-feedback" role="alert"><WarningCircle size={14} aria-hidden="true" /><span>{demo && "Demo 暂不可用。"}{feedback}</span></p>}
+      {showLogs && <footer className="project-preview-footer">
+        {status.state === "running" && status.url && <code className="project-preview-url">{status.url}</code>}
+        <details className="project-preview-logs" onToggle={event => setLogsOpen(event.currentTarget.open)}>
+          <summary><CaretRight size={13} aria-hidden="true" />启动日志</summary><pre>{status.logs || "暂无启动输出"}</pre>
+        </details>
+      </footer>}
+    </div>}
     {form && createPortal(<Modal className="collab-agent-editor project-preview-config" overlayClassName="dialog-overlay collab-agent-editor-overlay"
       ariaLabel="配置项目启动" onClose={() => { if (!busy) setForm(null); }}>
       <header><h3>配置项目启动</h3></header>

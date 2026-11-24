@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CaretDown, Check, Copy, Play, Square } from "@phosphor-icons/react";
+import { CaretDown, Check, Copy, GitBranch, Play, Square } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ManagedDeliveryMembers } from "./ManagedDeliveryMembers";
 import { ProjectPreviewActions } from "./ProjectPreviewActions";
@@ -33,15 +33,59 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
     const deliveryOwner = agents.find(agent => agent.id === managed.target.integrationOwner);
     const receipt = managed.finalAcceptance;
     const commands = [...new Set(plan.tasks.map(task => task.verificationCommand).filter(Boolean))];
-    if (managed.status === "completed") return <section className="conversation-plan team-plan-card team-delivery-card grok-delivery-card" aria-label="全自动托管结果">
-      <ProjectPreviewActions key={plan.id} projectId={plan.projectId} planId={plan.id} config={managed.preview} demo={managed.demo} root={managed.target.root}
-        onTasks={plan.status === "applied" ? onTasks : undefined} />
-      {receipt && receipt.commit === managed.commit && <p className="team-plan-acceptance">
-        宿主测试通过 · {receipt.reviewRunId ? "独立只读审查通过" : "本轮未安排独立审查"}<br />
-        <code>{receipt.verificationCommand}</code><br />
-        已合入 {managed.target.branch} · <code title={receipt.commit}>{receipt.commit.slice(0, 12)}</code>
-      </p>}
-    </section>;
+    const uniqueAssignees = [...new Set(plan.tasks.map(task => task.assigneeAgentId).filter(Boolean))]
+      .map(id => agents.find(agent => agent.id === id))
+      .filter((agent): agent is NonNullable<typeof agent> => Boolean(agent))
+      .slice(0, 3);
+    if (managed.status === "completed") {
+      const hasReceipt = Boolean(receipt && receipt.commit === managed.commit);
+      return <section className="conversation-plan team-plan-card team-delivery-card grok-delivery-card" aria-label="全自动托管结果">
+        <ProjectPreviewActions key={plan.id} projectId={plan.projectId} planId={plan.id} config={managed.preview} demo={managed.demo} root={managed.target.root}
+          subtitle={hasReceipt ? "已通过验收并合入仓库" : undefined}
+          onTasks={plan.status === "applied" ? onTasks : undefined}>
+          {hasReceipt && receipt && <div className="team-plan-acceptance grok-delivery-receipt">
+            <div className="grok-delivery-checks">
+              <div className="grok-check-pills">
+                <span className="grok-check-pill is-ok"><Check size={12} weight="bold" aria-hidden="true" />宿主测试通过</span>
+                <span className={`grok-check-pill ${receipt.reviewRunId ? "is-ok" : "is-muted"}`}>
+                  {receipt.reviewRunId && <Check size={12} weight="bold" aria-hidden="true" />}
+                  {receipt.reviewRunId ? "独立只读审查通过" : "本轮未安排独立审查"}
+                </span>
+              </div>
+              {uniqueAssignees.length > 0 && (
+                <span className="grok-fold-avatars" aria-hidden="true">
+                  {uniqueAssignees.map(agent => (
+                    <span key={agent.id} className="grok-fold-avatar-chip" title={agent.name}>
+                      <AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative />
+                    </span>
+                  ))}
+                </span>
+              )}
+            </div>
+            {receipt.verificationCommand && <div className="grok-cmd-box grok-delivery-cmd">
+              <code title={receipt.verificationCommand}>{receipt.verificationCommand}</code>
+              <button type="button" className="grok-icon-btn sm" aria-label="复制验收命令"
+                title={copiedCommand === receipt.verificationCommand ? "已复制" : "复制验收命令"}
+                onClick={() => copyCommand(receipt.verificationCommand)}>
+                {copiedCommand === receipt.verificationCommand ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+            </div>}
+            <div className="grok-delivery-git">
+              <GitBranch size={13} aria-hidden="true" />
+              <span>已合入</span>
+              <span className="grok-git-branch">{managed.target.branch}</span>
+              <span aria-hidden="true">·</span>
+              <code className="grok-git-commit" title={receipt.commit}>{receipt.commit.slice(0, 12)}</code>
+              <button type="button" className="grok-icon-btn sm" aria-label="复制提交哈希"
+                title={copiedCommand === receipt.commit ? "已复制" : "复制提交哈希"}
+                onClick={() => copyCommand(receipt.commit)}>
+                {copiedCommand === receipt.commit ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+            </div>
+          </div>}
+        </ProjectPreviewActions>
+      </section>;
+    }
     const summary = managed.status === "failed" && managed.summary?.includes("MCP config file not found:")
       && managed.summary.includes("{mcpServers:")
       ? "Claude Code 启动失败。Windows 未能正确传递 MCP 配置，可在任务执行查看详情。"
@@ -55,10 +99,6 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
           : "全自动托管中";
     const tone = managed.status === "failed" ? "fail" : (managed.status === "waiting_login" || paused) ? "warn" : "running";
     const stepCount = Math.max(plan.tasks.length, plan.taskIds.length);
-    const uniqueAssignees = [...new Set(plan.tasks.map(task => task.assigneeAgentId).filter(Boolean))]
-      .map(id => agents.find(agent => agent.id === id))
-      .filter((agent): agent is NonNullable<typeof agent> => Boolean(agent))
-      .slice(0, 3);
     return <section className="conversation-plan team-plan-card grok-plan-wrap" data-tone={tone} aria-label="全自动托管结果">
       <div className={`grok-process-fold${foldOpen ? " is-open" : ""}`}>
         <button type="button" className="grok-fold-trigger" aria-expanded={foldOpen} onClick={() => setFoldOpen(value => !value)}>
