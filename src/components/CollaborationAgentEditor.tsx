@@ -106,7 +106,7 @@ export function CollaborationAgentEditor({ agent, runtimeLocked, libraryScope = 
         </fieldset>
         <label>成员名称<input ref={nameInputRef} value={draft.name} maxLength={100} disabled={saving} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="例如：Codex 后端工程师" /></label>
         <div className="collab-agent-editor-pair"><label>Runtime<select aria-label="Runtime" value={draft.runtimeKind} disabled={saving || runtimeLocked || !ready} onChange={(e) => setDraft({ ...draft, runtimeKind: e.target.value as AgentRuntimeKind, model: agent && e.target.value === agent.runtimeKind ? agent.model : null })}>{AVAILABLE.filter(isRuntimeEnabled).map((kind) => <option value={kind} key={kind}>{kind === "deepseek_harness" ? "DeepSeek Harness CLI（dsh）" : RUNTIME_LABELS[kind]}</option>)}{agent && isLegacyCollaborationRuntime(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && <option value={agent.runtimeKind}>{RUNTIME_LABELS[agent.runtimeKind]}（已有成员兼容）</option>}{!isRuntimeEnabled(draft.runtimeKind) && <option value={draft.runtimeKind} disabled>{RUNTIME_LABELS[draft.runtimeKind]}（不可用）</option>}</select></label>
-        <label>角色<select aria-label="角色" value={draft.role} disabled={saving} onChange={(e) => setDraft({ ...draft, role: e.target.value as AgentRole })}>{Object.entries(ROLES).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+        <label>默认分工<select aria-label="默认分工" value={draft.role} disabled={saving} onChange={(e) => setDraft({ ...draft, role: e.target.value as AgentRole })}>{Object.entries(ROLES).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
         {runtimeLocked && <small>{libraryScope ? "该成员已有关联项目会话，保留当前 Runtime。" : "该成员有执行中的任务，等待空闲后可切换 Runtime。"}</small>}
         {keepingLegacy && <small>保留该成员原有 ZCode Desktop 配置和执行记录。选择 CLI 并保存才会切换，不会自动替换账号或模型。</small>}
         {agent && isLegacyCollaborationRuntime(agent.runtimeKind) && !keepingLegacy && <small>保存后改用所选 CLI 的登录和默认模型；原有执行记录保留。</small>}
@@ -119,7 +119,7 @@ export function CollaborationAgentEditor({ agent, runtimeLocked, libraryScope = 
           <label>自定义工作风格<textarea rows={2} value={draft.personaCustom} maxLength={PERSONA_CUSTOM_MAX} disabled={saving} onChange={(e) => setDraft({ ...draft, personaCustom: e.target.value.slice(0, PERSONA_CUSTOM_MAX) })} placeholder="例如：先复盘历史任务再动手，遇到歧义先提问，完成后主动给出验证步骤" /><span className="collab-persona-count">{draft.personaCustom.length} / {PERSONA_CUSTOM_MAX}</span></label>
         )}
         <label>职责定位<textarea aria-label="职责定位" rows={4} value={draft.description} disabled={saving} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="例如：擅长后端接口和数据存储，优先关注接口兼容性与数据一致性。" /></label>
-        <small>角色设定只说明专长、分工和沟通风格。工具、联网、Skill、MCP 与权限确认沿用 CLI 自身设置；当前消息中的任务要求优先。</small>
+        <small>默认分工用于推荐接手成员。托管按本轮计划和授权确定写入、审查及联调职责，工具和审批遵循 Runtime 的设置。</small>
         {agent && <label className="collab-agent-enabled"><input type="checkbox" checked={draft.enabled} disabled={saving || isRetiredRuntime(draft.runtimeKind)} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />启用成员（停用后不再领取新任务）</label>}
         <small>{libraryScope ? "修改会用于关联项目的后续任务。单独编辑过的项目成员使用该项目的配置。" : "配置用于后续任务；执行中的任务须完成或停止后再编辑。切换 Runtime 会停止空闲旧终端并保留只读归档，下次使用新会话；旧收件箱待发消息标为失败，需要重新发送。人格随每次派单注入提示词，保存即生效。"}</small>
         {error && <div className="collab-agent-error" role="alert">{error}</div>}

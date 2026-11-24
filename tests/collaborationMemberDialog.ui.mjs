@@ -24,6 +24,7 @@ try {
   await add.click();
   let dialog = page.getByRole("dialog", { name: "新增团队成员" });
   await assertAboveParent(dialog);
+  assert.equal(await dialog.getByLabel("默认分工", { exact: true }).inputValue(), "worker");
   await dialog.getByRole("button", { name: "保存成员", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "请填写成员名称" }).waitFor();
   await dialog.getByLabel("成员名称", { exact: true }).fill("新增回归成员");
