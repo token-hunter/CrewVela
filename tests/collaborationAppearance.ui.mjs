@@ -75,7 +75,7 @@ try {
   }
   assert.equal(new Set(dockedColors).size, presets.length);
   await closeSettings();
-  await workPanel.getByRole("button", { name: "在 Bot 模式打开", exact: true }).click();
+  await workPanel.getByRole("button", { name: "Bot模式", exact: true }).click();
   const rail = appHost.getByRole("navigation", { name: "协作项目列表" });
   await rail.waitFor();
   await openSettings();

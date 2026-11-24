@@ -49,7 +49,7 @@ export function RightSidebarActivityBar(props: Props) {
   const addRef = useRef<HTMLButtonElement>(null);
   const isCollaboration = sidebarTabKind(props.activeTab) === "multi_agent";
   const maximizeLabel = isCollaboration
-    ? (props.maximized ? "返回辅助栏" : "在 Bot 模式打开")
+    ? (props.maximized ? "返回辅助栏" : "Bot模式")
     : (props.maximized ? "恢复工作面板" : "最大化工作面板");
   useEffect(() => {
     if (props.menuOpen) menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
