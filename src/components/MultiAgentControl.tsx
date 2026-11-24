@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { ArrowClockwise, ArrowElbowDownLeft, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Lightning, ListChecks, Paperclip, Pause, PencilSimple, Plus, Robot, SidebarSimple, SlidersHorizontal, Stop, Trash, User, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowElbowDownLeft, ArrowRight, ArrowSquareOut, Broom, CaretDown, CaretRight, Check, CheckCircle, ChatCircleText, ClockCounterClockwise, DotsThree, FileArrowDown, GearSix, Lightning, ListChecks, Paperclip, Pause, PencilSimple, Plus, Robot, SidebarSimple, SlidersHorizontal, Stop, Trash, User, WarningCircle, X } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConversationMentionHighlight } from "./ConversationMentionHighlight";
 import { ResizableConversationComposer } from "./ResizableConversationComposer";
@@ -45,6 +45,8 @@ interface Props {
   focusedProjectId?: string | null;
   focusedProjectRequest?: number;
   projectOverview?: boolean;
+  onReturnToSidebar?: () => void;
+  modeButtonRef?: (button: HTMLButtonElement | null) => void;
   onOpenSession?: (sessionId: string | null, original?: ConversationOriginalSession) => void | Promise<void>;
   onOpenProjectSettings?: (projectId?: string, target?: "tasks") => void;
 }
@@ -100,7 +102,7 @@ function storedPending(id: string, chat?: string): PendingSend | null {
 function projectFromStorage(): string | null { return stored(PROJECT_KEY) || null; }
 
 /** One persisted project conversation. It deliberately has no general-command or global-broadcast route. */
-export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, projectOverview = false, onOpenSession, onOpenProjectSettings }: Props) {
+export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, projectOverview = false, onReturnToSidebar, modeButtonRef, onOpenSession, onOpenProjectSettings }: Props) {
   const [execDrawerOpen, setExecDrawerOpen] = useState(false);
   const [expandedUserMsgs, setExpandedUserMsgs] = useState<Record<string, boolean>>({});
   const { ready: runtimeReady, error: runtimeError, isRuntimeEnabled, refresh: refreshAvailability } = useRuntimeAvailability();
@@ -1099,6 +1101,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
             )}
             {historyActionsEl}
             {settingsBtnEl}
+            {onReturnToSidebar && <span className="grok-return-to-sidebar">
+              <button ref={modeButtonRef} type="button" className="conversation-icon" aria-label="返回辅助栏" title="返回辅助栏" onClick={onReturnToSidebar}>
+                <ArrowRight size={17} aria-hidden="true" />
+              </button>
+            </span>}
           </div>
         </div>
       ) : (

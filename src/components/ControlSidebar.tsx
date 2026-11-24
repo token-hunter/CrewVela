@@ -16,6 +16,8 @@ interface Props {
   open: boolean;
   active?: boolean;
   projectOverview?: boolean;
+  onReturnToSidebar?: () => void;
+  modeButtonRef?: (button: HTMLButtonElement | null) => void;
   variant?: "docked" | "detached";
   providers: ProviderConfig[];
   sessions: SessionRecord[];
@@ -32,7 +34,7 @@ interface Props {
 }
 
 /** Shared dock/detached shell. General commands remain available from their own application entry. */
-export function ControlSidebar({ open, active, projectOverview, variant = "docked", sessions, defaultCwd, onClose, onDetach, onDock, onSurfaceChange, isolatedSurface = false, onOpenSession, onOpenProjectSettings }: Props) {
+export function ControlSidebar({ open, active, projectOverview, onReturnToSidebar, modeButtonRef, variant = "docked", sessions, defaultCwd, onClose, onDetach, onDock, onSurfaceChange, isolatedSurface = false, onOpenSession, onOpenProjectSettings }: Props) {
   const [interventionsOpen, setInterventionsOpen] = useState(false);
   const [interventionCount, setInterventionCount] = useState(0);
   const [focusedProject, setFocusedProject] = useState<{ id: string; request: number } | null>(null);
@@ -56,16 +58,16 @@ export function ControlSidebar({ open, active, projectOverview, variant = "docke
   if (!open) return null;
   return <div className={`control-overlay control-${variant} collaboration-control-overlay`} data-multi-agent-style="grok_noir">
     <aside ref={panel} className="control-sidebar collaboration-control-sidebar" data-multi-agent-style="grok_noir" role="complementary" aria-label="多智能体协作" tabIndex={-1}>
-      <header className="conversation-shell-header">
+      {!projectOverview && <header className="conversation-shell-header">
         <div className="conversation-shell-actions">
           <button type="button" className="conversation-icon" aria-label={`待处理中心，${interventionCount} 项`} title="待处理中心" aria-expanded={interventionsOpen} onClick={() => setInterventionsOpen(value => !value)}><WarningCircleIcon size={17} />{interventionCount > 0 && <span>{Math.min(interventionCount, 99)}</span>}</button>
           {variant === "docked" && onDetach && <button type="button" className="conversation-icon" aria-label="分离多智能体窗口" title="分离为独立窗口" onClick={() => void onDetach()}><ArrowSquareOutIcon size={16} /></button>}
           {variant === "detached" && onDock && <button type="button" className="conversation-icon" aria-label="重新停靠多智能体窗口" onClick={() => void onDock()}><ArrowSquareInIcon size={16} /></button>}
           <button type="button" className="conversation-icon control-close" aria-label="关闭多智能体面板" onClick={onClose}><XIcon size={18} /></button>
         </div>
-      </header>
+      </header>}
       <InterventionCenter open={interventionsOpen} onClose={() => setInterventionsOpen(false)} onCountChange={setInterventionCount} onOpenProject={id => { setInterventionsOpen(false); setFocusedProject(value => ({ id, request: (value?.request ?? 0) + 1 })); }} />
-      <div className="control-multi-agent-surface"><MultiAgentControl sessions={sessions} active={isActive} projectOverview={projectOverview} defaultCwd={defaultCwd} focusedProjectId={focusedProject?.id} focusedProjectRequest={focusedProject?.request} onOpenSession={onOpenSession} onOpenProjectSettings={onOpenProjectSettings} /></div>
+      <div className="control-multi-agent-surface"><MultiAgentControl sessions={sessions} active={isActive} projectOverview={projectOverview} onReturnToSidebar={onReturnToSidebar} modeButtonRef={modeButtonRef} defaultCwd={defaultCwd} focusedProjectId={focusedProject?.id} focusedProjectRequest={focusedProject?.request} onOpenSession={onOpenSession} onOpenProjectSettings={onOpenProjectSettings} /></div>
     </aside>
   </div>;
 }

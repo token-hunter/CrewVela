@@ -485,6 +485,7 @@ export default function App() {
   const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false);
   const [appToolsMenuOpen, setAppToolsMenuOpen] = useState(false);
   const [sidebarMaximized, setSidebarMaximized] = useState(false);
+  const focusSidebarModeButton = useRef(false);
   const sidebarTerminalLaunchRef = useRef(false);
   const workspaceRootRef = useRef<string | null>(null);
   const activeRightSidebarTab: RightSidebarTab | null = gitOpen
@@ -2073,7 +2074,16 @@ export default function App() {
 
   const collaborationTabActive = sidebarTabKind(activeRightSidebarTab ?? "") === "multi_agent";
   const collaborationOverviewOpen = sidebarMaximized && collaborationTabActive;
-  const toggleSidebarMaximized = useCallback(() => setSidebarMaximized(value => !value), []);
+  const toggleSidebarMaximized = useCallback(() => {
+    focusSidebarModeButton.current = collaborationTabActive;
+    setSidebarMaximized(value => !value);
+  }, [collaborationTabActive]);
+  const sidebarModeButtonRef = useCallback((button: HTMLButtonElement | null) => {
+    if (button && focusSidebarModeButton.current) {
+      focusSidebarModeButton.current = false;
+      button.focus();
+    }
+  }, []);
 
   useEffect(() => {
     if (activeRightSidebarTab) mountRightSidebarTab(activeRightSidebarTab);
@@ -2664,7 +2674,7 @@ export default function App() {
                   aria-label="右侧栏"
                   aria-hidden={!activeRightSidebarTab}
                 >
-                  <RightSidebarActivityBar
+                  {!collaborationOverviewOpen && <RightSidebarActivityBar
                     activeTab={activeRightSidebarTab ?? lastRightSidebarTab}
                     onSelect={(tab) => void selectRightSidebarTab(tab)}
                     onClose={closeRightSidebar}
@@ -2672,11 +2682,12 @@ export default function App() {
                     onCloseTab={tab => void closeSidebarResource(tab)}
                     maximized={sidebarMaximized}
                     onToggleMaximize={toggleSidebarMaximized}
+                    modeButtonRef={sidebarModeButtonRef}
                     menuOpen={sidebarMenuOpen}
                     onMenuChange={setSidebarMenuOpen}
                     onOpenTool={tool => void openSidebarTool(tool)}
                     hasWorkspace={!!activeWorkspaceRoot}
-                  />
+                  />}
                   <div className="unified-right-sidebar-content">
                     {activeRightSidebarTab === "start" && (
                       <RightSidebarStart
@@ -2706,6 +2717,8 @@ export default function App() {
                         providers={[]}
                         open
                         projectOverview={collaborationOverviewOpen && activeRightSidebarTab === tab}
+                        onReturnToSidebar={collaborationOverviewOpen && activeRightSidebarTab === tab ? toggleSidebarMaximized : undefined}
+                        modeButtonRef={sidebarModeButtonRef}
                         active={!guideRequest && activeRightSidebarTab === tab && (tab !== "multi_agent" || !controlDetached)}
                         variant="docked"
                         sessions={sessions}

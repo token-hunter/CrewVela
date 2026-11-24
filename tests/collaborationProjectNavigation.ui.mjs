@@ -170,9 +170,16 @@ try {
   await workPanel.getByRole("button", { name: "多智能体" }).click();
   await openBot.waitFor();
   assert.equal(await openBot.getAttribute("title"), "Bot模式");
+  const resourceTabs = workPanel.getByRole("tablist", { name: "工作面板标签" });
+  const shellToolbar = workPanel.locator(".right-sidebar-panel.active .conversation-shell-header");
+  await resourceTabs.waitFor();
+  await shellToolbar.waitFor();
   await openBot.click();
   await appNav.getByRole("button", { name: "协作项目 A 待审批" }).waitFor();
   await shortcuts.waitFor({ state: "hidden" });
+  await resourceTabs.waitFor({ state: "hidden" });
+  await shellToolbar.waitFor({ state: "hidden" });
+  assert.equal(await returnToSidebar.evaluate(button => button === document.activeElement), true);
   const appEditor = app.getByRole("combobox", { name: "给团队发消息", exact: true });
   const prompt = workPanel.locator('[data-message-id="layout-prompt"]');
   const reply = workPanel.locator('[data-message-id="layout-reply"]');
@@ -209,15 +216,25 @@ try {
   assert.ok(Math.abs(canvas.x - composer.x) <= 1 && Math.abs(canvas.width - composer.width) <= 1,
     "Bot transcript and composer use the same column");
   const topbar = workPanel.locator(".grok-topbar");
+  assert.ok(Math.abs((await topbar.boundingBox()).y - (await workPanel.boundingBox()).y) <= 2,
+    "Bot toolbar starts at the top of the panel");
   const controls = [
     topbar.getByRole("heading", { name: "协作项目 A" }), topbar.getByRole("button", { name: /^切换会话：/ }),
     topbar.getByRole("tablist", { name: "协作视图" }), topbar.getByRole("button", { name: /^查看任务/ }),
     topbar.getByRole("button", { name: /^选择参与成员/ }), topbar.getByRole("button", { name: "展开右侧执行画布" }),
-    topbar.getByRole("button", { name: "讨论记录操作" }), topbar.getByRole("button", { name: "管理项目与成员" }),
+    topbar.getByRole("button", { name: "讨论记录操作" }), topbar.getByRole("button", { name: "管理项目与成员" }), returnToSidebar,
   ];
   const positions = await Promise.all(controls.map(control => control.boundingBox()));
   assert.ok(positions.every((bounds, index) => bounds && (index === 0 || bounds.x > positions[index - 1].x)),
     "Bot toolbar retains the current control order");
+  assert.equal(await returnToSidebar.textContent(), "");
+  assert.equal(await returnToSidebar.getAttribute("title"), "返回辅助栏");
+  await app.setViewportSize({ width: 820, height: 600 });
+  assert.equal(await returnToSidebar.evaluate(button => {
+    const rect = button.getBoundingClientRect();
+    return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest("button") === button;
+  }), true, "Return button remains reachable at the minimum window width");
+  await app.setViewportSize({ width: 1500, height: 900 });
   const sessionPicker = controls[1];
   assert.equal(await sessionPicker.getAttribute("aria-expanded"), "false");
   await sessionPicker.click();
@@ -227,6 +244,8 @@ try {
   await appEditor.fill("保留在原面板的输入");
   await returnToSidebar.click();
   await appNav.waitFor({ state: "hidden" });
+  await resourceTabs.waitFor();
+  await shellToolbar.waitFor();
   await shortcuts.waitFor();
   await reply.getByText("已完成", { exact: true }).waitFor();
   assert.deepEqual(await checkUserMessage(), botAvatarStyle, "The same avatar remains visible in the docked panel");
@@ -259,7 +278,7 @@ try {
 
   await openBot.click();
   await appNav.getByRole("button", { name: "协作项目 B 运行中" }).waitFor();
-  assert.equal(await collaborationTabs.last().getAttribute("aria-selected"), "true");
+  assert.equal(await collaborationTabs.count(), 0);
   assert.equal(await returnToSidebar.getAttribute("title"), "返回辅助栏");
   assert.equal(await conversation.getAttribute("aria-label"), conversationName);
   assert.equal(await appEditor.inputValue(), "验证付款流程的未发送草稿");

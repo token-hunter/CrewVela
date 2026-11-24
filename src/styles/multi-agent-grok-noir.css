@@ -648,6 +648,12 @@
   flex: none;
 }
 
+.collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-return-to-sidebar {
+  display: flex;
+  padding-inline-start: 5px;
+  border-inline-start: 1px solid var(--gn-border);
+}
+
 .collaboration-project-host[data-multi-agent-style="grok_noir"] .grok-top-task-wrap {
   display: inline-flex;
   align-items: center;
