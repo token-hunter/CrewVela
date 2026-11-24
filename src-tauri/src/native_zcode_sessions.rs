@@ -1971,13 +1971,14 @@ mod tests {
     }
     #[test]
     fn native_zcode_multiple_turns_and_cross_process_restore() {
-        let (root, manager, sessions, record, app) = fixture("normal");
+        let (root, manager, sessions, record, app) = fixture("reply_language");
         manager
             .start(app.handle().clone(), &sessions, &record)
             .unwrap();
         for message in ["first", "second"] {
             manager.send(&record.id, message).unwrap();
             let snapshot = wait(&manager, &record.id, |s| !s.busy);
+            assert!(snapshot.connected, "Desktop disconnected: {:?}", snapshot.error);
             assert!(snapshot
                 .rows
                 .iter()
@@ -2008,6 +2009,10 @@ mod tests {
             )
             .unwrap();
         assert!(sessions.drain_transitions().iter().all(|event| event.to != SessionStatus::Completed), "restored history must not replay completion automations");
+        reopened.send(&record.id, "after restore").unwrap();
+        let snapshot = wait(&reopened, &record.id, |s| !s.busy);
+        assert!(snapshot.connected, "Desktop disconnected: {:?}", snapshot.error);
+        assert!(snapshot.rows.iter().any(|row| row["kind"] == "assistantText" && row["text"] == "answer"));
         reopened.stop(&record.id, &sessions, app.handle()).unwrap();
         fs::remove_dir_all(root).unwrap();
     }

@@ -41,6 +41,12 @@ for await (const line of readline.createInterface({input:process.stdin})) {
       else {subscribe(pendingSubscribe);pendingSubscribe=undefined;}
       continue;
     }
+    if (value.id === 'reply-language') {
+      assert.deepEqual(value.result, {language:null});
+      assert.equal(value.error, undefined);
+      end();
+      continue;
+    }
     assert.equal(value.result.permissionUpdates,undefined);
     if (scenario==='account') {assert.equal(value.result.headersApplied,false);end('failed');continue;}
     assert.ok(['allow','deny'].includes(value.result.decision));
@@ -132,7 +138,8 @@ for await (const line of readline.createInterface({input:process.stdin})) {
       if(scenario==='attachments') { assert.equal(p.payload.text,''); assert.equal(p.payload.attachments.length,1); assert.equal(p.payload.attachments[0].fileName,'native attachment.txt'); assert.equal(p.payload.attachments[0].bytes,7); }
       deltas([row(turn*10+1,'turnHeader',{state:'running',sourceCommandId:command}),row(turn*10+2,'userInput',{text:p.payload.text,attachments:p.payload.attachments,entityId:`user-${turn}`}),row(turn*10+3,'reasoning',{text:'think',state:'streaming'}),row(turn*10+4,'assistantText',{text:'ans',state:'streaming'})]);
       frame({kind:'deltas',deltas:[{op:'row.delta',rowId:turn*10+3,path:'text',append:'ing'},{op:'row.delta',rowId:turn*10+4,path:'text',append:'wer'}]});
-      if(scenario==='account')emit({id:'account',method:'interaction/requestProviderRuntimeHeaders',params:{sessionId:sid}});
+      if(scenario==='reply_language')emit({id:'reply-language',method:'session/readReplyLanguage',params:{sessionId:sid}});
+      else if(scenario==='account')emit({id:'account',method:'interaction/requestProviderRuntimeHeaders',params:{sessionId:sid}});
       else if(scenario==='permission'||scenario==='subagents_permission'){pending=true;emit({id:'permission',method:'interaction/requestPermission',params:{sessionId:sid,requestId:`request-${turn}`,toolName:'Bash',input:{command:'echo fixture'}}});}
       else if(scenario!=='cancel'&&!queueScenario)end();
       if(scenario==='titles') {assert.ok(resumed||titleGenerationEnabled,'main session must enable native generation');frame({kind:'deltas',deltas:[{op:'state.updated',patch:{meta:{title:`会话摘要${++titleNumber}`,titleSource:'generated'}}}]});}

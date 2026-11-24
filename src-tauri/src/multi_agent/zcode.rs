@@ -1117,7 +1117,10 @@ impl<'a> Client<'a> {
             self.send(&json!({"id":id,"error":{"code":-32602,"message":"会话身份不匹配"}}))?;
             bail!("ZCode Desktop 反向请求会话身份不匹配：{method}");
         }
-        let result = if method == "interaction/requestPermission" {
+        let result = if method == "session/readReplyLanguage" {
+            // The Desktop protocol uses null when the host has no reply-language override.
+            json!({"language":null})
+        } else if method == "interaction/requestPermission" {
             let params = &frame["params"];
             let request = params["requestId"]
                 .as_str()
