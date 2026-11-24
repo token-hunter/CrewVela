@@ -117,7 +117,7 @@ fn matches_launch(args: &[PathBuf], executable: &Path, data: &Path) -> Result<()
     Ok(())
 }
 
-fn listener_pid(base: &str) -> Result<u32> {
+pub(super) fn listener_pid(base: &str) -> Result<u32> {
     let address = loopback_socket_address(base).context("仅允许核验本机回环记忆服务")?;
     let family = if address.is_ipv4() { AF_INET } else { AF_INET6 } as u32;
     let mut size = 0;

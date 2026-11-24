@@ -6397,11 +6397,6 @@ pub fn run() {
                     return Ok(());
                 }
             }
-            tauri::async_runtime::spawn(async {
-                if let Err(error) = ai_memory::embedded::restore().await {
-                    eprintln!("[crewvela] 内置共享记忆恢复失败：{error:#}");
-                }
-            });
             #[cfg(target_os = "windows")]
             if !test_profile::active() { if let Err(error) = windows_notification::initialize() {
                 eprintln!("[crewvela] 初始化 Windows 通知身份失败：{error:#}");
@@ -6509,6 +6504,13 @@ pub fn run() {
             );
             app.manage(collaboration_bridge);
             }
+            // Dynamic application listeners must be bound before restoring the
+            // embedded engine's saved port so an in-process clash is detectable.
+            tauri::async_runtime::spawn(async {
+                if let Err(error) = ai_memory::embedded::restore().await {
+                    eprintln!("[crewvela] 内置共享记忆恢复失败：{error:#}");
+                }
+            });
             app.manage(multi_agent_store);
             // 通用设置：代理 env 写进本进程（后续 spawn 的 ACP/PTY/MCP 子进程自动继承）、
             // keep-awake 轮询线程、系统托盘（关闭到托盘）。

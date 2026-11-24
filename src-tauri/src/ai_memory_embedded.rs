@@ -83,7 +83,41 @@ fn prepare_data(data: &Path) -> Result<String> {
     }
     let base = managed_url_from_config(&std::fs::read_to_string(config)?)?;
     auth::local_token(data, &base)?.context("内置共享记忆缺少本机访问令牌")?;
+    #[cfg(windows)]
+    let base = recover_app_port_collision(data, base)?;
     Ok(base)
+}
+
+#[cfg(windows)]
+fn recover_app_port_collision(data: &Path, base: String) -> Result<String> {
+    // The browser bridge or collaboration listener can reuse a port that the
+    // embedded engine saved on a previous launch. Only relocate a listener
+    // proven to be in this app; other processes keep the existing checks.
+    if service_process::listener_pid(&base).ok() != Some(std::process::id()) {
+        return Ok(base);
+    }
+    let old_address = loopback_socket_address(&base).context("内置记忆监听地址无效")?;
+    let listener = std::net::TcpListener::bind((old_address.ip(), 0))
+        .context("无法为内置共享记忆分配空闲端口")?;
+    let address = listener.local_addr()?;
+    let config = data.join("config.toml");
+    let mut text = std::fs::read_to_string(&config)?;
+    if managed_url_from_config(&text)? != base {
+        bail!("内置共享记忆配置在检测期间发生变化，请重试启动");
+    }
+    #[derive(Deserialize)]
+    struct Bind {
+        bind: Option<toml::Spanned<String>>,
+    }
+    let value = format!("\"{address}\"");
+    let settings: Bind = toml::from_str(&text).map_err(|_| anyhow::anyhow!("无法解析内置共享记忆监听配置"))?;
+    if let Some(bind) = settings.bind {
+        text.replace_range(bind.span(), &value);
+    } else {
+        text.insert_str(0, &format!("bind = {value}\n"));
+    }
+    onboarding::atomic_write(&config, text.as_bytes())?;
+    Ok(format!("http://{address}"))
 }
 
 async fn start(root: &Path) -> Result<()> {
@@ -370,6 +404,35 @@ pub fn run_stdio(id: &str, token: &str) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    #[test]
+    fn embedded_start_rebinds_own_listener_without_changing_credentials_or_data() -> Result<()> {
+        let data = std::env::temp_dir().join(format!("crewvela-embedded-port-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&data)?;
+        let original_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        let old_address = original_listener.local_addr()?;
+        let old_base = format!("http://{old_address}");
+        let config = data.join("config.toml");
+        let original = format!("# User comment\nbind = '{old_address}' # keep me\nembedding_provider = 'none'\n[auth]\nbearer_token = 'fixture'\n");
+        std::fs::write(&config, &original)?;
+        std::fs::write(data.join("memory-fixture"), "unchanged")?;
+
+        let new_base = prepare_data(&data)?;
+        assert_ne!(new_base, old_base);
+        let address = loopback_socket_address(&new_base).unwrap();
+        let updated = std::fs::read_to_string(&config)?;
+        assert_eq!(updated, original.replace(&format!("'{old_address}'"), &format!("\"{address}\"")));
+        assert_eq!(auth::local_token(&data, &new_base)?.as_deref(), Some("fixture"));
+        assert!(auth::local_token(&data, &old_base)?.is_none());
+        assert_eq!(service_process::listener_pid(&old_base)?, std::process::id());
+        assert_eq!(std::fs::read_to_string(data.join("memory-fixture"))?, "unchanged");
+        assert_eq!(prepare_data(&data)?, new_base);
+        std::fs::remove_file(data.join("memory-fixture"))?;
+        std::fs::remove_file(config)?;
+        std::fs::remove_dir(data)?;
+        Ok(())
+    }
+
     #[test]
     fn capture_is_deliberate_and_project_keys_are_independent() {
         assert_eq!(note_from_prompt("请记住：库存不足时保留购物车。"), Some("库存不足时保留购物车。"));
@@ -402,8 +465,20 @@ mod tests {
             let stopped = ai_memory_embedded_set_enabled(false).await.map_err(anyhow::Error::msg)?;
             assert!(!stopped.enabled && !stopped.running);
             assert!(recall(&a, marker).await.is_err());
+            #[cfg(windows)]
+            let collision = {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+                let address = listener.local_addr()?;
+                let config = root.join("data/config.toml");
+                let mut value: toml::Value = toml::from_str(&std::fs::read_to_string(&config)?)?;
+                value["bind"] = toml::Value::String(address.to_string());
+                std::fs::write(&config, toml::to_string(&value)?)?;
+                listener
+            };
             ai_memory_embedded_set_enabled(true).await.map_err(anyhow::Error::msg)?;
             assert!(recall(&a, marker).await?.to_string().contains(marker));
+            #[cfg(windows)]
+            assert_eq!(service_process::listener_pid(&format!("http://{}", collision.local_addr()?))?, std::process::id());
             Ok::<_, anyhow::Error>(())
         }.await;
         stop_at_exit();
