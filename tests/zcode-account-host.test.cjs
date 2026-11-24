@@ -6,6 +6,35 @@ const {tmpdir}=require('node:os');
 const {join}=require('node:path');
 const host=require('../src-tauri/resources/zcode-account-host.cjs');
 
+test('installed Desktop uses the newer catalog for its version and official endpoint', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'zcode-catalog-'));
+  try {
+    const bundled = join(root, 'bundled.json');
+    const endpoint = `endpoint-${createHash('sha256').update('https://zcode.z.ai').digest('hex').slice(0, 32)}`;
+    const runtime = join(root, 'runtime', 'provider', 'windows-x86_64');
+    const config = revision => ({schemaVersion: 1, revision, config: {providerConfigRules: {providerRules: []}, modelConfigRules: {modelRules: []}}});
+    const writeCatalog = async (version, origin, release) => {
+      const dir = join(runtime, version, origin);
+      await mkdir(dir, {recursive: true});
+      const path = join(dir, 'zcode-builtin.json');
+      await writeFile(path, JSON.stringify(release));
+      return path;
+    };
+    await writeFile(bundled, JSON.stringify(config(44)));
+    await writeCatalog('4.0.1', endpoint, config(99));
+    await writeCatalog('4.0.0', 'endpoint-custom', config(98));
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64'), bundled);
+    const active = await writeCatalog('4.0.0', endpoint, config(48));
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64'), active);
+    await writeCatalog('4.0.0', endpoint, config(43));
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64'), bundled);
+    await writeCatalog('4.0.0', endpoint, {...config(50), schemaVersion: 2});
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64'), bundled);
+  } finally {
+    await rm(root, {recursive: true, force: true});
+  }
+});
+
 test('process credential cipher reuses an existing OS key and preserves exact plaintext without writing files',async()=>{
   const root=await mkdtemp(join(tmpdir(),'zcode-cipher-'));
   const previous=process.env.ZCODE_DATA_BASE_DIR;

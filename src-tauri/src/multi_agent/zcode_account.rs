@@ -2,7 +2,7 @@
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -11,12 +11,16 @@ pub(super) struct AccountHost {
     program: PathBuf,
     env: Vec<(std::ffi::OsString, Option<std::ffi::OsString>)>,
     builtin: PathBuf,
+    active_catalog: Option<PathBuf>,
     version: Option<String>,
     pub config: Value,
     scopes: Value,
     start_plan_unavailable: bool,
 }
 impl AccountHost {
+    pub(super) fn active_catalog(&self) -> Option<&Path> {
+        self.active_catalog.as_deref()
+    }
     pub fn admits(&self, provider: &str) -> bool {
         self.scopes.get(provider).is_some()
     }
@@ -41,6 +45,9 @@ impl AccountHost {
         })
     }
     pub fn prepare(command: &Command) -> Result<Option<Self>> {
+        Self::prepare_with_desktop_catalog(command, false)
+    }
+    pub(super) fn prepare_with_desktop_catalog(command: &Command, allow_desktop_catalog: bool) -> Result<Option<Self>> {
         let env: Vec<_> = command
             .get_envs()
             .map(|(k, v)| (k.to_owned(), v.map(ToOwned::to_owned)))
@@ -64,20 +71,29 @@ impl AccountHost {
             .find(|(key, _)| *key == "CREWVELA_ZCODE_APP_VERSION")
             .and_then(|(_, value)| value)
             .and_then(|value| value.to_str().map(str::to_owned));
+        let use_desktop_catalog = allow_desktop_catalog && cfg!(windows)
+            && std::env::var_os("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE").is_none()
+            && program.parent().is_some_and(|root| {
+                builtin == root.join("resources/config/provider/zcode-builtin.json")
+                    && root.join("resources/app.asar").is_file()
+            });
         let mut host = Self {
             program,
             env,
             builtin,
+            active_catalog: None,
             version,
             config: Value::Null,
             scopes: Value::Null,
             start_plan_unavailable: false,
         };
-        let mut snapshot = json!({"operation":"snapshot"});
+        let mut snapshot = json!({"operation":"snapshot","useDesktopCatalog":use_desktop_catalog});
         if let Some(version) = &host.version {
             snapshot["version"] = json!(version);
         }
         let result = host.call(snapshot)?;
+        host.active_catalog = result["catalog"].as_str().map(PathBuf::from)
+            .filter(|path| path != &host.builtin);
         host.config = result["config"].clone();
         host.scopes = result["scopes"].clone();
         host.start_plan_unavailable = result["startPlanUnavailable"].as_bool().unwrap_or(false);
@@ -87,6 +103,9 @@ impl AccountHost {
         // Decrypted control characters can expand to six JSON bytes each.
         let output_limit: u64 = if input["operation"] == "credentialCipher" { 8 * 1024 * 1024 } else { 1024 * 1024 };
         input["builtin"] = json!(self.builtin);
+        if let Some(catalog) = &self.active_catalog {
+            input["catalog"] = json!(catalog);
+        }
         let mut command = Command::new(&self.program);
         command.args(["-e", include_str!("../../resources/zcode-account-host.cjs")]);
         for (key, value) in &self.env {
@@ -192,6 +211,7 @@ mod tests {
             program: PathBuf::new(),
             env: Vec::new(),
             builtin: PathBuf::new(),
+            active_catalog: None,
             version: None,
             config: json!({"states":{"account:fixture":{"unavailableReason":"credential-failed"}}}),
             scopes: json!({}),
@@ -224,6 +244,7 @@ mod tests {
             program: PathBuf::new(),
             env: Vec::new(),
             builtin: PathBuf::new(),
+            active_catalog: None,
             version: None,
             config: Value::Null,
             scopes: json!({"account:fixture":{"access":access,"scope":"fixture"}}),

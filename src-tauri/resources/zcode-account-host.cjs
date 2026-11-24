@@ -139,10 +139,33 @@ async function credentialCipher(input,createKeyStore){
     return failure('CREDENTIAL_SECURE_STORAGE_UNAVAILABLE','ZCode Desktop 安全凭据存储不可用，请在原生 ZCode Desktop 检查登录后恢复会话');
   }
 }
+function dataDirectory() {
+  return join(process.env.ZCODE_DATA_BASE_DIR?.trim()||process.env.HOME?.trim()||homedir(),'.zcode','v2');
+}
+
+async function desktopCatalog(bundled, directory, version, arch = process.arch) {
+  const platform = {x64: 'windows-x86_64', arm64: 'windows-aarch64'}[arch];
+  if (!platform || typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) return bundled;
+  // Match the official Desktop cache namespace. Do not search other endpoints or app versions.
+  const endpoint = `endpoint-${sha('https://zcode.z.ai').slice(0,32)}`;
+  const candidate = join(directory, 'runtime', 'provider', platform, version, endpoint, 'zcode-builtin.json');
+  try {
+    const release = await readJson(candidate);
+    const packaged = await readJson(bundled);
+    if (release.schemaVersion === packaged.schemaVersion &&
+        Number.isSafeInteger(release.revision) && release.revision > packaged.revision &&
+        Array.isArray(release.config?.providerConfigRules?.providerRules) &&
+        Array.isArray(release.config?.modelConfigRules?.modelRules)) return candidate;
+  } catch {
+    // The bundled catalog remains available offline or before Desktop's first refresh.
+  }
+  return bundled;
+}
+
 async function readLocal(input,context={keys:new Map()}) {
-  const directory=join(process.env.ZCODE_DATA_BASE_DIR?.trim()||process.env.HOME?.trim()||homedir(),'.zcode','v2');
+  const directory=dataDirectory();
   const [credentials,settings,builtin]=await Promise.all([
-    readJson(join(directory,'credentials.json'),true),readJson(join(directory,'setting.json'),true),readJson(input.builtin)
+    readJson(join(directory,'credentials.json'),true),readJson(join(directory,'setting.json'),true),readJson(input.catalog ?? input.builtin)
   ]);
   const load=await openCredentials(input,join(directory,'credentials.json'),credentials,context);
   // The native source-header builder reuses this existing device identity.
@@ -253,6 +276,7 @@ function officialOrigin(value, fallback, allowed){
 async function snapshot(input,request=fetch,createClient=nativeProjectTokenClient,createKeyStore) {
   const credentialContext={keys:new Map(),createKeyStore};
   if(!input.version){try{input.version=require(join(dirname(input.builtin),'..','..','app.asar','package.json')).version;}catch{}}
+  if (input.useDesktopCatalog) input.catalog = await desktopCatalog(input.builtin, dataDirectory(), input.version);
   const local=await readLocal(input,credentialContext),providers={},states={},scopes={};
   const rules=builtinRules(local).filter(r=>r.config?.access?.type==='zhipu-account');
   for(const rule of rules){
@@ -301,7 +325,7 @@ async function snapshot(input,request=fetch,createClient=nativeProjectTokenClien
     const current=material(fresh,id,grant.access);
     if(current?.scope!==grant.scope||(grant.projectToken&&sha(current?.oauthToken||'')!==grant.loginFingerprint))throw Error('ZCode Desktop 登录账号发生变化，请恢复会话刷新模型');
   }
-  const revision=`zcode-builtin:${local.builtin.revision}:${sha(resolve(input.builtin))}`;
+  const revision=`zcode-builtin:${local.builtin.revision}:${sha(resolve(input.catalog ?? input.builtin))}`;
   const config={basedOnZCodeBuiltinRevision:revision,providers,states};
   config.revision=`account:${sha(JSON.stringify(config))}`;
   // A built-in Start Plan rule is present even when another connection is in
@@ -309,7 +333,7 @@ async function snapshot(input,request=fetch,createClient=nativeProjectTokenClien
   const family=local.settings.providerFamilyDomain;
   const startPlanUnavailable=local.settings.providerFamilyConnectionSelections?.[family]?.kind==='start-plan'&&
     rules.some(rule=>rule.config.access.accountType===family&&rule.config.access.mode==='start-plan');
-  return {config,scopes,startPlanUnavailable};
+  return {config,scopes,startPlanUnavailable,catalog:input.catalog};
 }
 async function auth(input,request=fetch,createClient=nativeProjectTokenClient,createKeyStore){
   const credentialContext={keys:new Map(),createKeyStore};
@@ -326,7 +350,7 @@ async function auth(input,request=fetch,createClient=nativeProjectTokenClient,cr
   if(fresh?.scope!==grant.scope||(grant.projectToken&&sha(fresh?.oauthToken||'')!==grant.loginFingerprint))throw Error('ZCode Desktop 登录状态已变化，请重新加载模型');
   return {headersApplied:true,requestAuth:{apiKey:key}};
 }
-module.exports={decrypt,material,personalEntitled,startEntitlement,snapshot,auth,officialOrigin,credentialCipher};
+module.exports={decrypt,material,personalEntitled,startEntitlement,snapshot,auth,officialOrigin,credentialCipher,desktopCatalog};
 if(require.main===module||process.env.CREWVELA_ZCODE_ACCOUNT_HELPER==='1'){
   // One private request per process. First-party modules may retain native
   // handles; finish only after the complete JSON frame has flushed, rather

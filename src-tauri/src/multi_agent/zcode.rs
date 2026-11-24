@@ -929,11 +929,14 @@ impl Drop for Client<'_> {
 }
 impl<'a> Client<'a> {
     fn spawn(
-        command: Command,
+        mut command: Command,
         cwd: &Path,
         on_progress: &'a mut dyn FnMut() -> Result<()>,
     ) -> Result<Self> {
-        let account_host = account_host::AccountHost::prepare(&command)?;
+        let account_host = account_host::AccountHost::prepare_with_desktop_catalog(&command, true)?;
+        if let Some(catalog) = account_host.as_ref().and_then(account_host::AccountHost::active_catalog) {
+            command.env("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", catalog);
+        }
         Self::spawn_with_account_host(command, cwd, on_progress, account_host, "ZCode Desktop Agent")
     }
 
