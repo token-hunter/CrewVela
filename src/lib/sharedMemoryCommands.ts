@@ -4,6 +4,19 @@ export interface SharedMemoryCommandStatus {
   serverUrl: string;
 }
 
+export const sharedMemoryAgents = [
+  { id: "claude-code", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+  { id: "antigravity-cli", label: "Antigravity" },
+  { id: "zcode", label: "ZCode" },
+  { id: "kimi-code", label: "Kimi" },
+  { id: "dsh", label: "DeepSeek Harness" },
+  { id: "opencode", label: "OpenCode" },
+  { id: "pi", label: "Pi" },
+] as const;
+
+type AutomaticSetupAgent = Exclude<typeof sharedMemoryAgents[number]["id"], "dsh">;
+
 /** PowerShell literal strings keep $, backticks and spaces inert. */
 export function powerShellLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -47,11 +60,20 @@ export function sharedMemoryCommands(status: SharedMemoryCommandStatus | null, o
   const literal = windows ? powerShellLiteral : posixShellLiteral;
   const prefix = `${windows ? "& " : ""}${literal(status.executable)} --data-dir ${literal(status.dataDir)}`;
   const endpoint = `--server-url ${literal(status.serverUrl)}`;
-  const agents = ["claude-code", "codex", "kimi-code", "zcode"];
+  const forAgent = (agent: AutomaticSetupAgent) => ({
+    hooks: `${prefix} install-hooks --agent ${agent} ${endpoint}${agent === "claude-code" ? " --scope project" : ""} --apply`,
+    mcp: agent === "pi" ? null : `${prefix} install-mcp --client ${agent} ${endpoint} --apply`,
+  });
+  const agents = sharedMemoryAgents.flatMap(({ id }) => id === "dsh" ? [] : [forAgent(id)]);
   return {
     shellLabel: windows ? "PowerShell" : "zsh / bash",
-    hooks: agents.map(agent => `${prefix} install-hooks --agent ${agent} ${endpoint}${agent === "claude-code" ? " --scope project" : ""} --apply`).join("\n"),
-    mcp: agents.map(agent => `${prefix} install-mcp --client ${agent} ${endpoint} --apply`).join("\n"),
+    hooks: agents.map(agent => agent.hooks).join("\n"),
+    mcp: agents.flatMap(agent => agent.mcp ?? []).join("\n"),
+    forAgent,
+    deepSeek: {
+      hooks: `${prefix} install-hooks --agent dsh ${endpoint} --apply`,
+      mcp: `${prefix} install-mcp --client dsh ${endpoint}`,
+    },
     finalize: exactSessionCommand(status, options, windows),
   };
 }

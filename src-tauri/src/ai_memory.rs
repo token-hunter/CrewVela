@@ -403,11 +403,19 @@ pub async fn ai_memory_status() -> Result<AiMemoryStatus, String> {
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum SetupAgent { ClaudeCode, Codex, KimiCode, Zcode }
+pub enum SetupAgent { ClaudeCode, Codex, KimiCode, Zcode, Pi, Opencode, AntigravityCli }
 
 impl SetupAgent {
     fn id(self) -> &'static str {
-        match self { Self::ClaudeCode => "claude-code", Self::Codex => "codex", Self::KimiCode => "kimi-code", Self::Zcode => "zcode" }
+        match self {
+            Self::ClaudeCode => "claude-code",
+            Self::Codex => "codex",
+            Self::KimiCode => "kimi-code",
+            Self::Zcode => "zcode",
+            Self::Pi => "pi",
+            Self::Opencode => "opencode",
+            Self::AntigravityCli => "antigravity-cli",
+        }
     }
 }
 
@@ -429,9 +437,9 @@ pub struct SetupResult {
 fn setup_command(executable: &Path, data: &Path, url: &str, agent: SetupAgent, action: SetupAction, project: Option<&str>) -> Result<Command> {
     let mut command = Command::new(executable);
     command.arg("--data-dir").arg(data);
-    match action {
-        SetupAction::Hooks => { command.args(["install-hooks", "--agent", agent.id()]); }
-        SetupAction::Mcp => { command.args(["install-mcp", "--client", agent.id()]); }
+    match (agent, action) {
+        (SetupAgent::Pi, _) | (_, SetupAction::Hooks) => { command.args(["install-hooks", "--agent", agent.id()]); }
+        (_, SetupAction::Mcp) => { command.args(["install-mcp", "--client", agent.id()]); }
     }
     command.args(["--server-url", url, "--apply"]);
     if matches!((agent, action), (SetupAgent::ClaudeCode, SetupAction::Hooks)) {
@@ -547,8 +555,63 @@ pub async fn ai_memory_setup(agent: SetupAgent, action: SetupAction, project_dir
         if !data.is_dir() { bail!("共享记忆数据目录不存在，请先启动服务初始化"); }
         let project = project_dir.as_deref().map(Path::new).unwrap_or_else(|| Path::new("."));
         let (mcp_config, hooks_config) = verification::config_paths(agent, project)?;
-        guard_project_registration(match action { SetupAction::Hooks => &hooks_config, SetupAction::Mcp => &mcp_config }, action)?;
-        let command = setup_command(&executable, &data, &resolved_server_url()?, agent, action, project_dir.as_deref())?;
+        let url = resolved_server_url()?;
+        let target = match (agent, action) {
+            (SetupAgent::Pi, _) => &hooks_config,
+            (_, SetupAction::Hooks) => &hooks_config,
+            (_, SetupAction::Mcp) => &mcp_config,
+        };
+        let mut command = setup_command(&executable, &data, &url, agent, action, project_dir.as_deref())?;
+        match agent {
+            SetupAgent::Pi => {
+                verification::guard_generated_hook(target, agent, &url)?;
+                command.arg("--config-file").arg(target);
+            }
+            SetupAgent::Opencode => {
+                let program = crate::multi_agent::resolve_runtime_executable(crate::multi_agent::AgentRuntimeKind::OpenCode)
+                    .context("未检测到 OpenCode，无法配置旧版共享记忆")?;
+                if let Some(directory) = program.parent() {
+                    let path = std::env::var_os("PATH").unwrap_or_default();
+                    command.env("PATH", std::env::join_paths(std::iter::once(directory.to_path_buf()).chain(std::env::split_paths(&path)))?);
+                }
+                match action {
+                    SetupAction::Hooks => {
+                        let plugins = verification::opencode_plugins()?;
+                        // ai-memory probes OpenCode and selects one of these names. Check both
+                        // because the installer can retire the other dialect's generated plugin.
+                        for path in &plugins {
+                            verification::guard_generated_hook(path, agent, &url)?;
+                        }
+                        // The upstream hook installer uses this directory for both dialects.
+                        // For a relocated OpenCode profile, supply the dialect's actual file.
+                        if plugins != verification::default_opencode_plugins()? {
+                            let mut probe = crate::multi_agent::command_for_path(&program);
+                            probe.arg("--version").creation_flags_no_window();
+                            let result = run_setup_command(probe, Duration::from_secs(8))?;
+                            let major = result.stdout.split_whitespace().find_map(|part| {
+                                let (major, rest) = part.trim_start_matches('v').split_once('.')?;
+                                rest.split('.').next()?.parse::<u32>().ok()?;
+                                major.parse::<u32>().ok()
+                            }).filter(|_| result.success).context("无法获取 OpenCode 版本")?;
+                            let index = match major { 1 => 0, 2 => 1, _ => bail!("当前 OpenCode 主版本不支持旧版记忆插件") };
+                            command.arg("--config-file").arg(&plugins[index]);
+                        }
+                    }
+                    SetupAction::Mcp => {
+                        verification::guard_existing_registration(target, agent, &url)?;
+                        command.arg("--config-file").arg(target);
+                    }
+                }
+            }
+            SetupAgent::AntigravityCli => {
+                match action {
+                    SetupAction::Hooks => verification::guard_antigravity_hooks(target, &url)?,
+                    SetupAction::Mcp => verification::guard_existing_registration(target, agent, &url)?,
+                }
+                command.arg("--config-file").arg(target);
+            }
+            _ => guard_project_registration(target, action)?,
+        }
         run_setup_command(command, Duration::from_secs(60))
     }).await.map_err(|error| error.to_string())?.map_err(|error| format!("{error:#}"))
 }

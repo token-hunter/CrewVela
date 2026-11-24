@@ -26,7 +26,17 @@ test("平台生成各自 shell 的字面量与安装命令", () => {
   const posix = sharedMemoryCommands(status, { platform: "posix" });
   assert.equal(windows.shellLabel, "PowerShell");
   assert.equal(posix.shellLabel, "zsh / bash");
-  for (const group of [windows.hooks, windows.mcp, posix.hooks, posix.mcp]) assert.equal(group.split("\n").length, 4);
+  for (const commands of [windows, posix]) {
+    assert.equal(commands.hooks.split("\n").length, 7);
+    assert.equal(commands.mcp.split("\n").length, 6);
+    assert.match(commands.forAgent("pi").hooks, /install-hooks --agent pi /);
+    assert.equal(commands.forAgent("pi").mcp, null);
+    assert.match(commands.forAgent("opencode").mcp, /install-mcp --client opencode /);
+    assert.match(commands.forAgent("antigravity-cli").hooks, /install-hooks --agent antigravity-cli /);
+    assert.match(commands.deepSeek.hooks, /install-hooks --agent dsh --server-url 'http:\/\/127\.0\.0\.1:47374' --apply$/);
+    assert.match(commands.deepSeek.mcp, /install-mcp --client dsh --server-url 'http:\/\/127\.0\.0\.1:47374'$/);
+    assert.doesNotMatch(`${commands.hooks}\n${commands.mcp}`, /(?:--agent|--client) dsh/);
+  }
   assert.match(windows.hooks, /^& '/);
   assert.match(posix.hooks, /^'\/opt\/ai memory'/);
   assert.equal(posix.hooks.split("\n").filter(line => line.includes("--scope project")).length, 1);

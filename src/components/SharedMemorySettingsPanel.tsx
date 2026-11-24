@@ -6,7 +6,7 @@ import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon, CaretRightIcon, CheckI
 import { AdditionalProjectAccess, ZcodeFinalize } from "./SharedMemoryProjectControls";
 import { SharedMemoryQuickSetup } from "./SharedMemoryQuickSetup";
 import { EmbeddedMemoryToggle, useEmbeddedMemory } from "./EmbeddedMemoryToggle";
-import { sharedMemoryCommands } from "../lib/sharedMemoryCommands";
+import { sharedMemoryAgents as AGENTS, sharedMemoryCommands } from "../lib/sharedMemoryCommands";
 import { pushModal, removeModal } from "./ui/modalStack";
 import "../styles/shared-memory-settings.css";
 
@@ -43,12 +43,6 @@ const PREVIEW_STATUS: AiMemoryStatus = {
   managedByCrewVela: true,
 };
 
-const AGENTS = [
-  { id: "claude-code", label: "Claude Code" },
-  { id: "codex", label: "Codex" },
-  { id: "kimi-code", label: "Kimi" },
-  { id: "zcode", label: "ZCode" },
-] as const;
 type View = "overview" | "setup" | "advanced";
 type ServiceAction = "ai_memory_install" | "ai_memory_serve" | "ai_memory_stop";
 type SetupAction = "hooks" | "mcp";
@@ -223,13 +217,16 @@ export function LegacySharedMemorySettingsPanel({ active = true }: { active?: bo
   const [checkReport, setCheckReport] = useState<CheckReport | null>(null);
   const faqRef = useRef<HTMLDetailsElement>(null);
   const agent = AGENTS[agentIndex];
+  const usesDeepSeekManualSetup = agent.id === "dsh";
+  const usesPiExtension = agent.id === "pi";
+  const usesAntigravityHooks = agent.id === "antigravity-cli";
   const context = `${status?.executable}|${status?.dataDir}|${status?.serverUrl}|`;
   const setupKey = (action: SetupAction) => `${context}${agent.id}-${action}-${action === "hooks" && agent.id === "claude-code" ? projectDir : "global"}`;
-  const completed = setupResults[setupKey("hooks")]?.success && setupResults[setupKey("mcp")]?.success;
+  const completed = setupResults[setupKey("hooks")]?.success && (usesPiExtension || setupResults[setupKey("mcp")]?.success);
   const checked = checkReport?.agent === agent.id && checkReport.projectDir === projectDir ? checkReport : null;
   const checkFailed = checked && [checked.mcp, checked.hooks, checked.tools, checked.capture].some(item => ["failed", "missing", "mismatch"].includes(item.state));
   const configured = checked?.mcp.state === "ok" && checked.hooks.state === "ok";
-  const integrationSummary = checkFailed ? "检查发现问题" : completed || configured ? "配置已完成 · 待验证" : checked ? "已检查 · 会话待验证" : "接入待检查";
+  const integrationSummary = usesDeepSeekManualSetup ? "手动接入" : checkFailed ? "检查发现问题" : completed || configured ? "配置已完成 · 待验证" : checked ? "已检查 · 会话待验证" : "接入待检查";
   const rowState = (action: SetupAction) => {
     const item = checked?.[action];
     if (item) {
@@ -252,7 +249,9 @@ export function LegacySharedMemorySettingsPanel({ active = true }: { active?: bo
       ? "从所选项目目录启动 Claude Code，并重启会话以加载项目级钩子。"
       : agent.id === "zcode"
         ? "重启 ZCode 以加载 MCP；会话结束时按需手动收尾。"
-        : "重启 Kimi 会话，确认 MCP 工具已加载并验证会话捕获。";
+        : usesPiExtension
+          ? "重启 Pi 以加载记忆扩展，再在所选项目验证保存和检索。"
+          : `重启 ${agent.label} 会话，确认记忆工具已加载并验证会话捕获。`;
   const commands = sharedMemoryCommands(status);
   const applyStatus = (next: AiMemoryStatus) => {
     if (serviceStatusContextChanged(statusRef.current, next)) setCheckReport(null);
@@ -270,7 +269,7 @@ export function LegacySharedMemorySettingsPanel({ active = true }: { active?: bo
     } catch (reason) { setError(`选择项目失败：${String(reason)}`); }
   };
   const executeSetup = async (action: SetupAction) => {
-    if (pending.current || !selected || !statusFresh || !status?.serverRunning || (action === "hooks" && agent.id === "claude-code" && !projectDir)) return;
+    if (usesDeepSeekManualSetup || pending.current || !selected || !statusFresh || !status?.serverRunning || (action === "hooks" && agent.id === "claude-code" && !projectDir)) return;
     operationRevision.current += 1;
     pending.current = true;
     const key = setupKey(action);
@@ -289,7 +288,7 @@ export function LegacySharedMemorySettingsPanel({ active = true }: { active?: bo
     finally { pending.current = false; if (mounted.current) setBusy(null); }
   };
   const checkIntegration = async () => {
-    if (pending.current || !projectDir || !status?.installed) return;
+    if (usesDeepSeekManualSetup || pending.current || !projectDir || !status?.installed) return;
     operationRevision.current += 1;
     pending.current = true;
     setBusy("check-integration"); setError(null); setCheckReport(null);
@@ -304,10 +303,7 @@ export function LegacySharedMemorySettingsPanel({ active = true }: { active?: bo
     } catch (reason) { if (mounted.current) setError(`接入检查失败：${String(reason)}`); }
     finally { pending.current = false; if (mounted.current) setBusy(null); }
   };
-  const selected = commands ? {
-    hooks: commands.hooks.split("\n")[agentIndex],
-    mcp: commands.mcp.split("\n")[agentIndex],
-  } : null;
+  const selected = agent.id === "dsh" ? null : commands?.forAgent(agent.id) ?? null;
 
   useEffect(() => {
     if (!copied) return;
@@ -546,6 +542,20 @@ export function LegacySharedMemorySettingsPanel({ active = true }: { active?: bo
         </div>
       </div>
 
+      {usesDeepSeekManualSetup ? <section className="sm-setup-step sm-card" aria-labelledby="sm-dsh-title">
+        <div className="sm-step-heading"><div className="sm-step-title-copy"><h4 id="sm-dsh-title">手动接入 DeepSeek Harness</h4><p>在所用的 DeepSeek Harness profile 中配置会话捕获和记忆检索。</p></div></div>
+        <div className="sm-step-content sm-manual">
+          <h4>安装会话钩子</h4>
+          <p>先运行 <code>dsh plugin --profile PROFILE add @deepseek-ai/dsh-hooks-claude-code</code>，把 PROFILE 换成实际使用的 profile 名称。再运行下方命令生成钩子文件和配置片段。</p>
+          {copyButton(commands?.deepSeek.hooks, "dsh-hooks", "复制钩子命令")}
+          <h4>生成 MCP 配置</h4>
+          <p>在 {commands?.shellLabel ?? "终端"} 中执行命令，将输出的两个 <code>insert</code> 项追加到所用 profile 的 <code>cordis.patch.yml</code>，保留原有配置。</p>
+          {copyButton(commands?.deepSeek.mcp, "dsh-mcp", "复制 MCP 命令")}
+          {!commands && <p className="sm-unavailable">检测到 ai-memory 可执行文件和数据目录后即可复制命令。</p>}
+          <h4>验证接入</h4>
+          <p>重启该 profile，确认会话已加载 ai-memory 工具。在同一项目保存一条测试记忆，再从新会话检索它。</p>
+        </div>
+      </section> : <>
       <section className="sm-setup-step sm-card" aria-labelledby="sm-project-title">
         <div className="sm-step-heading"><span className="sm-step-index">01</span><div className="sm-step-title-copy"><h4 id="sm-project-title">选择验证项目</h4><p>选择要检查捕获记录的项目目录。</p></div></div>
         <div className="sm-step-content">
@@ -554,7 +564,7 @@ export function LegacySharedMemorySettingsPanel({ active = true }: { active?: bo
             <button type="button" className="sm-button" disabled={Boolean(busy)} onClick={() => void chooseProject()}>{projectDir ? "更换目录" : "选择项目目录"}</button>
           </div>
           {projectDir && <AdditionalProjectAccess key={projectDir} projectDir={projectDir} preview={PREVIEW} />}
-          <p className="sm-scope-copy"><span><strong>配置范围：</strong>{agent.id === "claude-code" ? "钩子仅写入当前项目，MCP 注册为用户全局。" : "钩子与 MCP 均写入用户全局配置，可能影响其他项目的新会话。"} 仅捕获指定项目需设置 allowlist。</span><button type="button" className="sm-inline-link" onClick={() => { if (faqRef.current) { faqRef.current.open = true; faqRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" }); } }}>查看说明 <ArrowUpRightIcon size={14} aria-hidden="true" /></button></p>
+          <p className="sm-scope-copy"><span><strong>配置范围：</strong>{agent.id === "claude-code" ? "钩子仅写入当前项目，MCP 注册为用户全局。" : usesPiExtension ? "扩展安装在 Pi 的用户目录，对新启动的 Pi 会话生效。" : "钩子与 MCP 均写入用户全局配置，可能影响其他项目的新会话。"} 仅捕获指定项目需设置 allowlist。</span><button type="button" className="sm-inline-link" onClick={() => { if (faqRef.current) { faqRef.current.open = true; faqRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" }); } }}>查看说明 <ArrowUpRightIcon size={14} aria-hidden="true" /></button></p>
         </div>
       </section>
 
@@ -562,8 +572,10 @@ export function LegacySharedMemorySettingsPanel({ active = true }: { active?: bo
         <div className="sm-step-heading"><span className="sm-step-index">02</span><div className="sm-step-title-copy"><h4 id="sm-config-title">配置智能体</h4><p>启用会话捕获与记忆检索。</p></div></div>
         <div className="sm-step-content">
           <div className="sm-config-list">
-            {([
-              ["hooks", "安装会话钩子", "会话结束后保存项目记忆。", "安装钩子", "重新安装"],
+            {(usesPiExtension ? [
+              ["hooks", "安装 Pi 记忆扩展", "同一个扩展提供会话捕获和记忆检索。", "安装扩展", "重新安装"],
+            ] as const : [
+              ["hooks", "安装会话钩子", usesAntigravityHooks ? "在会话开始和回合结束时捕获项目记忆。" : "会话结束后保存项目记忆。", "安装钩子", "重新安装"],
               ["mcp", "注册 MCP", "允许智能体检索共享记忆。", "注册 MCP", "重新注册"],
             ] as const).map(([key, title, description, actionLabel, repeatLabel]) => {
               const resultKey = setupKey(key);
@@ -624,6 +636,7 @@ export function LegacySharedMemorySettingsPanel({ active = true }: { active?: bo
       </section>
 
       <details className="sm-faq" ref={faqRef}><summary>常见问题与手动操作</summary>{manual}</details>
+      </>}
     </section>}
     {view === "advanced" && <section className="sm-card sm-advanced"><h3>本地服务信息</h3><p className="sm-muted">此处展示当前服务路径；智能体接入与捕获范围请前往接入配置。</p><dl>{[['可执行文件', status?.executable], ['数据目录', status?.dataDir], ['服务地址', status?.serverUrl]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code>{value ?? "未检测到"}</code></dd></div>)}</dl><button type="button" className="sm-button" onClick={() => setView("setup")}>前往接入配置 <ArrowRightIcon size={16} aria-hidden="true" /></button></section>}
   </div>;

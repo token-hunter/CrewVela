@@ -192,8 +192,8 @@
 .sm-page .sm-setup-service-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: none; }
 .sm-page .sm-status-read-error { color: var(--warn, #d9b84e); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .sm-page .sm-badge-warning { color: var(--warn, #d9b84e); }
-.sm-page .sm-agent-segment { display: inline-grid; grid-template-columns: repeat(4, minmax(82px, auto)); padding: 2px; margin: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); gap: 2px; }
-.sm-page .sm-agent-segment button { min-height: 32px; padding: 4px 13px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-dim); font-size: 12.5px; white-space: nowrap; }
+.sm-page .sm-agent-segment { display: flex; flex-wrap: wrap; min-width: 0; padding: 2px; margin: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); gap: 2px; }
+.sm-page .sm-agent-segment button { min-height: 32px; min-width: 65px; padding: 4px 13px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-dim); font-size: 12.5px; white-space: nowrap; }
 .sm-page .sm-agent-segment button:hover:not(:disabled) { color: var(--text); background: var(--bg-hover); }
 .sm-page .sm-agent-segment button.active { border-color: color-mix(in srgb, var(--sm-accent) 60%, var(--border)); color: var(--sm-accent); background: color-mix(in srgb, var(--sm-accent) 13%, var(--bg-elev)); font-weight: 600; }
 .sm-page .sm-setup-step { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--text) 2.5%, var(--bg-elev)); }
@@ -273,7 +273,7 @@
 @media (max-width: 650px) {
   .sm-page .sm-setup-toolbar { align-items: stretch; flex-direction: column; }
   .sm-page .sm-setup-service-right { justify-content: space-between; }
-  .sm-page .sm-agent-segment { width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .sm-page .sm-agent-segment { width: 100%; }
   .sm-page .sm-agent-segment button { padding-left: 5px; padding-right: 5px; font-size: 12px; }
   .sm-page .sm-project-picker { align-items: stretch; flex-direction: column; }
   .sm-page .sm-project-picker > .sm-button { width: 100%; }

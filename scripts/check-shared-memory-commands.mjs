@@ -9,8 +9,8 @@ assert.equal(sharedMemoryCommands(null), null);
 assert.equal(sharedMemoryCommands({ executable: "x", dataDir: null, serverUrl: "x" }), null);
 const status = { executable: "C:\\O'Brien\\ai-memory.exe", dataDir: "C:\\memory data", serverUrl: "http://127.0.0.1:47374" };
 const commands = sharedMemoryCommands(status, { platform: "windows" });
-for (const group of [commands.hooks, commands.mcp]) {
-  assert.equal(group.split("\n").length, 4);
+for (const [group, count] of [[commands.hooks, 7], [commands.mcp, 6]]) {
+  assert.equal(group.split("\n").length, count);
   assert.ok(group.split("\n").every(line => line.startsWith("& 'C:\\O''Brien\\ai-memory.exe' --data-dir 'C:\\memory data'")));
   assert.ok(group.split("\n").every(line => line.includes("--server-url 'http://127.0.0.1:47374'")));
 }

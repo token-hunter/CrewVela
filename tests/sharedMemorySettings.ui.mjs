@@ -25,6 +25,7 @@ await page.addInitScript(() => {
     if(cmd==='ai_memory_status'){if(window.__qaHold){const snapshot={...window.__qaStatus};await new Promise(resolve=>window.__qaResolve=resolve);return snapshot;}if(window.__qaStatusError)throw new Error('mock status unavailable');return {...window.__qaStatus};}
     if(cmd==='ai_memory_serve'){if(window.__qaStartError)throw new Error('mock start failed');window.__qaStatus.serverRunning=true;return {...window.__qaStatus};}
     if(cmd==='plugin:dialog|open')return 'C:/example/crewvela';
+    if(cmd==='plugin:clipboard-manager|write_text')return;
     if(cmd==='ai_memory_setup')return {success:true,exitCode:0,timedOut:false,stdout:'mock',stderr:'',outputTruncated:false};
     throw new Error('Unexpected '+cmd);
   }};
@@ -65,6 +66,10 @@ await page.getByRole('menuitem', {name:'旧版共享记忆', exact:true}).click(
 await page.getByRole('button', {name:'高级设置', exact:true}).click();
 await page.getByText('C:/memory-data', {exact:true}).waitFor();
 await page.getByRole('button', {name:'接入配置', exact:true}).click();
+const cliTargets = page.getByRole('group', {name:'选择智能体', exact:true});
+assert.deepEqual(await cliTargets.getByRole('button').allTextContents(),
+  ['Claude Code','Codex','Antigravity','ZCode','Kimi','DeepSeek Harness','OpenCode','Pi']);
+assert.equal(await cliTargets.getByRole('button', {name:'Codex', exact:true}).getAttribute('aria-pressed'), 'true');
 if (!(await page.getByRole('button',{name:'安装钩子',exact:true}).isDisabled())) throw new Error('stopped service must disable setup'); if (!(await page.getByRole('button',{name:'启动服务',exact:true}).count())) throw new Error('REGRESSION: 接入页没有启动服务入口'); console.log('PASS: stopped service exposes recovery');
 await page.getByRole('button',{name:'启动服务',exact:true}).click();
 await page.waitForFunction(()=>!document.querySelector('.sm-config-action')?.disabled);
@@ -80,6 +85,39 @@ console.log('PASS: home switch and diagnostics, old Wiki, retained legacy sectio
 await page.getByRole('button',{name:'安装钩子',exact:true}).click();
 await page.waitForFunction(()=>window.__qaCalls.some(x=>x.cmd==='ai_memory_setup'));
 console.log('PASS: start service then install dispatch');
+await cliTargets.getByRole('button',{name:'Pi',exact:true}).click();
+assert.equal(await page.getByRole('button',{name:'注册 MCP',exact:true}).count(),0);
+await page.getByRole('button',{name:'安装扩展',exact:true}).click();
+await page.waitForFunction(()=>window.__qaCalls.some(x=>x.cmd==='ai_memory_setup'&&x.args.agent==='pi'&&x.args.action==='hooks'));
+for (const [label,id] of [['OpenCode','opencode'],['Antigravity','antigravity-cli']]) {
+  await cliTargets.getByRole('button',{name:label,exact:true}).click();
+  await page.getByRole('button',{name:'安装钩子',exact:true}).click();
+  await page.waitForFunction(agent=>window.__qaCalls.some(x=>x.cmd==='ai_memory_setup'&&x.args.agent===agent&&x.args.action==='hooks'),id);
+  await page.getByRole('button',{name:'注册 MCP',exact:true}).click();
+  await page.waitForFunction(agent=>window.__qaCalls.some(x=>x.cmd==='ai_memory_setup'&&x.args.agent===agent&&x.args.action==='mcp'),id);
+}
+await page.setViewportSize({width:600,height:1100});
+await cliTargets.getByRole('button',{name:'DeepSeek Harness',exact:true}).click();
+const deepSeek = page.getByRole('region', {name:'手动接入 DeepSeek Harness'});
+await deepSeek.getByText(/cordis\.patch\.yml/).waitFor();
+assert.equal(await page.getByRole('button',{name:'注册 MCP',exact:true}).count(),0);
+assert.equal(await page.getByRole('button',{name:'检查接入',exact:true}).count(),0);
+const targetBounds = await cliTargets.boundingBox();
+for (const button of await cliTargets.getByRole('button').all()) {
+  const bounds = await button.boundingBox();
+  assert.ok(bounds.x + bounds.width <= targetBounds.x + targetBounds.width, 'runtime label must fit narrow setup toolbar');
+}
+for (const label of ['复制钩子命令', '复制 MCP 命令']) {
+  await deepSeek.getByRole('button',{name:label,exact:true}).click();
+  await deepSeek.getByRole('button',{name:'已复制',exact:true}).waitFor();
+}
+const dshCommands = await page.evaluate(()=>window.__qaCalls.filter(x=>x.cmd==='plugin:clipboard-manager|write_text').map(x=>x.args.text));
+assert.match(dshCommands[0], /install-hooks --agent dsh .* --apply$/);
+assert.match(dshCommands[1], /install-mcp --client dsh .*49374'$/);
+assert.equal(await page.evaluate(()=>window.__qaCalls.some(x=>x.args?.agent==='dsh')),false);
+await page.setViewportSize({width:1440,height:1100});
+console.log('PASS: ordered runtime tabs and manual DeepSeek commands fit the narrow pane');
+await cliTargets.getByRole('button',{name:'Codex',exact:true}).click();
 await page.evaluate(()=>{window.__qaStatus.serverRunning=false;window.dispatchEvent(new Event('focus'));});
 await page.waitForFunction(()=>document.querySelector('.sm-config-action')?.disabled);
 console.log('PASS: external stop disables actions');
