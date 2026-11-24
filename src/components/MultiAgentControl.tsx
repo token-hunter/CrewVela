@@ -90,6 +90,7 @@ function sendPayload(item: PendingSend): ConversationSendInput {
     ...(item.attachmentIds?.length ? { attachmentIds: item.attachmentIds } : {}),
     ...(item.chatDispatch ? { chatDispatch: item.chatDispatch } : {}),
     ...(item.managed ? { managed: true } : {}),
+    ...(item.integrationOwner ? { integrationOwner: item.integrationOwner } : {}),
     intent: item.intent ?? "chat", nativeCapabilities: item.nativeCapabilities ?? false,
     maxRounds: item.maxRounds ?? (item.intent === "exchange" ? 3 : 1), maxDurationSeconds: item.maxDurationSeconds ?? 600 };
 }
@@ -676,7 +677,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         ? conversationChatDispatch(body, agents.filter(agent => ids.includes(agent.id)), rule?.agentId ?? undefined)
         : { intent: conversationRequestIntent(body) };
       const queue = queueFollowup && chat && !rule;
-      const item: PendingSend = { projectId, expectedConversationId: conversation.conversation.id, clientMessageId: crypto.randomUUID(), body, participantAgentIds: ids, mode, ...routing, managed, nativeCapabilities: !managed, taskRules: rule ? { tools: "research", archivedRuleId: rule.id } : undefined, interrupt: discussing && !queue, queue };
+      const managedMembers = managed ? ids.map(id => agents.find(agent => agent.id === id)!) : [];
+      const dedicatedIntegrator = managedMembers.find(member => member.role === "integrator");
+      const integrationOwner = managedMembers.length >= 3 && !dedicatedIntegrator
+        ? [...managedMembers].reverse().find(member => member.role === "worker") : undefined;
+      const item: PendingSend = { projectId, expectedConversationId: conversation.conversation.id, clientMessageId: crypto.randomUUID(), body, participantAgentIds: ids, mode, ...routing, managed, integrationOwner: integrationOwner?.id, nativeCapabilities: !managed, taskRules: rule ? { tools: "research", archivedRuleId: rule.id } : undefined, interrupt: discussing && !queue, queue };
       if (chat && ids.length === 1 && mentionTokens.some(token => hasMentionToken(body, token))) item.rememberRecipientId = ids[0];
       setPlanIssues([]);
       if (mode === "execution_plan") {
@@ -702,14 +707,14 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         }
       }
       if (managed && snapshot) {
-        const members = ids.map(id => agents.find(agent => agent.id === id)!);
+        const members = managedMembers;
         const developer = members.find(member => member.role === "worker");
         const reviewer = members.find(member => member.role === "reviewer");
         const division = members.length === 1
           ? `单人托管\n${members[0].name} 负责规划、开发、测试和联调。本轮未安排独立审查。`
           : members.length === 2
             ? `双人托管\n${developer?.name ?? "开发成员"} 负责规划、开发、测试和联调。\n${reviewer?.name ?? "审查成员"} 独立只读审查最终候选提交，退回修复后重新审查。`
-            : `团队托管\n${members.map(member => `${member.name} · ${ROLE[member.role]}`).join("\n")}\n每项开发由独立成员只读审查，集成成员负责最终联调。`;
+            : `团队托管\n${members.map(member => `${member.name} · ${ROLE[member.role]}`).join("\n")}\n每项开发由独立成员只读审查。\n${dedicatedIntegrator?.name ?? integrationOwner?.name ?? "开发成员"} ${dedicatedIntegrator ? "负责最终联调。" : "兼任本轮联调。候选提交经独立只读审查和宿主验收后交付。"}`;
         const trust = members.some(member => member.runtimeKind === "claude_code") ? "\nClaude Code 会确认本轮工作树的信任提示。" : "";
         if (!window.confirm(`${division}\n\n允许本轮成员在独立工作树的分工范围内执行。分工生成后可查看验收命令。CrewVela 验收通过后自动合入 ${snapshot.project.defaultBranch} 分支。\n${snapshot.project.rootPath}${trust}`)) return;
       }

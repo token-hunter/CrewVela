@@ -166,6 +166,8 @@ pub struct ConversationExecutionPlan {
     pub message_id: String,
     pub summary: String,
     pub tasks: Vec<ConversationPlannedTask>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_task_key: Option<String>,
     pub status: String,
     pub task_ids: Vec<String>,
     pub created_at: i64,
@@ -209,6 +211,8 @@ pub struct ConversationSendInput {
     pub mode: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub managed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration_owner: Option<String>,
     #[serde(default = "default_intent")]
     pub intent: String,
     #[serde(default = "default_rounds")]
@@ -327,12 +331,14 @@ impl MultiAgentStore {
     pub(crate) fn conversation_plan_preflight(&self, input: &ConversationSendInput) -> Result<Vec<ConversationPlanIssue>> {
         if input.mode != "execution_plan" { return Ok(Vec::new()); }
         validate_send_input(&mut input.clone())?;
+        let mut has_integration_owner = false;
         if input.managed {
             let connection = self.connection.lock().unwrap();
             let (root, branch) = connection.query_row("SELECT root_path,default_branch FROM ma_projects WHERE id=?1",
                 [&input.project_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
-            if let Err(error) = super::managed_delivery::prepare(&connection, input, root, branch) {
-                return Ok(vec![ConversationPlanIssue { kind: "member", message: format!("{error:#}") }]);
+            match super::managed_delivery::prepare(&connection, input, root, branch) {
+                Ok(target) => has_integration_owner = target.integration_owner.is_some(),
+                Err(error) => return Ok(vec![ConversationPlanIssue { kind: "member", message: format!("{error:#}") }]),
             }
         }
         let (root, roster) = {
@@ -384,7 +390,7 @@ impl MultiAgentStore {
             issues.push(ConversationPlanIssue { kind: "member", message: format!("本轮缺少能执行只读审查的成员。请选择 Runtime 为 {runtimes}、角色为「审查」的成员。") });
         }
         if (parallel || ["由集成成员", "集成成员负责", "integrator"].iter().any(|term| goal.contains(*term)))
-            && !roster.iter().any(|(role, _)| role == "integrator") {
+            && !has_integration_owner && !roster.iter().any(|(role, _)| role == "integrator") {
             issues.push(ConversationPlanIssue { kind: "member", message: "本轮缺少「集成」角色。请选择负责联调和验收的集成成员。".into() });
         }
         Ok(issues)
@@ -1347,6 +1353,7 @@ impl MultiAgentStore {
                 attachment_ids: input.attachment_ids.clone(),
                 mode: input.mode.unwrap_or_else(|| "discussion".into()),
                 managed: false,
+                integration_owner: None,
                 intent: input.intent.unwrap_or_else(default_intent),
                 max_rounds: input.max_rounds.unwrap_or_else(default_rounds),
                 max_duration_seconds: input.max_duration_seconds.unwrap_or_else(default_duration),
@@ -2733,12 +2740,13 @@ fn discussion_prompt(
         ""
     };
     let review_contract = if let Some(target) = &round.managed_target {
-        let division = match target.mode {
-            ManagedTeamMode::Solo => "本轮为单人托管。只生成一项 worktree 任务，由当前开发成员负责实现、测试、联调和最终交付，dependsOn=[]。未安排独立审查。若实际需求或项目规则明确要求独立审查，请说明需要增加审查成员并等待用户。",
-            ManagedTeamMode::Pair => "本轮为双人托管。只生成一项由开发成员负责实现、测试、联调和最终交付的 worktree 任务（dependsOn=[]），以及一项由另一位 reviewer 执行的独立只读审查。审查最终候选提交，直接且只依赖该开发任务，workspaceMode=read_only、writePaths=[]、verificationCommand=null。",
-            ManagedTeamMode::Team => "将每项开发对应的审查单独列为一项任务，assigneeAgentId 填实际 reviewer 成员 ID，workspaceMode=read_only、writePaths=[]、verificationCommand=null，dependsOn 只填对应开发任务的 key。最后只安排一个 integrator 工作树任务，必须等待全部审查。",
+        let division = match (target.mode, target.integration_owner.as_deref()) {
+            (ManagedTeamMode::Solo, _) => "本轮为单人托管。只生成一项 worktree 任务，由当前开发成员负责实现、测试、联调和最终交付，dependsOn=[]。未安排独立审查。若实际需求或项目规则明确要求独立审查，请说明需要增加审查成员并等待用户。".into(),
+            (ManagedTeamMode::Pair, _) => "本轮为双人托管。只生成一项由开发成员负责实现、测试、联调和最终交付的 worktree 任务（dependsOn=[]），以及一项由另一位 reviewer 执行的独立只读审查。审查最终候选提交，直接且只依赖该开发任务，workspaceMode=read_only、writePaths=[]、verificationCommand=null。".into(),
+            (ManagedTeamMode::Team, None) => "将每项开发对应的审查单独列为一项任务，assigneeAgentId 填实际 reviewer 成员 ID，workspaceMode=read_only、writePaths=[]、verificationCommand=null，dependsOn 只填对应开发任务的 key。最后只安排一个 integrator 工作树任务，必须等待全部审查。".into(),
+            (ManagedTeamMode::Team, Some(owner)) => format!("本轮由开发成员 {owner} 兼任联调。按模块分别安排开发任务。为每项开发安排独立 reviewer，只读任务直接且只依赖该开发任务。开发涉及多种 Runtime 时，各项审查的 Runtime 必须不同于对应开发任务。另安排一项独立工作树联调任务，负责人必须为 {owner}，直接依赖全部模块审查。JSON 顶层增加 finalTaskKey，值为这项联调任务的 key。最后再安排一项只读最终审查，直接且只依赖 finalTaskKey。所有只读审查的 writePaths=[]，verificationCommand=null。"),
         };
-        let cross_runtime = if target.mode == ManagedTeamMode::Team { review_contract } else { "" };
+        let cross_runtime = if target.mode == ManagedTeamMode::Team && target.integration_owner.is_none() { review_contract } else { "" };
         format!("{cross_runtime}\n本轮已由用户明确启动全自动托管。计划通过检查后系统会执行。\
           {division} 每个任务的 reviewerAgentId 一律填 null。宿主执行写任务的验收命令。\
           最终交付任务负责端到端验收以及项目根目录 README.md 的启动和使用说明。\
@@ -2773,6 +2781,8 @@ fn discussion_prompt(
 struct PlanDraft {
     summary: String,
     tasks: Vec<ConversationPlannedTask>,
+    #[serde(default)]
+    final_task_key: Option<String>,
 }
 
 fn parse_plan(body: &str) -> Result<PlanDraft> {
@@ -2952,28 +2962,41 @@ fn validate_plan(
             ))
         })
         .collect::<Result<Vec<_>>>()?;
-    super::validate_parallel_review_graph(
-        &profiles
-            .iter()
-            .map(|(key, runtime_kind, role)| super::ReviewGraphAgent {
-                key,
-                runtime_kind: *runtime_kind,
-                role: *role,
-            })
-            .collect::<Vec<_>>(),
-        &plan
-            .tasks
-            .iter()
-            .map(|task| super::ReviewGraphTask {
-                key: &task.key,
-                title: &task.title,
-                assignee_key: &task.assignee_agent_id,
-                depends_on: &task.depends_on,
-                workspace_mode: task.workspace_mode,
-            })
-            .collect::<Vec<_>>(),
-    )
-    .map_err(anyhow::Error::msg)?;
+    let flexible_delivery = round.managed_target.as_ref().and_then(|target| target.integration_owner.as_deref());
+    let selected_delivery = if let Some(owner) = flexible_delivery {
+        let key = plan.final_task_key.as_deref().context("请用 finalTaskKey 指定最终联调任务")?;
+        let task = tasks.get(key).copied().context("最终联调任务不存在")?;
+        ensure!(task.assignee_agent_id == owner && task.workspace_mode == WorkspaceMode::Worktree,
+            "最终联调必须交给本轮授权兼任的开发成员，并使用独立工作树");
+        Some(task)
+    } else {
+        ensure!(plan.final_task_key.is_none(), "当前分工由既有流程确定最终交付任务");
+        None
+    };
+    if selected_delivery.is_none() {
+        super::validate_parallel_review_graph(
+            &profiles
+                .iter()
+                .map(|(key, runtime_kind, role)| super::ReviewGraphAgent {
+                    key,
+                    runtime_kind: *runtime_kind,
+                    role: *role,
+                })
+                .collect::<Vec<_>>(),
+            &plan
+                .tasks
+                .iter()
+                .map(|task| super::ReviewGraphTask {
+                    key: &task.key,
+                    title: &task.title,
+                    assignee_key: &task.assignee_agent_id,
+                    depends_on: &task.depends_on,
+                    workspace_mode: task.workspace_mode,
+                })
+                .collect::<Vec<_>>(),
+        )
+        .map_err(anyhow::Error::msg)?;
+    }
     if let Some(target) = &round.managed_target {
         let mut workers = Vec::new();
         let mut reviews = Vec::new();
@@ -2984,7 +3007,10 @@ fn validate_plan(
             target.check_assignment(&task.assignee_agent_id, *role, *runtime)?;
             super::managed_delivery::ManagedUse::engineering(*role, task.workspace_mode)?.check(*runtime)?;
             ensure!(task.reviewer_agent_id.is_none(), "全自动托管的 reviewerAgentId 必须为空，独立审查使用只读任务");
-            match (role, task.workspace_mode) {
+            let stage_role = if selected_delivery.is_some_and(|delivery| delivery.key == task.key) {
+                super::AgentRole::Integrator
+            } else { *role };
+            match (stage_role, task.workspace_mode) {
                 (super::AgentRole::Worker, WorkspaceMode::Worktree) => workers.push(task),
                 (super::AgentRole::Reviewer, WorkspaceMode::ReadOnly) => reviews.push(task),
                 (super::AgentRole::Integrator, WorkspaceMode::Worktree) => integrators.push(task),
@@ -3005,13 +3031,33 @@ fn validate_plan(
                 workers[0]
             }
             ManagedTeamMode::Team => {
-                ensure!(!workers.is_empty() && integrators.len() == 1 && reviews.len() == workers.len(),
+                let final_review_count = usize::from(selected_delivery.is_some());
+                ensure!(!workers.is_empty() && integrators.len() == 1 && reviews.len() == workers.len() + final_review_count,
                     "全自动托管需要唯一集成任务，并为每项开发任务配置一项独立审查");
-                for review in &reviews {
-                    ensure!(reaches(&tasks, &integrators[0].key, &review.key, &mut HashSet::new()),
-                        "集成任务必须等待全部审查通过");
+                let integration = integrators[0];
+                if selected_delivery.is_some() {
+                    let terminal = reviews.iter().filter(|review| review.depends_on.as_slice() == [integration.key.as_str()]).count();
+                    ensure!(terminal == 1, "最终候选必须有一项独立只读审查，且仅依赖最终联调任务");
+                    let modules = reviews.iter().filter(|review| review.depends_on.as_slice() != [integration.key.as_str()]);
+                    let prerequisites = modules.map(|review| review.key.as_str()).collect::<HashSet<_>>();
+                    ensure!(integration.depends_on.iter().map(String::as_str).collect::<HashSet<_>>() == prerequisites,
+                        "最终联调必须且只直接依赖全部模块审查");
+                    let runtime_of = |task: &ConversationPlannedTask| profiles.iter().find(|(id, _, _)| *id == task.assignee_agent_id)
+                        .map(|(_, runtime, _)| *runtime).unwrap();
+                    if workers.iter().map(|task| runtime_of(task).as_str()).collect::<HashSet<_>>().len() > 1 {
+                        for task in &workers {
+                            ensure!(reviews.iter().any(|review| review.depends_on.as_slice() == [task.key.as_str()]
+                                && runtime_of(review) != runtime_of(task)),
+                                "跨 Runtime 开发任务须由不同 Runtime 的成员独立只读审查");
+                        }
+                    }
+                } else {
+                    for review in &reviews {
+                        ensure!(reaches(&tasks, &integration.key, &review.key, &mut HashSet::new()),
+                            "集成任务必须等待全部审查通过");
+                    }
                 }
-                integrators[0]
+                integration
             }
         };
         for worker in workers.iter().filter(|_| target.mode != ManagedTeamMode::Solo) {
@@ -3096,6 +3142,7 @@ impl MultiAgentStore {
             message_id: message_id.into(),
             summary: draft.summary,
             tasks: draft.tasks,
+            final_task_key: draft.final_task_key,
             status: "pending".into(),
             task_ids: Vec::new(),
             created_at: now(),
@@ -3144,6 +3191,7 @@ impl MultiAgentStore {
             &PlanDraft {
                 summary: plan.summary.clone(),
                 tasks: plan.tasks.clone(),
+                final_task_key: plan.final_task_key.clone(),
             },
         )?;
         let root: String = tx.query_row(
@@ -3226,9 +3274,12 @@ impl MultiAgentStore {
             .collect();
         plan.status = "applied".into();
         if let Some(managed) = plan.managed.as_mut() {
-            managed.final_task_id = plan.tasks.iter()
-                .find(|task| managed.target.is_final_assignee(&task.assignee_agent_id))
-                .map(|task| ids[&task.key].clone());
+            managed.final_task_id = if managed.target.integration_owner.is_some() {
+                plan.final_task_key.as_ref().map(|key| ids[key].clone())
+            } else {
+                plan.tasks.iter().find(|task| managed.target.is_final_assignee(&task.assignee_agent_id))
+                    .map(|task| ids[&task.key].clone())
+            };
             if managed.status == "waiting_login" { managed.summary = None; }
             managed.status = "running".into();
         }

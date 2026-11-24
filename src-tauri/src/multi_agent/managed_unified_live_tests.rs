@@ -120,7 +120,7 @@ fn real_unified_managed_unit_converter() -> Result<()> {
 只安排三项任务，任务的 reviewerAgentId 一律为 null。换算器开发只改 public/index.html 与 tests/frontend.test.js，验证命令 node --test tests/frontend.test.js。独立审查直接依赖开发任务，只读检查实际提交及测试证据，返回审查结论，禁写且不运行命令。联调验收直接依赖该审查，在 README.md、crewvela.launch.json 和 tests/integration.test.js 中补充用法、Demo 清单和覆盖实际 HTTP 换算的测试，验证命令 node --test tests/integration.test.js。
 联调从提交版本本机启动 node server.js，验证首页、快捷按钮和 25°C 到 77°F，保留现有换算。Demo 清单使用 {"program":"node","args":["server.js"],"workingDirectory":".","url":null}，自动发现 PORT=0 的回环地址。只操作本测试项目，留在本地，不推送。"#;
     chat.send(store.clone(), ConversationSendInput {
-        native_capabilities: manual, managed: !manual, expected_conversation_id: None, chat_dispatch: None,
+        native_capabilities: manual, managed: !manual, integration_owner: None, expected_conversation_id: None, chat_dispatch: None,
         project_id: project.id.clone(), client_message_id: id(), body: body.into(), attachment_ids: Vec::new(),
         participant_agent_ids: participants, mode: "execution_plan".into(), intent: "chat".into(),
         max_rounds: 1, max_duration_seconds: 900, task_rules: None,

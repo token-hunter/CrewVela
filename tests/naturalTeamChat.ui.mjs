@@ -138,11 +138,15 @@ try{
  await counts.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===3);
  assert.deepEqual((await call(counts,'ma_conversation_send'))[2].args.input.participantAgentIds,selected);
  await draft.fill('开发一个待办列表项目');
- counts.once('dialog', dialog=>dialog.accept());
- await chooseConversationTool(counts,'全自动托管');
+ await Promise.all([counts.waitForEvent('dialog').then(async dialog=>{
+  const message=dialog.message();
+  await dialog.accept();
+  assert.match(message,/Codex 兼任本轮联调/);
+ }),chooseConversationTool(counts,'全自动托管')]);
  await counts.waitForFunction(()=>window.conversationMock.calls.filter(c=>c.command==='ma_conversation_send').length===4);
  const managed = (await call(counts,'ma_conversation_send'))[3].args.input;
  assert.equal(managed.managed,true);
+ assert.equal(managed.integrationOwner,'codex');
  assert.deepEqual(managed.participantAgentIds,selected);
  await counts.close();
  const goal = '@Claude Code @Codex 开发一个贪吃蛇小游戏。前后端分别开发，交叉审查后再由集成成员联调。';

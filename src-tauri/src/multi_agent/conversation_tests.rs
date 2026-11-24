@@ -285,7 +285,7 @@ impl Fixture {
         }
     }
     fn input(&self) -> ConversationSendInput {
-        ConversationSendInput { native_capabilities: false, managed: false, expected_conversation_id: None, chat_dispatch: None,
+        ConversationSendInput { native_capabilities: false, managed: false, integration_owner: None, expected_conversation_id: None, chat_dispatch: None,
             project_id: self.project.clone(),
             client_message_id: "user-1".into(),
             body: "Discuss the project".into(),
@@ -315,6 +315,7 @@ impl Fixture {
     fn draft(&self) -> PlanDraft {
         PlanDraft {
             summary: "explicit plan".into(),
+            final_task_key: None,
             tasks: vec![ConversationPlannedTask {
                 key: "one".into(),
                 title: "implement".into(),
@@ -2144,7 +2145,7 @@ fn managed_plan_requires_all_roles_and_accepts_zcode_cli_static_review() {
     };
     crate::runtime_preferences::with_launch_default_for_test("claude_code", "auto", || {
         set_role("worker");
-        assert!(fixture.store.conversation_plan_preflight(&input).unwrap().iter().any(|issue| issue.message.contains("开发、审查和集成成员")));
+        assert!(fixture.store.conversation_plan_preflight(&input).unwrap().iter().any(|issue| issue.message.contains("独立只读审查成员")));
         set_role("reviewer");
         let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
         assert!(issues.is_empty(), "{:?}", issues.iter().map(|issue| &issue.message).collect::<Vec<_>>());

@@ -335,6 +335,7 @@ mod tests {
             base: hash.clone(),
             planner: "test".into(),
             mode: Default::default(),
+            integration_owner: None,
             members: Default::default(),
         };
         let mut delivery = ManagedDelivery::new(target);
@@ -347,6 +348,7 @@ mod tests {
             message_id: "message".into(),
             summary: String::new(),
             tasks: vec![],
+            final_task_key: None,
             status: "applied".into(),
             task_ids: vec![],
             created_at: 1,
@@ -466,7 +468,7 @@ mod tests {
             root_path: checkout.display().to_string(), default_branch: "main".into() }).unwrap();
         let mut delivery = ManagedDelivery::new(super::super::managed_delivery::ManagedTarget {
             root: team.root_path.clone(), branch: "main".into(), base: commit.clone(),
-            planner: "fixture".into(), mode: Default::default(), members: Default::default(),
+            planner: "fixture".into(), mode: Default::default(), integration_owner: None, members: Default::default(),
         });
         delivery.status = "completed".into();
         delivery.commit = Some(commit);
@@ -474,7 +476,7 @@ mod tests {
         delivery.demo = Some(DeliveryDemo::Preparing);
         let plan = super::super::ConversationExecutionPlan {
             id: "plan".into(), project_id: team.id.clone(), round_id: "round".into(), message_id: "message".into(),
-            summary: String::new(), tasks: vec![], status: "applied".into(), task_ids: vec![], created_at: 1, managed: Some(delivery),
+            summary: String::new(), tasks: vec![], final_task_key: None, status: "applied".into(), task_ids: vec![], created_at: 1, managed: Some(delivery),
         };
         store.connection.lock().unwrap().execute("INSERT INTO ma_conversation_plans(id,project_id,round_id,data_json) VALUES(?1,?2,?3,?4)",
             params![plan.id, team.id, plan.round_id, serde_json::to_string(&plan).unwrap()]).unwrap();

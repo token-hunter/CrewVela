@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{bail, ensure, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use super::conversation::{ConversationExecutionPlan, ConversationSendInput};
 use super::executor::{git_head, hidden_command};
@@ -32,6 +33,8 @@ pub(super) struct ManagedTarget {
     pub planner: String,
     #[serde(default)]
     pub mode: ManagedTeamMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration_owner: Option<String>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub(super) members: std::collections::BTreeMap<String, ManagedMember>,
 }
@@ -47,7 +50,7 @@ pub(super) struct ManagedMember {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ManagedAcceptance {
-    task_id: String,
+    pub(super) task_id: String,
     run_id: String,
     artifact_id: String,
     pub(super) commit: String,
@@ -83,7 +86,7 @@ pub(super) struct ManagedDelivery {
     pub demo: Option<DeliveryDemo>,
 }
 
-/// Host receipt for the fixed commit tested after all small-team tasks finished.
+/// Host receipt for the fixed commit tested after all tasks finished.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct FinalAcceptance {
@@ -93,6 +96,8 @@ pub(super) struct FinalAcceptance {
     commit: String,
     verification_command: String,
     review_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    source_reviews: Vec<(String, String)>,
 }
 
 impl ManagedDelivery {
@@ -127,6 +132,14 @@ pub(super) fn git(cwd: &Path, args: &[&str]) -> Result<String> {
 }
 
 impl ManagedTarget {
+    pub(super) fn host_finalizes(&self) -> bool {
+        self.mode != ManagedTeamMode::Team || self.integration_owner.is_some()
+    }
+
+    pub(super) fn reviews_exact_commits(&self) -> bool {
+        self.mode == ManagedTeamMode::Pair || self.integration_owner.is_some()
+    }
+
     pub(super) fn check_assignment(&self, id: &str, role: AgentRole, runtime: AgentRuntimeKind) -> Result<()> {
         if !self.members.is_empty() {
             ensure!(self.members.get(id).is_some_and(|grant| grant.role == role && grant.runtime == runtime),
@@ -339,10 +352,19 @@ pub(super) fn prepare(
             ManagedTeamMode::Pair
         }
         _ => {
-            ensure!(["worker", "reviewer", "integrator"].iter().all(|role| roles.contains(*role)),
-                "三位及以上成员全自动托管需要开发、审查和集成成员");
+            ensure!(roles.contains("worker") && roles.contains("reviewer"),
+                "团队托管需要至少一位可写开发成员和一位独立只读审查成员");
             ManagedTeamMode::Team
         }
+    };
+    let integration_owner = if mode == ManagedTeamMode::Team && !roles.contains("integrator") {
+        let owner = input.integration_owner.as_ref().context("请确认本轮兼任联调的开发成员")?;
+        ensure!(members.get(owner).is_some_and(|member| member.role == AgentRole::Worker),
+            "兼任联调的成员或权限已变更，请重新确认本轮分工");
+        Some(owner.clone())
+    } else {
+        ensure!(input.integration_owner.is_none(), "本轮成员已变更，请重新确认联调安排");
+        None
     };
     // Small teams plan with the same developer who will implement and integrate.
     if mode != ManagedTeamMode::Team {
@@ -357,6 +379,7 @@ pub(super) fn prepare(
         base,
         planner,
         mode,
+        integration_owner,
         members,
     };
     target.check_before_start(&target.root)?;
@@ -608,14 +631,15 @@ impl MultiAgentStore {
         Ok(())
     }
 
-    fn small_team_candidate<'a>(
+    fn final_candidate<'a>(
         &self, snapshot: &'a MultiAgentSnapshot, plan: &ConversationExecutionPlan,
     ) -> Result<(&'a super::MultiAgentTask, &'a super::ArtifactRecord, FinalAcceptance)> {
         let managed = plan.managed.as_ref().context("缺少托管授权")?;
         let final_id = managed.final_task_id.as_ref().context("缺少本轮最终交付任务标识")?;
         let pair = managed.target.mode == ManagedTeamMode::Pair;
-        ensure!(plan.tasks.len() == 1 + usize::from(pair) && plan.task_ids.len() == plan.tasks.len(),
-            "最终交付分工与授权人数不一致");
+        let flexible = managed.target.integration_owner.is_some();
+        ensure!(plan.task_ids.len() == plan.tasks.len() && (flexible || plan.tasks.len() == 1 + usize::from(pair)),
+            "最终交付与已授权分工不一致");
         let latest_delivery = |id: &str, role: AgentRole, workspace, artifact_type| -> Result<_> {
             let index = plan.task_ids.iter().position(|value| value == id).context("交付任务不属于本轮授权")?;
             let planned = &plan.tasks[index];
@@ -638,39 +662,76 @@ impl MultiAgentStore {
             Ok((task, run, artifact))
         };
         let (task, run, artifact) = latest_delivery(final_id, AgentRole::Worker, WorkspaceMode::Worktree, "git_commit")?;
+        if let Some(owner) = &managed.target.integration_owner {
+            ensure!(&run.agent_id == owner, "最终交付负责人已偏离授权");
+        }
         let receipts = self.managed_acceptance_receipts(std::slice::from_ref(artifact))?;
         let [receipt] = receipts.as_slice() else { bail!("候选提交缺少开发任务的宿主测试回执") };
         let command = task.verification_command.clone().context("缺少成品验收命令")?;
         ensure!(receipt.verification_command.as_ref() == Some(&command), "开发测试回执与本轮验收命令不一致");
-        let review_run_id = if pair {
-            let review_id = plan.task_ids.iter().find(|id| *id != final_id).context("缺少最终审查任务")?;
+        let approve = |review_id: &String, target_id: &String, writer_id: &str, commit: &str| -> Result<String> {
             let (_, review_run, review_artifact) = latest_delivery(review_id, AgentRole::Reviewer, WorkspaceMode::ReadOnly, "review")?;
             let host_artifact: bool = self.connection.lock().unwrap().query_row("SELECT EXISTS(
                 SELECT 1 FROM ma_runtime_events e JOIN ma_artifacts a ON a.id=json_extract(e.payload_json,'$.artifactId')
                 JOIN ma_runs r ON r.id=e.run_id WHERE r.id=?1 AND a.id=?2 AND a.run_id=r.id AND e.task_id=a.task_id
                 AND e.agent_id=r.agent_id AND e.created_at=r.finished_at AND e.created_at=a.created_at AND e.event_type='completed')",
                 params![review_run.id,review_artifact.id], |r| r.get(0))?;
-            ensure!(host_artifact && review_run.agent_id != run.agent_id && review_artifact.content_hash.as_ref() == Some(&receipt.commit)
+            ensure!(host_artifact && review_run.agent_id != writer_id && review_artifact.content_hash.as_deref() == Some(commit)
                 && snapshot.review_decisions.iter().any(|d| d.review_task_id == *review_id && d.review_run_id == review_run.id
-                    && d.target_task_id == *final_id && d.reviewer_agent_id == review_run.agent_id && d.applied_at.is_some()
+                    && d.target_task_id == *target_id && d.reviewer_agent_id == review_run.agent_id && d.applied_at.is_some()
                     && d.verdict == super::ReviewVerdict::Approved), "最终候选提交尚未获得对应的独立只读审查通过回执");
-            Some(review_run.id.clone())
+            Ok(review_run.id.clone())
+        };
+        let review_for = |key: &str| -> Result<&String> {
+            let mut ids = plan.tasks.iter().zip(&plan.task_ids).filter(|(t, _)| {
+                t.workspace_mode == WorkspaceMode::ReadOnly && t.depends_on.as_slice() == [key]
+            }).map(|(_, id)| id);
+            let id = ids.next().context("缺少候选提交的独立审查任务")?;
+            ensure!(ids.next().is_none(), "对应候选提交的审查任务不唯一");
+            Ok(id)
+        };
+        let review_run_id = if pair || flexible {
+            let key = &plan.tasks[plan.task_ids.iter().position(|id| id == final_id).context("最终任务未登记")?].key;
+            Some(approve(review_for(key)?, final_id, &run.agent_id, &receipt.commit)?)
         } else { None };
+        let mut source_reviews = Vec::new();
+        if flexible {
+            for (planned, id) in plan.tasks.iter().zip(&plan.task_ids) {
+                if id == final_id || planned.workspace_mode != WorkspaceMode::Worktree { continue; }
+                let (_, source, source_artifact) = latest_delivery(id, AgentRole::Worker, WorkspaceMode::Worktree, "git_commit")?;
+                let source_receipts = self.managed_acceptance_receipts(std::slice::from_ref(source_artifact))?;
+                let [source_receipt] = source_receipts.as_slice() else { bail!("模块缺少宿主验收回执"); };
+                let approved = approve(review_for(&planned.key)?, id, &source.agent_id, &source_receipt.commit)?;
+                source_reviews.push((source_artifact.id.clone(), approved));
+            }
+            let mut expected = source_reviews.iter().map(|(artifact, _)| artifact).collect::<Vec<_>>();
+            expected.sort();
+            ensure!(!expected.is_empty() && run.session_locator.as_ref().and_then(|locator| locator.get("managedInputArtifacts")) == Some(&json!(expected)),
+                "最终候选使用的模块交付与当前已审查提交不一致");
+        }
         Ok((task, artifact, FinalAcceptance { task_id: final_id.clone(), run_id: run.id.clone(),
-            artifact_id: artifact.id.clone(), commit: receipt.commit.clone(), verification_command: command, review_run_id }))
+            artifact_id: artifact.id.clone(), commit: receipt.commit.clone(), verification_command: command, review_run_id, source_reviews }))
     }
 
-    fn verify_small_team_delivery(
+    fn verify_final_delivery(
         &self, snapshot: &MultiAgentSnapshot, plan: &ConversationExecutionPlan, cancelled: &AtomicBool,
     ) -> Result<FinalAcceptance> {
         let managed = plan.managed.as_ref().context("缺少托管授权")?;
-        let (task, artifact, candidate) = self.small_team_candidate(snapshot, plan)?;
+        let (task, artifact, candidate) = self.final_candidate(snapshot, plan)?;
         let root = managed.target.check(&snapshot.project.root_path)?;
         let head = git_head(&root)?;
         ensure!(head == managed.target.base || (head == candidate.commit && managed.final_acceptance.as_ref() == Some(&candidate)),
             "交付分支已移动或缺少对应的最终验收回执");
         let cwd = PathBuf::from(&artifact.uri);
-        let scopes = self.managed_write_paths(&task.id)?;
+        let final_scopes = self.managed_write_paths(&task.id)?;
+        let mut scopes = final_scopes.clone();
+        if managed.target.integration_owner.is_some() {
+            for (planned, id) in plan.tasks.iter().zip(&plan.task_ids) {
+                if id != &task.id && planned.workspace_mode == WorkspaceMode::Worktree {
+                    scopes.extend(self.managed_write_paths(id)?);
+                }
+            }
+        }
         let check_workspace = || super::executor::check_final_candidate(&snapshot.project, &cwd, &managed.target.base, &candidate.commit, &scopes);
         check_workspace()?;
         if let Some(saved) = &managed.final_acceptance {
@@ -680,7 +741,7 @@ impl MultiAgentStore {
         if let (_, Some(entry)) = verification(&candidate.verification_command)? {
             ensure!(!git(&cwd, &["ls-tree", &candidate.commit, "--", entry])?.is_empty(), "验收测试入口必须已提交到最终候选版本");
         }
-        if scopes.iter().any(|path| path == MANIFEST) {
+        if final_scopes.iter().any(|path| path == MANIFEST) {
             PreviewConfig::from_delivery(&cwd, &candidate.commit)?.with_context(|| format!("网页成品缺少 {MANIFEST}"))?;
         }
         self.append_run_log(&candidate.run_id, "system", &format!("最终候选提交验收：{}", candidate.commit))?;
@@ -705,8 +766,8 @@ impl MultiAgentStore {
         cancelled: &AtomicBool,
     ) -> Result<()> {
         let managed = plan.managed.as_ref().context("缺少托管授权")?;
-        let small_team = managed.target.mode != ManagedTeamMode::Team;
-        if small_team && (cancelled.load(Ordering::Acquire) || self.project(&plan.project_id)?.status != ProjectStatus::Active) {
+        let host_finalizes = managed.target.host_finalizes();
+        if host_finalizes && (cancelled.load(Ordering::Acquire) || self.project(&plan.project_id)?.status != ProjectStatus::Active) {
             return Ok(());
         }
         let mut accepted_candidate = None;
@@ -757,8 +818,8 @@ impl MultiAgentStore {
                     .collect::<Vec<_>>()
                     .join("、")
             );
-            if small_team {
-                let candidate = self.verify_small_team_delivery(snapshot, plan, cancelled)?;
+            if host_finalizes {
+                let candidate = self.verify_final_delivery(snapshot, plan, cancelled)?;
                 let summary = snapshot.runs.iter().find(|run| run.id == candidate.run_id)
                     .and_then(|run| run.output_summary.clone()).unwrap_or_default();
                 let result = (candidate.commit.clone(), candidate.verification_command.clone(), summary);
@@ -806,7 +867,7 @@ impl MultiAgentStore {
                     .unwrap_or_else(|| "交付已通过验证。".into()),
             ))
         })();
-        let accepted = if small_team {
+        let accepted = if host_finalizes {
             let mut connection = self.connection.lock().unwrap();
             let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let current: Option<String> = tx.query_row("SELECT p.data_json FROM ma_conversation_plans p
@@ -981,7 +1042,7 @@ impl MultiAgentStore {
                         "{} 的工作树已偏离原验收提交",
                         task.title
                     );
-                    if member.role == AgentRole::Integrator {
+                    if !managed.target.host_finalizes() && member.role == AgentRole::Integrator {
                         merged = Some(sha.to_owned());
                     }
                 }
@@ -993,8 +1054,8 @@ impl MultiAgentStore {
                 _ => {}
             }
         }
-        if all_done && managed.target.mode != ManagedTeamMode::Team {
-            let (_, _, candidate) = self.small_team_candidate(&snapshot, plan)?;
+        if all_done && managed.target.host_finalizes() {
+            let (_, _, candidate) = self.final_candidate(&snapshot, plan)?;
             if let Some(accepted) = &managed.final_acceptance {
                 ensure!(accepted == &candidate, "已登记的最终验收与当前交付或审查不符");
             }

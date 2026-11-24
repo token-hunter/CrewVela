@@ -66,7 +66,7 @@ fn generated_plan_requires_one_writer_and_the_selected_reviewer() -> Result<()> 
         let (fixture, plan) = small_plan(pair);
         let round = fixture.store.conversation_round(&plan.round_id)?;
         let connection = fixture.store.connection.lock().unwrap();
-        let check = |tasks| validate_plan(&connection, &round, &PlanDraft { summary: "分工".into(), tasks });
+        let check = |tasks| validate_plan(&connection, &round, &PlanDraft { summary: "分工".into(), tasks, final_task_key: None });
         assert!(check(plan.tasks.clone()).is_ok());
         let mut missing_readme = plan.tasks.clone();
         missing_readme[0].write_paths = vec!["src/owned".into()];
@@ -119,14 +119,118 @@ fn implement(fixture: &Fixture, plan: &ConversationExecutionPlan, revision: usiz
 }
 
 fn review(fixture: &Fixture, plan: &ConversationExecutionPlan, sha: &str, verdict: ReviewVerdict) -> Result<String> {
-    let (task, run) = claim(fixture, plan, 1)?;
     let root = crate::providers::config_dir()?.join("worktrees");
-    let cwd = prepare_workspace_at(&root, &fixture.store.project(&fixture.project)?, &task, &run.id, &[], Some(sha))?;
+    review_task(fixture, plan, &root, 1, 0, sha, verdict)
+}
+
+fn review_task(fixture: &Fixture, plan: &ConversationExecutionPlan, root: &Path, review: usize, target: usize, sha: &str, verdict: ReviewVerdict) -> Result<String> {
+    let (task, run) = claim(fixture, plan, review)?;
+    let cwd = prepare_workspace_at(root, &fixture.store.project(&fixture.project)?, &task, &run.id, &[], Some(sha))?;
     assert_eq!(git_head(&cwd)?, sha);
     fixture.store.submit_review_decision(SubmitReviewDecisionInput { review_run_id: run.id.clone(),
-        target_task_id: plan.task_ids[0].clone(), verdict, summary: "scripted review".into() })?;
+        target_task_id: plan.task_ids[target].clone(), verdict, summary: "scripted review".into() })?;
     record_run(fixture, &run, &cwd, sha, false)?;
     Ok(run.id)
+}
+
+#[test]
+fn combined_delivery_requires_final_review_and_current_module_receipts() -> Result<()> {
+    for case in ["success", "stale-review", "wrong-input", "final-fails"] {
+        let (fixture, mut input, draft) = managed_plan_fixture();
+        let store = &fixture.store;
+        let mut draft: Value = serde_json::from_str(&draft)?;
+        let tasks = draft["tasks"].as_array_mut().unwrap();
+        let writer = tasks[2]["assigneeAgentId"].as_str().unwrap().to_owned();
+        let reviewer = tasks[1]["assigneeAgentId"].as_str().unwrap().to_owned();
+        store.connection.lock().unwrap().execute("UPDATE ma_agents SET role='worker' WHERE id=?1", [&writer])?;
+        store.connection.lock().unwrap().execute("UPDATE ma_agents SET runtime_kind='zcode_cli' WHERE id=?1", [&reviewer])?;
+        store.connection.lock().unwrap().execute("UPDATE ma_agents SET runtime_kind='claude_code' WHERE id=?1", [&fixture.agents[0]])?;
+        input.body = "分别开发前端与后端，经过独立审查后联调并交付".into();
+        input.integration_owner = Some(writer.clone());
+        let mut backend = tasks[0].clone();
+        backend["key"] = json!("backend");
+        backend["assigneeAgentId"] = json!(writer);
+        backend["writePaths"] = json!(["backend"]);
+        backend["verificationCommand"] = json!("node --test backend/check.test.js");
+        let mut backend_review = tasks[1].clone();
+        backend_review["key"] = json!("backend-review");
+        backend_review["dependsOn"] = json!(["backend"]);
+        let mut final_review = tasks[1].clone();
+        final_review["key"] = json!("final-review");
+        final_review["dependsOn"] = json!(["integration"]);
+        tasks[2]["dependsOn"] = json!(["review", "backend-review"]);
+        tasks.insert(2, backend);
+        tasks.insert(3, backend_review);
+        tasks.push(final_review);
+        draft["finalTaskKey"] = json!("integration");
+        crate::runtime_preferences::with_launch_default_for_test("claude_code", "auto", || -> Result<()> {
+            let mut unapproved = input.clone();
+            unapproved.integration_owner = None;
+            assert!(!store.conversation_plan_preflight(&unapproved)?.is_empty());
+            unapproved.integration_owner = Some(reviewer.clone());
+            assert!(!store.conversation_plan_preflight(&unapproved)?.is_empty());
+            assert!(store.conversation_plan_preflight(&input)?.is_empty());
+            let chat = fixture.run_input(input, &ScriptedReplies::new(vec![draft.to_string()]));
+            assert_eq!(chat.execution_plans.len(), 1);
+            let plan = &chat.execution_plans[0];
+            assert_eq!(plan.managed.as_ref().unwrap().target.integration_owner.as_deref(), Some(writer.as_str()));
+            store.apply_conversation_plan_in(&ConversationExecutePlanInput {
+                project_id: fixture.project.clone(), plan_id: plan.id.clone(), client_request_id: format!("managed-{}", plan.id),
+            }, true)?;
+            store.set_project_status(&fixture.project, ProjectStatus::Active)?;
+            let plan = store.managed_plan_running(&fixture.project)?.unwrap();
+            assert_eq!(plan.managed.as_ref().unwrap().final_task_id.as_ref(), Some(&plan.task_ids[4]));
+            let project = store.project(&fixture.project)?;
+            let base = git_head(Path::new(&project.root_path))?;
+            let root = fixture.root.join("worktrees");
+            let write = |index, path: &str, test: &str| -> Result<(String, String)> {
+                let (task, run) = claim(&fixture, &plan, index)?;
+                let dependencies = store.dependency_artifacts(&task.id)?;
+                let cwd = prepare_workspace_at(&root, &project, &task, &run.id, &dependencies, None)?;
+                let file = cwd.join(path);
+                std::fs::create_dir_all(file.parent().unwrap())?;
+                std::fs::write(file, test)?;
+                if index == 4 { std::fs::write(cwd.join("README.md"), "Run module and integration tests with Node.")?; }
+                assert!(verify_task_acceptance(&task, &cwd, &AtomicBool::new(false), Some((store, &run.id)))?);
+                let sha = commit_task_worktree(&cwd, &task.title)?;
+                let mut inputs = dependencies.iter().filter(|a| a.artifact_type == "git_commit").map(|a| a.id.as_str()).collect::<Vec<_>>();
+                inputs.sort_unstable();
+                if index == 4 && case == "wrong-input" { inputs.clear(); }
+                let runtime = store.agent_profile(&run.agent_id)?.runtime_kind;
+                let locator = json!({"cwd":cwd,"adapter":runtime,"threadId":id(),"managedTurn":"completed","managedInputArtifacts":inputs});
+                store.finalize_successful_run(&run.id, cwd.to_str().unwrap(), "scripted member", true, Some(&sha), Some(&locator))?;
+                Ok((sha, run.id))
+            };
+            let passing = "require('node:test')('acceptance',()=>{});";
+            let (front, _) = write(0, "src/owned/check.test.js", passing)?;
+            let front_review = review_task(&fixture, &plan, &root, 1, 0, &front, ReviewVerdict::Approved)?;
+            let (back, _) = write(2, "backend/check.test.js", passing)?;
+            review_task(&fixture, &plan, &root, 3, 2, &back, ReviewVerdict::Approved)?;
+            let marker_path = fixture.root.join("break-final-test");
+            let integration_test = format!("require('node:test')('integrated',()=>{{const fs=require('node:fs'); const assert=require('node:assert/strict'); assert.ok(fs.existsSync('src/owned/check.test.js') && fs.existsSync('backend/check.test.js')); assert.equal(fs.existsSync({}), false);}});",
+                serde_json::to_string(&marker_path)?);
+            let (candidate, _) = write(4, "tests/acceptance.test.js", &integration_test)?;
+            assert_eq!(git_head(Path::new(&project.root_path))?, base, "联调任务不得提前合入");
+            review_task(&fixture, &plan, &root, 5, 4, &candidate, ReviewVerdict::Approved)?;
+            if case == "stale-review" {
+                store.connection.lock().unwrap().execute("UPDATE ma_artifacts SET content_hash=?1 WHERE run_id=?2 AND artifact_type='review'", params![base, front_review])?;
+            } else if case == "final-fails" {
+                std::fs::write(marker_path, "fail final acceptance")?;
+            }
+            store.settle_idle_managed_plan(&store.snapshot(&project.id)?, &plan, &ProjectPreviews::default(), &AtomicBool::new(false))?;
+            let result = store.conversation_snapshot(&project.id)?.execution_plans.remove(0).managed.unwrap();
+            if case == "success" {
+                assert_eq!(result.status, "completed", "{:?}", result.summary);
+                assert_eq!(git_head(Path::new(&project.root_path))?, candidate);
+                assert_eq!(serde_json::to_value(result.final_acceptance.unwrap())?["sourceReviews"].as_array().unwrap().len(), 2);
+            } else {
+                assert_eq!(result.status, "failed", "{case}: {:?}", result.summary);
+                assert_eq!(git_head(Path::new(&project.root_path))?, base);
+            }
+            Ok(())
+        })?;
+    }
+    Ok(())
 }
 
 #[test]

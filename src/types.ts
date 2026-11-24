@@ -1117,10 +1117,11 @@ export interface ConversationExecutionPlan {
   messageId: string;
   summary: string;
   tasks: ConversationPlannedTask[];
+  finalTaskKey?: string;
   status: "pending" | "applied" | "superseded";
   taskIds: string[];
   managed?: {
-    target: { root: string; branch: string; mode?: "solo" | "pair" | "team"; members?: Record<string, { runtime: AgentRuntimeKind; role: AgentRole }> };
+    target: { root: string; branch: string; mode?: "solo" | "pair" | "team"; integrationOwner?: string; members?: Record<string, { runtime: AgentRuntimeKind; role: AgentRole }> };
     status: "planning" | "waiting_login" | "running" | "completed" | "failed";
     summary: string | null;
     commit: string | null;
@@ -1199,6 +1200,7 @@ export interface ConversationMemberModelSummary {
 export interface ConversationSendInput {
   nativeCapabilities?: boolean;
   managed?: boolean;
+  integrationOwner?: string;
   projectId: string;
   expectedConversationId?: string;
   clientMessageId: string;

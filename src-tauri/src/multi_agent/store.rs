@@ -1478,7 +1478,7 @@ impl MultiAgentStore {
         if matches!(artifact_type, "git_commit" | "workspace" | "review") {
             if let Some(target) = super::managed_delivery::task_target(&tx, &input.task_id)? {
                 anyhow::ensure!(artifact_type == "review", "托管任务的 Git 交付由 CrewVela 在测试通过后登记");
-                anyhow::ensure!(target.mode != super::managed_delivery::ManagedTeamMode::Pair, "最终候选提交的审查回执由 CrewVela 登记");
+                anyhow::ensure!(!target.reviews_exact_commits(), "候选提交的审查回执由 CrewVela 登记");
             }
         }
         let artifact = ArtifactRecord {
@@ -2875,9 +2875,9 @@ impl MultiAgentStore {
         } else {
             None
         };
-        let pair_review = managed_target.as_ref().is_some_and(|target| target.mode == super::managed_delivery::ManagedTeamMode::Pair)
+        let pinned_review = managed_target.as_ref().is_some_and(|target| target.reviews_exact_commits())
             && task.workspace_mode == WorkspaceMode::ReadOnly;
-        if pair_review {
+        if pinned_review {
             let decision = review_decision.as_ref().context("最终只读审查缺少结论")?;
             let delivered: String = tx.query_row(
                 "SELECT a.content_hash FROM ma_artifacts a JOIN ma_runs r ON r.id=a.run_id
@@ -3036,7 +3036,7 @@ impl MultiAgentStore {
                             params![run.task_id, now],
                         )?;
                         // Reviewer 必须创建新只读工作区，旧工作区不含实现者的修复提交。
-                        if !pair_review {
+                        if !pinned_review {
                             tx.execute("UPDATE ma_runs SET session_locator_json = NULL WHERE task_id = ?1",
                                 params![run.task_id])?;
                         }
@@ -3852,7 +3852,7 @@ impl MultiAgentStore {
             anyhow::ensure!(["sessionId","threadId"].iter().any(|key| patch.get(*key).or_else(|| prior.get(*key))
                 .and_then(serde_json::Value::as_str).is_some_and(|id| !id.is_empty())), "受理回执缺少原生会话身份");
         }
-        anyhow::ensure!(!["cwd", "adapter", "managedBaseline", "managedLaunchMode", "managedTurn", "stopUnverified"]
+        anyhow::ensure!(!["cwd", "adapter", "managedBaseline", "managedLaunchMode", "managedInputArtifacts", "managedTurn", "stopUnverified"]
             .iter().any(|key| patch.contains_key(*key)), "原生回执不能更改任务授权或工作树");
         // Keep the identifiers reported by the adapter separately from the editable run locator.
         let identity: serde_json::Map<String, serde_json::Value> = ["sessionId", "threadId", "turnId", "commandId", "messageId", "engine", "toolPolicy"]

@@ -2205,10 +2205,25 @@ pub(super) fn execute_run(
         store.latest_session_locator(&task.id)?
     };
     let dependency_artifacts = store.dependency_artifacts(&task.id)?;
+    let managed_input_artifacts = managed_target.as_ref()
+        .filter(|target| target.integration_owner.is_some() && task.workspace_mode == WorkspaceMode::Worktree)
+        .map(|_| {
+            let mut ids = dependency_artifacts.iter().filter(|artifact| artifact.artifact_type == "git_commit")
+                .map(|artifact| artifact.id.as_str()).collect::<Vec<_>>();
+            ids.sort_unstable();
+            serde_json::json!(ids)
+        });
+    if let (Some(inputs), Some(previous)) = (&managed_input_artifacts, &resume_locator) {
+        if previous.get("managedInputArtifacts") != Some(inputs) {
+            let error = anyhow!("前置交付已更新，原工作树须重新集成，已保留现有成果");
+            store.fail_run_permanently(&run_id, &error.to_string(), None)?;
+            return Err(error);
+        }
+    }
     let managed_acceptance = if managed_target.is_some() && agent.role == AgentRole::Reviewer {
         store.managed_acceptance_receipts(&dependency_artifacts)?
     } else { Vec::new() };
-    let pair_review = managed_target.as_ref().is_some_and(|target| target.mode == super::managed_delivery::ManagedTeamMode::Pair)
+    let pinned_review = managed_target.as_ref().is_some_and(|target| target.reviews_exact_commits())
         && task.workspace_mode == WorkspaceMode::ReadOnly;
     let managed_native = managed_target.is_some() && task.workspace_mode == WorkspaceMode::Worktree;
     let had_workspace = resume_locator.is_some();
@@ -2239,8 +2254,14 @@ pub(super) fn execute_run(
     } else {
         match resumable_cwd {
             Some(path) => Ok(path),
-            None if pair_review => (|| {
-                let [receipt] = managed_acceptance.as_slice() else { bail!("最终审查缺少唯一的开发验收提交"); };
+            None if pinned_review => (|| {
+                let snapshot = store.snapshot(&project.id)?;
+                let mut edges = snapshot.dependencies.iter().filter(|edge| edge.task_id == task.id);
+                let dependency = edges.next().context("只读审查缺少目标任务")?;
+                anyhow::ensure!(edges.next().is_none(), "只读审查必须指定唯一目标");
+                let mut receipts = managed_acceptance.iter().filter(|receipt| receipt.task_id == dependency.depends_on_task_id);
+                let receipt = receipts.next().context("只读审查缺少当前目标的验收提交")?;
+                anyhow::ensure!(receipts.next().is_none(), "审查目标存在多个验收提交");
                 let root = crate::providers::config_dir()?.join("worktrees");
                 prepare_workspace_at(&root, &project, &task, &run_id, &[], Some(&receipt.commit))
             })(),
@@ -2357,6 +2378,9 @@ pub(super) fn execute_run(
             }
         }
     }
+    if let (Some(inputs), Some(initial)) = (&managed_input_artifacts, initial_locator.as_mut()) {
+        initial["managedInputArtifacts"] = inputs.clone();
+    }
     store.start_run_with_storage(UpdateRunInput {
         run_id: run_id.clone(),
         status: RunStatus::Running,
@@ -2399,6 +2423,9 @@ pub(super) fn execute_run(
     let adapter = adapter_for(agent.runtime_kind);
     debug_assert_eq!(adapter.kind(), agent.runtime_kind);
     let outcome = adapter.execute(&request, cancelled).and_then(|mut result| {
+        if let Some(inputs) = &managed_input_artifacts {
+            result.session_locator["managedInputArtifacts"] = inputs.clone();
+        }
         if agent.runtime_kind == AgentRuntimeKind::Codex {
             request.codex_storage.mark(&mut result.session_locator);
             let id = locator_string(Some(&result.session_locator), &["threadId", "thread_id", "sessionId"])
@@ -2498,7 +2525,7 @@ pub(super) fn execute_run(
                 }
                 match checkpoint_task_workspace(&request, &cwd, read_only_baseline_head.as_deref())
                 {
-                    Ok(_) if pair_review => read_only_baseline_head.clone(),
+                    Ok(_) if pinned_review => read_only_baseline_head.clone(),
                     Ok(hash) => hash,
                     Err(error) => {
                         let _ = store.fail_run_with_retry(
@@ -2518,7 +2545,7 @@ pub(super) fn execute_run(
                         let workspace = cwd.display().to_string();
                         let scopes = store.managed_write_paths(&request.task.id)?;
                         validate_planned_delivery(&request.project, &workspace, hash, &scopes)?;
-                        if request.agent.role == AgentRole::Integrator {
+                        if request.agent.role == AgentRole::Integrator && !target.host_finalizes() {
                             use super::project_preview::{PreviewConfig, MANIFEST};
                             if scopes.iter().any(|scope| scope == MANIFEST) {
                                 PreviewConfig::from_delivery(&cwd, hash)?

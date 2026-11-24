@@ -29,13 +29,14 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
 
   const managed = plan.managed;
   if (managed) {
-    const smallTeam = managed.target.mode === "solo" || managed.target.mode === "pair";
+    const deliveryTask = plan.tasks.find(task => task.key === plan.finalTaskKey);
+    const deliveryOwner = agents.find(agent => agent.id === managed.target.integrationOwner);
     const receipt = managed.finalAcceptance;
     const commands = [...new Set(plan.tasks.map(task => task.verificationCommand).filter(Boolean))];
     if (managed.status === "completed") return <section className="conversation-plan team-plan-card team-delivery-card grok-delivery-card" aria-label="全自动托管结果">
       <ProjectPreviewActions key={plan.id} projectId={plan.projectId} planId={plan.id} config={managed.preview} demo={managed.demo} root={managed.target.root}
         onTasks={plan.status === "applied" ? onTasks : undefined} />
-      {smallTeam && receipt && receipt.commit === managed.commit && <p className="team-plan-acceptance">
+      {receipt && receipt.commit === managed.commit && <p className="team-plan-acceptance">
         宿主测试通过 · {receipt.reviewRunId ? "独立只读审查通过" : "本轮未安排独立审查"}<br />
         <code>{receipt.verificationCommand}</code><br />
         已合入 {managed.target.branch} · <code title={receipt.commit}>{receipt.commit.slice(0, 12)}</code>
@@ -81,6 +82,7 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
           </span>
         </button>
         {foldOpen && <div className="grok-fold-body">
+          {deliveryTask && deliveryOwner && <p className="team-plan-acceptance">{deliveryOwner.name} 兼任联调 · {deliveryTask.title}</p>}
           <ManagedDeliveryMembers plan={plan} snapshot={snapshot} onRecords={onTaskRecords} />
           {commands.length > 0 && <div className="grok-fold-commands" aria-label="计划验收命令">
             <span className="grok-fold-cmd-label">计划验收命令</span>
