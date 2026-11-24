@@ -1329,6 +1329,21 @@ async fn ma_conversation_plan_preflight(
     let store = state.inner().clone();
     blocking_command(move || {
         let mut issues = store.conversation_plan_preflight(&input).map_err(to_err)?;
+        if issues.is_empty() && input.managed {
+            for id in &input.participant_agent_ids {
+                let member = store.agent_profile(id).map_err(to_err)?;
+                if member.runtime_kind == multi_agent::AgentRuntimeKind::ZCodeCli {
+                    let project = store.project(&input.project_id).map_err(to_err)?;
+                    if let Err(error) = multi_agent::zcode::managed_cli_preflight(std::path::Path::new(&project.root_path)) {
+                        issues.push(multi_agent::conversation::ConversationPlanIssue {
+                            kind: "member",
+                            message: format!("{} 的 ZCode CLI 托管预检失败。{error:#}", member.name),
+                        });
+                    }
+                    break;
+                }
+            }
+        }
         if issues.is_empty() { issues.extend(store.plan_auth_preflight(&input).map_err(to_err)?); }
         Ok(issues)
     }).await

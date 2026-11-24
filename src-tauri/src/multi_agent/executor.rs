@@ -623,6 +623,7 @@ impl AgentTerminalHost {
         let mut late_restricted_choice = None;
         let mut restricted_opened_at = None;
         let mut pi_accepted = false;
+        let mut waiting_for_claude_input = false;
         loop {
             if cancelled.load(Ordering::Acquire) {
                 self.stop_native_runtime(
@@ -671,11 +672,25 @@ impl AgentTerminalHost {
                     return Err(PermanentRunError("Codex 未离开受限打开页面，已保留工作树与任务记录".into()).into());
                 }
             }
-            if request.managed_native() && (self.sessions.get(&session.id).is_some_and(|record| record.pty_id == Some(pty_id)
-                && record.status == SessionStatus::Waiting) || (transcript_changed && managed_approval_dialog(&capture.output()))) {
-                self.sessions.clear_agent_prompt(&session.id);
-                self.stop_native_runtime(&session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?;
-                return Err(PermanentRunError("原生 CLI 需要人工授权或输入，托管任务已停止；请检查原生终端的审批配置".into()).into());
+            if request.managed_native() {
+                let current = self.sessions.get(&session.id);
+                let input = managed_native_input(kind, current.as_ref(), pty_id, transcript_changed, &capture);
+                match input {
+                    ManagedNativeInput::Wait => {
+                        if !waiting_for_claude_input {
+                            request.store.append_run_log(&request.run_id, "system",
+                                "Claude Code 等待人工确认。请在待处理中心或成员原终端查看请求；处理后原轮次会继续。")?;
+                        }
+                        // Keep the same PTY and prompt binding. Existing approval actions own user input.
+                        waiting_for_claude_input = true;
+                    }
+                    ManagedNativeInput::Continue => waiting_for_claude_input = false,
+                    ManagedNativeInput::Stop => {
+                        self.sessions.clear_agent_prompt(&session.id);
+                        self.stop_native_runtime(&session, pty_id, request.store.handoff_in_progress(&request.project.id)?)?;
+                        return Err(PermanentRunError("原生 CLI 需要人工授权或输入，托管任务已停止；请检查原生终端的审批配置".into()).into());
+                    }
+                }
             }
             if let Some(hook_summary) =
                 self.sessions
@@ -790,6 +805,9 @@ impl AgentTerminalHost {
                     pty_id,
                     request.store.handoff_in_progress(&request.project.id)?,
                 )?;
+                if waiting_for_claude_input {
+                    return Err(PermanentRunError("Claude Code 等待人工确认超时，已保留本轮记录".into()).into());
+                }
                 return Err(anyhow!("{} 执行超时", request.agent.name));
             }
             std::thread::sleep(Duration::from_millis(80));
@@ -5098,6 +5116,31 @@ fn managed_startup_detail(raw: &str) -> String {
     String::new()
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ManagedNativeInput {
+    Continue,
+    Wait,
+    Stop,
+}
+
+fn managed_native_input(
+    runtime: AgentRuntimeKind,
+    session: Option<&SessionRecord>,
+    pty_id: u32,
+    transcript_changed: bool,
+    capture: &RuntimeStreamCapture,
+) -> ManagedNativeInput {
+    let waiting = session.is_some_and(|session|
+        session.pty_id == Some(pty_id) && session.status == SessionStatus::Waiting);
+    if runtime == AgentRuntimeKind::ClaudeCode && waiting {
+        ManagedNativeInput::Wait
+    } else if waiting || (transcript_changed && managed_approval_dialog(&capture.output())) {
+        ManagedNativeInput::Stop
+    } else {
+        ManagedNativeInput::Continue
+    }
+}
+
 fn managed_approval_dialog(raw: &str) -> bool {
     let frame = strip_terminal_control_sequences(runtime_prompt_frame(raw)).to_ascii_lowercase();
     let words = frame.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -7315,6 +7358,36 @@ mod tests {
         let mut privileged = Command::new("fixture");
         privileged.args(["--permission", "full-access"]).env("CREWVELA_AGENT_TOKEN", "current");
         assert!(!binding.matches_command(&privileged));
+    }
+
+    #[test]
+    fn managed_claude_waits_for_input_on_its_original_terminal() {
+        let root = std::env::temp_dir().join(format!("managed-claude-input-{}", uuid::Uuid::new_v4()));
+        let sessions = SessionManager::open_at(root.join("sessions.json"), root.join("events")).unwrap();
+        let session = sessions.create_runtime(crate::sessions::NewRuntimeSession {
+            runtime_kind: "claude_code".into(),
+            cwd: root.display().to_string(),
+            project_id: None,
+        }).unwrap();
+        sessions.attach_runtime(&session.id, 77).unwrap();
+        sessions.apply_hook_value(&serde_json::json!({
+            "session_id": session.claude_session_id,
+            crate::brand::APP_SESSION: session.id,
+            "hook_event_name": "Notification",
+            "notification_type": "permission_prompt",
+            "message": "fixture tool approval"
+        })).unwrap();
+        let waiting = sessions.get(&session.id).unwrap();
+        assert_eq!(waiting.status, SessionStatus::Waiting);
+        let capture = RuntimeStreamCapture::default();
+        assert_eq!(managed_native_input(AgentRuntimeKind::ClaudeCode, Some(&waiting), 77, false, &capture), ManagedNativeInput::Wait);
+        assert_eq!(managed_native_input(AgentRuntimeKind::ClaudeCode, Some(&waiting), 78, false, &capture), ManagedNativeInput::Continue);
+        assert_eq!(managed_native_input(AgentRuntimeKind::Codex, Some(&waiting), 77, false, &capture), ManagedNativeInput::Stop);
+        sessions.mark_terminal_submission(77).unwrap();
+        let running = sessions.get(&session.id).unwrap();
+        assert_eq!(running.pty_id, Some(77));
+        assert_eq!(managed_native_input(AgentRuntimeKind::ClaudeCode, Some(&running), 77, false, &capture), ManagedNativeInput::Continue);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

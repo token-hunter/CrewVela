@@ -756,6 +756,24 @@ pub(super) fn execute_managed_turn(
     managed_turn_command(command, cwd, prompt, resume, model, text_only, stopped, checkpoint)
 }
 
+pub(crate) fn managed_cli_preflight(cwd: &Path) -> Result<()> {
+    let command = launch(&cli_executable()?)?;
+    check_managed_cli_protocol(command, cwd)
+}
+
+fn check_managed_cli_protocol(command: Command, cwd: &Path) -> Result<()> {
+    let stopped = AtomicBool::new(false);
+    let mut deny = |_: &Value, _: &AtomicBool| Ok(false);
+    let mut progress = || Ok(());
+    let mut client = Client::spawn_with_account_host(command, cwd, &mut progress, None, "ZCode CLI")?;
+    let checked = client.check_v4(&stopped, &mut deny, Duration::from_secs(8));
+    match (checked, client.cleanup_checked()) {
+        (Ok(()), cleanup) => cleanup,
+        (Err(error), Ok(())) => Err(error),
+        (Err(error), Err(cleanup)) => Err(error.context(format!("清理 ZCode CLI 预检进程失败：{cleanup:#}"))),
+    }
+}
+
 #[cfg(test)]
 fn execute_managed_review_command(command: Command, cwd: &Path, prompt: &str, stopped: &AtomicBool) -> Result<ZCodeResult> {
     let turn = managed_turn_command(command, cwd, prompt, None, None, false, stopped, &mut |_, _, _, _| Ok(()))?;
@@ -866,6 +884,8 @@ struct Client<'a> {
     cleanup_after_stop: Option<Box<dyn FnOnce()>>,
     stdin: ChildStdin,
     receiver: mpsc::Receiver<Result<Value>>,
+    startup_diagnostic: mpsc::Receiver<Option<&'static str>>,
+    runtime_name: &'static str,
     queued: VecDeque<Value>,
     next_id: u64,
     session: Option<String>,
@@ -877,6 +897,28 @@ struct Client<'a> {
     account_host: Option<account_host::AccountHost>,
     selected_model: Value,
     auth_error: Option<String>,
+}
+
+#[derive(Debug)]
+pub(super) struct ProtocolClosed(String);
+
+impl std::fmt::Display for ProtocolClosed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ProtocolClosed {}
+
+fn startup_stderr_diagnostic(bytes: &[u8]) -> Option<&'static str> {
+    let line = String::from_utf8_lossy(bytes);
+    if line.contains("MODULE_NOT_FOUND") || line.contains("ERR_MODULE_NOT_FOUND") {
+        Some("Node.js 找不到 CLI 入口或依赖，请检查「安装与版本」中的启动路径")
+    } else if line.contains("ERR_DLOPEN_FAILED") {
+        Some("Node.js 无法加载原生依赖，请检查 CLI 与 Node.js 版本")
+    } else {
+        None
+    }
 }
 impl Drop for Client<'_> {
     fn drop(&mut self) {
@@ -892,7 +934,7 @@ impl<'a> Client<'a> {
         on_progress: &'a mut dyn FnMut() -> Result<()>,
     ) -> Result<Self> {
         let account_host = account_host::AccountHost::prepare(&command)?;
-        Self::spawn_with_account_host(command, cwd, on_progress, account_host)
+        Self::spawn_with_account_host(command, cwd, on_progress, account_host, "ZCode Desktop Agent")
     }
 
     fn spawn_with_account_host(
@@ -900,10 +942,11 @@ impl<'a> Client<'a> {
         cwd: &Path,
         on_progress: &'a mut dyn FnMut() -> Result<()>,
         account_host: Option<account_host::AccountHost>,
+        runtime_name: &'static str,
     ) -> Result<Self> {
         command.current_dir(cwd).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         let (mut child, identity) = crate::acp::spawn_owned_command(&mut command)
-            .context("启动 ZCode Desktop Agent 失败")?;
+            .with_context(|| format!("启动 {runtime_name} 失败"))?;
         let pipes = (|| -> Result<_> {
             Ok((child.stdin.take().context("ZCode Desktop 缺少 stdin")?, child.stdout.take().context("ZCode Desktop 缺少 stdout")?))
         })();
@@ -914,17 +957,21 @@ impl<'a> Client<'a> {
                 return Err(error);
             }
         };
-        // 持续排空 stderr，避免子进程阻塞；不把本地凭据或 provider 错误正文写入日志。
+        // Drain stderr and keep only fixed diagnostics. Raw CLI output can contain credentials.
+        let (diagnostic_sender, startup_diagnostic) = mpsc::channel();
         if let Some(stderr) = child.stderr.take() {
             std::thread::spawn(move || {
                 let mut reader = BufReader::new(stderr);
                 let mut sink = Vec::new();
+                let mut diagnostic = None;
                 loop {
                     sink.clear();
-                    if reader.read_until(b'\n', &mut sink).unwrap_or(0) == 0 {
+                    if (&mut reader).take(4096).read_until(b'\n', &mut sink).unwrap_or(0) == 0 {
                         break;
                     }
+                    diagnostic = diagnostic.or_else(|| startup_stderr_diagnostic(&sink));
                 }
+                let _ = diagnostic_sender.send(diagnostic);
             });
         }
         let (sender, receiver) = mpsc::channel();
@@ -955,6 +1002,8 @@ impl<'a> Client<'a> {
             cleanup_after_stop: None,
             stdin,
             receiver,
+            startup_diagnostic,
+            runtime_name,
             queued: VecDeque::new(),
             next_id: 1,
             session: None,
@@ -973,22 +1022,40 @@ impl<'a> Client<'a> {
         self.stdin.flush()?;
         Ok(())
     }
+    fn protocol_closed(&mut self) -> anyhow::Error {
+        let diagnostic = self.startup_diagnostic.recv_timeout(Duration::from_millis(200)).ok().flatten();
+        // On Windows the pipe can report EOF before the process handle is signalled.
+        let deadline = Instant::now() + Duration::from_millis(400);
+        let status = loop {
+            match self.child.try_wait() {
+                Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+                state => break state.ok().flatten(),
+            }
+        };
+        let exit = status.map_or_else(
+            || "退出状态未取得".to_owned(),
+            |status| format!("退出状态 {status}"),
+        );
+        let detail = diagnostic.map_or_else(String::new, |line| format!("，{line}"));
+        ProtocolClosed(format!("{} 协议连接已关闭（{exit}）{detail}", self.runtime_name)).into()
+    }
+
     fn receive(&mut self, deadline: Instant, cancelled: &AtomicBool) -> Result<Value> {
         loop {
             if cancelled.load(Ordering::Acquire) {
-                bail!("ZCode Desktop 任务已取消");
+                bail!("{} 任务已取消", self.runtime_name);
             }
             if self.progress_at.elapsed() >= Duration::from_secs(20) {
                 (self.on_progress)()?;
                 self.progress_at = Instant::now();
             }
             if Instant::now() >= deadline {
-                bail!("ZCode Desktop 协议等待超时");
+                bail!("{} 协议等待超时", self.runtime_name);
             }
             match self.receiver.recv_timeout(Duration::from_millis(100)) {
                 Ok(value) => return value,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(_) => bail!("ZCode Desktop Agent 已退出，任务未确认完成"),
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(self.protocol_closed()),
             }
         }
     }
@@ -1101,10 +1168,33 @@ impl<'a> Client<'a> {
         cancelled: &AtomicBool,
         permission: &mut PermissionHandler<'_>,
     ) -> Result<Value> {
+        self.request_with_timeout(method, params, cancelled, permission, CONTROL_TIMEOUT)
+    }
+
+    fn check_v4(&mut self, cancelled: &AtomicBool, permission: &mut PermissionHandler<'_>, timeout: Duration) -> Result<()> {
+        let query = self.request_with_timeout("v4/commands/query", json!({"commands":[{"sessionId":null,"commandId":uuid::Uuid::new_v4().to_string()}],"clock":true}), cancelled, permission, timeout)?;
+        ensure!(query.get("results").is_some_and(Value::is_array), "{} 未确认支持 v4 协议", self.runtime_name);
+        Ok(())
+    }
+
+    fn request_with_timeout(
+        &mut self,
+        method: &str,
+        params: Value,
+        cancelled: &AtomicBool,
+        permission: &mut PermissionHandler<'_>,
+        timeout: Duration,
+    ) -> Result<Value> {
         let id = self.next_id;
         self.next_id += 1;
-        self.send(&json!({"id":id,"method":method,"params":params}))?;
-        let mut deadline = Instant::now() + CONTROL_TIMEOUT;
+        if let Err(error) = self.send(&json!({"id":id,"method":method,"params":params})) {
+            let broken_pipe = error.chain().any(|cause| {
+                cause.downcast_ref::<std::io::Error>().is_some_and(|err| err.kind() == std::io::ErrorKind::BrokenPipe)
+                    || cause.downcast_ref::<serde_json::Error>().is_some_and(|err| err.io_error_kind() == Some(std::io::ErrorKind::BrokenPipe))
+            });
+            return Err(if broken_pipe { self.protocol_closed() } else { error });
+        }
+        let mut deadline = Instant::now() + timeout;
         loop {
             let frame = self.receive(deadline, cancelled)?;
             // 双向 RPC 的 ID 空间独立，同号权限请求不能当成命令 ACK。
@@ -1930,7 +2020,7 @@ impl<'a> DesktopConnection<'a> {
                     }
                 }
             };
-            Client::spawn_with_account_host(command, cwd, progress, host)?
+            Client::spawn_with_account_host(command, cwd, progress, host, "ZCode CLI")?
         } else {
             Client::spawn(command, cwd, progress)?
         });
@@ -1948,10 +2038,7 @@ impl<'a> DesktopConnection<'a> {
                 bail!("ZCode Desktop 账号配置版本确认失败");
             }
         }
-        let query = client.request("v4/commands/query", json!({"commands":[{"sessionId":null,"commandId":uuid::Uuid::new_v4().to_string()}],"clock":true}), stopped, permission)?;
-        if !query.get("results").is_some_and(Value::is_array) {
-            bail!("ZCode Desktop 安装版不支持 v4 协议");
-        }
+        client.check_v4(stopped, permission, CONTROL_TIMEOUT)?;
         let workspace =
             json!({"workspaceKey":cwd.to_string_lossy(),"workspacePath":cwd.to_string_lossy()});
         let mut workflow_enabled = policy["enabled"] == true;
@@ -2720,6 +2807,34 @@ impl<'a> DesktopConnection<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn managed_zcode_preflight_checks_protocol_and_redacts_startup_failure() {
+        let cwd = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut working = Command::new("node");
+        working.args(["-e", r#"
+const lines = require('node:readline').createInterface({input: process.stdin});
+lines.once('line', line => {
+    const {id, method} = JSON.parse(line);
+    if (method !== 'v4/commands/query') process.exit(2);
+    process.stdout.write(JSON.stringify({id, result: {results: []}}) + '\n');
+});
+"#]);
+        check_managed_cli_protocol(working, cwd).unwrap();
+
+        let mut broken = Command::new("node");
+        broken.args(["-e", r#"
+const lines = require('node:readline').createInterface({input: process.stdin});
+lines.once('line', () => {
+    process.stderr.write('Cannot find module private-fixture-path (MODULE_NOT_FOUND)\n', () => process.exit(17));
+});
+"#]);
+        let error = check_managed_cli_protocol(broken, cwd).unwrap_err();
+        assert!(error.downcast_ref::<ProtocolClosed>().is_some());
+        let message = format!("{error:#}");
+        assert!(message.contains("ZCode CLI") && message.contains("17") && message.contains("找不到 CLI 入口"), "{message}");
+        assert!(!message.contains("private-fixture-path"), "{message}");
+    }
 
     #[test]
     fn managed_zcode_correlates_ack_terminal_and_reapplies_explicit_tools_on_resume() {
@@ -3534,7 +3649,7 @@ createInterface({input:process.stdin}).on('line', input=>{
             });
         "#]);
         let mut progress = || Ok(());
-        let mut client = Client::spawn_with_account_host(command, Path::new(env!("CARGO_MANIFEST_DIR")), &mut progress, None).unwrap();
+        let mut client = Client::spawn_with_account_host(command, Path::new(env!("CARGO_MANIFEST_DIR")), &mut progress, None, "ZCode Desktop Agent").unwrap();
         assert!(client.session.is_none(), "workspace cipher may be requested before session creation");
         let result = client.request("fixture/open", json!({}), &AtomicBool::new(false), &mut |_, _| panic!("cipher request must never approve a tool"));
         assert_eq!(result.unwrap()["connected"], true);
@@ -3592,7 +3707,7 @@ createInterface({input:process.stdin}).on('line', input=>{
         command.args(["-e", SIDE_RPC_FIXTURE]).env("SIDE_RPC_SCENARIO", scenario);
         // Deliberately bypass account discovery: these fixtures never read user
         // credentials or obtain provider headers, even under a configured shell.
-        let mut client = Client::spawn_with_account_host(command, Path::new(env!("CARGO_MANIFEST_DIR")), progress, None).unwrap();
+        let mut client = Client::spawn_with_account_host(command, Path::new(env!("CARGO_MANIFEST_DIR")), progress, None, "ZCode Desktop Agent").unwrap();
         client.session = Some("parent-fixture".into());
         DesktopConnection {
             client, session_id: "parent-fixture".into(), subscription: "parent-sub".into(),
@@ -3609,7 +3724,7 @@ createInterface({input:process.stdin}).on('line', input=>{
         let mut command = Command::new(which::which("node").unwrap());
         command.args(["-e", "setInterval(()=>{},1000)"]);
         let mut progress = || Ok(());
-        let mut client = Client::spawn_with_account_host(command, Path::new(env!("CARGO_MANIFEST_DIR")), &mut progress, None).unwrap();
+        let mut client = Client::spawn_with_account_host(command, Path::new(env!("CARGO_MANIFEST_DIR")), &mut progress, None, "ZCode Desktop Agent").unwrap();
         pid.store(client.child.id(), Ordering::Release);
         client.tracked_process_id = Some(&pid);
         let stopped = std::sync::Arc::new(std::sync::Barrier::new(2));

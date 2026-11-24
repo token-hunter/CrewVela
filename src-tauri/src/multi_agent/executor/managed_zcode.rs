@@ -43,7 +43,13 @@ pub(super) fn execute(request: &RuntimeRequest, cancelled: &AtomicBool) -> Resul
                 }
                 request.checkpoint_managed_turn(phase, patch)
             },
-        )?;
+        ).map_err(|error| {
+            if error.downcast_ref::<super::super::zcode::ProtocolClosed>().is_some() {
+                PermanentRunError(error.to_string()).into()
+            } else {
+                error
+            }
+        })?;
         let locator = request
             .store
             .latest_session_locator(&request.task.id)?
