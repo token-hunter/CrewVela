@@ -13,6 +13,15 @@ function withStorage(stub) {
   return () => { delete globalThis.window; };
 }
 
+test('快捷入口包含设置导航的所有项目，顺序与文案一致', async () => {
+  const { SIDEBAR_SHORTCUT_OPTIONS } = await modulePromise;
+  const settings = fs.readFileSync(path.join(__dirname, '../src/components/SettingsDialog.tsx'), 'utf8');
+  const navigation = settings.split('const settingsNavGroups = [')[1].split('const normalizedNavQuery')[0];
+  const items = [...navigation.matchAll(/id: "(\w+)" as const,\s*label: "([^"]+)"/g)]
+    .map(([, id, label]) => ({ id, label }));
+  assert.deepEqual(SIDEBAR_SHORTCUT_OPTIONS.map(({ id, label }) => ({ id, label })), items);
+});
+
 test('配置会去重、丢弃未知 id，并按设置页导航顺序输出', async () => {
   const { sanitizeSidebarShortcuts, SIDEBAR_SHORTCUT_OPTIONS } = await modulePromise;
   assert.deepEqual(

@@ -10,11 +10,13 @@ import { CornersOutIcon } from "@phosphor-icons/react/dist/csr/CornersOut";
 import { CubeIcon } from "@phosphor-icons/react/dist/csr/Cube";
 import { DotsThreeIcon } from "@phosphor-icons/react/dist/csr/DotsThree";
 import { FolderPlusIcon } from "@phosphor-icons/react/dist/csr/FolderPlus";
+import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
+import { LockIcon } from "@phosphor-icons/react/dist/csr/Lock";
 import { MonitorIcon } from "@phosphor-icons/react/dist/csr/Monitor";
 import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
 import { PackageIcon } from "@phosphor-icons/react/dist/csr/Package";
@@ -63,11 +65,14 @@ const SIDEBAR_SHORTCUT_ICONS: Record<string, () => ReactNode> = {
   appearance: () => <PaletteIcon size={17} />,
   companionship: () => <HeartIcon size={17} />,
   collaboration: () => <UsersIcon size={17} />,
+  projectManagement: () => <FolderSimpleIcon size={17} />,
   sharedMemory: () => <BrainIcon size={17} />,
   automation: () => <AutomationIcon size={17} />,
+  quickCommands: () => <TerminalWindowIcon size={17} />,
   browserControl: () => <GlobeIcon size={17} />,
   skills: () => <ScrollIcon size={17} weight="regular" />,
   archivedSessions: () => <ArchiveIcon size={17} />,
+  privacy: () => <LockIcon size={17} />,
 };
 
 interface Props extends Pick<ComponentProps<typeof SessionList>, "onOpenProject" | "onManageProjects" | "projectResumeIds" | "onContinueProject" | "projectServiceAction"> {
