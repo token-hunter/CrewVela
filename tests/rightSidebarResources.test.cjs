@@ -23,7 +23,7 @@ for (const platform of ['Win32', 'MacIntel']) test(`${platform} 开始页完整�
   const scope = {
     ...platformModule(platform),
     React: { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }) },
-    FolderSimpleIcon: 'folder', TerminalWindowIcon: 'terminal-window', GlobeIcon: 'globe',
+    FolderSimpleIcon: 'folder', TerminalIcon: 'terminal', GlobeIcon: 'globe',
     GitBranchIcon: 'git-branch', RobotIcon: 'robot', HouseIcon: 'house', CaretRightIcon: 'caret-right',
   };
   const declarations = ['RightSidebarStart', 'ResourceIcon', 'sidebarTabKind'].map(name => componentAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name).getText(componentAst).replace(/^export\s+/, '')).join('\n');
@@ -38,9 +38,10 @@ for (const platform of ['Win32', 'MacIntel']) test(`${platform} 开始页完整�
   assert.equal(entries.length, 5);
   assert.deepEqual(entries.map(entry => entry.children[1].children[0]),
     ['文件', '终端', '浏览器', 'Git', '多智能体']);
-  assert.deepEqual(entries.map(entry => entry.children[0].type), ['folder', 'terminal-window', 'globe', 'git-branch', 'robot']);
+  const icons = entries.map(entry => entry.children[0].children[0].type);
+  assert.deepEqual(icons, ['folder', 'terminal', 'globe', 'git-branch', 'robot']);
   for (const [index, id] of ['files:one', 'terminal:one', 'browser:one', 'git:one', 'multi_agent:one'].entries()) {
-    assert.equal(scope.ResourceIcon({ id }).type, entries[index].children[0].type, `${id}: tab and menu icon must match start entry`);
+    assert.equal(scope.ResourceIcon({ id }).type, icons[index], `${id}: tab and menu icon must match start entry`);
   }
   entries.forEach(entry => entry.props.onClick());
   assert.deepEqual(opened, ['files', platform === 'MacIntel' ? 'zsh' : 'powershell', 'browser', 'git', 'multi_agent']);

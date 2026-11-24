@@ -1,7 +1,7 @@
 import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
-import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
+import { TerminalIcon } from "@phosphor-icons/react/dist/csr/Terminal";
 import { isTerminalShell, terminalShells, shellLabel } from "../platform";
 import type { RightSidebarStartStyle, TerminalShell } from "../types";
 import { useEffect, useRef } from "react";
@@ -42,7 +42,7 @@ function ResourceIcon({ id }: { id: string }) {
   if (id === "browser") return <GlobeIcon size={16} />;
   if (id === "git") return <GitBranchIcon size={16} weight="regular" />;
   if (id === "multi_agent") return <RobotIcon size={16} />;
-  if (id === "terminal") return <TerminalWindowIcon size={16} />;
+  if (id === "terminal") return <TerminalIcon size={16} aria-hidden="true" />;
   return <HouseIcon size={16} />;
 }
 export function RightSidebarActivityBar(props: Props) {
@@ -128,7 +128,7 @@ export function RightSidebarStart({
     <nav className="right-sidebar-start right-sidebar-start--minimal" aria-label="工作区工具" data-workspace-root={root ?? undefined} data-start-style="minimal">
       <div className="right-sidebar-start-tools">
         <button type="button" disabled={!root} title="浏览工作区文件" onClick={() => onOpenTool("files")}><i className="right-sidebar-start-icon" aria-hidden="true"><FolderSimpleIcon size={17} /></i><span>文件</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
-        <button type="button" disabled={!root} title={`在当前工作区运行 ${shellLabel(terminalShells()[0])}`} onClick={() => onOpenTool(terminalShells()[0])}><i className="right-sidebar-start-icon" aria-hidden="true"><TerminalWindowIcon size={17} /></i><span>终端</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
+        <button type="button" disabled={!root} title={`在当前工作区运行 ${shellLabel(terminalShells()[0])}`} onClick={() => onOpenTool(terminalShells()[0])}><i className="right-sidebar-start-icon" aria-hidden="true"><TerminalIcon size={17} /></i><span>终端</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
         <button type="button" title="打开网页或搜索内容" onClick={() => onOpenTool("browser")}><i className="right-sidebar-start-icon" aria-hidden="true"><GlobeIcon size={17} /></i><span>浏览器</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
         <button type="button" title="查看 Git 更改与提交记录" onClick={() => onOpenTool("git")}><i className="right-sidebar-start-icon" aria-hidden="true"><GitBranchIcon size={17} weight="regular" /></i><span>Git</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>
         <button type="button" title="协调智能体任务与协作进度" onClick={() => onOpenTool("multi_agent")}><i className="right-sidebar-start-icon" aria-hidden="true"><RobotIcon size={17} /></i><span>多智能体</span><i className="right-sidebar-start-arrow-pill" aria-hidden="true"><CaretRightIcon className="right-sidebar-start-arrow" size={14} /></i></button>

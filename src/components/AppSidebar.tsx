@@ -5,12 +5,8 @@ import { createPortal } from "react-dom";
 import type { ComponentProps, ReactNode } from "react";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
 import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
-import { BrainIcon } from "@phosphor-icons/react/dist/csr/Brain";
-import { CornersOutIcon } from "@phosphor-icons/react/dist/csr/CornersOut";
 import { CubeIcon } from "@phosphor-icons/react/dist/csr/Cube";
-import { DotsThreeIcon } from "@phosphor-icons/react/dist/csr/DotsThree";
 import { FolderPlusIcon } from "@phosphor-icons/react/dist/csr/FolderPlus";
-import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
@@ -24,6 +20,7 @@ import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { SlidersIcon } from "@phosphor-icons/react/dist/csr/Sliders";
+import { TerminalIcon } from "@phosphor-icons/react/dist/csr/Terminal";
 import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { UsersIcon } from "@phosphor-icons/react/dist/csr/Users";
@@ -41,7 +38,9 @@ import claudeIcon from "../assets/claude-color.png";
 import { RUNTIME_LOGOS } from "../runtimeLogos";
 import { SessionList } from "./SessionList";
 import { AutomationIcon } from "./AutomationIcon";
-import { AppToolsMenu } from "./AppToolsMenu";
+import { ProjectManagementIcon } from "./ProjectManagementIcon";
+import { SharedMemoryIcon } from "./SharedMemoryIcon";
+import { AppToolsIcon, AppToolsMenu } from "./AppToolsMenu";
 import { AppHelpDialog } from "./AppHelpDialog";
 import { Modal } from "./ui/Modal";
 import type { AppHelpSection } from "../appHelp";
@@ -65,10 +64,10 @@ const SIDEBAR_SHORTCUT_ICONS: Record<string, () => ReactNode> = {
   appearance: () => <PaletteIcon size={17} />,
   companionship: () => <HeartIcon size={17} />,
   collaboration: () => <UsersIcon size={17} />,
-  projectManagement: () => <FolderSimpleIcon size={17} />,
-  sharedMemory: () => <BrainIcon size={17} />,
+  projectManagement: () => <ProjectManagementIcon size={17} />,
+  sharedMemory: () => <SharedMemoryIcon size={17} />,
   automation: () => <AutomationIcon size={17} />,
-  quickCommands: () => <TerminalWindowIcon size={17} />,
+  quickCommands: () => <TerminalIcon size={17} aria-hidden="true" />,
   browserControl: () => <GlobeIcon size={17} />,
   skills: () => <ScrollIcon size={17} weight="regular" />,
   archivedSessions: () => <ArchiveIcon size={17} />,
@@ -225,7 +224,7 @@ export function AppSidebar(props: Props) {
               }
             }}
           >
-            <DotsThreeIcon size={18} weight="bold" />
+            <AppToolsIcon />
           </button>
           <button
             type="button"
@@ -245,7 +244,9 @@ export function AppSidebar(props: Props) {
               aria-pressed={props.viewFocused}
               onClick={props.onFocusView}
             >
-              <CornersOutIcon size={17} />
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <path d="M4 10V4h6M14 20h6v-6" />
+              </svg>
             </button>
             <button
               className={props.viewFocused ? "" : "active"}
@@ -255,12 +256,11 @@ export function AppSidebar(props: Props) {
               aria-pressed={!props.viewFocused}
               onClick={props.onOverviewView}
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
-                <rect x="3" y="3" width="18" height="18" rx="3" />
-                <rect x="6.5" y="6.4" width="2.2" height="2.2" rx="0.5" fill="currentColor" stroke="none" />
-                <rect x="6.5" y="10.9" width="2.2" height="2.2" rx="0.5" fill="currentColor" stroke="none" />
-                <rect x="6.5" y="15.4" width="2.2" height="2.2" rx="0.5" fill="currentColor" stroke="none" />
-                <path d="M11.5 7.5H17.5M11.5 12H17.5M11.5 16.5H17.5" strokeLinecap="round" />
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+                <circle cx="4.7" cy="6" r="1.12" fill="currentColor" />
+                <circle cx="4.7" cy="12" r="1.12" fill="currentColor" />
+                <circle cx="4.7" cy="18" r="1.12" fill="currentColor" />
+                <path d="M9 6h11M9 12h11M9 18h11" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" />
               </svg>
             </button>
           </span>

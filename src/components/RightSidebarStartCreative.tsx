@@ -5,7 +5,7 @@ import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { RobotIcon } from "@phosphor-icons/react/dist/csr/Robot";
-import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
+import { TerminalIcon } from "@phosphor-icons/react/dist/csr/Terminal";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
@@ -161,7 +161,7 @@ export function RightSidebarStartCreative({
       title: `在当前工作区运行 ${shellLabel(defaultShell)}`,
       disabled: !root,
       accentColor: "#5fbf77",
-      icon: <TerminalWindowIcon size={17} />,
+      icon: <TerminalIcon size={17} />,
     },
     {
       key: "browser",

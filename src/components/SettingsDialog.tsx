@@ -5,13 +5,11 @@ import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
 import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
-import { BrainIcon } from "@phosphor-icons/react/dist/csr/Brain";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
 import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import { UsersIcon } from "@phosphor-icons/react/dist/csr/Users";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
-import { FolderSimpleIcon } from "@phosphor-icons/react/dist/csr/FolderSimple";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
@@ -42,11 +40,13 @@ import {
 import { SettingsStyleMenu } from "./SettingsStyleMenu";
 import { QuickCommandCenter } from "./QuickCommandCenter";
 import type { QuickContext } from "../quickCommands";
-import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
+import { TerminalIcon } from "@phosphor-icons/react/dist/csr/Terminal";
 import { AutomationPanel } from "./AutomationPanel";
 import { PetSettingsPanel } from "./PetSettingsPanel";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 import { AutomationIcon } from "./AutomationIcon";
+import { ProjectManagementIcon } from "./ProjectManagementIcon";
+import { SharedMemoryIcon } from "./SharedMemoryIcon";
 import { ArchivedSessionsPanel } from "./ArchivedSessionsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { WorktreeSettingsPanel } from "./WorktreeSettingsPanel";
@@ -207,13 +207,13 @@ export function SettingsDialog({
           id: "projectManagement" as const,
           label: "项目管理",
           keywords: "本地项目 工作目录 启动配置 归档 协作",
-          icon: <FolderSimpleIcon size={16} />,
+          icon: <ProjectManagementIcon size={16} />,
         },
         {
           id: "sharedMemory" as const,
           label: "共享记忆",
           keywords: "共享 记忆 ai-memory handoff 交接 跨智能体",
-          icon: <BrainIcon size={16} />,
+          icon: <SharedMemoryIcon size={16} />,
         },
         {
           id: "automation" as const,
@@ -221,7 +221,7 @@ export function SettingsDialog({
           keywords: "定时 任务 automation",
           icon: <AutomationIcon size={16} />,
         },
-        { id: "quickCommands" as const, label: "快捷指令", keywords: "快捷 指令 command 收藏 自定义 范围", icon: <TerminalWindowIcon size={16} /> },
+        { id: "quickCommands" as const, label: "快捷指令", keywords: "快捷 指令 command 收藏 自定义 范围", icon: <TerminalIcon size={16} aria-hidden="true" /> },
       ],
     },
     {

@@ -5,7 +5,7 @@ import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGl
 import { StarIcon } from "@phosphor-icons/react/dist/csr/Star";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
-import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
+import { TerminalIcon } from "@phosphor-icons/react/dist/csr/Terminal";
 import { ChatCircleIcon } from "@phosphor-icons/react/dist/csr/ChatCircle";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
 import { FolderIcon } from "@phosphor-icons/react/dist/csr/Folder";
@@ -205,7 +205,7 @@ export function QuickCommandCenter({ sessions, providers, context = {}, manage =
       <nav className="quick-center-list" aria-label="指令列表" aria-busy={loading}>
         {!catalogPending && !filtered.length && <p className="quick-center-empty">{query ? "没有匹配的指令" : tab === "favorites" ? "暂无收藏，可在全部指令中点击星标。" : "暂无记录"}</p>}
         {filtered.map(c => <div className={`quick-center-list-row${draft.id === c.id ? " selected" : ""}`} key={c.id}>
-          <button type="button" disabled={busy} aria-pressed={draft.id === c.id} onClick={() => choose(c)}>{c.action === "launch" ? <TerminalWindowIcon size={19} /> : <ChatCircleIcon size={19} />}<span>{c.title}<small>{c.id.startsWith("custom:") ? "自定义" : c.action === "launch" ? c.providerId ? "已配置 Provider" : "本地配置" : ACTION_LABELS[c.action]}</small></span></button>
+          <button type="button" disabled={busy} aria-pressed={draft.id === c.id} onClick={() => choose(c)}>{c.action === "launch" ? <TerminalIcon size={19} aria-hidden="true" /> : <ChatCircleIcon size={19} />}<span>{c.title}<small>{c.id.startsWith("custom:") ? "自定义" : c.action === "launch" ? c.providerId ? "已配置 Provider" : "本地配置" : ACTION_LABELS[c.action]}</small></span></button>
           <button type="button" className="quick-center-favorite" aria-label={`${settings.favorites.includes(c.id) ? "取消收藏" : "收藏"} ${c.title}`} aria-pressed={settings.favorites.includes(c.id)} disabled={busy || !!storageError} onClick={() => mutateSettings(s => ({ ...s, favorites: s.favorites.includes(c.id) ? s.favorites.filter(i => i !== c.id) : [...s.favorites, c.id] }))}><StarIcon size={17} weight={settings.favorites.includes(c.id) ? "fill" : "regular"} /></button>
         </div>)}
         {catalogPending && <p className="quick-center-loading" role="status" aria-label="正在检测本机 Agent 与已配置服务">正在检测本机 Agent 与已配置服务…</p>}

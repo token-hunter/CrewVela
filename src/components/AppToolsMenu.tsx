@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { CaretRight, Question, ShieldCheck, ArrowClockwise, Info, Eye, CornersOut, CornersIn, DotsThree, GearSix } from "@phosphor-icons/react";
+import { CaretRight, Question, ShieldCheck, ArrowClockwise, Info, Eye, CornersOut, CornersIn, GearSix } from "@phosphor-icons/react";
 import type { AppHelpSection } from "../appHelp";
 import type { AppViewMenuProps } from "../appView";
 import { AppHelpDialog } from "./AppHelpDialog";
@@ -16,6 +16,14 @@ interface Props {
 }
 type Section = "view" | "help";
 const menuItems = (root: HTMLElement | null) => root ? [...root.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]:not(:disabled)')] : [];
+
+export function AppToolsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M2 4h14 M2 9h11 M2 14h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 export function AppToolsMenu(props: Props) {
   const root = useRef<HTMLDivElement>(null), sectionMenu = useRef<HTMLDivElement>(null);
@@ -119,7 +127,7 @@ export function CollapsedAppTools({ view, onSettings }: { view?: AppViewMenuProp
   const [open, setOpen] = useState(false);
   const [help, setHelp] = useState<AppHelpSection | null>(null);
   return <>
-    <button ref={trigger} type="button" className="workspace-sidebar-expand" aria-label="更多工具" title="更多工具" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(current=>!current)}><DotsThree size={18} weight="bold" /></button>
+    <button ref={trigger} type="button" className="workspace-sidebar-expand" aria-label="更多工具" title="更多工具" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(current=>!current)}><AppToolsIcon /></button>
     {open && <AppToolsMenu trigger={trigger} view={view} onClose={()=>setOpen(false)} onHelp={setHelp} onSettings={onSettings} />}
     {help && <AppHelpDialog key={help} section={help} onClose={()=>setHelp(null)} />}
   </>;
