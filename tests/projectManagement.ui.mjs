@@ -64,6 +64,21 @@ try {
     ["协作中心", "项目管理", "共享记忆", "自动化", "快捷指令"]);
   const panel = page.locator(".project-management");
   const card = name => panel.locator("article", { has: page.getByRole("button", { name, exact: true }) });
+  const assertCollapsed = async () => {
+    await card("Second project").waitFor();
+    assert.equal(await panel.getByRole("button", { expanded: true }).count(), 0);
+    assert.equal(await panel.getByText("本地开发服务", { exact: true }).filter({ visible: true }).count(), 0);
+  };
+  await assertCollapsed();
+  const fixtureCard = card("Fixture project");
+  await fixtureCard.getByRole("button", { name: "展开Fixture project", exact: true }).click();
+  assert.equal(await fixtureCard.getByText("本地开发服务", { exact: true }).isVisible(), true);
+  const search = panel.getByRole("searchbox");
+  await search.fill("Second project");
+  await assertCollapsed();
+  await search.clear();
+  await fixtureCard.getByRole("button", { name: "收起Fixture project", exact: true }).click();
+  await assertCollapsed();
   const menu = async (name, action) => {
     await card(name).getByLabel(`${name}的项目操作`, { exact: true }).click();
     await card(name).getByRole("button", { name: action, exact: true }).click();
@@ -168,6 +183,10 @@ try {
   await restore.waitFor({ state: "detached" });
   await card("单位换算器").getByRole("button", { name: "打开工作区", exact: true }).click();
   await panel.waitFor({ state: "detached" });
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await nav.getByRole("button", { name: "项目管理", exact: true }).click();
+  await assertCollapsed();
+  await page.getByRole("button", { name: "关闭设置", exact: true }).click();
   await page.getByRole("button", { name: "新建会话", exact: true }).first().click();
   await page.getByRole("menuitem", { name: "Claude Code", exact: true }).click();
   const launcher = page.getByRole("dialog", { name: "新建会话", exact: true });

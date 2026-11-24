@@ -153,7 +153,7 @@ export function ProjectManagementPanel({
   onOpenAppearanceSettings,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<string | null | undefined>(undefined);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ project: Project; kind: EditKind } | null>(null);
   const [logs, setLogs] = useState<Project | null>(null);
   const [error, setError] = useState("");
@@ -165,8 +165,6 @@ export function ProjectManagementPanel({
     .sort((left, right) => (right.lastOpenedAt ?? 0) - (left.lastOpenedAt ?? 0) || right.createdAt - left.createdAt);
   const active = matches.filter(project => project.archivedAt == null);
   const archived = matches.filter(project => project.archivedAt != null);
-  const selected = expanded === undefined || (expanded && !matches.some(item => item.id === expanded))
-    ? (active.find(item => item.id === activeProjectId) ?? active[0])?.id : expanded;
   const hasLinks = projects.some(project => !!project.collaborationProjectIds?.length);
   useEffect(() => {
     if (!hasLinks) return;
@@ -186,7 +184,7 @@ export function ProjectManagementPanel({
     try { await services?.change(id, action); } catch { /* The project-specific error is shown on its card. */ }
   };
   const renderProject = (project: Project) => {
-    const isOpen = selected === project.id;
+    const isOpen = expanded === project.id;
     const archived = project.archivedAt != null;
     const status = services?.statuses[project.id];
     const running = projectServiceActive(status);
