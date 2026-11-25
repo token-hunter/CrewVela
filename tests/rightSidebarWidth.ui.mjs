@@ -61,9 +61,12 @@ try {
   await sidebar.getByRole("tab", { name: "Git", exact: true }).click();
   await sidebar.getByRole("button", { name: "恢复工作面板", exact: true }).click();
   await equalWidth(resized + 24, "restore after maximized tab switch");
-  await sidebar.getByRole("button", { name: "收起工作面板", exact: true }).click();
-  await page.getByRole("button", { name: "切换右侧栏", exact: true }).click();
-  await equalWidth(resized + 24, "collapse/reopen");
+  await sidebar.getByRole("button", { name: "最大化工作面板", exact: true }).click();
+  const sidebarToggle = page.getByRole("button", { name: "切换右侧栏", exact: true });
+  await sidebarToggle.click();
+  assert.equal(await sidebarToggle.getAttribute("aria-pressed"), "false");
+  await sidebarToggle.click();
+  await equalWidth(resized + 24, "collapse maximized panel and reopen at saved width");
   await page.reload();
   await page.getByRole("button", { name: "切换右侧栏", exact: true }).click();
   await equalWidth(resized + 24, "reload persistence");

@@ -13,7 +13,6 @@ import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { HouseIcon } from "@phosphor-icons/react/dist/csr/House";
 import { CornersOutIcon } from "@phosphor-icons/react/dist/csr/CornersOut";
 import { CornersInIcon } from "@phosphor-icons/react/dist/csr/CornersIn";
-import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import {
   RightSidebarStartCreative,
   RightSidebarStartStyleCorner,
@@ -27,7 +26,6 @@ interface Props {
   tabs: SidebarResourceTab[];
   onSelect: (tab: RightSidebarTab) => void;
   onCloseTab: (tab: RightSidebarTab) => void;
-  onClose: () => void;
   onToggleMaximize: () => void;
   modeButtonRef?: (button: HTMLButtonElement | null) => void;
   maximized: boolean;
@@ -78,7 +76,6 @@ export function RightSidebarActivityBar(props: Props) {
         <button ref={props.modeButtonRef} type="button" aria-label={maximizeLabel}
           title={isCollaboration ? maximizeLabel : (props.maximized ? "恢复" : "最大化")} onClick={props.onToggleMaximize}>
           {props.maximized ? <CornersInIcon size={17} /> : <CornersOutIcon size={17} />}</button>
-        <button type="button" aria-label={t("收起工作面板")} title={t("收起")} onClick={props.onClose}><SidebarSimpleIcon size={17} /></button>
       </div>
       {props.menuOpen && <>
         <button className="right-sidebar-menu-backdrop" aria-label={t("关闭新建标签菜单")} onClick={closeMenu} />

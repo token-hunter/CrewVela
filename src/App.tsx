@@ -2679,7 +2679,6 @@ export default function App() {
                   {!collaborationOverviewOpen && <RightSidebarActivityBar
                     activeTab={activeRightSidebarTab ?? lastRightSidebarTab}
                     onSelect={(tab) => void selectRightSidebarTab(tab)}
-                    onClose={closeRightSidebar}
                     tabs={openRightSidebarTabs.map(id => ({ id, label: id === "start" ? t("开始") : sidebarTabKind(id ?? "") === "files" ? t("文件") : sidebarTabKind(id ?? "") === "browser" ? t("浏览器") : sidebarTabKind(id ?? "") === "git" ? "Git" : sidebarTabKind(id ?? "") === "multi_agent" ? t("多智能体") : shellLabel(sessions.find(item => item.id === id.slice(9))?.shell) }))}
                     onCloseTab={tab => void closeSidebarResource(tab)}
                     maximized={sidebarMaximized}

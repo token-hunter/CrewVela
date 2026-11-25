@@ -60,10 +60,13 @@ try {
   await page.locator(".app-shell:not(.sidebar-collapsed)").waitFor();
 
   const sidebar=page.getByRole("complementary",{name:"右侧栏",exact:true});
+  const sidebarToggle=page.getByRole("button",{name:"切换右侧栏",exact:true});
   for(const [name,label] of [["文件","文件"],["Git 更改","Git"],["浏览器","浏览器"],["终端","PowerShell"],["多智能体","多智能体"]]) {
     await viewPanel(page,name);
     const tab=sidebar.getByRole("tab",{name:label,exact:true});await tab.waitFor();
     assert.equal(await tab.count(),1);
+    assert.equal(await sidebar.getByRole("button",{name:"收起工作面板",exact:true}).count(),0);
+    assert.equal(await sidebarToggle.getAttribute("aria-pressed"),"true");
     if(name==="浏览器") {
       const address=sidebar.locator(".right-sidebar-panel.active").getByRole("textbox",{name:"地址栏",exact:true});
       await address.fill("https://example.com/view-menu");await address.press("Enter");
@@ -77,13 +80,14 @@ try {
     const total=await sidebar.getByRole("tab").count();
     await viewPanel(page,name);
     assert.equal(await sidebar.getByRole("tab").count(),total,`${name}: repeated viewing reuses tabs`);
-    await page.getByRole("button",{name:"切换右侧栏",exact:true}).click();
+    await sidebarToggle.click();
+    assert.equal(await sidebarToggle.getAttribute("aria-pressed"),"false");
     assert.equal(await active.evaluate(el=>el.isConnected),true,`${name}: hide keeps its panel mounted`);
-    await page.getByRole("button",{name:"切换右侧栏",exact:true}).click();
+    await sidebarToggle.click();
     assert.equal(await active.evaluate(el=>el.classList.contains("active")),true,`${name}: toggle restores the existing instance`);
     assert.equal(await tab.count(),1);
   }
-  await sidebar.getByRole("button",{name:"收起工作面板",exact:true}).click();
+  await sidebarToggle.click();
   // Original toolbar/tab controls remain available after duplicate menu entries are removed.
   await viewPanel(page,"文件");
   await sidebar.getByRole("button",{name:"新建工作面板标签",exact:true}).click();
@@ -91,7 +95,7 @@ try {
   const fileTabs=sidebar.getByRole("tab",{name:"文件",exact:true});assert.equal(await fileTabs.count(),2);
   await fileTabs.nth(0).click();await viewPanel(page,"文件");
   assert.equal(await fileTabs.nth(0).getAttribute("aria-selected"),"true");assert.equal(await fileTabs.count(),2);
-  await sidebar.getByRole("button",{name:"收起工作面板",exact:true}).click();
+  await sidebarToggle.click();
   await page.getByRole("button",{name:"聚焦",exact:true}).click();
   await page.waitForFunction(()=>document.querySelectorAll(".terminal-wrap .grid > .pane:not(.pane-hidden)").length===1);
   await page.getByRole("button",{name:"总览",exact:true}).click();

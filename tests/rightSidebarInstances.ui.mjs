@@ -22,7 +22,7 @@ try {
     assert.equal(await tabs.nth(0).getAttribute("aria-selected"), "true");
     assert.equal(await tabs.nth(1).getAttribute("aria-selected"), "false");
     if (label === "多智能体") {
-      await sidebar.getByRole("button", { name: "收起工作面板", exact: true }).click();
+      await page.getByRole("button", { name: "切换右侧栏", exact: true }).click();
       await page.getByRole("button", { name: "切换右侧栏", exact: true }).click();
       assert.equal(await tabs.nth(0).getAttribute("aria-selected"), "true", "collapse/reopen retains the instance");
       const mode = sidebar.locator(".right-sidebar-panel.active").getByRole("button", { name: "协作自动确认模式", exact: true });
