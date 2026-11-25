@@ -23,16 +23,43 @@ test('installed Desktop uses the newer catalog for its version and official endp
     await writeFile(bundled, JSON.stringify(config(44)));
     await writeCatalog('4.0.1', endpoint, config(99));
     await writeCatalog('4.0.0', 'endpoint-custom', config(98));
-    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64'), bundled);
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64', 'win32'), bundled);
     const active = await writeCatalog('4.0.0', endpoint, config(48));
-    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64'), active);
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64', 'win32'), active);
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'arm64', 'darwin'), bundled);
+    const mac = join(root, 'runtime', 'provider', 'darwin-aarch64', '4.0.0', endpoint);
+    await mkdir(mac, {recursive: true});
+    const macCatalog = join(mac, 'zcode-builtin.json');
+    await writeFile(macCatalog, JSON.stringify(config(48)));
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'arm64', 'darwin'), macCatalog);
     await writeCatalog('4.0.0', endpoint, config(43));
-    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64'), bundled);
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64', 'win32'), bundled);
     await writeCatalog('4.0.0', endpoint, {...config(50), schemaVersion: 2});
-    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64'), bundled);
+    assert.equal(await host.desktopCatalog(bundled, root, '4.0.0', 'x64', 'win32'), bundled);
   } finally {
     await rm(root, {recursive: true, force: true});
   }
+});
+
+test('macOS Desktop uses the linked BigModel account only for its active OAuth identity', () => {
+  const provider = 'account:bigmodel-individual-coding-plan';
+  const access = {accountType:'bigmodel', mode:'individual-coding-plan'};
+  const settings = {providerFamilyDomain:'bigmodel', providerFamilyConnectionSelections:{bigmodel:{kind:access.mode}}};
+  const credentials = {
+    'oauth:active_provider':'zai_cn',
+    'oauth:zai_cn:user_info':JSON.stringify({user_id:'login-id'}),
+    'oauth:zai_cn:access_token':'unrelated-login-token',
+    'oauth:linked_bigmodel':JSON.stringify({userId:'login-id',customerId:'customer-id',accessToken:'linked-business-token'}),
+  };
+  const local = {settings,load:name=>credentials[name]||''};
+  const linked = host.material(local,provider,access,'darwin');
+  assert.equal(linked.accountId,'customer-id');
+  assert.equal(linked.oauthToken,'linked-business-token');
+  assert.equal(host.material(local,provider,access,'win32'),null);
+  credentials['oauth:session_revision']='changed';
+  assert.notEqual(host.material(local,provider,access,'darwin').scope,linked.scope);
+  credentials['oauth:zai_cn:user_info']=JSON.stringify({id:'other-login'});
+  assert.equal(host.material(local,provider,access,'darwin'),null);
 });
 
 test('process credential cipher reuses an existing OS key and preserves exact plaintext without writing files',async()=>{

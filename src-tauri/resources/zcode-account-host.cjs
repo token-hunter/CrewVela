@@ -143,12 +143,13 @@ function dataDirectory() {
   return join(process.env.ZCODE_DATA_BASE_DIR?.trim()||process.env.HOME?.trim()||homedir(),'.zcode','v2');
 }
 
-async function desktopCatalog(bundled, directory, version, arch = process.arch) {
-  const platform = {x64: 'windows-x86_64', arm64: 'windows-aarch64'}[arch];
-  if (!platform || typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) return bundled;
+async function desktopCatalog(bundled, directory, version, arch = process.arch, os = process.platform) {
+  const platform = {win32: 'windows', darwin: 'darwin'}[os];
+  const architecture = {x64: 'x86_64', arm64: 'aarch64'}[arch];
+  if (!platform || !architecture || typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) return bundled;
   // Match the official Desktop cache namespace. Do not search other endpoints or app versions.
   const endpoint = `endpoint-${sha('https://zcode.z.ai').slice(0,32)}`;
-  const candidate = join(directory, 'runtime', 'provider', platform, version, endpoint, 'zcode-builtin.json');
+  const candidate = join(directory, 'runtime', 'provider', `${platform}-${architecture}`, version, endpoint, 'zcode-builtin.json');
   try {
     const release = await readJson(candidate);
     const packaged = await readJson(bundled);
@@ -181,17 +182,31 @@ async function readLocal(input,context={keys:new Map()}) {
 function accountIdentity(local,family) {
   const profile=local.load(`oauth:${family}:user_info`);
   if(!profile)return '';
-  try {const p=JSON.parse(profile);return family==='zai'?(p.id||p.user_id||''):(p.id||'');}
+  try {const p=JSON.parse(profile);return ['zai','zai_cn'].includes(family)?(p.id||p.user_id||''):(p.id||'');}
   catch {return '';}
 }
-function material(local,providerId,access) {
+function material(local,providerId,access,os=process.platform) {
   const family=access.accountType, mode=access.mode;
   if(!['bigmodel','zai'].includes(family)||!['start-plan','individual-coding-plan'].includes(mode))return null;
-  if(local.settings.providerFamilyDomain!==family||local.load('oauth:active_provider')!==family)return null;
-  const identity=accountIdentity(local,family);
-  if(typeof identity!=='string'||!identity.trim())return null;
+  if(local.settings.providerFamilyDomain!==family)return null;
+  const login=local.load('oauth:active_provider');
   const selected=local.settings.providerFamilyConnectionSelections?.[family];
   if(mode==='individual-coding-plan'&&selected?.kind!==mode)return null;
+  if(os==='darwin'&&family==='bigmodel'&&mode==='individual-coding-plan'&&['zai_cn','zai'].includes(login)){
+    const profileId=accountIdentity(local,login);
+    const raw=local.load('oauth:linked_bigmodel');
+    let linked;
+    try{linked=JSON.parse(raw);}catch{return null;}
+    const identity=typeof linked?.customerId==='string'?linked.customerId.trim():'';
+    const oauthToken=typeof linked?.accessToken==='string'?linked.accessToken.trim():'';
+    if(typeof profileId!=='string'||!profileId.trim()||linked?.userId!==profileId||!identity||!oauthToken||!local.load(`oauth:${login}:access_token`))return null;
+    const key=local.load(`account-provider:coding-plan:${providerId}:account:${encodeURIComponent(identity)}:api-key`);
+    const scope=sha(JSON.stringify([identity,login,profileId,local.load('oauth:session_revision'),family,selected]));
+    return {key,oauthToken,accountId:identity,scope,family,mode};
+  }
+  if(login!==family)return null;
+  const identity=accountIdentity(local,family);
+  if(typeof identity!=='string'||!identity.trim())return null;
   const key=mode==='start-plan'?local.load('zcodejwttoken'):
     local.load(`account-provider:coding-plan:${providerId}:account:${encodeURIComponent(identity.trim())}:api-key`);
   const oauthToken=mode==='individual-coding-plan'?local.load(`oauth:${family}:access_token`):'';

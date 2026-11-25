@@ -168,7 +168,7 @@ fn zcode_macos_installed_native_js_tool_stays_off_dock() -> Result<()> {
         }
     }
     let mut progress = || Ok(());
-    let mut client = Client::spawn_with_account_host(command, &root.0, &mut progress, None)?;
+    let mut client = Client::spawn_with_account_host(command, &root.0, &mut progress, None, "ZCode Desktop Agent")?;
     // Current installed service is modern-only MCP: each request carries its envelope.
     let meta = json!({
         "io.modelcontextprotocol/protocolVersion":"2026-07-28",
@@ -195,19 +195,22 @@ fn zcode_macos_installed_individual_catalog_matches_windows_variants() -> Result
     let mut connection = DesktopConnection::open(root.command(true)?, &root.0, None, false, vec![], &stopped, &mut deny, &mut progress)?;
     let result = (|| -> Result<()> {
         anyhow::ensure!(connection.model_catalog_notice().is_none(), "healthy Individual account must not receive a Start Plan notice");
+        let updated_catalog = connection.client.account_host.as_ref()
+            .and_then(account_host::AccountHost::active_catalog).is_some();
+        let flagship = if updated_catalog { "GLM-5.4" } else { "GLM-5.3" };
         let mut verified = 0;
-        for model in ["GLM-5.3", "GLM-5.3-Flash"] {
+        for model in [flagship, "GLM-5.3-Flash"] {
             for level in ["low", "high", "max"] {
                 let choice = connection.models.iter().find(|choice| {
                     choice.selection["providerId"] == "account:bigmodel-individual-coding-plan" &&
                     choice.selection["modelId"] == model && choice.selection["options"]["reasoningLevel"] == level
-                }).context("installed Individual catalog did not include the expected public model variant")?.id.clone();
+                }).with_context(|| format!("installed Individual catalog did not include {model} / {level}"))?.id.clone();
                 connection.set_model(&choice, &stopped, &mut deny)?;
                 anyhow::ensure!(connection.selected_model_id.as_deref() == Some(choice.as_str()), "native model binding was not confirmed");
                 verified += 1;
             }
         }
-        println!("ZCODE_MACOS_INDIVIDUAL_CATALOG_OK public_model_variants={verified} bindings=6 start_plan_notice=false no_model_request=true");
+        println!("ZCODE_MACOS_INDIVIDUAL_CATALOG_OK flagship={flagship} public_model_variants={verified} bindings=6 official_cache={updated_catalog} no_model_request=true");
         Ok(())
     })();
     let shutdown = connection.shutdown();
