@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { open as openDirectory } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { X } from "@phosphor-icons/react";
+import { IS_MAC } from "../platform";
 import { RUNTIME_LABELS, RUNTIME_LOGOS } from "../runtimeLogos";
 import { isCliRuntime, launchChoices, launchModeLabel, type RuntimeLaunchSelection } from "../runtimeLaunch";
 import { CHAT_AGENTS, TERMINAL_AGENTS, type NewSessionAgent } from "../newSessionAgents";
@@ -104,7 +105,7 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
       } catch (reason) { if (mounted.current) setError(`启动失败：${String(reason)}`); }
       finally { submitting.current = false; if (mounted.current) setPending(false); }
     }}>
-      <label>Agent<span className="cli-launch-agent-field"><img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><select aria-label="启动 Agent" value={kind} disabled={busy} onChange={event => { setKind(event.target.value as NewSessionAgent); setOverride(null); setSaveAsDefault(false); setError(null); }}>
+      <label>Agent<span className={IS_MAC ? "cli-launch-agent-field cli-launch-agent-field-mac" : "cli-launch-agent-field"}><img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><select aria-label="启动 Agent" value={kind} disabled={busy} onChange={event => { setKind(event.target.value as NewSessionAgent); setOverride(null); setSaveAsDefault(false); setError(null); }}>
         {[{ label: "CLI 终端 Agent", items: order.order }, { label: "原生聊天 Agent", items: chatOrder.order }].map(group => <optgroup label={group.label} key={group.label}>
           {group.items.map(runtime => <option key={runtime} value={runtime} disabled={!availability.isRuntimeEnabled(runtime)}>{RUNTIME_LABELS[runtime]}</option>)}
         </optgroup>)}
