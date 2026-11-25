@@ -2,6 +2,13 @@
 
 当前开发线为 **v0.1.0 Beta**。安装包内部版本为 `0.1.0`。GitHub 测试构建使用独立的 Beta 标签，例如 `v0.1.0-beta.20261118`。下载、源码提交与校验值见[发布列表](https://github.com/token-hunter/CrewVela/releases)。
 
+## v0.1.0 Beta · 2026-11-26
+
+[Windows x64 Beta 安装包](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261126)，对应源码提交 `0062a19`。
+
+- 合入 macOS 上的 ZCode Desktop 模型目录修复，以及新建会话时 Agent 图标遮挡文字的修复。
+- 使用更新后的源码重新构建 Windows x64 安装包。
+
 ## v0.1.0 Beta · 2026-11-25
 
 [Windows x64 Beta 安装包](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261125)。以下是 11 月 18 日 Windows Beta 之后合入的主要变化。

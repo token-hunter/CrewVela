@@ -2,12 +2,12 @@
 
 [English](downloads.en.md)
 
-最新下载为 [Windows x64 Beta · 2026-11-25](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261125)，对应源码提交 [`81e4f28`](https://github.com/token-hunter/CrewVela/commit/81e4f2836053352111d7089ea9ccbff5f2779477)，应用内部版本为 `0.1.0`。
+最新下载为 [Windows x64 Beta · 2026-11-26](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261126)，对应源码提交 [`0062a19`](https://github.com/token-hunter/CrewVela/commit/0062a198a441973c794c085e81c4fa975a35e50f)，应用内部版本为 `0.1.0`。
 
 | 资产 | 用途与当前状态 |
 | --- | --- |
-| [CrewVela-0.1.0-windows-x64-setup.exe](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261125/CrewVela-0.1.0-windows-x64-setup.exe) | Windows x64 当前用户安装向导，提供简体中文和 English。应用本体可从源码单独构建 |
-| [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261125/SHA256SUMS.txt) | 上述安装包的完整性校验值 |
+| [CrewVela-0.1.0-windows-x64-setup.exe](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/CrewVela-0.1.0-windows-x64-setup.exe) | Windows x64 当前用户安装向导，提供简体中文和 English。应用本体可从源码单独构建 |
+| [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/SHA256SUMS.txt) | 上述安装包的完整性校验值 |
 | macOS / Linux | 当前无下载附件。macOS 可按下方源码构建说明操作 |
 
 ## Windows
