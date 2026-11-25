@@ -11,7 +11,8 @@ export function ProjectManagementIcon({ size = 16 }: { size?: number }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M8.5 4h7M6.5 7.5h11M4 11h16l-1.3 8.3a1.7 1.7 0 0 1-1.7 1.4H7a1.7 1.7 0 0 1-1.7-1.4L4 11Z" />
+      <path d="M3.5 7.2a2 2 0 0 1 2-2h3.9l1.8 1.9h7.3a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7.2Z" />
+      <path d="M3.5 10.4h17" />
     </svg>
   );
 }

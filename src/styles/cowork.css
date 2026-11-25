@@ -332,21 +332,35 @@ body {
 
 /* 分组标题与计数 */
 .session-projects-toolbar {
-  padding: 8px 9px 4px 14px;
-  color: var(--text-faint);
-  font: 500 12px/1 var(--display-font);
+  min-height: 34px;
+  margin: 6px 8px 2px;
+  padding: 0 8px 0 11px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  font: 500 14px/1.4 var(--display-font);
   letter-spacing: 0;
   text-transform: none;
+  transition: background-color 140ms ease;
+}
+
+.session-projects-toolbar:hover {
+  background: color-mix(in srgb, var(--bg-hover) 55%, transparent);
 }
 
 .session-projects-toolbar button {
   opacity: 0;
+  color: var(--text-dim);
   transition: opacity 140ms ease, background-color 140ms ease, color 140ms ease;
 }
 
 .session-projects-toolbar:hover button,
 .session-projects-toolbar:focus-within button {
   opacity: 1;
+}
+
+.session-projects-toolbar button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .unified-sidebar .session-project-head {
