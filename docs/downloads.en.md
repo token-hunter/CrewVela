@@ -2,11 +2,11 @@
 
 [简体中文](downloads.md)
 
-CrewVela is in the **v0.1.0 Beta** series. [GitHub Releases](https://github.com/token-hunter/CrewVela/releases) lists each build with its source commit and checksums. The Windows installer reports app version `0.1.0`.
+The latest download is [Windows x64 Beta · 2026-11-25](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261125), built from [`81e4f28`](https://github.com/token-hunter/CrewVela/commit/81e4f2836053352111d7089ea9ccbff5f2779477). The installer reports app version `0.1.0`. See [GitHub Releases](https://github.com/token-hunter/CrewVela/releases) for earlier builds.
 
 ## Windows x64
 
-1. Open the [Windows Beta release](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261118) and download `CrewVela-0.1.0-windows-x64-setup.exe` and `SHA256SUMS.txt`.
+1. Download the [Windows installer](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261125/CrewVela-0.1.0-windows-x64-setup.exe) and [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261125/SHA256SUMS.txt).
 2. In PowerShell, run the command below from your downloads folder. Compare the `Hash` value with the entry in `SHA256SUMS.txt`.
 3. Run the installer. The installer is unsigned, installs for the current Windows user, and offers English and Simplified Chinese. In the app, choose your interface language in **Settings → General**.
 
