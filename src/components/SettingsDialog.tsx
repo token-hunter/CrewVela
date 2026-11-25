@@ -1,10 +1,12 @@
-import { useTranslation } from "../useInterfaceLanguage";
+import { useInterfaceLanguage, useTranslation } from "../useInterfaceLanguage";
+import { setInterfaceLanguage } from "../interfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { Switch } from "./ui/Switch";
 import { Modal } from "./ui/Modal";
 import type { ComponentProps, Dispatch, SetStateAction } from "react";
 import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
 import { ArchiveIcon } from "@phosphor-icons/react/dist/csr/Archive";
+import { CaretDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
 import { GearSixIcon } from "@phosphor-icons/react/dist/csr/GearSix";
 import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
@@ -12,6 +14,7 @@ import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGl
 import { UsersIcon } from "@phosphor-icons/react/dist/csr/Users";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
+import { PushPinIcon } from "@phosphor-icons/react/dist/csr/PushPin";
 import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import type {
@@ -58,6 +61,11 @@ import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { LockIcon } from "@phosphor-icons/react/dist/csr/Lock";
 import { PrivacySettingsPanel } from "./PrivacySettingsPanel";
 import type { CollaborationTasksRequest } from "../collaborationTasks";
+import {
+  loadSidebarShortcuts,
+  saveSidebarShortcuts,
+  subscribeSidebarShortcuts,
+} from "../sidebarShortcuts";
 
 interface Props {
   quickContext?: QuickContext;
@@ -129,6 +137,18 @@ export function SettingsDialog({
   initialCollaborationTasksRequest,
 }: Props) {
   const t = useTranslation();
+  const interfaceLanguage = useInterfaceLanguage();
+  const [languageSaveFailed, setLanguageSaveFailed] = useState(false);
+  const [pinnedShortcuts, setPinnedShortcuts] = useState<SettingsSection[]>(() =>
+    loadSidebarShortcuts(),
+  );
+  useEffect(() => subscribeSidebarShortcuts(setPinnedShortcuts), []);
+  const togglePinShortcut = (id: SettingsSection) => {
+    const next = pinnedShortcuts.includes(id)
+      ? pinnedShortcuts.filter((item) => item !== id)
+      : [...pinnedShortcuts, id];
+    saveSidebarShortcuts(next);
+  };
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     String(initialSection) === "mcp" ? "generalSettings" : initialSection,
   );
@@ -154,7 +174,7 @@ export function SettingsDialog({
         {
           id: "generalSettings" as const,
           label: "常规",
-          keywords: "通用 常规 general 代理 proxy 网络 network 托盘 tray 休眠 keep awake 终端 字体 font 硬件加速 gpu 证书",
+          keywords: "通用 常规 general 语言 language 代理 proxy 网络 network 托盘 tray 休眠 keep awake 终端 字体 font 硬件加速 gpu 证书",
           icon: <GearSixIcon size={16} weight="regular" />,
         },
         {
@@ -373,23 +393,43 @@ export function SettingsDialog({
                   <span className="settings-nav-group-label">
                     {t(group.label)}
                   </span>
-                  {items.map((item) => (
-                    <button
-                      type="button"
-                      className={`settings-nav-item${activeSection === item.id ? " active" : ""}`}
-                      aria-label={t(item.label)}
-                      aria-current={
-                        activeSection === item.id ? "page" : undefined
-                      }
-                      onClick={() => { privacyNavigationTarget.current = null; setPrivacyCollaborationRequested(false); setTaskRequest(undefined); setActiveSection(item.id); }}
-                      key={item.id}
-                    >
-                      <span className="settings-nav-icon" aria-hidden="true">
-                        {item.icon}
-                      </span>
-                      <span className="settings-nav-label">{t(item.label)}</span>
-                    </button>
-                  ))}
+                  {items.map((item) => {
+                    const isPinned = pinnedShortcuts.includes(item.id);
+                    const pinLabel = isPinned
+                      ? t("取消固定「{name}」到主侧栏", { name: t(item.label) })
+                      : t("固定「{name}」到主侧栏", { name: t(item.label) });
+                    return (
+                      <div
+                        className={`settings-nav-row${isPinned ? " is-pinned" : ""}`}
+                        key={item.id}
+                      >
+                        <button
+                          type="button"
+                          className={`settings-nav-item${activeSection === item.id ? " active" : ""}`}
+                          aria-label={t(item.label)}
+                          aria-current={
+                            activeSection === item.id ? "page" : undefined
+                          }
+                          onClick={() => { privacyNavigationTarget.current = null; setPrivacyCollaborationRequested(false); setTaskRequest(undefined); setActiveSection(item.id); }}
+                        >
+                          <span className="settings-nav-icon" aria-hidden="true">
+                            {item.icon}
+                          </span>
+                          <span className="settings-nav-label">{t(item.label)}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`settings-nav-pin${isPinned ? " pinned" : ""}`}
+                          aria-pressed={isPinned}
+                          aria-label={pinLabel}
+                          title={isPinned ? t("取消固定到主侧栏") : t("固定到主侧栏")}
+                          onClick={() => togglePinShortcut(item.id)}
+                        >
+                          <PushPinIcon size={13} weight={isPinned ? "fill" : "regular"} aria-hidden="true" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </section>
               );
             })}
@@ -417,18 +457,37 @@ export function SettingsDialog({
                 </div>
               <div className="settings-heading-actions">
                 {activeSection === "generalSettings" && (
-                  <SettingsStyleMenu
-                    label={t("常规页面模式")}
-                    value={resolveGeneralSettingsStyle(appearance)}
-                    options={[
-                      { id: "classic", label: "经典布局" },
-                      { id: "coffee", label: "防休眠咖啡桌" },
-                    ]}
-                    onChange={(style) =>
-                      onAppearanceChange((current) => ({ ...current, generalSettingsStyle: style }))
-                    }
-                    onOpenAppearanceSettings={() => setActiveSection("appearance")}
-                  />
+                  <>
+                    <label className="general-interface-language" title={t("界面语言")}>
+                      <GlobeIcon size={14} className="general-interface-language-icon" aria-hidden="true" />
+                      <select
+                        aria-label={t("界面语言")}
+                        value={interfaceLanguage}
+                        onChange={(event) => {
+                          const value = event.currentTarget.value;
+                          if (value === "zh-CN" || value === "en") {
+                            setLanguageSaveFailed(!setInterfaceLanguage(value));
+                          }
+                        }}
+                      >
+                        <option value="zh-CN">{t("简体中文")}</option>
+                        <option value="en">English</option>
+                      </select>
+                      <CaretDownIcon size={12} className="general-interface-language-caret" aria-hidden="true" />
+                    </label>
+                    <SettingsStyleMenu
+                      label={t("常规页面模式")}
+                      value={resolveGeneralSettingsStyle(appearance)}
+                      options={[
+                        { id: "classic", label: "经典布局" },
+                        { id: "coffee", label: "防休眠咖啡桌" },
+                      ]}
+                      onChange={(style) =>
+                        onAppearanceChange((current) => ({ ...current, generalSettingsStyle: style }))
+                      }
+                      onOpenAppearanceSettings={() => setActiveSection("appearance")}
+                    />
+                  </>
                 )}
                 {activeSection === "worktrees" && (
                   <SettingsStyleMenu
@@ -530,6 +589,11 @@ export function SettingsDialog({
                   )}
               </div>
             </div>}
+            {activeSection === "generalSettings" && languageSaveFailed && (
+              <p className="general-interface-language-error" role="alert">
+                {t("无法保存界面语言，请检查本地存储。")}
+              </p>
+            )}
             {sectionCopy.note && <p className="settings-page-note">{t(sectionCopy.note)}</p>}
 
             {activeSection === "privacy" ? (

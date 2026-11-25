@@ -125,9 +125,17 @@
 .settings-native .settings-nav-list { padding: 0 0 8px; scrollbar-width: thin; }
 .settings-native .settings-nav-group-label { padding: 0 10px 7px; font-size: 13px; font-weight: 400; letter-spacing: 0; color: var(--text-dim); }
 .settings-native .settings-nav-group + .settings-nav-group { margin-top: 18px; }
+.settings-native .settings-nav-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.settings-native .settings-nav-row + .settings-nav-row { margin-top: 1px; }
 .settings-dialog.settings-native .settings-nav-group .settings-nav-item {
+  flex: 1;
+  min-width: 0;
   min-height: 36px;
-  padding: 5px 10px;
+  padding: 5px 32px 5px 10px;
   grid-template-columns: 19px minmax(0, 1fr);
   gap: 10px;
   border: 0;
@@ -143,6 +151,43 @@
   color: var(--text);
   font-weight: 600;
   box-shadow: none;
+}
+.settings-native .settings-nav-pin {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.settings-native .settings-nav-row:hover .settings-nav-pin,
+.settings-native .settings-nav-row:focus-within .settings-nav-pin {
+  opacity: 0.9;
+}
+.settings-native .settings-nav-pin:hover {
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--text);
+  opacity: 1;
+}
+.settings-native .settings-nav-pin.pinned {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.settings-native .settings-nav-pin.pinned:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
 }
 .settings-dialog.settings-native .settings-nav-icon { color: currentColor; }
 .settings-native .settings-nav-icon svg { width: 18px; height: 18px; }
@@ -1450,7 +1495,7 @@
   .settings-native-overlay > .settings-dialog.settings-native { width: calc(100vw - 16px); height: calc(100dvh - 16px); grid-template-columns: 64px minmax(0, 1fr); border-radius: 10px; }
   .settings-dialog.settings-native .settings-nav { display: flex; padding: 12px 8px; }
   .settings-native .settings-search { display: none; }
-  .settings-native .settings-nav-group-label, .settings-native .settings-nav-label { display: none; }
+  .settings-native .settings-nav-group-label, .settings-native .settings-nav-label, .settings-native .settings-nav-pin { display: none; }
   .settings-native .settings-nav-group .settings-nav-item { grid-template-columns: 1fr; justify-items: center; min-height: 36px; padding: 6px; }
   .settings-native .settings-nav-group + .settings-nav-group { margin-top: 12px; }
   .settings-native-overlay > .settings-dialog.settings-native .settings-content > .settings-content-inner { padding: 20px 16px; }

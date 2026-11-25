@@ -1,6 +1,5 @@
 import { LocalizedErrorText } from "./LocalizedErrorText";
-import { useInterfaceLanguage, useTranslation } from "../useInterfaceLanguage";
-import { setInterfaceLanguage } from "../interfaceLanguage";
+import { useTranslation } from "../useInterfaceLanguage";
 import { IS_MAC } from "../platform";
 import "../styles/settings-workspace.css";
 import { useEffect, useRef, useState } from "react";
@@ -49,8 +48,6 @@ export function GeneralSettingsPanel({
   viewStyle?: GeneralSettingsStyle;
 }) {
   const t = useTranslation();
-  const interfaceLanguage = useInterfaceLanguage();
-  const [languageSaveFailed, setLanguageSaveFailed] = useState(false);
   const [status, setStatus] = useState<GeneralSettingsStatus | null>(
     UI_PREVIEW ? GENERAL_SETTINGS_PREVIEW : null,
   );
@@ -103,17 +100,6 @@ export function GeneralSettingsPanel({
 
   return (
     <div className="runtime-settings settings-workspace general-settings-panel">
-      <label className="general-interface-language">
-        <span>{t("界面语言")}</span>
-        <select value={interfaceLanguage} onChange={(event) => {
-          const value = event.currentTarget.value;
-          if (value === "zh-CN" || value === "en") setLanguageSaveFailed(!setInterfaceLanguage(value));
-        }}>
-          <option value="zh-CN">{t("简体中文")}</option>
-          <option value="en">English</option>
-        </select>
-      </label>
-      {languageSaveFailed && <p role="alert">{t("无法保存界面语言，请检查本地存储。")}</p>}
       {viewStyle === "coffee" ? (
         <fieldset className="general-coffee-layout" disabled={busy || !status} style={{ border: 0, padding: 0, margin: 0 }}>
           <section className="general-coffee-card general-coffee-cup-card" aria-label={t("防休眠咖啡杯与系统开关")}>

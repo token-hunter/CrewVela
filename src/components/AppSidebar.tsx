@@ -20,7 +20,6 @@ import { PackageIcon } from "@phosphor-icons/react/dist/csr/Package";
 import { PaletteIcon } from "@phosphor-icons/react/dist/csr/Palette";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
-import { SlidersIcon } from "@phosphor-icons/react/dist/csr/Sliders";
 import { TerminalIcon } from "@phosphor-icons/react/dist/csr/Terminal";
 import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
@@ -50,10 +49,9 @@ import { SidebarAttention } from "./SidebarAttention";
 import type { AttentionKind } from "../sidebarAttention";
 import type { SettingsSection } from "./SettingsDialog";
 import {
-  DEFAULT_SIDEBAR_SHORTCUTS,
   SIDEBAR_SHORTCUT_OPTIONS,
   loadSidebarShortcuts,
-  saveSidebarShortcuts,
+  subscribeSidebarShortcuts,
 } from "../sidebarShortcuts";
 
 // 与设置页导航保持一致的图标/字重复现；key 即 sidebarShortcuts 的 option id。
@@ -173,22 +171,11 @@ export function AppSidebar(props: Props) {
   const [shortcuts, setShortcuts] = useState<SettingsSection[]>(() =>
     loadSidebarShortcuts(),
   );
-  const [shortcutsMenuOpen, setShortcutsMenuOpen] = useState(false);
+  useEffect(() => subscribeSidebarShortcuts(setShortcuts), []);
 
-  const toggleShortcut = (id: SettingsSection) => {
-    setShortcuts((current) => {
-      const next = current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id];
-      saveSidebarShortcuts(next);
-      return next;
-    });
-  };
-
-  const resetShortcuts = () => {
-    setShortcuts([...DEFAULT_SIDEBAR_SHORTCUTS]);
-    saveSidebarShortcuts(DEFAULT_SIDEBAR_SHORTCUTS);
-  };
+  const pinnedShortcuts = SIDEBAR_SHORTCUT_OPTIONS.filter((option) =>
+    shortcuts.includes(option.id),
+  );
 
   const runNewAction = (action: () => void) => {
     setNewMenuOpen(false);
@@ -289,79 +276,27 @@ export function AppSidebar(props: Props) {
         </button>
       </div>
       {newMenuOpen && !toolsMenuOpen && <div className="menu-backdrop" onClick={closeToolsMenus} />}
-      <nav className="unified-sidebar-nav" aria-label={t("主导航")}>
-        <div className="unified-sidebar-nav-head">
-          <span>{t("快捷入口")}</span>
-          <button
-            type="button"
-            aria-label={t("自定义快捷入口")}
-            title={t("自定义快捷入口")}
-            aria-expanded={shortcutsMenuOpen}
-            onClick={() => setShortcutsMenuOpen((current) => !current)}
-          >
-            <SlidersIcon size={14} weight="bold" />
-          </button>
-        </div>
-        {SIDEBAR_SHORTCUT_OPTIONS.filter((option) =>
-          shortcuts.includes(option.id),
-        ).map((option) => {
-          const renderIcon = SIDEBAR_SHORTCUT_ICONS[option.id];
-          return (
-            <button
-              type="button"
-              key={option.id}
-              onClick={() => props.onOpenSection(option.id)}
-            >
-              {renderIcon ? (
-                renderIcon()
-              ) : (
-                <GearSixIcon size={17} />
-              )}
-              <span>{t(option.label)}</span>
-            </button>
-          );
-        })}
-        {shortcutsMenuOpen && (
-          <>
-            <div
-              className="menu-backdrop"
-              onClick={() => setShortcutsMenuOpen(false)}
-            />
-            <div
-              className="sidebar-shortcut-picker"
-              role="group"
-              aria-label={t("自定义快捷入口")}
-            >
-              <header className="sidebar-shortcut-picker-head">
-                <strong>{t("显示哪些设置入口")}</strong>
-                <button type="button" onClick={resetShortcuts}>
-                  {t("恢复默认")}
-                </button>
-              </header>
-              <p className="sidebar-shortcut-picker-hint">
-                {t("勾选后显示在左侧栏，全部取消即全部隐藏。")}
-              </p>
-              {(["通用", "智能体", "集成", "数据"] as const).map((group) => (
-                <div className="sidebar-shortcut-picker-group" key={group}>
-                  <span>{t(group)}</span>
-                  {SIDEBAR_SHORTCUT_OPTIONS.filter(
-                    (option) => option.group === group,
-                  ).map((option) => (
-                    <label key={option.id}>
-                      <input
-                        type="checkbox"
-                        checked={shortcuts.includes(option.id)}
-                        onChange={() => toggleShortcut(option.id)}
-                      />
-                      <span>{t(option.label)}</span>
-                    </label>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </nav>
+      {pinnedShortcuts.length > 0 && (
+        <nav className="unified-sidebar-nav" aria-label={t("主导航")}>
+          {pinnedShortcuts.map((option) => {
+            const renderIcon = SIDEBAR_SHORTCUT_ICONS[option.id];
+            return (
+              <button
+                type="button"
+                key={option.id}
+                onClick={() => props.onOpenSection(option.id)}
+              >
+                {renderIcon ? (
+                  renderIcon()
+                ) : (
+                  <GearSixIcon size={17} />
+                )}
+                <span>{t(option.label)}</span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
 
       <div className="session-drawer unified-session-drawer">
         <SessionList

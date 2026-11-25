@@ -59,13 +59,35 @@ export function loadSidebarShortcuts(): SettingsSection[] {
   }
 }
 
+const listeners = new Set<(ids: SettingsSection[]) => void>();
+
+export function subscribeSidebarShortcuts(
+  listener: (ids: SettingsSection[]) => void,
+): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key === SIDEBAR_SHORTCUTS_STORAGE_KEY || event.key === null) {
+      const next = loadSidebarShortcuts();
+      for (const listener of listeners) listener(next);
+    }
+  });
+}
+
 export function saveSidebarShortcuts(ids: SettingsSection[]): void {
+  const sanitized = sanitizeSidebarShortcuts(ids);
   try {
     window.localStorage.setItem(
       SIDEBAR_SHORTCUTS_STORAGE_KEY,
-      JSON.stringify(sanitizeSidebarShortcuts(ids)),
+      JSON.stringify(sanitized),
     );
   } catch {
     // 存储不可用时保持当前会话内的选择即可。
   }
+  for (const listener of listeners) listener(sanitized);
 }

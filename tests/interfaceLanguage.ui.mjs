@@ -44,13 +44,11 @@ try {
   await page.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("button", { name: "New session", exact: true }).waitFor();
   await page.getByRole("button", { name: "Dismiss messaging tip" }).click();
-  await page.getByRole("button", { name: "Customize shortcuts" }).click();
-  const shortcuts = page.getByRole("group", { name: "Customize shortcuts" });
-  await shortcuts.getByRole("checkbox", { name: "Project management" }).waitFor();
-  await shortcuts.getByRole("checkbox", { name: "Quick commands" }).waitFor();
-  await shortcuts.getByRole("checkbox", { name: "Privacy" }).waitFor();
-  await page.mouse.click(835, 650);
-  await shortcuts.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Pin Project management to main sidebar" }).waitFor();
+  await page.getByRole("button", { name: "Pin Quick commands to main sidebar" }).waitFor();
+  await page.getByRole("button", { name: "Pin Privacy to main sidebar" }).waitFor();
+  await page.getByRole("button", { name: "Close settings" }).click();
 
   const runtimePage = await context.newPage();
   await runtimePage.goto(new URL("/tests/fixtures/app-session-async-ui.html?cli-launch=1", base).href);

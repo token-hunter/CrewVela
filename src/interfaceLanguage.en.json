@@ -2268,5 +2268,11 @@
   "{project} 项目详情": "Project details for {project}",
   "{count} 分钟前": "{count} min ago",
   "{count} 小时前": "{count} hr ago",
-  "{count} 天前": "{count} days ago"
+  "{count} 天前": "{count} days ago",
+  "固定到主侧栏": "Pin to main sidebar",
+  "取消固定到主侧栏": "Unpin from main sidebar",
+  "固定「{name}」到主侧栏": "Pin {name} to main sidebar",
+  "取消固定「{name}」到主侧栏": "Unpin {name} from main sidebar",
+  "主侧栏已固定 {count} 项": "{count} pinned to sidebar",
+  "全部隐藏": "Hide all"
 }
