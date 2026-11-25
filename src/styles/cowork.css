@@ -97,22 +97,16 @@ body {
   flex: 0 0 22px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  background: var(--brand-fill);
-  color: var(--on-brand-fill);
-  transition: transform 160ms ease, background-color 160ms ease;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  transition: color 140ms ease;
 }
 
-.sidebar-new-session-button:hover .sidebar-new-session-icon {
-  background: var(--brand-fill-hover);
-  transform: rotate(90deg);
-}
-
-:root[data-appearance-accent="none"] .sidebar-new-session-icon,
-:root[data-appearance-accent="none"] .sidebar-new-session-button:hover .sidebar-new-session-icon {
+.sidebar-new-session-button:hover .sidebar-new-session-icon,
+.sidebar-new-session-button[aria-expanded="true"] .sidebar-new-session-icon {
   background: transparent;
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--text-dim);
 }
 
 /* 快捷入口导航 */

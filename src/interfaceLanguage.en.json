@@ -2274,5 +2274,18 @@
   "固定「{name}」到主侧栏": "Pin {name} to main sidebar",
   "取消固定「{name}」到主侧栏": "Unpin {name} from main sidebar",
   "主侧栏已固定 {count} 项": "{count} pinned to sidebar",
-  "全部隐藏": "Hide all"
+  "全部隐藏": "Hide all",
+  "搜索": "Search",
+  "搜索会话、终端或项目…": "Search sessions, terminals, or projects…",
+  "搜索分类": "Search categories",
+  "关闭搜索": "Close search",
+  "需要关注": "Needs attention",
+  "最近使用": "Recent",
+  "新建终端": "New terminal",
+  "没有找到匹配结果": "No matching results",
+  "切换类型": "Switch tab",
+  "移动": "Navigate",
+  "打开": "Open",
+  "切换": "Cycle",
+  "清空": "Clear"
 }

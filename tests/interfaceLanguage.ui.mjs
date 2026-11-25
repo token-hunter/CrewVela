@@ -42,7 +42,7 @@ try {
   await page.getByRole("button", { name: "Advanced settings", exact: true }).click();
   await page.getByRole("heading", { name: "Local service information", exact: true }).waitFor();
   await page.getByRole("button", { name: "Close settings" }).click();
-  await page.getByRole("button", { name: "New session", exact: true }).waitFor();
+  await page.getByRole("button", { name: "New", exact: true }).waitFor();
   await page.getByRole("button", { name: "Dismiss messaging tip" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Pin Project management to main sidebar" }).waitFor();
@@ -86,7 +86,7 @@ try {
   await teamPage.getByRole("tab", { name: "团队聊天" }).waitFor();
   await page.getByRole("combobox", { name: "界面语言" }).waitFor();
   await page.getByRole("button", { name: "关闭设置" }).click();
-  await page.getByRole("button", { name: "新建会话", exact: true }).waitFor();
+  await page.getByRole("button", { name: "新建", exact: true }).waitFor();
   assert.equal(await page.locator("html").getAttribute("lang"), "zh-CN");
   console.log("Interface language switches immediately, survives reload, and fits the narrow window.");
 } finally {

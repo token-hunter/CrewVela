@@ -14,7 +14,6 @@ import { DotsThreeIcon } from "@phosphor-icons/react/dist/csr/DotsThree";
 import { FileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
 import { FolderIcon } from "@phosphor-icons/react/dist/csr/Folder";
 import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
-import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import { PencilSimpleIcon } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { PushPinIcon } from "@phosphor-icons/react/dist/csr/PushPin";
@@ -157,7 +156,6 @@ export function SessionList({
   const t = useTranslation();
   const [filter, setFilter] = useState<SessionFilter>("running");
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<Set<string>>(loadFavorites);
   const [pinnedSessions, setPinnedSessions] = useState(() => loadPins(PINNED_SESSIONS_STORAGE_KEY));
   const [pinnedProjects, setPinnedProjects] = useState(() => loadPins(PINNED_PROJECTS_STORAGE_KEY));
@@ -392,16 +390,8 @@ export function SessionList({
     } else {
       filtered = typeSessions;
     }
-    const keyword = query.trim().toLowerCase();
-    if (keyword) {
-      filtered = filtered.filter((session) =>
-        sessionDisplayTitle(session).toLowerCase().includes(keyword) ||
-        session.cwd.toLowerCase().includes(keyword) ||
-        sessionDisplayProvider(session).toLowerCase().includes(keyword),
-      );
-    }
     return pinnedFirst(filtered, pinnedSessions, (session) => logicalSessionId(session.id));
-  }, [favorites, filter, query, sessions, typeFilter, logicalSessionId, pinnedSessions]);
+  }, [favorites, filter, sessions, typeFilter, logicalSessionId, pinnedSessions]);
 
   const orderedProjects = useMemo(() => pinnedFirst(projects, pinnedProjects, (project) => project.id), [projects, pinnedProjects]);
 
@@ -773,32 +763,6 @@ export function SessionList({
         )}
       </div>
 
-      <div className="session-search">
-        <MagnifyingGlassIcon size={13} aria-hidden="true" />
-        <input
-          value={query}
-          placeholder={t("搜索标题 / 目录 / provider")}
-          spellCheck={false}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && query) {
-              event.stopPropagation();
-              setQuery("");
-            }
-          }}
-        />
-        {query && (
-          <button
-            type="button"
-            aria-label={t("清空搜索")}
-            title={t("清空搜索")}
-            onClick={() => setQuery("")}
-          >
-            ×
-          </button>
-        )}
-      </div>
-
       <div className="session-type-filters" role="group" aria-label={t("会话类型")}>
         {([
           ["all", "全部", sessions.length],
@@ -920,15 +884,10 @@ export function SessionList({
             {filter === "favorites" ? "暂无收藏会话" : "暂无会话"}
           </div>
         )}
-        {visibleSessions.length === 0 && projects.length > 0 && query.trim()
-          && (!groupByProject || !projects.some(project => `${project.name} ${project.path}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))) && (
-          <div className="session-empty">没有匹配「{query.trim()}」的项目或会话</div>
-        )}
         {groupByProject && projectGroups ? (
           <>
             {orderedProjects.map((project) => {
               const groupSessions = projectGroups.byProject.get(project.id) ?? [];
-              if (query.trim() && groupSessions.length === 0 && !`${project.name} ${project.path}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) return null;
               return renderProjectGroup(project, groupSessions);
             })}
             {projectGroups.ungrouped.length > 0 && (

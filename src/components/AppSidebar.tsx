@@ -1,5 +1,5 @@
 import { useTranslation } from "../useInterfaceLanguage";
-import { terminalShells, shellLabel } from "../platform";
+import { IS_MAC, terminalShells, shellLabel } from "../platform";
 import { useRuntimeAvailability } from "../runtimeAvailability";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -14,6 +14,7 @@ import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
 import { HeartIcon } from "@phosphor-icons/react/dist/csr/Heart";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
 import { LockIcon } from "@phosphor-icons/react/dist/csr/Lock";
+import { MagnifyingGlassIcon } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import { MonitorIcon } from "@phosphor-icons/react/dist/csr/Monitor";
 import { ScrollIcon } from "@phosphor-icons/react/dist/csr/Scroll";
 import { PackageIcon } from "@phosphor-icons/react/dist/csr/Package";
@@ -46,6 +47,7 @@ import { Modal } from "./ui/Modal";
 import type { AppHelpSection } from "../appHelp";
 import type { AppViewMenuProps } from "../appView";
 import { SidebarAttention } from "./SidebarAttention";
+import { SidebarSearchModal } from "./SidebarSearchModal";
 import type { AttentionKind } from "../sidebarAttention";
 import type { SettingsSection } from "./SettingsDialog";
 import {
@@ -171,7 +173,25 @@ export function AppSidebar(props: Props) {
   const [shortcuts, setShortcuts] = useState<SettingsSection[]>(() =>
     loadSidebarShortcuts(),
   );
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
+
   useEffect(() => subscribeSidebarShortcuts(setShortcuts), []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (event.key.toLowerCase() !== "k") return;
+      if (!searchModalOpen && document.querySelector(".dialog-overlay, .editor-overlay, .settings-native-overlay")) {
+        return;
+      }
+      event.preventDefault();
+      setNewMenuOpen(false);
+      setToolsMenuOpen(false);
+      setSearchModalOpen((open) => !open);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [searchModalOpen]);
 
   const pinnedShortcuts = SIDEBAR_SHORTCUT_OPTIONS.filter((option) =>
     shortcuts.includes(option.id),
@@ -271,8 +291,26 @@ export function AppSidebar(props: Props) {
             setNewMenuOpen(!newMenuOpen || toolsMenuOpen || props.rightSidebarMenuOpen);
           }}
         >
-          <span className="sidebar-new-session-icon" aria-hidden="true"><PlusIcon size={12} weight="bold" /></span>
-          <span>{t("新建会话")}</span>
+          <span className="sidebar-new-session-icon" aria-hidden="true"><PlusIcon size={16} /></span>
+          <span>{t("新建")}</span>
+        </button>
+        <button
+          type="button"
+          className="sidebar-search-trigger"
+          aria-haspopup="dialog"
+          aria-expanded={searchModalOpen}
+          onClick={() => {
+            closeToolsMenus();
+            setSearchModalOpen(true);
+          }}
+        >
+          <span className="sidebar-search-trigger-icon" aria-hidden="true">
+            <MagnifyingGlassIcon size={16} />
+          </span>
+          <span>{t("搜索")}</span>
+          <kbd className="sidebar-search-trigger-kbd" aria-hidden="true">
+            {IS_MAC ? "⌘K" : "Ctrl K"}
+          </kbd>
         </button>
       </div>
       {newMenuOpen && !toolsMenuOpen && <div className="menu-backdrop" onClick={closeToolsMenus} />}
@@ -464,6 +502,29 @@ export function AppSidebar(props: Props) {
           </Modal>, document.body
       )}
       {helpSection && <AppHelpDialog key={helpSection} section={helpSection} onClose={() => setHelpSection(null)} />}
+      <SidebarSearchModal
+        open={searchModalOpen}
+        onClose={() => setSearchModalOpen(false)}
+        sessions={props.sessions}
+        projects={props.projects}
+        selectedSessionId={props.selectedSessionId}
+        onSelectSession={props.onSelectSession}
+        onRenameSession={props.onRenameSession}
+        onStopSession={props.onStopSession}
+        onDeleteSession={props.onDeleteSession}
+        onArchiveSession={props.onArchiveSession}
+        onOpenProject={props.onOpenProject}
+        onNewSessionInProject={props.onNewSessionInProject}
+        onNewSession={() => {
+          if (isRuntimeEnabled("claude_code")) props.onNewClaudeSession();
+          else setNewMenuOpen(true);
+        }}
+        onNewTerminal={() => {
+          const shell = terminalShells()[0];
+          if (shell) props.onNewTerminal(shell);
+        }}
+        onAddProject={props.onAddProject}
+      />
     </aside>
   );
 }
