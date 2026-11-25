@@ -29,9 +29,9 @@ CrewVela 是一个基于 **Tauri 2 + React + Rust** 的桌面多 Agent 工作台
 
 点击下方播放器，看看多个 Agent 如何在一个工作台里协作。
 
-https://github.com/user-attachments/assets/14b2afaf-b851-402e-bae4-d33cd1e159f7
+https://github.com/user-attachments/assets/1fa71278-c7fc-4a16-a31e-156cfbea7600
 
-约 1 分钟 · 原片画面与文字保持不变。
+时长 1 分钟。
 
 ## 让你的 Agent 成为一支队伍
 

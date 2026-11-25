@@ -11,9 +11,9 @@
 
 通用图形来源与其他素材核对范围见 [素材记录](../asset-provenance.md)。
 
-- 产品宣传片：用户于 2026-11-11 更新，61.312 秒、1920×1080、30 fps，H.264/AAC，33,202,058 字节；按用户确认原样发布，保留制作时的画面与片尾文字。原片通过 GitHub 原生视频附件托管，不纳入源码历史；中英文 README 顶部直接展示播放器，不要求进入 Release 下载。SHA-256：`18bf84eb219ad41d32071f1392a689f5a3b0699886d95c2f0ce7a7812a5b163a`。
+- 产品宣传片更新于 2026-11-25。中英文 README 使用同一份 [GitHub 原生视频附件](https://github.com/user-attachments/assets/1fa71278-c7fc-4a16-a31e-156cfbea7600)，60 秒、1920×1080、30 fps，H.264/AAC。根据上传上限重新压缩为 9,695,624 字节，保留完整时长和音轨。附件 SHA-256 为 `ebc8340cffee14f596c8fe1c8d77db59fae980e86d08ef9da5f1836355393167`。
 
-  README 使用同一原片的 [GitHub 原生视频附件](https://github.com/user-attachments/assets/14b2afaf-b851-402e-bae4-d33cd1e159f7)，支持直接播放；未使用本地转码预览副本。2026-11-12 将附件文件名调整为 `crewvela.mp4`，视频字节与上述 SHA-256 保持不变。
+  私有仓库的附件沿用仓库访问权限。迁移到新的公开仓库时，重新上传视频并更新中英文 README 的附件链接。
 
 - `collaboration-workflow.zh.svg` / `collaboration-workflow.en.svg`：将 README 原有 Mermaid 的四个节点及实现、审查、反馈、接手连线改为静态 SVG；用于去掉 GitHub 自动附带的图表缩放、移动、重置与复制工具，属于工作方式示意。
 
