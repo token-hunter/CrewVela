@@ -23,7 +23,7 @@
 
 CrewVela 是一个基于 **Tauri 2 + React + Rust** 的桌面多 Agent 工作台，把独立会话、会话通信、项目协作和工作交接放进同一个窗口。沿用各 Agent 的本机安装、账号与权限机制，让你围绕任务组织工具。
 
-> **当前版本 v0.1.0 Beta。** Windows x64 提供安装向导。macOS 当前提供源码构建说明。下载链接、校验文件和安装步骤见[下载与安装](docs/downloads.md)。
+> **当前版本 v0.1.0 Beta。** 提供 Windows x64 安装向导和 macOS Apple Silicon DMG。下载链接、校验文件和安装步骤见[下载与安装](docs/downloads.md)。
 
 ## 一分钟看 CrewVela
 
@@ -150,10 +150,10 @@ APPLE_SIGNING_IDENTITY=- npm run build:macos
 | 平台 | 当前验证范围 |
 | --- | --- |
 | Windows x64 | 提供未签名的 NSIS 安装包。验证范围见对应 Release |
-| macOS Apple Silicon | 目前没有下载附件，可查看源码构建与原生验收步骤 |
+| macOS Apple Silicon | 提供 ARM64 DMG，使用 ad-hoc 签名，未经 Apple 公证 |
 | macOS Intel / Linux | 未完成原生验收，当前不提供已验证安装包 |
 
-Windows 安装包对应的源码提交与 SHA-256 见[下载页](docs/downloads.md)和对应 Release。平台验收、隐私脱敏、依赖风险与素材来源见[发布检查清单](docs/release-checklist.md)、[安全说明](SECURITY.md)及[素材记录](docs/asset-provenance.md)。
+各平台安装包对应的源码提交与 SHA-256 见[下载页](docs/downloads.md)和对应 Release。平台验收、隐私脱敏、依赖风险与素材来源见[发布检查清单](docs/release-checklist.md)、[安全说明](SECURITY.md)及[素材记录](docs/asset-provenance.md)。
 
 ## 常见问题
 

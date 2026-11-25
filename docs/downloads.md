@@ -2,15 +2,18 @@
 
 [English](downloads.en.md)
 
-最新下载为 [Windows x64 Beta · 2026-11-26](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261126)，对应源码提交 [`0062a19`](https://github.com/token-hunter/CrewVela/commit/0062a198a441973c794c085e81c4fa975a35e50f)，应用内部版本为 `0.1.0`。
+[2026-11-26 Beta](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261126) 提供 Windows x64 和 macOS Apple Silicon 安装包，应用内部版本为 `0.1.0`。
 
 | 资产 | 用途与当前状态 |
 | --- | --- |
 | [CrewVela-0.1.0-windows-x64-setup.exe](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/CrewVela-0.1.0-windows-x64-setup.exe) | Windows x64 当前用户安装向导，提供简体中文和 English。应用本体可从源码单独构建 |
 | [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/SHA256SUMS.txt) | 上述安装包的完整性校验值 |
-| macOS / Linux | 当前无下载附件。macOS 可按下方源码构建说明操作 |
+| [CrewVela_0.1.0_macos_aarch64.dmg](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/CrewVela_0.1.0_macos_aarch64.dmg) | macOS Apple Silicon 安装镜像 |
+| [CrewVela_0.1.0_macos_aarch64.dmg.sha256](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/CrewVela_0.1.0_macos_aarch64.dmg.sha256) | macOS 安装镜像校验值 |
 
 ## Windows
+
+Windows 安装包对应源码提交 [`0062a19`](https://github.com/token-hunter/CrewVela/commit/0062a198a441973c794c085e81c4fa975a35e50f)。
 
 下载 `CrewVela-0.1.0-windows-x64-setup.exe` 并运行安装向导。WebView2 和对应 Agent CLI 仍需本机可用。**使用下载版无需安装 Rust/MSVC 或克隆源码**；运行时使用的 Node、CLI 和 ACP 适配器仍有单独依赖，无源码目录的干净机器验证仍待完成。自行使用 ZIP 分发时，解压后再运行 EXE，不要从压缩包内部启动。
 
@@ -39,9 +42,15 @@ npm run bundle:windows
 
 未签名文件可能显示系统来源/信誉提示。公开说明签名状态并核对发行源；不要求用户关闭 Defender、SmartScreen 或其他系统防护。
 
-## macOS
+## macOS Apple Silicon
 
-当前 GitHub Release 没有 macOS 安装附件。Apple Silicon 用户可在 Mac 上按 [Mac 指南](../MACOS-CODEX-HANDOFF.md)构建并验证。指南包含 ARM64 打包与原生验收步骤，也列出 Intel 源码构建命令。本地构建使用 ad-hoc 签名，尚未做 Developer ID 签名或公证。正式模式最低系统版本及 Intel 原生兼容性仍待验收。
+DMG 由提交 [`35d1c0e`](https://github.com/token-hunter/CrewVela/commit/35d1c0ea35b141b5b61afe14f7a29758417391ef) 构建，使用 ad-hoc 签名，未经 Apple 公证。将 DMG 和对应的 `.sha256` 文件下载到同一目录，运行：
+
+```sh
+shasum -a 256 -c CrewVela_0.1.0_macos_aarch64.dmg.sha256
+```
+
+通过校验后，打开 DMG 并将 CrewVela 拖入「应用程序」。源码构建及原生验收步骤见 [Mac 指南](../MACOS-CODEX-HANDOFF.md)。Intel Mac 和 Linux 暂无已验证的安装包。
 
 ## 升级与卸载
 

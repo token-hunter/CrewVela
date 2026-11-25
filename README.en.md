@@ -23,7 +23,7 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 
 CrewVela is a desktop workspace built with **Tauri 2, React, and Rust**. It brings separate agent sessions, messaging, project collaboration, and work handoffs into one window, while retaining each agent's local installation, accounts, and permission mechanisms.
 
-> **Current version: v0.1.0 Beta.** An installer is available for Windows x64. macOS users can build from source. See [Download and install](docs/downloads.en.md) for links, checksums, and setup.
+> **Current version: v0.1.0 Beta.** Downloads are available for Windows x64 and macOS Apple Silicon. See [Download and install](docs/downloads.en.md) for links, checksums, and setup.
 
 ## See CrewVela in one minute
 
@@ -150,10 +150,10 @@ Project members use the same entry point. Copying an example only writes to the 
 | Platform | Current validation |
 | --- | --- |
 | Windows x64 | An unsigned NSIS installer is available. See the release notes for verification details |
-| macOS Apple Silicon | Source build and native verification instructions are available. No download is currently listed |
+| macOS Apple Silicon | An ARM64 DMG is available. It is ad-hoc signed and has not been notarized by Apple |
 | macOS Intel / Linux | Native acceptance incomplete; no verified downloads offered |
 
-The Windows source commit and SHA-256 are listed on the [download page](docs/downloads.en.md) and the corresponding GitHub Release. See the [release checklist (Chinese)](docs/release-checklist.md), [security policy](SECURITY.md), and [asset record (Chinese)](docs/asset-provenance.md) for validation details.
+Source commits and SHA-256 files for each installer are listed on the [download page](docs/downloads.en.md) and the corresponding GitHub Release. See the [release checklist (Chinese)](docs/release-checklist.md), [security policy](SECURITY.md), and [asset record (Chinese)](docs/asset-provenance.md) for validation details.
 
 ## Common questions
 
