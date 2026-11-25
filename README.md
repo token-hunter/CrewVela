@@ -176,6 +176,10 @@ Windows 安装包对应的源码提交与 SHA-256 见[下载页](docs/downloads.
 
 从[贡献指南](CONTRIBUTING.md)开始。公开反馈前请先脱敏；安全问题按 [SECURITY.md](SECURITY.md) 处理。
 
+### 联系作者
+
+想聊 CrewVela 的使用体验、功能建议或合作，欢迎加我微信 `weilegexinaaa`。添加时请备注「CrewVela」。
+
 ## 给作者加个鸡腿 🍗
 
 <div align="center">
