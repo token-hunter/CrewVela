@@ -71,12 +71,20 @@ impl AccountHost {
             .find(|(key, _)| *key == "CREWVELA_ZCODE_APP_VERSION")
             .and_then(|(_, value)| value)
             .and_then(|value| value.to_str().map(str::to_owned));
-        let use_desktop_catalog = allow_desktop_catalog && cfg!(windows)
-            && std::env::var_os("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE").is_none()
-            && program.parent().is_some_and(|root| {
-                builtin == root.join("resources/config/provider/zcode-builtin.json")
-                    && root.join("resources/app.asar").is_file()
+        let windows_bundle = cfg!(windows) && program.parent().is_some_and(|root| {
+            builtin == root.join("resources/config/provider/zcode-builtin.json")
+                && root.join("resources/app.asar").is_file()
+        });
+        let mac_bundle = cfg!(target_os = "macos") && program.ancestors()
+            .find(|path| path.ends_with("Contents/Frameworks"))
+            .and_then(Path::parent)
+            .is_some_and(|contents| {
+                builtin == contents.join("Resources/config/provider/zcode-builtin.json")
+                    && contents.join("Resources/app.asar").is_file()
             });
+        let use_desktop_catalog = allow_desktop_catalog
+            && std::env::var_os("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE").is_none()
+            && (windows_bundle || mac_bundle);
         let mut host = Self {
             program,
             env,
