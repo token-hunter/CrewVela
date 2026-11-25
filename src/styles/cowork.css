@@ -339,6 +339,16 @@ body {
   text-transform: none;
 }
 
+.session-projects-toolbar button {
+  opacity: 0;
+  transition: opacity 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.session-projects-toolbar:hover button,
+.session-projects-toolbar:focus-within button {
+  opacity: 1;
+}
+
 .unified-sidebar .session-project-head {
   border-radius: 8px;
 }
