@@ -68,7 +68,7 @@ For message flow and agent integration details, see the [technical architecture 
 | **Work handoffs** | Prepare and preview context; stop the source session while retaining visible history |
 | **Session and workspace management** | Split views, workspace search, session filters, and Git worktree management |
 | **Optional shared memory** | Set up built-in local memory or use the legacy integrations to retrieve project context in later sessions |
-| **Work tools** | Access files, terminals, a browser, and source-control entry points |
+| **Work tools** | Access files, terminals, the browser, source control, and multi-agent collaboration from the work panel |
 
 ## Bring the agents you already use
 
