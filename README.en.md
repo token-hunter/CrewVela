@@ -69,7 +69,6 @@ For message flow and agent integration details, see the [technical architecture 
 | **Session and workspace management** | Split views, workspace search, session filters, and Git worktree management |
 | **Optional shared memory** | Set up built-in local memory or use the legacy integrations to retrieve project context in later sessions |
 | **Work tools** | Access files, terminals, a browser, and source-control entry points |
-| **English and Simplified Chinese** | Switch the interface language in **Settings → General** and pin frequently used settings to the sidebar |
 
 ## Bring the agents you already use
 
