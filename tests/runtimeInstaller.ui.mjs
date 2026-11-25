@@ -72,6 +72,8 @@ try {
   const zcode = zcodePage.getByRole('dialog', { name: '管理 Runtime', exact: true });
   await zcode.locator('[data-runtime-order="zcode_cli"]').getByRole('button', {name:'安装与版本'}).click();
   const select = zcode.getByRole('button', {name:'选择已有 CLI',exact:true});
+  await select.waitFor();
+  assert.equal(await zcode.getByRole('button', { name: /^(开始安装|安装并验证|更新|检查更新)$/ }).count(), 0);
   await select.click();
   await zcodePage.evaluate(() => { window.runtimeInstallerFixture.selectedFile = 'C:/fixture/新路径/ZCode CLI/zcode.cjs'; });
   await select.click();

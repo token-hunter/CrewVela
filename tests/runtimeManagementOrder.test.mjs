@@ -8,7 +8,7 @@ import * as installation from "../src/runtimeInstallation.ts";
 import * as launch from "../src/runtimeLaunch.ts";
 import { reorderRuntimeOrder, persistRuntimeOrder, loadRuntimeOrder } from "../src/runtimePreferences.ts";
 
-const labels = { claude_code: "Claude Code", codex: "Codex", kimi_code: "Kimi Code", pi: "Pi", opencode: "OpenCode", zcode_cli: "ZCode CLI", zcode: "ZCode Desktop", codex_chat: "Codex Chat" };
+const labels = { claude_code: "Claude Code", codex: "Codex", kimi_code: "Kimi Code", pi: "Pi", opencode: "OpenCode", zcode_cli: "ZCode CLI", antigravity: "Antigravity CLI", zcode: "ZCode Desktop", codex_chat: "Codex Chat" };
 function harness() {
   const disabled = new Set(["kimi_code"]);
   const toggles = [];
@@ -24,8 +24,12 @@ function harness() {
       if (id === "react") return {
         useState(value) { const index = hookIndex++; if (!(index in hooks)) hooks[index] = value; return [hooks[index], (next) => { hooks[index] = typeof next === "function" ? next(hooks[index]) : next; }]; },
         useRef(value) { const index = hookIndex++; return hooks[index] ??= { current: value }; },
+        // The browser installer tests exercise the chat dependency effect and its IPC.
+        useEffect() {},
       };
       if (id === "react/jsx-runtime") return { jsx, jsxs: jsx };
+      if (id === "@tauri-apps/api/core") return { invoke: (command) => assert.fail(`Unexpected runtime IPC: ${command}`) };
+      if (id === "./LocalizedErrorText") return { LocalizedErrorText: "localized-error" };
       if (id === "../useInterfaceLanguage") return {
         useTranslation: () => (source, values) => source.replace(/\{(\w+)\}/g, (token, key) => values?.[key] ?? token),
       };
@@ -86,20 +90,24 @@ test("管理 Runtime 在各自分组内上下移动，禁用成员可排序并�
 
 test("排序保存错误在管理弹窗内展示，按钮不嵌套在开关标签中", () => {
   const h = harness();
-  const tree = h.render({ order: ["claude_code", "codex"], onReorder() {}, orderError: "保存 Runtime 排序失败：存储不可写" });
-  assert.ok(nodes(tree).some((node) => node.props.role === "alert" && String(node.props.children).includes("存储不可写")));
+  const orderError = "保存 Runtime 排序失败：存储不可写";
+  const tree = h.render({ order: ["claude_code", "codex"], onReorder() {}, orderError });
+  const alert = nodes(tree).find((node) => node.props.role === "alert");
+  assert.ok(alert);
+  assert.equal(nodes(alert).find((node) => node.type === "localized-error")?.props.source, orderError);
   for (const label of nodes(tree).filter((node) => node.type === "label")) {
     assert.equal(nodes(label.props.children).some((node) => node.type === "button"), false);
   }
 });
 
-test("五种 CLI 安装入口进入和返回不改变开关或排序，暂缓 ZCode CLI", () => {
-  const h = harness(); const order = ["claude_code", "codex", "kimi_code", "pi", "opencode", "zcode_cli"];
+test("七种 CLI 管理入口进入和返回不改变开关或排序", () => {
+  const h = harness();
+  const order = Object.freeze(["claude_code", "codex", "kimi_code", "pi", "opencode", "zcode_cli", "antigravity"]);
   const props = { order, onReorder() { assert.fail("opening installation must not reorder runtimes"); } };
   let tree = h.render(props);
   const entries = nodes(tree).filter(node => node.type === "button" && node.props.className?.includes("collab-runtime-install-entry"));
-  assert.equal(entries.length, 5);
-  for (const kind of order.slice(0, 5)) {
+  assert.equal(entries.length, 7);
+  for (const kind of order) {
     nodes(row(tree, kind)).find(node => node.type === "button" && node.props.className?.includes("collab-runtime-install-entry")).props.onClick();
     tree = h.render(props);
     const installer = nodes(tree).find(node => node.type === "runtime-installer");
@@ -108,7 +116,8 @@ test("五种 CLI 安装入口进入和返回不改变开关或排序，暂缓 ZC
     installer.props.onBack(); tree = h.render(props);
   }
   assert.ok(button(tree, "上移 Codex"));
-  assert.deepEqual(order, ["claude_code", "codex", "kimi_code", "pi", "opencode", "zcode_cli"]);
+  assert.deepEqual(nodes(tree).filter(node => node.props["data-runtime-order"]).map(node => node.props["data-runtime-order"]), [...order]);
+  assert.equal(nodes(row(tree, "kimi_code")).find(node => node.type === "input").props.checked, false);
 });
 
 function row(tree, kind) {
