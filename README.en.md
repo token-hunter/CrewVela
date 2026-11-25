@@ -13,7 +13,7 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 [![React and TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT license](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
 
-[![Download Beta](https://img.shields.io/badge/download-Beta-2563EB?style=for-the-badge&logo=github&logoColor=white)](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)
+[![Download Windows Beta](https://img.shields.io/badge/download-Windows_Beta-2563EB?style=for-the-badge&logo=github&logoColor=white)](docs/downloads.en.md)
 
 [Watch the film](#see-crewvela-in-one-minute) · [Get started](#get-started) · [Workflow guide](docs/workflows.md) · [User guide](docs/user-guide.md) · [简体中文](README.md)
 
@@ -23,7 +23,7 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 
 CrewVela is a desktop workspace built with **Tauri 2, React, and Rust**. It brings separate agent sessions, messaging, project collaboration, and work handoffs into one window, while retaining each agent's local installation, accounts, and permission mechanisms.
 
-> **Current version: v0.1.0 Beta. Feedback and issue reports are welcome.** The Windows installer is available on [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0). [Download the macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg) (ARM64, ad-hoc signed, not notarized). See the [installation guide](docs/downloads.md) for setup and verification limits.
+> **Current version: v0.1.0 Beta.** An installer is available for Windows x64. macOS users can build from source. See [Download and install](docs/downloads.en.md) for links, checksums, and setup.
 
 ## See CrewVela in one minute
 
@@ -43,6 +43,7 @@ You may already use different agents for different jobs: building a feature, fin
 | Try another approach when an agent gets stuck | Preview a handoff, switch agents, and retain the source session's visible history |
 | Move several tasks forward | Use a split workspace and optional Git worktrees for separate working directories |
 | Organize a project by role | Track members, tasks, dependencies, collaboration messages, and diagnostics |
+| Deliver against acceptance criteria | Use automated project delivery to assign implementation, review, and integration, then run the configured checks and open a demo when available |
 | Continue in a later session | Use session recovery and optional local shared-memory integration |
 
 ## How multiple agents work together
@@ -63,27 +64,29 @@ For message flow and agent integration details, see the [technical architecture 
 | --- | --- |
 | **CLI and native chat** | Use different session types in one desktop workspace |
 | **Session messaging** | Select recipients and use session discovery, message origins, and reply instructions |
-| **Project collaboration** | Organize members, tasks, dependencies, messages, and diagnostics |
+| **Project collaboration and delivery** | Open the project chat in Bot Mode. Run automated delivery with one agent or assign implementation, review, and integration across a team |
 | **Work handoffs** | Prepare and preview context; stop the source session while retaining visible history |
-| **Session and workspace management** | Split views, tabs, execution status, and optional Git worktrees |
-| **Optional shared memory** | Connect a local memory service for later retrieval of project context |
+| **Session and workspace management** | Split views, workspace search, session filters, and Git worktree management |
+| **Optional shared memory** | Set up built-in local memory or use the legacy integrations to retrieve project context in later sessions |
 | **Work tools** | Access files, terminals, a browser, and source-control entry points |
+| **English and Simplified Chinese** | Switch the interface language in **Settings → General** and pin frequently used settings to the sidebar |
 
 ## Bring the agents you already use
 
-These are the integration entry points implemented in the project. Availability depends on the installed CLI, adapter, account, and model configuration; this is not a full platform/model acceptance matrix.
+CrewVela connects to eight agent families. Availability depends on the installed CLI, adapter, account, and model configuration.
 
 | Agent | CLI terminal entry | Native chat entry |
 | --- | --- | --- |
 | Claude Code | Claude Code | Claude Code Chat |
 | Codex | Codex CLI | Codex Chat |
-| Kimi Code | Kimi Code | Kimi Code Chat |
+| Antigravity | Antigravity CLI | — |
+| ZCode | ZCode CLI | ZCode Desktop |
+| Kimi | Kimi Code CLI | Kimi Code Chat |
+| DeepSeek Harness | — | DeepSeek Harness |
 | OpenCode | OpenCode | OpenCode Chat |
 | Pi | Pi Agent | Pi Chat |
-| ZCode | ZCode CLI | ZCode Desktop |
-| DeepSeek Harness | Not currently supported | DeepSeek Harness |
 
-CrewVela does not include model subscriptions or agent accounts. Shared-memory quick setup in source supports Claude Code and Codex on Windows x64 and macOS Apple Silicon / Intel, discovers official stable releases, and explicitly updates managed installs after backing up data and integration configs. Native Mac first-use and upgrade acceptance are pending; existing Release assets are not updated automatically. See the [user guide](docs/user-guide.md) for other integration paths and requirements.
+CrewVela uses your existing agent accounts, subscriptions, and model settings. The runtime manager can install supported official CLIs such as Antigravity CLI, and detect or select an existing ZCode CLI installation. See [CLI installation and version management (Chinese)](docs/runtime-installation.md) and the [user guide (Chinese)](docs/user-guide.md).
 
 ## Get started
 
@@ -91,9 +94,9 @@ CrewVela does not include model subscriptions or agent accounts. Shared-memory q
 
 | Goal | Start here |
 | --- | --- |
-| Download the desktop app | [Installation and attachment status](docs/downloads.md) |
-| Connect two agents | [Workflow guide](docs/workflows.md) |
-| Configure sessions, models, and tools | [User guide](docs/user-guide.md) |
+| Download the desktop app | [Download and install](docs/downloads.en.md) |
+| Connect two agents | [Workflow guide (Chinese)](docs/workflows.md) |
+| Configure sessions, models, and tools | [User guide (Chinese)](docs/user-guide.md) |
 | Build and validate on Mac | [Mac handoff guide](MACOS-CODEX-HANDOFF.md) |
 | Contribute | [Contributing guide](CONTRIBUTING.md) |
 
@@ -117,7 +120,7 @@ npm run tauri -- dev
 npm run tauri -- build --no-bundle
 ```
 
-Output: `src-tauri/target/release/CrewVela.exe`, the application executable. The NSIS installer is a separate artifact; see [installation details](docs/downloads.md).
+Output: `src-tauri/target/release/CrewVela.exe`, the application executable. See [Download and install](docs/downloads.en.md) for the separate NSIS installer.
 
 **macOS: run on an Apple Silicon Mac.**
 
@@ -147,11 +150,11 @@ Project members use the same entry point. Copying an example only writes to the 
 
 | Platform | Current validation |
 | --- | --- |
-| Windows x64 | Local source builds and regression passed; clean-machine installation and complete workflow acceptance pending |
-| macOS Apple Silicon | ARM64 DMG available, ad-hoc signed and not notarized; full native UI, installed-app normal exit, and real agent/model acceptance remain open |
+| Windows x64 | An unsigned NSIS installer is available. See the release notes for verification details |
+| macOS Apple Silicon | Source build and native verification instructions are available. No download is currently listed |
 | macOS Intel / Linux | Native acceptance incomplete; no verified downloads offered |
 
-The packages correspond to the `v0.1.0` tag; `main` includes subsequent updates. See the [release checklist](docs/release-checklist.md), [security policy](SECURITY.md), and [asset record](docs/asset-provenance.md) for platform validation, privacy cleanup, dependency findings, and asset provenance records.
+The Windows source commit and SHA-256 are listed on the [download page](docs/downloads.en.md) and the corresponding GitHub Release. See the [release checklist (Chinese)](docs/release-checklist.md), [security policy](SECURITY.md), and [asset record (Chinese)](docs/asset-provenance.md) for validation details.
 
 ## Common questions
 

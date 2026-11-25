@@ -1,10 +1,12 @@
-# CLI 安装与版本管理（首批 Windows）
+# CLI 安装与版本管理（Windows）
 
-入口：设置 → 协作中心 → 管理 Runtime → Claude Code / Codex 的“安装与版本”。
+入口为「设置 → 协作中心 → 管理 Runtime → 安装与版本」。
 
 ## 安装范围
 
-首批支持 Windows x64 / ARM64 的 Claude Code、Codex。其他 Runtime 保留现有管理方式。已在 Windows x64 验证真实官方包；ARM64 尚未实机验收。
+- Windows x64 / ARM64 下，Claude Code、Codex、OpenCode、Kimi Code、Pi 和 Antigravity CLI 有 CrewVela 托管安装入口。可安装版本取决于上游提供的对应平台发布包。
+- ZCode CLI 使用本机已有安装。可以检测 PATH 中的命令，或点击「选择已有 ZCode CLI」并验证所选入口。ZCode Desktop 的聊天适配器单独管理。
+- Windows x64 的官方包验证记录见下文，ARM64 尚未实机验收。macOS 可按各 Agent 的官方方式安装，然后在 CrewVela 中使用。
 
 CLI 安装在当前用户的 CrewVela 配置目录 `runtime-installations/<kind>/versions/` 中，仅改变 CrewVela 使用的程序入口。外部终端继续使用原有全局 CLI，既有 CLI 安装及其运行进程保留。
 
@@ -14,7 +16,7 @@ CLI 安装在当前用户的 CrewVela 配置目录 `runtime-installations/<kind>
 
 1. 检查平台、官方版本和当前 CLI 状态。
 2. 下载官方文件，按响应字节显示真实进度；无法取得总大小时不显示百分比。
-3. Claude Code 按官方发行清单校验 SHA256；Codex 按官方 npm 平台包 SRI 校验 SHA512，保留整包辅助程序及目录结构。
+3. 按运行时校验发行包。Claude Code 使用官方清单的 SHA-256，Codex 和 OpenCode 使用 npm 平台包的 SHA-512，Antigravity CLI 使用 Google 官方发行清单的 SHA-512。安装时保留需要的辅助程序及包目录结构。
 4. 在新目录验证版本和 `--help`。通过后原子切换 `current.json`，旧入口备份为 `previous.json`。失败或取消时不切换；更高的本地版本不会被自动降级。
 5. 根据需要打开原生 CLI 登录，完成后重新检查。登录成功与模型额度可用分开显示。
 

@@ -1,21 +1,26 @@
 # 下载与安装
 
-当前版本为 **v0.1.0 Beta（测试版）**，欢迎试用并反馈问题。安装包与校验文件见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。
+[English](downloads.en.md)
 
-**Beta 表示当前发布阶段；现有 Git 标签和安装包内部版本仍保留 `v0.1.0` / `0.1.0`，附件名称与下载链接保持不变。** 后续 `main` 更新不会自动更新附件。不同平台附件的源码提交以 Release 说明为准；本次 macOS DMG 对应 [`3ddf245`](https://github.com/token-hunter/CrewVela/commit/3ddf2459fef861a4c7aedeef7a7083134a334212)。 新仓库使用清理后的源码与 Windows 安装包，旧历史及旧包保留在独立的私有备份中。隐私脱敏、依赖、素材与安装验收记录见[发布检查清单](release-checklist.md)。
+当前开发线为 **v0.1.0 Beta**。可下载的 Windows x64 测试版见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases)。每次发布记录独立的源码提交和文件校验值。安装包内部版本为 `0.1.0`。
 
 | 资产 | 用途与当前状态 |
 | --- | --- |
-| `CrewVela-0.1.0-windows-x64-setup.exe` | Release 附件；Windows NSIS 安装向导，当前用户安装、中英文界面；完整安装验收仍待完成 |
-| `CrewVela-0.1.0-windows-x64.exe` | 应用本体的对外命名；不是安装向导，尚未作为该 Release 的独立附件提供 |
-| `CrewVela-0.1.0-windows-x64-portable.zip` | 计划包含应用 EXE、许可、安装说明和构建信息；尚未作为 Release 附件提供 |
-| [CrewVela_0.1.0_macos_aarch64.dmg](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg) | macOS Apple Silicon（ARM64），约 23 MiB；ad-hoc 签名、未公证；原生完整验收仍待完成 |
-| [CrewVela_0.1.0_macos_aarch64.dmg.sha256](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg.sha256) | 上述 macOS DMG 的独立校验文件 |
-| `SHA256SUMS.txt` | 覆盖实际上传的 Windows 安装包与 macOS DMG；完整性散列不代替签名 |
+| [CrewVela-0.1.0-windows-x64-setup.exe](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261118/CrewVela-0.1.0-windows-x64-setup.exe) | Windows x64 当前用户安装向导，提供简体中文和 English。应用本体可从源码单独构建 |
+| [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261118/SHA256SUMS.txt) | 上述安装包的完整性校验值 |
+| macOS / Linux | 当前无下载附件。macOS 可按下方源码构建说明操作 |
 
 ## Windows
 
 下载 `CrewVela-0.1.0-windows-x64-setup.exe` 并运行安装向导。WebView2 和对应 Agent CLI 仍需本机可用。**使用下载版无需安装 Rust/MSVC 或克隆源码**；运行时使用的 Node、CLI 和 ACP 适配器仍有单独依赖，无源码目录的干净机器验证仍待完成。自行使用 ZIP 分发时，解压后再运行 EXE，不要从压缩包内部启动。
+
+运行安装向导前，可在下载目录使用 PowerShell 核对 SHA-256。将 `Hash` 与同一 Release 的 `SHA256SUMS.txt` 比较。
+
+```powershell
+Get-FileHash .\CrewVela-0.1.0-windows-x64-setup.exe -Algorithm SHA256
+```
+
+应用界面语言在「设置 → 常规」切换，独立于安装向导所选语言。
 
 当前源码的发行构建只在应用安装位置和用户运行时 PATH 中发现适配器，不引用构建机器的源码目录；未安装时通过 npx 使用固定版本。Codex 的本地安装和 npx 回退均加载同一个包装桥。开发构建仍可使用项目 node_modules。首次使用可能联网安装适配器，且必须有兼容的 Node/npm；这不代表所有适配器均已内置。
 
@@ -34,21 +39,9 @@ npm run bundle:windows
 
 未签名文件可能显示系统来源/信誉提示。公开说明签名状态并核对发行源；不要求用户关闭 Defender、SmartScreen 或其他系统防护。
 
-## macOS Apple Silicon
+## macOS
 
-直接下载 [macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg) 和[校验文件](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg.sha256)，放在同一目录后执行：
-
-```sh
-shasum -a 256 -c CrewVela_0.1.0_macos_aarch64.dmg.sha256
-```
-
-校验通过后打开 DMG，将应用拖入 Applications；替换旧版本前先完整退出应用。使用下载版无需安装 Rust 或克隆源码，但 Node/npm、所用 Agent CLI 与账号仍需本机准备。
-
-该包的应用代码与 main 提交 `fc67a5b` 一致，在 `3ddf245` 版本之上包含全项目审计优化（弹窗层级、主题强调色，模型设置、窄窗格、快捷指令设置页与空工作区的布局，通知文案按平台显示，减少空闲重渲染），并保留右侧“开始”页卡片高度等已有修复。包内应用为 `CrewVela.app`。本轮 Node 473 项（468 通过、0 失败、5 项原有跳过）、浏览器界面套件 59/59；构建、生产资源和包校验通过；Rust 代码未改动，本轮未重跑。DMG 生成时跳过了 Finder 排版脚本，安装窗口没有预设图标位置，将应用拖入 Applications 即可。新增功能的完整原生交互、系统权限、真实模型及 Windows 实机尚未验收。完整结果见 [Release 说明](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。自行构建见 [Mac 指南](../MACOS-CODEX-HANDOFF.md)。
-
-本地 ad-hoc 构建不等于 Developer ID 签名或公证；不提供批量删除隔离属性或关闭 Gatekeeper 的安装步骤。签名凭据不得写入源码或报告。
-
-当前隔离测试要求 macOS 14+；这不是正式模式的最低系统版本承诺。正式版最低版本、Intel 支持均需额外验收，不能根据架构编译成功直接填写。
+当前 GitHub Release 没有 macOS 安装附件。Apple Silicon 用户可在 Mac 上按 [Mac 指南](../MACOS-CODEX-HANDOFF.md)构建并验证。指南包含 ARM64 打包与原生验收步骤，也列出 Intel 源码构建命令。本地构建使用 ad-hoc 签名，尚未做 Developer ID 签名或公证。正式模式最低系统版本及 Intel 原生兼容性仍待验收。
 
 ## 升级与卸载
 

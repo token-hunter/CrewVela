@@ -13,7 +13,7 @@
 [![React 与 TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT 许可](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
 
-[![下载 Beta 版本](https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-Beta_%E7%89%88%E6%9C%AC-2563EB?style=for-the-badge&logo=github&logoColor=white)](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)
+[![下载 Windows Beta](https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-Windows_Beta-2563EB?style=for-the-badge&logo=github&logoColor=white)](docs/downloads.md)
 
 [宣传片](#一分钟看-crewvela) · [开始使用](#开始使用) · [协作玩法](docs/workflows.md) · [使用手册](docs/user-guide.md) · [English](README.en.md)
 
@@ -23,7 +23,7 @@
 
 CrewVela 是一个基于 **Tauri 2 + React + Rust** 的桌面多 Agent 工作台，把独立会话、会话通信、项目协作和工作交接放进同一个窗口。沿用各 Agent 的本机安装、账号与权限机制，让你围绕任务组织工具。
 
-> **当前版本 v0.1.0 Beta（测试版）。欢迎试用并反馈问题。** Windows 安装包见 [GitHub Releases](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)；[下载 macOS Apple Silicon DMG](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0/CrewVela_0.1.0_macos_aarch64.dmg)（ARM64，ad-hoc 签名，未公证）。安装步骤与验证限制见[下载说明](docs/downloads.md)。
+> **当前版本 v0.1.0 Beta。** Windows x64 提供安装向导。macOS 当前提供源码构建说明。下载链接、校验文件和安装步骤见[下载与安装](docs/downloads.md)。
 
 ## 一分钟看 CrewVela
 
@@ -43,6 +43,7 @@ https://github.com/user-attachments/assets/14b2afaf-b851-402e-bae4-d33cd1e159f7
 | 当前 Agent 卡住了，换个思路 | 预览交接资料，再交给另一个 Agent；保留来源会话的可见历史 |
 | 同时推进几个任务 | 网格分屏查看会话；按需使用 Git worktree 分隔工作目录 |
 | 把一个需求拆成多个角色 | 通过项目成员、任务依赖、协作消息和诊断查看进展 |
+| 让 Agent 按验收条件交付 | 在项目中选择全自动托管，由成员完成实现、按计划审查与联调，再按项目配置验收和提供 Demo |
 | 下次打开还能接着做 | 使用会话恢复，以及可选的本地共享记忆接入 |
 
 ## 多个 Agent，如何一起完成工作
@@ -63,27 +64,29 @@ https://github.com/user-attachments/assets/14b2afaf-b851-402e-bae4-d33cd1e159f7
 | --- | --- |
 | **CLI 与原生聊天** | 在同一个桌面工作区使用不同类型的 Agent 会话 |
 | **会话通信** | 选择发送方与接收方，使用会话列表、消息来源和回复指引对齐对象 |
-| **项目协作** | 按成员、任务和依赖组织工作，查看协作消息与诊断 |
+| **项目协作与托管** | 项目聊天可切换 Bot 模式。托管支持单个成员交付，也可为多成员分配实现、审查与联调职责 |
 | **工作交接** | 准备并预览交接资料；来源会话停止运行，历史仍可见 |
-| **会话与工作区管理** | 网格分屏、标签切换、状态展示，以及可选的 Git worktree 隔离 |
-| **共享记忆（可选）** | 接入本地记忆服务，支持后续会话检索项目上下文 |
+| **会话与工作区管理** | 网格分屏、工作区搜索、会话筛选和 Git worktree 管理 |
+| **共享记忆（可选）** | 配置内置本地记忆，也可使用旧版共享记忆接入，让后续会话检索项目上下文 |
 | **工作工具** | 在工作面板访问文件、终端、浏览器及源码控制入口 |
+| **简体中文与 English** | 在「设置 → 常规」切换界面语言，并把常用设置固定到侧栏 |
 
 ## 接入你已经在用的 Agent
 
-下表展示项目提供的接入入口，实际可用性取决于 CLI、适配器、账号与模型配置；不是全平台、全模型的验收承诺。
+当前提供 8 个 Agent 系列的接入。实际可用性取决于 CLI、适配器、账号与模型配置。
 
 | Agent | CLI 终端入口 | 原生聊天入口 |
 | --- | --- | --- |
 | Claude Code | Claude Code | Claude Code Chat |
 | Codex | Codex CLI | Codex Chat |
-| Kimi Code | Kimi Code | Kimi Code Chat |
+| Antigravity | Antigravity CLI | — |
+| ZCode | ZCode CLI | ZCode Desktop |
+| Kimi | Kimi Code CLI | Kimi Code Chat |
+| DeepSeek Harness | — | DeepSeek Harness |
 | OpenCode | OpenCode | OpenCode Chat |
 | Pi | Pi Agent | Pi Chat |
-| ZCode | ZCode CLI | ZCode Desktop |
-| DeepSeek Harness | 暂不支持 | DeepSeek Harness |
 
-CrewVela 不附送模型、订阅或 Agent 账号。源码中的共享记忆快速配置支持 Windows x64、macOS Apple Silicon / Intel 的 Claude Code / Codex，可发现官方最新稳定版并显式更新托管安装，更新前备份数据与接入配置；Mac 原生首次启用与升级仍待实机验收，已有 Release 附件不会自动更新。其他接入方式与条件见[使用手册](docs/user-guide.md)。
+CrewVela 沿用各 Agent 自己的账号、订阅和模型配置。「设置 → 协作中心 → 管理 Runtime」可管理 Antigravity CLI 等受支持的官方安装，也可检测或选择本机已有的 ZCode CLI。详见 [CLI 安装与版本管理](docs/runtime-installation.md)和[使用手册](docs/user-guide.md)。
 
 ## 开始使用
 
@@ -147,11 +150,11 @@ APPLE_SIGNING_IDENTITY=- npm run build:macos
 
 | 平台 | 当前验证范围 |
 | --- | --- |
-| Windows x64 | 本机源码构建与回归通过；干净机器安装与完整业务验收待完成 |
-| macOS Apple Silicon | 已提供 ARM64 DMG，ad-hoc 签名、未公证；原生界面完整交互、安装副本正常退出与真实 Agent/模型等仍待验收 |
+| Windows x64 | 提供未签名的 NSIS 安装包。验证范围见对应 Release |
+| macOS Apple Silicon | 目前没有下载附件，可查看源码构建与原生验收步骤 |
 | macOS Intel / Linux | 未完成原生验收，当前不提供已验证安装包 |
 
-安装包对应 `v0.1.0` 标签，`main` 分支包含后续更新。平台验收、隐私脱敏、依赖风险与素材来源的核对记录见[发布检查清单](docs/release-checklist.md)、[安全说明](SECURITY.md)及[素材记录](docs/asset-provenance.md)。
+Windows 安装包对应的源码提交与 SHA-256 见[下载页](docs/downloads.md)和对应 Release。平台验收、隐私脱敏、依赖风险与素材来源见[发布检查清单](docs/release-checklist.md)、[安全说明](SECURITY.md)及[素材记录](docs/asset-provenance.md)。
 
 ## 常见问题
 
