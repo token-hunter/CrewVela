@@ -15,7 +15,7 @@
 
 ## v0.1.0 Beta · 2026-11-09
 
-安装包与校验文件见 [GitHub Release](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0)。以下为当前 0.1.0 开发线的功能概览，`main` 包含标签之后的更新，具体安装包版本以 Release 记录为准。
+以下为早期 0.1.0 开发线的功能概览。当前安装包与校验文件见[下载与安装](docs/downloads.md)。
 
 - 多 Agent CLI 和原生聊天工作台、会话通信及教程。
 - 项目协作、交接预览与可见的来源历史。

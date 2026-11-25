@@ -2,7 +2,7 @@
 
 [English](downloads.en.md)
 
-最新下载为 [Windows x64 Beta · 2026-11-25](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261125)，对应源码提交 [`81e4f28`](https://github.com/token-hunter/CrewVela/commit/81e4f2836053352111d7089ea9ccbff5f2779477)，应用内部版本为 `0.1.0`。[历史版本](https://github.com/token-hunter/CrewVela/releases)仍可按原标签取得。
+最新下载为 [Windows x64 Beta · 2026-11-25](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261125)，对应源码提交 [`81e4f28`](https://github.com/token-hunter/CrewVela/commit/81e4f2836053352111d7089ea9ccbff5f2779477)，应用内部版本为 `0.1.0`。
 
 | 资产 | 用途与当前状态 |
 | --- | --- |
