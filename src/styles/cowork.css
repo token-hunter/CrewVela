@@ -339,12 +339,6 @@ body {
   text-transform: none;
 }
 
-.session-projects-toolbar-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
 .unified-sidebar .session-project-head {
   border-radius: 8px;
 }

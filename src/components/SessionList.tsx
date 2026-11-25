@@ -144,7 +144,6 @@ export function SessionList({
   logicalSessionId = (id) => id,
   onNewSessionInProject,
   onOpenProject,
-  onManageProjects,
   projectResumeIds,
   onContinueProject,
   projectServiceAction,
@@ -902,19 +901,16 @@ export function SessionList({
       {groupByProject && (
         <div className="session-projects-toolbar">
           <span>{t("项目")}</span>
-          <span className="session-projects-toolbar-actions">
-            {onManageProjects && <button type="button" aria-label={t("项目管理")} title={t("项目管理")} onClick={onManageProjects}><DotsThreeIcon size={16} /></button>}
-            {onAddProject && (
-              <button
-                type="button"
-                aria-label={t("添加项目")}
-                title={t("添加项目")}
-                onClick={onAddProject}
-              >
-                <PlusIcon size={14} weight="bold" />
-              </button>
-            )}
-          </span>
+          {onAddProject && (
+            <button
+              type="button"
+              aria-label={t("添加项目")}
+              title={t("添加项目")}
+              onClick={onAddProject}
+            >
+              <PlusIcon size={14} weight="bold" />
+            </button>
+          )}
         </div>
       )}
 
