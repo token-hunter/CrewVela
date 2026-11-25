@@ -75,6 +75,7 @@ const api = {
     fail(message:string) { const entry=api.help.pending.shift(); if(!entry)throw Error("No pending app update check"); entry.reject(new Error(message)); },
   },
   calls, pending, rejectProviderDelete: true,
+  nativeLanguageUpdates: [] as unknown[],
   originalRunReads: [] as unknown[],
   rejectSwitchDismiss: false, switchCommands: [] as string[],
   usages: {} as Record<string, unknown>,
@@ -93,6 +94,11 @@ const api = {
     }
   },
   async invoke(command: string, args?: Record<string, unknown>) {
+    if (command === "set_interface_language") {
+      api.nativeLanguageUpdates.push(args?.language);
+      if (new URLSearchParams(location.search).has("tray-language-failure")) throw new Error("无法写入偏好文件");
+      return null;
+    }
     if (originalRunFixture) {
       if (command === "ma_snapshot") {
         const snapshot = navigationSnapshot(String(args?.projectId));

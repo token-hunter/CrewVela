@@ -111,35 +111,35 @@ export function TerminalFontPicker({ value, onChange, preview }: { value: string
         }
       }}>
       <input id="general-terminal-font" aria-describedby={missing.length || (error && !open) ? hintId : undefined}
-        value={value} placeholder="默认字体" autoComplete="off" spellCheck={false}
+        value={value} placeholder={t("默认字体")} autoComplete="off" spellCheck={false}
         onBlur={() => { if (value.trim()) ensureCatalog(); }}
         onChange={event => onChange(event.target.value)} />
       <button type="button" ref={trigger} aria-expanded={open} aria-controls={open ? listId : undefined} onClick={() => {
         if (!open) { setQuery(""); ensureCatalog(); }
         setOpen(!open);
-      }}>本机字体 <CaretDown size={13} aria-hidden="true" /></button>
+      }}>{t("本机字体")} <CaretDown size={13} aria-hidden="true" /></button>
       {open && <div className="model-combobox-list terminal-font-catalog" id={listId}
         data-above={placement.above} style={{ maxHeight: placement.height }}>
         <input ref={search} type="search" value={query} onChange={event => setQuery(event.target.value)}
-          aria-label="搜索本机字体" placeholder="搜索本机字体" autoComplete="off" />
-        <div ref={options} className="terminal-font-options" aria-label="可选字体" role="group" tabIndex={-1}>
-          <button type="button" className="model-combobox-option" aria-pressed={!value.trim()} onClick={() => select("")}>默认字体</button>
+          aria-label={t("搜索本机字体")} placeholder={t("搜索本机字体")} autoComplete="off" />
+        <div ref={options} className="terminal-font-options" aria-label={t("可选字体")} role="group" tabIndex={-1}>
+          <button type="button" className="model-combobox-option" aria-pressed={!value.trim()} onClick={() => select("")}>{t("默认字体")}</button>
           {shownFonts.map(font => <button type="button" className="model-combobox-option"
             key={font.family} aria-pressed={[font.family, ...font.aliases].some(name => name.toLowerCase() === primary)}
             onClick={() => select(font.family)}>
-            <span>{font.family}</span>{font.monospace && <em>等宽</em>}
+            <span>{font.family}</span>{font.monospace && <em>{t("等宽")}</em>}
           </button>)}
-          {error ? <p className="terminal-font-empty" role="status">无法读取本机字体。
+          {error ? <p className="terminal-font-empty" role="status">{t("无法读取本机字体。")}
             <button type="button" className="conversation-text-button" onClick={() => {
               search.current?.focus();
               setAttempt(value => value + 1);
             }}>{t("重试")}</button>
-          </p> : !fonts ? <p className="terminal-font-empty" role="status">正在读取本机字体…</p>
-            : shownFonts.length === 0 && <p className="terminal-font-empty">没有匹配的字体</p>}
+          </p> : !fonts ? <p className="terminal-font-empty" role="status">{t("正在读取本机字体…")}</p>
+            : shownFonts.length === 0 && <p className="terminal-font-empty">{t("没有匹配的字体")}</p>}
         </div>
       </div>}
     </div>
-    {missing.length > 0 && <small id={hintId} className="terminal-font-hint" role="status">本机列表中未找到 {missing.join("、")}，将使用备用字体。</small>}
-    {error && !open && <small id={hintId} className="terminal-font-hint" role="status">无法读取本机字体列表，可以继续手动填写。</small>}
+    {missing.length > 0 && <small id={hintId} className="terminal-font-hint" role="status">{t("本机列表中未找到")} {missing.join("、")}{t("，将使用备用字体。")}</small>}
+    {error && !open && <small id={hintId} className="terminal-font-hint" role="status">{t("无法读取本机字体列表，可以继续手动填写。")}</small>}
   </div>;
 }

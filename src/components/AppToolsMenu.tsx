@@ -114,7 +114,7 @@ export function AppToolsMenu(props: Props) {
       <button type="button" role="menuitem" onClick={()=>choose("about")}><Info size={17}/><span>{t("关于 CrewVela")}</span></button>
     </div>}
     {section === "view" && view && <div ref={sectionMenu} id="app-view-submenu" className="app-help-submenu app-view-submenu" role="menu" aria-label={t("视图")} style={{left:position.sectionLeft,top:position.sectionTop}} onKeyDown={event=>navigate(event,1)}>
-      <button type="button" role="menuitem" disabled={!view.fullscreenAvailable || view.fullscreenPending} onClick={()=>act(view.onFullscreen)}>{view.fullscreen ? <CornersIn size={17} /> : <CornersOut size={17} />}<span>{view.fullscreen ? "退出全屏" : "全屏"}</span></button>
+      <button type="button" role="menuitem" disabled={!view.fullscreenAvailable || view.fullscreenPending} onClick={()=>act(view.onFullscreen)}>{view.fullscreen ? <CornersIn size={17} /> : <CornersOut size={17} />}<span>{view.fullscreen ? t("退出全屏") : t("全屏")}</span></button>
     </div>}
   </>,document.body);
   return <>

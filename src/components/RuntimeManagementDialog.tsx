@@ -1,3 +1,4 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
 import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -124,7 +125,7 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose,
       <span>{RUNTIME_LABELS[kind]}<small className="collab-runtime-scope">{COLLABORATION_RUNTIMES.includes(kind) ? t("CLI 协作执行") : isLegacyCollaborationRuntime(kind) ? t("原生聊天 · 已有协作成员兼容") : t("仅原生聊天")}</small>
         {supportsChatInstallation(kind) && <small className="runtime-chat-dependency" data-missing={chatDependencies?.[kind]?.needsSetup || undefined}>{t(chatDependencies?.[kind]?.label ?? (chatDependencies ? "打开详情检查启动依赖" : "正在检查启动依赖…"))}</small>}
       </span>
-      <small>{pending === kind ? "保存中…" : availability.ready ? availability.isRuntimeEnabled(kind) ? t("已启用") : "已禁用" : t("加载中…")}</small>
+      <small>{pending === kind ? t("保存中…") : availability.ready ? availability.isRuntimeEnabled(kind) ? t("已启用") : t("已禁用") : t("加载中…")}</small>
       <input type="checkbox" aria-label={t("启用 {runtime}", { runtime: RUNTIME_LABELS[kind] })} checked={availability.ready && availability.isRuntimeEnabled(kind)} disabled={!availability.ready || pending !== null} onChange={(event) => void toggle(kind, event.target.checked)} />
     </label>
     {isCliRuntime(kind) && <select className="runtime-default-mode" aria-label={t("默认启动模式 · {runtime}", { runtime: RUNTIME_LABELS[kind] })} value={availability.prefs.defaultLaunchModes?.[kind] ?? "cli_default"} disabled={!availability.ready || pending !== null} onChange={event => void saveMode(kind, event.target.value)}>
@@ -140,8 +141,8 @@ export function RuntimeManagementDialog({ order, onReorder, orderError, onClose,
   return <Modal className={`collab-runtime-management${installing ? " runtime-installation-modal" : ""}`} ariaLabel={t("管理 Runtime")} onClose={onClose}>
     <header><h3>{t("管理 Runtime")}</h3><button type="button" className="btn secondary" aria-label={t("关闭")} onClick={onClose}>{installing ? <X size={21} /> : t("关闭")}</button></header>
     {installing ? <RuntimeInstallWizard key={installing} kind={installing} onBack={() => setInstalling(null)} onComplete={installing === initialInstaller ? onClose : undefined} /> : <>
-    {(error || availability.error) && <p role="alert" className="collaboration-settings-error">{error || availability.error}</p>}
-    {orderError && <p role="alert" className="collaboration-settings-error">{orderError}</p>}
+    {(error || availability.error) && <p role="alert" className="collaboration-settings-error"><LocalizedErrorText source={error || availability.error || ""} /></p>}
+    {orderError && <p role="alert" className="collaboration-settings-error"><LocalizedErrorText source={orderError} /></p>}
     {!availability.ready && <button type="button" className="btn secondary" onClick={() => void availability.refresh()}>{t("重新加载配置")}</button>}
     <div className="collab-runtime-management-list" onDragOver={(event) => {
       if (!dragSource.current) return;

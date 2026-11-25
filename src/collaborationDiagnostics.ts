@@ -34,11 +34,11 @@ export function diagnosticChecks(health: Health) {
   ];
 }
 
-export function summarizeDiagnosticChecks(checks: ReadonlyArray<{ state: CheckState }>): string {
+export function summarizeDiagnosticChecks(checks: ReadonlyArray<{ state: CheckState }>, t?: (key: string, values?: Record<string, string | number>) => string): string {
   return (["异常", "等待授权", "已停止", "未验证", "忙碌", "正常"] as const).flatMap((state) => {
     const count = checks.filter((check) => check.state === state).length;
-    return count ? [`${count} 项${state}`] : [];
-  }).join(" · ") || "0 项检查";
+    return count ? [t ? t("{count} 项{state}", { count, state: t(state) }) : `${count} 项${state}`] : [];
+  }).join(" · ") || (t ? t("0 项检查") : "0 项检查");
 }
 
 const ACTIVITY_LABELS: Record<string, string> = { "conversation.cleared": "对话已清空", "run.status_changed": "执行状态更新", "task.execution_completed": "任务执行结束", "task.created": "任务已创建", "task.status_changed": "任务状态更新", "artifact.created": "已提交交付物", "review.created": "审核已提交", "project.status_changed": "项目状态更新" };

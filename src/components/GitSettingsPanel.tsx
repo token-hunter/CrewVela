@@ -1,3 +1,4 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
 import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -587,18 +588,18 @@ export function GitSourceControlPanel({
     const primaryDisabled = busy || (primaryStages ? pendingPaths.length === 0 : !message.trim());
 
     return (
-      <aside className="git-source-sidebar" aria-label="Git 源代码控制">
+      <aside className="git-source-sidebar" aria-label={t("Git 源代码控制")}>
         <header className="git-source-sidebar-header">
           <div className="git-source-sidebar-title">
             <GitBranch size={16} weight="bold" />
-            <strong>源代码控制</strong>
+            <strong>{t("源代码控制")}</strong>
           </div>
           <div className="git-source-sidebar-header-actions">
-            <button type="button" aria-label="刷新 Git 状态" title="刷新 Git 状态" onClick={() => void refresh()} disabled={busy || !workspaceReady}>
+            <button type="button" aria-label={t("刷新 Git 状态")} title={t("刷新 Git 状态")} onClick={() => void refresh()} disabled={busy || !workspaceReady}>
               <ArrowClockwise size={15} className={busy ? "spin" : ""} />
             </button>
             {onClose && (
-              <button type="button" aria-label="关闭源代码控制" title={t("关闭")} onClick={onClose}>
+              <button type="button" aria-label={t("关闭源代码控制")} title={t("关闭")} onClick={onClose}>
                 <X size={15} />
               </button>
             )}
@@ -611,19 +612,19 @@ export function GitSourceControlPanel({
             <input
               value={filterQuery}
               onChange={(event) => setFilterQuery(event.target.value)}
-              placeholder="筛选文件"
-              aria-label="筛选 Git 变更文件"
+              placeholder={t("筛选文件")}
+              aria-label={t("筛选 Git 变更文件")}
             />
           </label>
           <details className="git-source-sidebar-overflow">
-            <summary aria-label="更多 Git 操作" title="更多 Git 操作"><DotsThree size={17} weight="bold" /></summary>
+            <summary aria-label={t("更多 Git 操作")} title={t("更多 Git 操作")}><DotsThree size={17} weight="bold" /></summary>
             <div>
               <button type="button" onClick={() => void runRemote("fetch")} disabled={busy || !workspaceReady}>Fetch</button>
               <button type="button" onClick={() => void runRemote("pull")} disabled={busy || !workspaceReady}>Pull</button>
               <button type="button" onClick={() => setMergeDialogOpen(true)} disabled={busy || status?.mergeInProgress || branches.length === 0}>
                 Merge…
               </button>
-              {status?.mergeInProgress && <button type="button" className="danger-text" onClick={() => void abortMerge()} disabled={busy || !workspaceReady}>取消合并</button>}
+              {status?.mergeInProgress && <button type="button" className="danger-text" onClick={() => void abortMerge()} disabled={busy || !workspaceReady}>{t("取消合并")}</button>}
               <button type="button" onClick={() => void runRemote(status?.upstream ? "push" : "publish")} disabled={busy || !workspaceReady}>
                 {status?.upstream ? "Push" : "Publish Branch"}
               </button>
@@ -641,14 +642,14 @@ export function GitSourceControlPanel({
               setSelectedWorkspaceId(event.target.value);
               setDiffOpen(false);
             }}
-            aria-label="选择 Git 工作区"
+            aria-label={t("选择 Git 工作区")}
           >
             {workspaces.map((workspace) => (
               <option value={workspace.id} key={workspace.id}>{workspace.label} · {workspace.detail}</option>
             ))}
           </select>
           <div className="git-source-sidebar-repo">
-            <strong>{selectedWorkspace?.label ?? "未选择工作区"}</strong>
+            <strong>{selectedWorkspace?.label ?? t("未选择工作区")}</strong>
             <span className="git-source-sidebar-stats"><em>+{additions}</em><i>-{deletions}</i></span>
           </div>
           <div className="git-source-sidebar-branch">
@@ -660,26 +661,26 @@ export function GitSourceControlPanel({
         {status?.mergeInProgress && (
           <div className="git-source-sidebar-merge-state">
             <Warning size={15} />
-            <span><strong>合并冲突待处理</strong><small>解决冲突后提交，或取消本次合并。</small></span>
-            <button type="button" onClick={() => void abortMerge()} disabled={busy || !workspaceReady}>取消合并</button>
+            <span><strong>{t("合并冲突待处理")}</strong><small>{t("解决冲突后提交，或取消本次合并。")}</small></span>
+            <button type="button" onClick={() => void abortMerge()} disabled={busy || !workspaceReady}>{t("取消合并")}</button>
           </div>
         )}
 
-        {error && <div className="git-source-sidebar-banner error"><Warning size={14} /><span>{error}</span></div>}
-        {notice && !error && <div className="git-source-sidebar-banner notice"><Check size={14} /><span>{notice}</span></div>}
+        {error && <div className="git-source-sidebar-banner error"><Warning size={14} /><LocalizedErrorText source={error} /></div>}
+        {notice && !error && <div className="git-source-sidebar-banner notice"><Check size={14} /><span>{t(notice)}</span></div>}
 
         <section className="git-source-sidebar-composer">
           <div className="git-source-sidebar-message">
             <textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
-              placeholder="提交信息"
+              placeholder={t("提交信息")}
               rows={3}
             />
             <button
               type="button"
-              aria-label="AI 生成提交信息"
-              title="AI 生成提交信息"
+              aria-label={t("AI 生成提交信息")}
+              title={t("AI 生成提交信息")}
               onClick={() => void generateMessage()}
               disabled={!isRuntimeEnabled("claude_code") || busy || !providerId || stagedPaths.length === 0}
             >
@@ -696,20 +697,20 @@ export function GitSourceControlPanel({
               disabled={primaryDisabled}
             >
               {primaryStages ? <Plus size={15} /> : <Check size={15} />}
-              {primaryStages ? "暂存全部" : "提交"}
+              {primaryStages ? t("暂存全部") : t("提交")}
             </button>
             <details>
-              <summary aria-label="更多提交与同步操作"><CaretDown size={14} /></summary>
+              <summary aria-label={t("更多提交与同步操作")}><CaretDown size={14} /></summary>
               <div>
-                <button type="button" onClick={() => void commit(false)} disabled={busy || !workspaceReady || !message.trim()}>提交</button>
-                <button type="button" onClick={() => void commit(true)} disabled={busy || !workspaceReady || !message.trim()}>提交并推送</button>
+                <button type="button" onClick={() => void commit(false)} disabled={busy || !workspaceReady || !message.trim()}>{t("提交")}</button>
+                <button type="button" onClick={() => void commit(true)} disabled={busy || !workspaceReady || !message.trim()}>{t("提交并推送")}</button>
                 <button type="button" onClick={() => void runRemote(status?.upstream ? "push" : "publish")} disabled={busy || !workspaceReady}>
                   {status?.upstream ? "Push" : "Publish Branch"}
                 </button>
                 <button type="button" onClick={() => void runRemote("pull")} disabled={busy || !workspaceReady}>Pull</button>
                 <button type="button" onClick={() => void runRemote("fetch")} disabled={busy || !workspaceReady}>Fetch</button>
                 <button type="button" onClick={() => setMergeDialogOpen(true)} disabled={busy || status?.mergeInProgress || branches.length === 0}>Merge…</button>
-                {status?.mergeInProgress && <button type="button" className="danger-text" onClick={() => void abortMerge()} disabled={busy || !workspaceReady}>取消合并</button>}
+                {status?.mergeInProgress && <button type="button" className="danger-text" onClick={() => void abortMerge()} disabled={busy || !workspaceReady}>{t("取消合并")}</button>}
                 <button type="button" className="danger-text" onClick={() => void runRemote("force_push")} disabled={busy || !status?.upstream}>Force Push</button>
               </div>
             </details>
@@ -720,7 +721,7 @@ export function GitSourceControlPanel({
           {hiddenSidebarEntryCount > 0 && (
             <div className="git-source-sidebar-limit">
               <Warning size={14} />
-              <span>检测到 {sidebarEntryCount} 项，仅显示前 {GIT_SIDEBAR_ENTRY_LIMIT} 项。使用筛选可缩小范围。</span>
+              <span>{t("检测到")} {sidebarEntryCount} {t("项，仅显示前")} {GIT_SIDEBAR_ENTRY_LIMIT} {t("项。使用筛选可缩小范围。")}</span>
             </div>
           )}
           {sidebarGroups.map((group) => (
@@ -729,12 +730,12 @@ export function GitSourceControlPanel({
                 <strong>{group.label}<em>{group.allEntries.length}</em></strong>
                 <span>
                   {group.id === "staged" ? (
-                    <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_unstage", group.allEntries.map((entry) => entry.path))} title="全部取消暂存"><Minus size={13} /></button>
+                    <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_unstage", group.allEntries.map((entry) => entry.path))} title={t("全部取消暂存")}><Minus size={13} /></button>
                   ) : (
-                    <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_stage", group.allEntries.map((entry) => entry.path))} title="全部暂存"><Plus size={13} /></button>
+                    <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_stage", group.allEntries.map((entry) => entry.path))} title={t("全部暂存")}><Plus size={13} /></button>
                   )}
                   {(group.id === "changes" || group.id === "untracked") && (
-                    <button type="button" className="danger-text" disabled={busy || !workspaceReady} onClick={() => void discardPaths(group.allEntries.map((entry) => entry.path))} title="全部丢弃"><Trash size={13} /></button>
+                    <button type="button" className="danger-text" disabled={busy || !workspaceReady} onClick={() => void discardPaths(group.allEntries.map((entry) => entry.path))} title={t("全部丢弃")}><Trash size={13} /></button>
                   )}
                 </span>
               </header>
@@ -747,9 +748,9 @@ export function GitSourceControlPanel({
                   </button>
                   <span className="git-source-sidebar-file-actions">
                     {group.id === "staged" ? (
-                      <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_unstage", [entry.path])} title="取消暂存"><Minus size={12} /></button>
+                      <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_unstage", [entry.path])} title={t("取消暂存")}><Minus size={12} /></button>
                     ) : (
-                      <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_stage", [entry.path])} title="暂存"><Plus size={12} /></button>
+                      <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_stage", [entry.path])} title={t("暂存")}><Plus size={12} /></button>
                     )}
                   </span>
                 </div>
@@ -760,37 +761,37 @@ export function GitSourceControlPanel({
             <EmptyState
               className="git-source-sidebar-empty"
               icon={<Check size={22} />}
-              title={normalizedFilter ? "没有匹配文件" : "工作区干净"}
-              description={normalizedFilter ? "换个关键词继续筛选。" : "当前没有待处理的变更。"}
+              title={normalizedFilter ? t("没有匹配文件") : t("工作区干净")}
+              description={normalizedFilter ? t("换个关键词继续筛选。") : t("当前没有待处理的变更。")}
               descriptionAs="span"
             />
           )}
-          {!status && !error && <EmptyState className="git-source-sidebar-empty" title="正在读取 Git 状态…" titleAs="span" />}
+          {!status && !error && <EmptyState className="git-source-sidebar-empty" title={t("正在读取 Git 状态…")} titleAs="span" />}
         </div>
 
         {mergeDialogOpen && (
-          <section className="git-source-sidebar-merge-dialog" role="dialog" aria-modal="true" aria-label="合并分支">
+          <section className="git-source-sidebar-merge-dialog" role="dialog" aria-modal="true" aria-label={t("合并分支")}>
             <header>
-              <div><GitBranch size={16} /><span><strong>合并分支</strong><small>合并到 {status?.branch ?? "当前分支"}</small></span></div>
-              <button type="button" onClick={() => setMergeDialogOpen(false)} aria-label="关闭合并分支"><X size={15} /></button>
+              <div><GitBranch size={16} /><span><strong>{t("合并分支")}</strong><small>{t("合并到")} {status?.branch ?? t("当前分支")}</small></span></div>
+              <button type="button" onClick={() => setMergeDialogOpen(false)} aria-label={t("关闭合并分支")}><X size={15} /></button>
             </header>
             <div className="git-source-sidebar-merge-form">
               <label>
-                <span>来源分支</span>
+                <span>{t("来源分支")}</span>
                 <select value={mergeSource} onChange={(event) => setMergeSource(event.target.value)}>
                   {branches.map((branch) => (
-                    <option key={branch.name} value={branch.name}>{branch.name}{branch.remote ? "（远程）" : ""}</option>
+                    <option key={branch.name} value={branch.name}>{branch.name}{branch.remote ? t("（远程）") : ""}</option>
                   ))}
                 </select>
               </label>
               <label className="git-source-sidebar-merge-mode">
                 <input type="checkbox" checked={mergeNoFf} onChange={(event) => setMergeNoFf(event.target.checked)} />
-                <span><strong>创建 Merge Commit</strong><small>使用 --no-ff 保留独立分支历史。</small></span>
+                <span><strong>{t("创建 Merge Commit")}</strong><small>{t("使用 --no-ff 保留独立分支历史。")}</small></span>
               </label>
               {!!status?.entries.length && (
                 <div className="git-source-sidebar-merge-warning">
                   <Warning size={15} />
-                  <span>工作区存在未提交变更，提交或清理后才能合并。</span>
+                  <span>{t("工作区存在未提交变更，提交或清理后才能合并。")}</span>
                 </div>
               )}
               <footer>
@@ -801,7 +802,7 @@ export function GitSourceControlPanel({
                   onClick={() => void runMerge()}
                   disabled={busy || !mergeSource || !!status?.entries.length || status?.mergeInProgress}
                 >
-                  {mergeNoFf ? "使用 --no-ff 合并" : "合并"}
+                  {mergeNoFf ? t("使用 --no-ff 合并") : t("合并")}
                 </button>
               </footer>
             </div>
@@ -812,11 +813,11 @@ export function GitSourceControlPanel({
         {diffOpen && (
           <section className="git-source-sidebar-diff">
             <header>
-              <button type="button" onClick={() => setDiffOpen(false)} aria-label="返回变更列表"><ArrowLeft size={15} /></button>
+              <button type="button" onClick={() => setDiffOpen(false)} aria-label={t("返回变更列表")}><ArrowLeft size={15} /></button>
               <div><strong>{selection?.label ?? "Diff"}</strong><small>{selection?.area}</small></div>
             </header>
             <div className="git-source-sidebar-diff-content" tabIndex={0} role="document" aria-label="Git Diff">
-              {(diff || "正在读取 Diff…").split("\n").map((line, index) => (
+              {(diff || t("正在读取 Diff…")).split("\n").map((line, index) => (
                 <code className={diffLineKind(line)} key={`${index}:${line.slice(0, 24)}`}>{line || " "}</code>
               ))}
             </div>
@@ -837,27 +838,27 @@ export function GitSourceControlPanel({
           </select>
         </label>
         <label>
-          <span>比较基准</span>
+          <span>{t("比较基准")}</span>
           <select
             disabled={busy || !settingsReady} value={settings.compareStrategy}
             onChange={(event) => setSettings((current) => ({ ...current, compareStrategy: event.target.value as GitSettings["compareStrategy"] }))}
           >
-            <option value="repository_default">仓库默认分支</option>
-            <option value="branch_upstream">当前分支 Upstream</option>
+            <option value="repository_default">{t("仓库默认分支")}</option>
+            <option value="branch_upstream">{t("当前分支 Upstream")}</option>
           </select>
         </label>
         <label className="git-prefix-field">
-          <span>Worktree 分支前缀</span>
+          <span>{t("Worktree 分支前缀")}</span>
           <input disabled={busy || !settingsReady} value={settings.branchPrefix} onChange={(event) => setSettings((current) => ({ ...current, branchPrefix: event.target.value }))} />
         </label>
-        <button type="button" className="btn" onClick={() => void saveSettings()} disabled={busy || !settingsReady}>保存设置</button>
-        <button type="button" className="icon-button" aria-label="刷新 Git 状态" onClick={() => void refresh()} disabled={busy || !workspaceReady}>
+        <button type="button" className="btn" onClick={() => void saveSettings()} disabled={busy || !settingsReady}>{t("保存设置")}</button>
+        <button type="button" className="icon-button" aria-label={t("刷新 Git 状态")} onClick={() => void refresh()} disabled={busy || !workspaceReady}>
           <ArrowClockwise size={17} className={busy ? "spin" : ""} />
         </button>
       </div>
 
-      {error && <div className="git-error-banner"><Warning size={16} /> <span>{error}</span></div>}
-      {notice && !error && <div className="git-notice-banner"><Check size={16} /> <span>{notice}</span></div>}
+      {error && <div className="git-error-banner"><Warning size={16} /> <LocalizedErrorText source={error} /></div>}
+      {notice && !error && <div className="git-notice-banner"><Check size={16} /> <span>{t(notice)}</span></div>}
 
       <div className="git-workbench-grid">
         <aside className="git-workspace-rail">
@@ -875,12 +876,12 @@ export function GitSourceControlPanel({
                 <i>{changeSummary(workspace.id === selectedWorkspaceId ? status : workspaceStatuses[workspace.id] ?? null)}</i>
               </button>
             ))}
-            {!workspaces.length && <p>暂无项目或 Worktree。</p>}
+            {!workspaces.length && <p>{t("暂无项目或 Worktree。")}</p>}
           </div>
           {status && (
             <footer>
               <strong>{status.branch ?? "Detached HEAD"}</strong>
-              <span>{status.upstream ?? "尚未发布"}</span>
+              <span>{status.upstream ?? t("尚未发布")}</span>
               <div><em>↑ {status.ahead}</em><i>↓ {status.behind}</i></div>
             </footer>
           )}
@@ -888,7 +889,7 @@ export function GitSourceControlPanel({
 
         <section className="git-change-pane">
           <header>
-            <div><strong>源代码变更</strong><small>{status?.compareBase ? `比较 ${status.compareBase}` : "仅显示工作区变更"}</small></div>
+            <div><strong>{t("源代码变更")}</strong><small>{status?.compareBase ? t("比较 {base}", { base: status.compareBase }) : t("仅显示工作区变更")}</small></div>
             <div className="git-remote-actions">
               <button type="button" title="Fetch" onClick={() => void runRemote("fetch")} disabled={busy || !workspaceReady}><CloudArrowDown size={16} /></button>
               <button type="button" title="Pull --ff-only" onClick={() => void runRemote("pull")} disabled={busy || !workspaceReady}>Pull</button>
@@ -903,12 +904,12 @@ export function GitSourceControlPanel({
                   <strong>{group.label}<em>{group.entries.length}</em></strong>
                   <span>
                     {(group.id === "staged") ? (
-                      <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_unstage", group.entries.map((entry) => entry.path))} title="全部取消暂存"><Minus size={14} /></button>
+                      <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_unstage", group.entries.map((entry) => entry.path))} title={t("全部取消暂存")}><Minus size={14} /></button>
                     ) : (
-                      <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_stage", group.entries.map((entry) => entry.path))} title="全部暂存"><Plus size={14} /></button>
+                      <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_stage", group.entries.map((entry) => entry.path))} title={t("全部暂存")}><Plus size={14} /></button>
                     )}
                     {(group.id === "changes" || group.id === "untracked") && (
-                      <button type="button" className="danger-text" disabled={busy || !workspaceReady} onClick={() => void discardPaths(group.entries.map((entry) => entry.path))} title="全部丢弃"><Trash size={14} /></button>
+                      <button type="button" className="danger-text" disabled={busy || !workspaceReady} onClick={() => void discardPaths(group.entries.map((entry) => entry.path))} title={t("全部丢弃")}><Trash size={14} /></button>
                     )}
                   </span>
                 </header>
@@ -921,12 +922,12 @@ export function GitSourceControlPanel({
                     </button>
                     <span className="git-file-actions">
                       {group.id === "staged" ? (
-                        <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_unstage", [entry.path])} title="取消暂存"><Minus size={13} /></button>
+                        <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_unstage", [entry.path])} title={t("取消暂存")}><Minus size={13} /></button>
                       ) : (
-                        <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_stage", [entry.path])} title="暂存"><Plus size={13} /></button>
+                        <button type="button" disabled={busy || !workspaceReady} onClick={() => void mutate("git_stage", [entry.path])} title={t("暂存")}><Plus size={13} /></button>
                       )}
                       {(group.id === "changes" || group.id === "untracked") && (
-                        <button type="button" className="danger-text" disabled={busy || !workspaceReady} onClick={() => void discardPaths([entry.path])} title="丢弃"><Trash size={13} /></button>
+                        <button type="button" className="danger-text" disabled={busy || !workspaceReady} onClick={() => void discardPaths([entry.path])} title={t("丢弃")}><Trash size={13} /></button>
                       )}
                     </span>
                   </div>
@@ -935,7 +936,7 @@ export function GitSourceControlPanel({
             ))}
             {!!status?.committedEntries.length && (
               <section className="git-change-group committed">
-                <header><strong>已提交变更<em>{status.committedEntries.length}</em></strong><small>{status.compareBase}…HEAD</small></header>
+                <header><strong>{t("已提交变更")}<em>{status.committedEntries.length}</em></strong><small>{status.compareBase}…HEAD</small></header>
                 {status.committedEntries.map((entry) => (
                   <div className={`git-file-row${selection?.key === `committed:${entry.path}` ? " active" : ""}`} key={`committed:${entry.path}`}>
                     <button type="button" className="git-file-main" onClick={() => selectFile(entry, "committed")}>
@@ -947,34 +948,34 @@ export function GitSourceControlPanel({
                 ))}
               </section>
             )}
-            {status && !groups.length && !status.committedEntries.length && <div className="git-clean-state"><Check size={22} /><strong>没有待处理变更</strong><span>当前工作区与比较基准一致。</span></div>}
+            {status && !groups.length && !status.committedEntries.length && <div className="git-clean-state"><Check size={22} /><strong>{t("没有待处理变更")}</strong><span>{t("当前工作区与比较基准一致。")}</span></div>}
           </div>
         </section>
 
         <section className="git-detail-pane">
           <header>
-            <div><strong>{selection?.label ?? "Diff"}</strong><small>{selection ? selection.area : "选择左侧文件查看差异"}</small></div>
+            <div><strong>{selection?.label ?? "Diff"}</strong><small>{selection ? selection.area : t("选择左侧文件查看差异")}</small></div>
           </header>
           <div className="git-diff-view" tabIndex={0} role="document" aria-label="Git Diff">
-            {(diff || "选择一个变更查看完整 Diff。").split("\n").map((line, index) => (
+            {(diff || t("选择一个变更查看完整 Diff。")).split("\n").map((line, index) => (
               <code className={diffLineKind(line)} key={`${index}:${line.slice(0, 24)}`}>{line || " "}</code>
             ))}
           </div>
           <div className="git-commit-composer">
             <div className="git-ai-row">
-              <span>Claude Code · 本地配置</span>
+              <span>{t("Claude Code · 本地配置")}</span>
               <button type="button" onClick={() => void generateMessage()} disabled={!isRuntimeEnabled("claude_code") || busy || !providerId || !status?.entries.some((entry) => entry.staged)}>
-                <MagicWand size={15} />AI 生成
+                <MagicWand size={15} />{t("AI 生成")}
               </button>
             </div>
             <textarea
               value={message}
               onChange={(event) => setMessage(event.target.value)}
-              placeholder="输入提交信息，生成后仍可编辑…"
+              placeholder={t("输入提交信息，生成后仍可编辑…")}
               rows={3}
             />
             <details>
-              <summary>提交信息指令</summary>
+              <summary>{t("提交信息指令")}</summary>
               <textarea
                 disabled={busy || !settingsReady} value={settings.commitInstruction}
                 onChange={(event) => setSettings((current) => ({ ...current, commitInstruction: event.target.value }))}
@@ -982,8 +983,8 @@ export function GitSourceControlPanel({
               />
             </details>
             <div className="git-commit-actions">
-              <button type="button" className="btn" onClick={() => void commit(false)} disabled={busy || !workspaceReady || !message.trim()}>提交</button>
-              <button type="button" className="btn primary" onClick={() => void commit(true)} disabled={busy || !workspaceReady || !message.trim()}>提交并推送</button>
+              <button type="button" className="btn" onClick={() => void commit(false)} disabled={busy || !workspaceReady || !message.trim()}>{t("提交")}</button>
+              <button type="button" className="btn primary" onClick={() => void commit(true)} disabled={busy || !workspaceReady || !message.trim()}>{t("提交并推送")}</button>
             </div>
           </div>
         </section>
@@ -1168,7 +1169,7 @@ export function GitSettingsPanel({
         <div className="settings-heading-actions git-settings-actions">
           {onViewStyleChange && (
             <SettingsStyleMenu
-              label="Git 页面模式"
+              label={t("Git 页面模式")}
               value={viewStyle}
               options={GIT_STYLE_OPTIONS}
               onChange={onViewStyleChange}
@@ -1182,9 +1183,9 @@ export function GitSettingsPanel({
           )}
           {dirty && (
             <>
-              <span className="git-settings-dirty"><i aria-hidden="true" />未保存</span>
+              <span className="git-settings-dirty"><i aria-hidden="true" />{t("未保存")}</span>
               <button type="button" className="btn" onClick={resetDraft} disabled={busy}>
-                还原
+                {t("还原")}
               </button>
             </>
           )}
@@ -1200,7 +1201,7 @@ export function GitSettingsPanel({
             onClick={() => void save()}
             disabled={busy || loading || !savedSnapshot || !dirty}
           >
-            {busy ? "保存中…" : "保存设置"}
+            {busy ? t("保存中…") : t("保存设置")}
           </button>
         </div>
       </div>
@@ -1208,19 +1209,19 @@ export function GitSettingsPanel({
       {error && (
         <div className="git-settings-feedback error" role="alert">
           <Warning size={15} aria-hidden="true" />
-          <span>{error}</span>
+          <LocalizedErrorText source={error} />
         </div>
       )}
 
       {viewStyle === "railway" ? (
-        <section className="git-railway-card" aria-label="分支道岔示意图">
+        <section className="git-railway-card" aria-label={t("分支道岔示意图")}>
           <div className="git-railway-head">
             <div>
-              <strong>微型分支道岔示意图</strong>
-              <small>实时映射 Pull 同步轨道与新建 Worktree 分支站牌。</small>
+              <strong>{t("微型分支道岔示意图")}</strong>
+              <small>{t("实时映射 Pull 同步轨道与新建 Worktree 分支站牌。")}</small>
             </div>
             <div className="git-railway-sign">
-              <span>站牌预览</span>
+              <span>{t("站牌预览")}</span>
               <code>{previewWorktreeBranch(settings.branchPrefix)}</code>
             </div>
           </div>
@@ -1245,7 +1246,7 @@ export function GitSettingsPanel({
                 {settings.compareStrategy === "branch_upstream" ? "upstream" : "origin/main"}
               </text>
               <text x="220" y="20" textAnchor="middle" fill="var(--text-dim)" fontSize="10.5">
-                比较基准
+                {t("比较基准")}
               </text>
               {settings.pullStrategy === "rebase" ? (
                 <>
@@ -1253,7 +1254,7 @@ export function GitSettingsPanel({
                   <circle cx="455" cy="82" r="7" fill="var(--accent)" />
                   <circle cx="620" cy="38" r="8" fill="var(--accent)" />
                   <text x="420" y="103" textAnchor="middle" fill="var(--accent)" fontSize="11" fontWeight="600">
-                    本地提交变基重放 (--rebase) · 线性接入最新远端
+                    {t("本地提交变基重放 (--rebase) · 线性接入最新远端")}
                   </text>
                   <text x="620" y="20" textAnchor="middle" fill="var(--accent)" fontSize="10.5" fontWeight="600">
                     HEAD (rebased)
@@ -1264,7 +1265,7 @@ export function GitSettingsPanel({
                   <circle cx="385" cy="38" r="7" fill="var(--success)" />
                   <circle cx="520" cy="38" r="8" fill="var(--success)" />
                   <text x="450" y="76" textAnchor="middle" fill="var(--success)" fontSize="11" fontWeight="600">
-                    仅允许直线快进 (--ff-only) · 遇到分叉自动安全停靠
+                    {t("仅允许直线快进 (--ff-only) · 遇到分叉自动安全停靠")}
                   </text>
                   <text x="520" y="20" textAnchor="middle" fill="var(--success)" fontSize="10.5" fontWeight="600">
                     HEAD (fast-forward)
@@ -1276,7 +1277,7 @@ export function GitSettingsPanel({
 
           <div className="git-railway-controls">
             <label className="git-railway-control">
-              Worktree 分支前缀
+              {t("Worktree 分支前缀")}
               <input
                 disabled={controlsDisabled}
                 value={settings.branchPrefix}
@@ -1285,8 +1286,8 @@ export function GitSettingsPanel({
               />
             </label>
             <div className="git-railway-control">
-              <span>默认比较基准</span>
-              <div className="git-segmented" role="radiogroup" aria-label="默认比较基准">
+              <span>{t("默认比较基准")}</span>
+              <div className="git-segmented" role="radiogroup" aria-label={t("默认比较基准")}>
                 {COMPARE_STRATEGY_OPTIONS.map((option) => {
                   const active = settings.compareStrategy === option.value;
                   return (
@@ -1299,15 +1300,15 @@ export function GitSettingsPanel({
                       disabled={controlsDisabled}
                       onClick={() => updateSettings((current) => ({ ...current, compareStrategy: option.value }))}
                     >
-                      {option.label}
+                      {t(option.label)}
                     </button>
                   );
                 })}
               </div>
             </div>
             <div className="git-railway-control">
-              <span>Pull 道岔策略</span>
-              <div className="git-segmented" role="radiogroup" aria-label="Pull 策略">
+              <span>{t("Pull 道岔策略")}</span>
+              <div className="git-segmented" role="radiogroup" aria-label={t("Pull 策略")}>
                 {PULL_STRATEGY_OPTIONS.map((option) => {
                   const active = settings.pullStrategy === option.value;
                   return (
@@ -1322,7 +1323,7 @@ export function GitSettingsPanel({
                       disabled={controlsDisabled}
                       onClick={() => updateSettings((current) => ({ ...current, pullStrategy: option.value }))}
                     >
-                      <span>{option.shortLabel}</span>
+                      <span>{t(option.shortLabel)}</span>
                       <code>{option.flag}</code>
                     </button>
                   );
@@ -1335,15 +1336,15 @@ export function GitSettingsPanel({
       <section className="git-settings-section">
         <header className="git-settings-section-head">
           <span className="git-section-icon" aria-hidden="true"><GitBranch size={15} /></span>
-          <strong>分支与比较</strong>
-          <span className="git-section-sub">· Worktree 与远端同步默认规则</span>
+          <strong>{t("分支与比较")}</strong>
+          <span className="git-section-sub">{t("· Worktree 与远端同步默认规则")}</span>
         </header>
 
         <div className="git-settings-rows">
           <label className="git-settings-row">
             <span>
-              <strong>Worktree 分支前缀</strong>
-              <small>新建会话或 Agent Worktree 时自动拼接。</small>
+              <strong>{t("Worktree 分支前缀")}</strong>
+              <small>{t("新建会话或 Agent Worktree 时自动拼接。")}</small>
             </span>
             <div className="git-prefix-control">
               <input
@@ -1353,17 +1354,17 @@ export function GitSettingsPanel({
                 placeholder="crewvela/"
               />
               <span className="git-branch-preview">
-                预览 <code>{previewWorktreeBranch(settings.branchPrefix)}</code>
+                {t("预览")} <code>{previewWorktreeBranch(settings.branchPrefix)}</code>
               </span>
             </div>
           </label>
 
           <div className="git-settings-row">
             <span>
-              <strong>默认比较基准</strong>
-              <small>{activeCompare.hint}</small>
+              <strong>{t("默认比较基准")}</strong>
+              <small>{t(activeCompare.hint)}</small>
             </span>
-            <div className="git-segmented" role="radiogroup" aria-label="默认比较基准">
+            <div className="git-segmented" role="radiogroup" aria-label={t("默认比较基准")}>
               {COMPARE_STRATEGY_OPTIONS.map((option) => {
                 const active = settings.compareStrategy === option.value;
                 return (
@@ -1376,7 +1377,7 @@ export function GitSettingsPanel({
                     disabled={controlsDisabled}
                     onClick={() => updateSettings((current) => ({ ...current, compareStrategy: option.value }))}
                   >
-                    {option.label}
+                    {t(option.label)}
                   </button>
                 );
               })}
@@ -1385,10 +1386,10 @@ export function GitSettingsPanel({
 
           <div className="git-settings-row">
             <span>
-              <strong>Pull 策略</strong>
-              <small>{activePull.hint}</small>
+              <strong>{t("Pull 策略")}</strong>
+              <small>{t(activePull.hint)}</small>
             </span>
-            <div className="git-segmented" role="radiogroup" aria-label="Pull 策略">
+            <div className="git-segmented" role="radiogroup" aria-label={t("Pull 策略")}>
               {PULL_STRATEGY_OPTIONS.map((option) => {
                 const active = settings.pullStrategy === option.value;
                 return (
@@ -1403,7 +1404,7 @@ export function GitSettingsPanel({
                     disabled={controlsDisabled}
                     onClick={() => updateSettings((current) => ({ ...current, pullStrategy: option.value }))}
                   >
-                    <span>{option.shortLabel}</span>
+                    <span>{t(option.shortLabel)}</span>
                     <code>{option.flag}</code>
                   </button>
                 );
@@ -1418,23 +1419,24 @@ export function GitSettingsPanel({
         <header className="git-settings-section-head git-settings-section-head-stacked">
           <span className="git-section-icon" aria-hidden="true"><MagicWand size={15} /></span>
           <div>
-            <strong>提交信息</strong>
-            <small>作为 Agent 生成提交说明时的固定要求，生成后仍可在 Git 面板中编辑。</small>
+            <strong>{t("提交信息")}</strong>
+            <small>{t("作为 Agent 生成提交说明时的固定要求，生成后仍可在 Git 面板中编辑。")}</small>
           </div>
         </header>
 
         <div className="git-commit-editor">
           <textarea
-            aria-label="提交信息指令"
+            aria-label={t("提交信息指令")}
             disabled={controlsDisabled}
-            value={settings.commitInstruction}
+            value={!savedSnapshot && settings.commitInstruction === DEFAULT_SETTINGS.commitInstruction
+              ? t(DEFAULT_SETTINGS.commitInstruction) : settings.commitInstruction}
             onChange={(event) => updateSettings((current) => ({ ...current, commitInstruction: event.target.value }))}
             rows={2}
-            placeholder="输入生成提交说明时的规范要求…"
+            placeholder={t("输入生成提交说明时的规范要求…")}
           />
           <div className="git-commit-editor-footer">
-            <div className="git-prompt-presets" aria-label="快捷指令模板">
-              <span className="git-presets-label">快捷模板</span>
+            <div className="git-prompt-presets" aria-label={t("快捷指令模板")}>
+              <span className="git-presets-label">{t("快捷模板")}</span>
               {COMMIT_INSTRUCTION_PRESETS.map((preset) => {
                 const applied = settings.commitInstruction.includes(preset.text);
                 return (
@@ -1447,7 +1449,7 @@ export function GitSettingsPanel({
                     onClick={() => toggleInstructionPreset(preset.text)}
                   >
                     {applied ? <Check size={12} weight="bold" aria-hidden="true" /> : <Plus size={11} weight="bold" aria-hidden="true" />}
-                    <span>{preset.label}</span>
+                    <span>{t(preset.label)}</span>
                   </button>
                 );
               })}
@@ -1460,31 +1462,31 @@ export function GitSettingsPanel({
       {viewStyle === "railway" ? (
         <div className="git-railway-safety">
           <span>
-            <strong>只读安全信号灯：</strong>强制推送须手动确认并始终使用 <code>--force-with-lease</code>；仅快进模式遇到分叉会自动停靠。
+            <strong>{t("只读安全信号灯：")}</strong>{t("强制推送须手动确认并始终使用")} <code>--force-with-lease</code>{t("；仅快进模式遇到分叉会自动停靠。")}
           </span>
-          <span className="git-railway-signal">● 绿灯保护中</span>
+          <span className="git-railway-signal">{t("● 绿灯保护中")}</span>
         </div>
       ) : (
       <section className="git-settings-section git-settings-safety">
         <header className="git-settings-section-head">
           <span className="git-section-icon" aria-hidden="true"><Warning size={15} /></span>
-          <strong>安全保证</strong>
-          <span className="git-section-sub">· 这些底线由 CrewVela 固定执行，无需也无法修改</span>
+          <strong>{t("安全保证")}</strong>
+          <span className="git-section-sub">{t("· 这些底线由 CrewVela 固定执行，无需也无法修改")}</span>
         </header>
 
         <ul className="git-settings-guarantees">
           <li>
             <Check size={14} weight="bold" aria-hidden="true" />
             <span>
-              <strong>推送保护</strong>
-              强制推送必须手动确认，并始终使用 <code>--force-with-lease</code>，不会覆盖远端新增提交。
+              <strong>{t("推送保护")}</strong>
+              {t("强制推送必须手动确认，并始终使用")} <code>--force-with-lease</code>{t("，不会覆盖远端新增提交。")}
             </span>
           </li>
           <li>
             <Check size={14} weight="bold" aria-hidden="true" />
             <span>
-              <strong>同步策略</strong>
-              仅快进模式遇到分叉会停止；选择变基模式时，Pull 会重新应用本地提交，冲突需要手动处理。
+              <strong>{t("同步策略")}</strong>
+              {t("仅快进模式遇到分叉会停止；选择变基模式时，Pull 会重新应用本地提交，冲突需要手动处理。")}
             </span>
           </li>
         </ul>

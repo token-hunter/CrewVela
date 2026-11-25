@@ -81,7 +81,7 @@ export function TerminalFontPreview({ fontFamily, fontSize, theme }: { fontFamil
   }, [family, size, theme]);
 
   return <section className="terminal-font-preview" aria-label={t("终端字体预览")}>
-    <header><span>预览</span><small>保存后应用到终端</small></header>
+    <header><span>{t("预览")}</span><small>{t("保存后应用到终端")}</small></header>
     <div className="terminal-font-preview-sample">
       <div ref={host} aria-hidden="true" style={{ minHeight: Math.ceil(size * 1.18) * 4 }} />
     </div>

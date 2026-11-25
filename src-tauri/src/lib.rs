@@ -32,6 +32,7 @@ mod runtime_communication_acceptance_tests;
 mod zcode_communication_acceptance_tests;
 mod control;
 pub mod general_settings;
+mod native_language;
 mod terminal_fonts;
 mod git_source_control;
 mod chat_turn_changes;
@@ -6602,6 +6603,7 @@ pub fn run() {
             skill_center_save_set,
             skill_center_delete_set,
             skill_center_apply_set,
+            native_language::set_interface_language,
             git_settings_get,
             git_settings_save,
             git_status,
@@ -7068,8 +7070,9 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
     use tauri::menu::Menu;
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-    let show = tauri::menu::MenuItem::with_id(app, "show", "显示 CrewVela", true, None::<&str>)?;
-    let quit = tauri::menu::MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let (show_label, quit_label) = native_language::InterfaceLanguage::load().tray_labels();
+    let show = tauri::menu::MenuItem::with_id(app, "show", show_label, true, None::<&str>)?;
+    let quit = tauri::menu::MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let mut builder = TrayIconBuilder::with_id("crewvela-tray")
         .tooltip("CrewVela")
@@ -7098,6 +7101,7 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
         builder = builder.icon(icon.clone());
     }
     builder.build(app)?;
+    app.manage(native_language::TrayMenuItems { show, quit });
     Ok(())
 }
 

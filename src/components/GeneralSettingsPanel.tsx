@@ -1,3 +1,4 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
 import { useInterfaceLanguage, useTranslation } from "../useInterfaceLanguage";
 import { setInterfaceLanguage } from "../interfaceLanguage";
 import { IS_MAC } from "../platform";
@@ -108,7 +109,7 @@ export function GeneralSettingsPanel({
           const value = event.currentTarget.value;
           if (value === "zh-CN" || value === "en") setLanguageSaveFailed(!setInterfaceLanguage(value));
         }}>
-          <option value="zh-CN">简体中文</option>
+          <option value="zh-CN">{t("简体中文")}</option>
           <option value="en">English</option>
         </select>
       </label>
@@ -123,7 +124,7 @@ export function GeneralSettingsPanel({
               disabled={IS_MAC || busy || !status}
               aria-pressed={awakeActive}
               aria-label={t("保持电脑运行")}
-              title={IS_MAC ? t("macOS 暂不支持保持电脑运行") : awakeActive ? "点击盖上杯盖，允许休眠" : "点击掀盖冲泡，阻止系统休眠"}
+              title={IS_MAC ? t("macOS 暂不支持保持电脑运行") : awakeActive ? t("点击盖上杯盖，允许休眠") : t("点击掀盖冲泡，阻止系统休眠")}
               onClick={() => setDraft((current) => ({ ...current, keepAwake: !current.keepAwake }))}
             >
               <svg viewBox="0 0 128 124" width="118" height="114" aria-hidden="true">
@@ -149,10 +150,10 @@ export function GeneralSettingsPanel({
             <div className="general-coffee-cup-copy">
               <strong>
                 {IS_MAC
-                  ? "macOS 暂不支持防休眠"
+                  ? t("macOS 暂不支持防休眠")
                   : awakeActive
-                    ? "防休眠咖啡 · 温热在线"
-                    : "已盖上杯盖 · 允许休眠"}
+                    ? t("防休眠咖啡 · 温热在线")
+                    : t("已盖上杯盖 · 允许休眠")}
               </strong>
               <p>{IS_MAC ? t("此项仅在 Windows 平台生效。") : t(GENERAL_KEEP_AWAKE_DESCRIPTION)}</p>
             </div>
@@ -192,14 +193,14 @@ export function GeneralSettingsPanel({
               <div className="general-coffee-head">
                 <div>
                   <strong>{t("终端活字试字台")}</strong>
-                  <small>边滑字号边核对真实终端、代码与中文对齐，保存后即时生效。</small>
+                  <small>{t("边滑字号边核对真实终端、代码与中文对齐，保存后即时生效。")}</small>
                 </div>
                 <div className="general-coffee-sample-tabs" role="tablist" aria-label={t("试字样张")}>
                   {([
-                    ["terminal", "真实终端"],
-                    ["code", "代码样张"],
-                    ["zh", "中文对齐"],
-                    ["log", "任务日志"],
+                    ["terminal", t("真实终端")],
+                    ["code", t("代码样张")],
+                    ["zh", t("中文对齐")],
+                    ["log", t("任务日志")],
                   ] as const).map(([key, label]) => (
                     <button
                       key={key}
@@ -311,7 +312,7 @@ export function GeneralSettingsPanel({
               <div className="general-network-status-bar" aria-hidden="true">
                 <span className={`general-status-badge${status.proxyEnvActive ? " active" : ""}`}>
                   <i />
-                  {status.proxyEnvActive ? "出口状态：已按配置覆盖" : "出口状态：沿用系统环境"}
+                  {status.proxyEnvActive ? t("出口状态：已按配置覆盖") : t("出口状态：沿用系统环境")}
                 </span>
                 <span className="general-status-meta">{t("对新启动会话立即生效")}</span>
               </div>
@@ -366,12 +367,12 @@ export function GeneralSettingsPanel({
       )}
       {status && <details className="runtime-details general-runtime-details">
         <summary>{t("查看运行状态")}</summary>
-        <dl><div><dt>{t("代理出口")}</dt><dd>{status.proxyEnvActive ? t("已按配置覆盖") : "沿用系统环境变量"}</dd></div>
-          <div><dt>{t("保持运行")}</dt><dd>{IS_MAC || status.keepAwakeActive === null ? "当前平台不支持" : status.keepAwakeActive ? "正在阻止休眠" : "待命"}</dd></div>
-          <div><dt>{t("关闭行为")}</dt><dd>{status.settings.closeToTray ? "隐藏到托盘" : "退出应用"}</dd></div></dl>
+        <dl><div><dt>{t("代理出口")}</dt><dd>{status.proxyEnvActive ? t("已按配置覆盖") : t("沿用系统环境变量")}</dd></div>
+          <div><dt>{t("保持运行")}</dt><dd>{IS_MAC || status.keepAwakeActive === null ? t("当前平台不支持") : status.keepAwakeActive ? t("正在阻止休眠") : t("待命")}</dd></div>
+          <div><dt>{t("关闭行为")}</dt><dd>{status.settings.closeToTray ? t("隐藏到托盘") : t("退出应用")}</dd></div></dl>
         <p>{t(GENERAL_PROXY_COVERAGE)} {t(GENERAL_PROXY_RESTART_HINT)}</p>
       </details>}
-      {status?.warning && <p className="runtime-warning" role="alert">{status.warning}</p>}
+      {status?.warning && <p className="runtime-warning" role="alert"><LocalizedErrorText source={status.warning} /></p>}
       <SettingsActions ready={!!status} loading={loading} busy={busy} dirty={dirty} invalid={errors.length > 0} message={errors[0] ? t(errors[0]) : notice && t(notice.text, { reason: notice.reason ?? "" })} onSave={save} onRetry={() => setReload(n => n + 1)} />
     </div>
   );

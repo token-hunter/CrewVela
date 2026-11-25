@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { EnvelopeIcon } from "@phosphor-icons/react/dist/csr/Envelope";
@@ -15,6 +16,7 @@ function dayLabel(at: number): string {
 }
 
 export function CollaborationRecordsPanel({ snapshot, preview = false }: { snapshot: MultiAgentSnapshot; preview?: boolean }) {
+  const t = useTranslation();
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!preview);
@@ -54,15 +56,15 @@ export function CollaborationRecordsPanel({ snapshot, preview = false }: { snaps
     const group = groups.get(day) ?? [];
     group.push(item); groups.set(day, group);
   }
-  return <section className="collab-records" aria-label="协作记录">
+  return <section className="collab-records" aria-label={t("协作记录")}>
     <div className="collab-records-controls">
-      <input type="search" aria-label="搜索记录" placeholder="搜索记录" value={query} onChange={event => setQuery(event.target.value)} />
-      <label>类型：<select aria-label="记录类型" value={kind} onChange={event => setKind(event.target.value)}>
-        {["全部", "消息", "事件", "运行", "直通", "直通·广播", "系统", "交付", "经验"].map(value => <option key={value}>{value}</option>)}
+      <input type="search" aria-label={t("搜索记录")} placeholder={t("搜索记录")} value={query} onChange={event => setQuery(event.target.value)} />
+      <label>{t("类型：")}<select aria-label={t("记录类型")} value={kind} onChange={event => setKind(event.target.value)}>
+        {[t("全部"), t("消息"), t("事件"), t("运行"), t("直通"), t("直通·广播"), t("系统"), t("交付"), t("经验")].map(value => <option key={value}>{value}</option>)}
       </select></label>
     </div>
-    {error && <div className="collab-records-error" role="alert">{error}<button type="button" disabled={loading} onClick={() => void loadDeliveries()}>重试</button></div>}
-    {loading && !deliveries.length && <p className="collab-records-loading" role="status">正在读取投递记录…</p>}
+    {error && <div className="collab-records-error" role="alert">{error}<button type="button" disabled={loading} onClick={() => void loadDeliveries()}>{t("重试")}</button></div>}
+    {loading && !deliveries.length && <p className="collab-records-loading" role="status">{t("正在读取投递记录…")}</p>}
     {[...groups].map(([day, items]) => <section className="collab-records-day" key={day}>
       <h3>{day}</h3>
       <div className="collab-records-timeline">
@@ -78,11 +80,11 @@ export function CollaborationRecordsPanel({ snapshot, preview = false }: { snaps
               <span className="collab-records-text"><strong>{item.title}</strong><span>{item.body}</span></span>
               <CaretDownIcon size={14} aria-hidden="true" className={open ? "expanded" : ""} />
             </button>
-            {open && <pre className="collab-records-body">{item.body || "此记录无正文"}{item.details ? `\n\n${item.details}` : ""}</pre>}
+            {open && <pre className="collab-records-body">{item.body || t("此记录无正文")}{item.details ? `\n\n${item.details}` : ""}</pre>}
           </article>;
         })}
       </div>
     </section>)}
-    {!filtered.length && <p className="collab-empty">{records.length ? "没有符合条件的记录" : "暂无协作记录"}</p>}
+    {!filtered.length && <p className="collab-empty">{records.length ? t("没有符合条件的记录") : t("暂无协作记录")}</p>}
   </section>;
 }

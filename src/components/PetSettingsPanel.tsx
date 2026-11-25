@@ -1,3 +1,5 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { ArrowCounterClockwiseIcon, CheckIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import type { PetDefinition, PetSettings } from "../petSettings";
@@ -38,6 +40,7 @@ function readDataUrl(file: File): Promise<string> {
 }
 
 export function PetSettingsPanel({ settings, onChange }: Props) {
+  const t = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
   const [importing, setImporting] = useState(false);
@@ -159,14 +162,14 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
     <div className="pet-settings-panel">
       <div className="dialog-heading settings-heading pet-settings-heading">
         <div>
-          <h2 id="settings-title">陪伴</h2>
-          <p>管理桌面宠物的角色、互动和显示。</p>
+          <h2 id="settings-title">{t("陪伴")}</h2>
+          <p>{t("管理桌面宠物的角色、互动和显示。")}</p>
         </div>
         <div className="settings-heading-actions pet-settings-master-inline">
-          <span className="pet-switch-caption" aria-hidden="true">显示桌宠</span>
+          <span className="pet-switch-caption" aria-hidden="true">{t("显示桌宠")}</span>
           <Switch
             className="pet-switch"
-            label="显示桌宠"
+            label={t("显示桌宠")}
             checked={settings.enabled}
             onChange={(checked) => {
               enabledRevision.current += 1;
@@ -182,13 +185,13 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
             type="button"
             className={`pet-live-stage${settings.enabled ? "" : " disabled"}${activePet.actionAtlas ? " interactive" : ""}`}
             onClick={cyclePreviewAction}
-            title={activePet.actionAtlas ? "点击切换试播动作" : activePet.name}
-            aria-label={activePet.actionAtlas ? `预览舞台：${activePet.name}，点击切换试播动作` : `预览舞台：${activePet.name}`}
+            title={activePet.actionAtlas ? t("点击切换试播动作") : activePet.name}
+            aria-label={activePet.actionAtlas ? t("预览舞台：{pet}，点击切换试播动作", { pet: activePet.name }) : t("预览舞台：{pet}", { pet: activePet.name })}
           >
             <span className="pet-live-stage-header">
               <span className="pet-stage-tag">LIVE PREVIEW</span>
               <span className="pet-stage-status">
-                {settings.enabled ? (activePet.actionAtlas ? currentActionMeta.label : "互动陪伴中") : "已隐藏"}
+                {settings.enabled ? (activePet.actionAtlas ? t(currentActionMeta.label) : t("互动陪伴中")) : t("已隐藏")}
               </span>
             </span>
             <span
@@ -219,30 +222,30 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
           <div className="pet-showcase-controls">
             <div className="pet-showcase-top">
               <div className="pet-showcase-identity">
-                <h3>{activePet.name}</h3>
-                <span>{activePet.description}</span>
+                <h3>{activePet.custom ? activePet.name : t(activePet.name)}</h3>
+                <span>{activePet.custom ? activePet.description : t(activePet.description)}</span>
               </div>
               <button
                 type="button"
                 className="btn secondary pet-reset-position"
                 onClick={resetPosition}
-                title="将桌宠恢复到工作区默认右下角位置"
+                title={t("将桌宠恢复到工作区默认右下角位置")}
               >
                 {positionResetNotice ? <CheckIcon size={13} weight="bold" aria-hidden="true" /> : <ArrowCounterClockwiseIcon size={13} aria-hidden="true" />}
-                <span>{positionResetNotice ? "已归位" : "重置位置"}</span>
+                <span>{positionResetNotice ? t("已归位") : t("重置位置")}</span>
               </button>
             </div>
 
             <div className="pet-size-row">
               <div className="pet-size-label">
-                <strong>宠物大小</strong>
-                <small>可直接拖动桌宠改变位置</small>
+                <strong>{t("宠物大小")}</strong>
+                <small>{t("可直接拖动桌宠改变位置")}</small>
                 <span className="pet-size-value">{settings.size}px</span>
               </div>
               <div className="pet-size-control">
                 <input
                   type="range"
-                  aria-label="宠物大小"
+                  aria-label={t("宠物大小")}
                   min={72}
                   max={192}
                   step={4}
@@ -253,9 +256,9 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
             </div>
 
             <div className="pet-action-bar">
-              <span className="pet-action-label">试播动作</span>
+              <span className="pet-action-label">{t("试播动作")}</span>
               {activePet.actionAtlas ? (
-                <div className="pet-action-pills" role="group" aria-label="试播动作">
+                <div className="pet-action-pills" role="group" aria-label={t("试播动作")}>
                   {PREVIEW_ACTIONS.map((action) => {
                     const active = previewAction === action.id;
                     return (
@@ -266,13 +269,13 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
                         aria-pressed={active}
                         onClick={() => setPreviewAction(action.id)}
                       >
-                        {action.label}
+                        {t(action.label)}
                       </button>
                     );
                   })}
                 </div>
               ) : (
-                <span className="pet-action-hint">自定义形象保持原图展示</span>
+                <span className="pet-action-hint">{t("自定义形象保持原图展示")}</span>
               )}
             </div>
           </div>
@@ -282,8 +285,8 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
       <section className="pet-settings-section pet-gallery-section">
         <div className="pet-settings-section-heading">
           <div className="pet-gallery-heading-copy">
-            <h3>水果伙伴陈列柜</h3>
-            <p>四款橙子与四种水果，点击即刻切换上场。</p>
+            <h3>{t("水果伙伴陈列柜")}</h3>
+            <p>{t("四款橙子与四种水果，点击即刻切换上场。")}</p>
           </div>
           <button
             type="button"
@@ -292,7 +295,7 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
             onClick={() => inputRef.current?.click()}
           >
             <PlusIcon size={15} />
-            {importing ? "正在导入…" : "导入自定义"}
+            {importing ? t("正在导入…") : t("导入自定义")}
           </button>
           <input
             ref={inputRef}
@@ -303,7 +306,7 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
             onChange={(event) => void importPet(event.target.files?.[0])}
           />
         </div>
-        {error && <p className="pet-import-error" role="alert">{error}</p>}
+        {error && <p className="pet-import-error" role="alert"><LocalizedErrorText source={error} /></p>}
         <div className="pet-choice-grid">
           {pets.map((pet) => {
             const selected = settings.selectedId === pet.id;
@@ -319,16 +322,16 @@ export function PetSettingsPanel({ settings, onChange }: Props) {
                     <img src={pet.src} alt="" draggable={false} />
                   </span>
                   <span className="pet-choice-copy">
-                    <strong>{pet.name}</strong>
-                    <small>{pet.description}</small>
+                    <strong>{pet.custom ? pet.name : t(pet.name)}</strong>
+                    <small>{pet.custom ? pet.description : t(pet.description)}</small>
                   </span>
                 </button>
                 {pet.custom && (
                   <button
                     type="button"
                     className="pet-choice-delete"
-                    aria-label={`删除 ${pet.name}`}
-                    title={`删除 ${pet.name}`}
+                    aria-label={t("删除 {pet}", { pet: pet.name })}
+                    title={t("删除 {pet}", { pet: pet.name })}
                     onClick={() => removeCustomPet(pet.id)}
                   >
                     <TrashIcon size={14} />

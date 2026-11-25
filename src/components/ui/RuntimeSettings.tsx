@@ -1,6 +1,7 @@
 import { useTranslation } from "../../useInterfaceLanguage";
 import type { ReactNode } from "react";
 import { Switch } from "./Switch";
+import { LocalizedErrorText } from "../LocalizedErrorText";
 
 export function SettingsGroup({ title, description, children }: {
   title: string; description?: string; children: ReactNode;
@@ -28,7 +29,7 @@ export function SettingsActions({ ready, loading, busy, dirty, invalid, message,
 }) {
   const t = useTranslation();
   return <footer className="runtime-actions">
-    <div aria-live="polite">{message || hint}</div>
+    <div aria-live="polite">{message ? <LocalizedErrorText source={message} /> : hint}</div>
     {ready
       ? <button type="button" className="btn primary" disabled={busy || !dirty || invalid} onClick={onSave}>{busy ? t("正在应用…") : t("保存并应用")}</button>
       : <button type="button" className="btn secondary" disabled={loading} onClick={onRetry}>{loading ? t("正在读取设置…") : t("重新读取设置")}</button>}

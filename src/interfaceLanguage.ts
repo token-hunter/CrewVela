@@ -1,4 +1,5 @@
 import english from "./interfaceLanguage.en.json";
+import { invoke } from "@tauri-apps/api/core";
 
 export type InterfaceLanguage = "zh-CN" | "en";
 type MessageValues = Record<string, string | number>;
@@ -20,6 +21,7 @@ function loadLanguage(): InterfaceLanguage {
 }
 
 let language = loadLanguage();
+let nativeLanguageUpdate: Promise<void> = Promise.resolve();
 
 function applyLanguage(next: InterfaceLanguage) {
   if (typeof document !== "undefined") document.documentElement.lang = next;
@@ -54,6 +56,14 @@ export function setInterfaceLanguage(next: InterfaceLanguage): boolean {
   return true;
 }
 
+export function syncDesktopInterfaceLanguage(next: InterfaceLanguage): Promise<void> {
+  const update = nativeLanguageUpdate.catch(() => undefined).then(() =>
+    invoke<void>("set_interface_language", { language: next }),
+  );
+  nativeLanguageUpdate = update;
+  return update;
+}
+
 export function translate(language: InterfaceLanguage, source: string, values?: MessageValues): string {
   const message = language === "en" && Object.prototype.hasOwnProperty.call(messages, source)
     ? messages[source]
@@ -61,4 +71,8 @@ export function translate(language: InterfaceLanguage, source: string, values?: 
   return values ? message.replace(/\{(\w+)\}/g, (placeholder, key: string) =>
     Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : placeholder,
   ) : message;
+}
+
+export function translateCurrent(source: string, values?: MessageValues): string {
+  return translate(language, source, values);
 }

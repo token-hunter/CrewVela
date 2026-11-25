@@ -1,4 +1,5 @@
-import { useTranslation } from "./useInterfaceLanguage";
+import { useInterfaceLanguage, useTranslation } from "./useInterfaceLanguage";
+import { syncDesktopInterfaceLanguage, translateCurrent } from "./interfaceLanguage";
 import { attentionOpenMode, type AttentionKind } from "./sidebarAttention";
 import { IS_MAC, isTerminalShell, shellLabel, terminalShells } from "./platform";
 import { existingViewPanel, type AppViewMenuProps, type ViewPanel } from "./appView";
@@ -357,6 +358,7 @@ const PREVIEW_PROJECTS: Project[] = [
 
 export default function App() {
   const t = useTranslation();
+  const interfaceLanguage = useInterfaceLanguage();
   const [testProfile, setTestProfile] = useState<{dataDir: string} | null>(null);
   useEffect(() => {
     if (UI_PREVIEW) return;
@@ -545,6 +547,14 @@ export default function App() {
     const id = toastIdRef.current;
     setToasts((current) => [...current, { id, message }]);
   }, []);
+  useEffect(() => {
+    if (UI_PREVIEW || !("__TAURI_INTERNALS__" in window)) return;
+    let active = true;
+    void syncDesktopInterfaceLanguage(interfaceLanguage).catch((reason: unknown) => {
+      if (active) showError(`无法更新系统托盘的语言：${String(reason)}`);
+    });
+    return () => { active = false; };
+  }, [interfaceLanguage, showError]);
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
@@ -701,8 +711,8 @@ export default function App() {
           void deliverDesktopNotice({
             id: `intervention:${item.id}`,
             title: isFailure
-              ? `CrewVela · ${item.kind === "semantic_review" ? "审核需要处理" : "任务重试失败"}`
-              : "CrewVela · 等待人工处理",
+              ? `CrewVela · ${translateCurrent(item.kind === "semantic_review" ? "审核需要处理" : "任务重试失败")}`
+              : `CrewVela · ${translateCurrent("等待人工处理")}`,
             body: `${item.projectName}：${item.title}`,
             category: "intervention",
           });

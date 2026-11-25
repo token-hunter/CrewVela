@@ -70,14 +70,14 @@ function NotificationHistoryView({ records, onReadAll, onClear, onOpenUrl }: {
   return (
     <section className="notification-history-panel">
       <header>
-        <div><strong>{t("通知历史")}</strong><small>完整消息持久化保存在本机，默认保留30天。</small></div>
+        <div><strong>{t("通知历史")}</strong><small>{t("完整消息持久化保存在本机，默认保留30天。")}</small></div>
         <div>
-          <button className="btn ghost" disabled={!records.some((item) => !item.read)} onClick={onReadAll}><CheckIcon size={14} />全部已读</button>
-          <button className="btn ghost" disabled={records.length === 0} onClick={onClear}><TrashIcon size={14} />清空记录</button>
+          <button className="btn ghost" disabled={!records.some((item) => !item.read)} onClick={onReadAll}><CheckIcon size={14} />{t("全部已读")}</button>
+          <button className="btn ghost" disabled={records.length === 0} onClick={onClear}><TrashIcon size={14} />{t("清空记录")}</button>
         </div>
       </header>
       {records.length > 0 && (
-        <div className="notification-history-filters" role="group" aria-label="通知分类筛选">
+        <div className="notification-history-filters" role="group" aria-label={t("通知分类筛选")}>
           {HISTORY_FILTERS.map((filter) => {
             const count = filter.id === "all" ? records.length : records.filter((r) => r.category === filter.id).length;
             if (filter.id !== "all" && count === 0) return null;
@@ -97,19 +97,19 @@ function NotificationHistoryView({ records, onReadAll, onClear, onOpenUrl }: {
         </div>
       )}
       {records.length === 0 ? (
-        <EmptyState className="notification-history-empty" icon={<BellRingingIcon size={24} />} title={t("暂无通知")} description="任务状态和测试通知会显示在这里。" />
+        <EmptyState className="notification-history-empty" icon={<BellRingingIcon size={24} />} title={t("暂无通知")} description={t("任务状态和测试通知会显示在这里。")} />
       ) : filteredRecords.length === 0 ? (
-        <EmptyState className="notification-history-empty" icon={<BellRingingIcon size={24} />} title="该分类下暂无通知" description="切换到“全部”可查看其他类别的历史通知。" />
+        <EmptyState className="notification-history-empty" icon={<BellRingingIcon size={24} />} title={t("该分类下暂无通知")} description={t("切换到“全部”可查看其他类别的历史通知。")} />
       ) : (
         <div className="notification-history-list">
           {filteredRecords.map((record) => (
             <article key={record.id} className={record.read ? "" : "unread"} data-category={record.category}>
               <span className="notification-history-dot" aria-hidden="true" />
               <div>
-                <header><span className={`notification-category-badge ${record.category}`}>{categoryLabel(record.category)}</span><time>{new Date(record.createdAt).toLocaleString()}</time></header>
+                <header><span className={`notification-category-badge ${record.category}`}>{t(categoryLabel(record.category))}</span><time>{new Date(record.createdAt).toLocaleString()}</time></header>
                 <strong>{normalizeNotificationTitle(record.title)}</strong>
                 <p>{record.body}</p>
-                {record.url && <button type="button" onClick={() => onOpenUrl(record.url!)}>查看来源</button>}
+                {record.url && <button type="button" onClick={() => onOpenUrl(record.url!)}>{t("查看来源")}</button>}
               </div>
             </article>
           ))}
@@ -172,7 +172,7 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
 
   return (
     <div className="notification-settings-panel">
-      <div className="notification-view-tabs" role="tablist" aria-label="通知功能">
+      <div className="notification-view-tabs" role="tablist" aria-label={t("通知功能")}>
         <button type="button" role="tab" aria-selected={activeView === "notifications"} className={activeView === "notifications" ? "active" : ""} onClick={() => setActiveView("notifications")}>{t("通知设置")}</button>
         <button type="button" role="tab" aria-selected={activeView === "history"} className={activeView === "history" ? "active" : ""} onClick={() => setActiveView("history")}>{t("通知历史")}{unreadCount > 0 && <span className="notification-unread-count">{unreadCount}</span>}</button>
       </div>
@@ -186,11 +186,11 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
           onOpenUrl={openSource}
         />
       ) : viewStyle === "mixer" ? (
-        <section className="noti-mixer-card" aria-label="桌面迷你调音台">
+        <section className="noti-mixer-card" aria-label={t("桌面迷你调音台")}>
           <div className="noti-mixer-head">
             <div>
-              <strong>桌面通知调音台</strong>
-              <small>按事件通道调控提醒总闸、提示音推子与专注静默红灯。</small>
+              <strong>{t("桌面通知调音台")}</strong>
+              <small>{t("按事件通道调控提醒总闸、提示音推子与专注静默红灯。")}</small>
             </div>
             <div className="noti-mixer-actions">
               <button
@@ -200,7 +200,7 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
                 aria-pressed={settings.suppressWhenFocused}
                 onClick={() => update({ suppressWhenFocused: !settings.suppressWhenFocused })}
               >
-                <span>{settings.suppressWhenFocused ? "● 专注静默中" : "○ 专注时抑制"}</span>
+                <span>{settings.suppressWhenFocused ? t("● 专注静默中") : t("○ 专注时抑制")}</span>
               </button>
               <button
                 type="button"
@@ -209,7 +209,7 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
                 onClick={() => void testNotice("mixer")}
               >
                 <BellRingingIcon size={15} />
-                <span>试听测试通知</span>
+                <span>{t("试听测试通知")}</span>
               </button>
             </div>
           </div>
@@ -241,25 +241,25 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
 
             <div className="noti-fader-panel">
               <div className="noti-fader-row">
-                <span>提示音通道</span>
+                <span>{t("提示音通道")}</span>
                 <select
                   aria-label={t("通知声音")}
                   value={settings.sound}
                   disabled={!settings.enabled}
                   onChange={(event) => update({ sound: event.target.value as NotificationSettings["sound"] })}
                 >
-                  <option value="system">系统默认</option>
-                  <option value="soft">柔和双音</option>
-                  <option value="bell">清脆铃声</option>
-                  <option value="none">静音</option>
+                  <option value="system">{t("系统默认")}</option>
+                  <option value="soft">{t("柔和双音")}</option>
+                  <option value="bell">{t("清脆铃声")}</option>
+                  <option value="none">{t("静音")}</option>
                 </select>
               </div>
               <div className="noti-fader-row">
-                <span>音量推子</span>
-                <strong>{settings.sound === "none" ? "静音" : settings.sound === "system" ? t("跟随系统") : `${settings.volume}%`}</strong>
+                <span>{t("音量推子")}</span>
+                <strong>{settings.sound === "none" ? t("静音") : settings.sound === "system" ? t("跟随系统") : `${settings.volume}%`}</strong>
               </div>
               <input
-                aria-label="通知音量"
+                aria-label={t("通知音量")}
                 type="range"
                 min="0"
                 max="100"
@@ -275,8 +275,8 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
             {([
               {
                 key: "enabled" as const,
-                title: "总通道",
-                sub: IS_MAC ? "系统桌面总闸" : "Windows 通知总闸",
+                title: t("总通道"),
+                sub: IS_MAC ? t("系统桌面总闸") : t("Windows 通知总闸"),
                 color: "var(--accent)",
                 checked: settings.enabled,
                 disabled: false,
@@ -284,8 +284,8 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
               },
               {
                 key: "taskComplete" as const,
-                title: "任务完成",
-                sub: "会话执行结束提醒",
+                title: t("任务完成"),
+                sub: t("会话执行结束提醒"),
                 color: "var(--success)",
                 checked: settings.taskComplete,
                 disabled: !settings.enabled,
@@ -293,8 +293,8 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
               },
               {
                 key: "taskFailed" as const,
-                title: "失败与审核",
-                sub: "异常或未通过提醒",
+                title: t("失败与审核"),
+                sub: t("异常或未通过提醒"),
                 color: "var(--danger)",
                 checked: settings.taskFailed,
                 disabled: !settings.enabled,
@@ -302,8 +302,8 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
               },
               {
                 key: "waitingForUser" as const,
-                title: "等待审批",
-                sub: "人工介入暂停提醒",
+                title: t("等待审批"),
+                sub: t("人工介入暂停提醒"),
                 color: "var(--warn, #e5a94c)",
                 checked: settings.waitingForUser,
                 disabled: !settings.enabled,
@@ -340,25 +340,25 @@ export function NotificationSettingsPanel({ settings, onChange, viewStyle = "cla
         </section>
       ) : <>
         <section className="notification-card notification-master-card">
-          <ToggleRow tone="master" title="启用通知" description={`为后台任务和需要人工处理的事件发送${IS_MAC ? "系统" : " Windows "}通知。`} checked={settings.enabled} onChange={(enabled) => update({ enabled })} />
+          <ToggleRow tone="master" title={t("启用通知")} description={t("为后台任务和需要人工处理的事件发送{platform}通知。", { platform: IS_MAC ? t("系统") : " Windows " })} checked={settings.enabled} onChange={(enabled) => update({ enabled })} />
           <div className="notification-divider" />
-          <ToggleRow tone="success" title="Agent 任务完成" description="会话执行结束时提醒。" checked={settings.taskComplete} disabled={!settings.enabled} onChange={(taskComplete) => update({ taskComplete })} />
-          <ToggleRow tone="danger" title="执行失败与审核失败" description="任务失败或审核未通过时提醒。" checked={settings.taskFailed} disabled={!settings.enabled} onChange={(taskFailed) => update({ taskFailed })} />
-          <ToggleRow tone="warn" title="等待审批或人工输入" description="Agent 暂停并等待你处理时提醒。" checked={settings.waitingForUser} disabled={!settings.enabled} onChange={(waitingForUser) => update({ waitingForUser })} />
+          <ToggleRow tone="success" title={t("Agent 任务完成")} description={t("会话执行结束时提醒。")} checked={settings.taskComplete} disabled={!settings.enabled} onChange={(taskComplete) => update({ taskComplete })} />
+          <ToggleRow tone="danger" title={t("执行失败与审核失败")} description={t("任务失败或审核未通过时提醒。")} checked={settings.taskFailed} disabled={!settings.enabled} onChange={(taskFailed) => update({ taskFailed })} />
+          <ToggleRow tone="warn" title={t("等待审批或人工输入")} description={t("Agent 暂停并等待你处理时提醒。")} checked={settings.waitingForUser} disabled={!settings.enabled} onChange={(waitingForUser) => update({ waitingForUser })} />
         </section>
 
         <section className="notification-card notification-sound-card">
-          <div><strong>{t("通知声音")}</strong><small>选择 CrewVela 弹出通知时播放的提示音。</small></div>
+          <div><strong>{t("通知声音")}</strong><small>{t("选择 CrewVela 弹出通知时播放的提示音。")}</small></div>
           <div className="notification-controls">
             <select value={settings.sound} disabled={!settings.enabled} onChange={(event) => update({ sound: event.target.value as NotificationSettings["sound"] })}>
-              <option value="system">系统默认</option><option value="soft">柔和双音</option><option value="bell">清脆铃声</option><option value="none">静音</option>
+              <option value="system">{t("系统默认")}</option><option value="soft">{t("柔和双音")}</option><option value="bell">{t("清脆铃声")}</option><option value="none">{t("静音")}</option>
             </select>
-            <input aria-label="通知音量" type="range" min="0" max="100" step="5" value={settings.volume} disabled={!settings.enabled || settings.sound === "none" || settings.sound === "system"} onChange={(event) => update({ volume: Number(event.target.value) })} />
+            <input aria-label={t("通知音量")} type="range" min="0" max="100" step="5" value={settings.volume} disabled={!settings.enabled || settings.sound === "none" || settings.sound === "system"} onChange={(event) => update({ volume: Number(event.target.value) })} />
             <span>{settings.volume}%</span>
-            <button className="btn secondary" disabled={!settings.enabled} onClick={() => void testNotice()}><BellRingingIcon size={15} />发送测试通知</button>
+            <button className="btn secondary" disabled={!settings.enabled} onClick={() => void testNotice()}><BellRingingIcon size={15} />{t("发送测试通知")}</button>
           </div>
           <div className="notification-divider" />
-          <ToggleRow title="专注时抑制" description="CrewVela 位于前台时不显示普通会话通知。" checked={settings.suppressWhenFocused} disabled={!settings.enabled} onChange={(suppressWhenFocused) => update({ suppressWhenFocused })} />
+          <ToggleRow title={t("专注时抑制")} description={t("CrewVela 位于前台时不显示普通会话通知。")} checked={settings.suppressWhenFocused} disabled={!settings.enabled} onChange={(suppressWhenFocused) => update({ suppressWhenFocused })} />
         </section>
 
       </>}

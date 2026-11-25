@@ -1,3 +1,4 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
 import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -51,9 +52,9 @@ function formatBaseRef(baseRef: string | null): string | null {
   return baseRef.replace(/^refs\/(heads|remotes)\//, "");
 }
 
-function formatEntryMeta(entry: Entry): string {
+function formatEntryMeta(entry: Entry, t: ReturnType<typeof useTranslation>): string {
   const base = formatBaseRef(entry.baseRef);
-  const branchText = entry.branch ? (base ? `${entry.branch} ← ${base}` : entry.branch) : (base ? `基准 ${base}` : null);
+  const branchText = entry.branch ? (base ? `${entry.branch} ← ${base}` : entry.branch) : (base ? t("基准 {base}", { base }) : null);
   return [
     entry.project || "未分组",
     entry.runtime ? RUNTIME_LABELS[entry.runtime] : "协作任务",
@@ -172,23 +173,23 @@ export function WorktreeSettingsPanel({
 
   return (
     <div className="worktree-settings">
-      {error && <p role="alert" className="worktree-banner error-text">{error}</p>}
+      {error && <p role="alert" className="worktree-banner error-text"><LocalizedErrorText source={error} /></p>}
       {notice && !error && (
         <p role="status" className="worktree-banner worktree-notice">
           <CheckIcon size={13} weight="bold" aria-hidden="true" />
-          <span>{notice}</span>
+          <span>{t(notice)}</span>
         </p>
       )}
 
       <section className="worktree-section worktree-root-section">
         <div className="worktree-root-header">
           <div className="worktree-section-copy">
-            <h3>工作树根目录</h3>
-            <p>新建的会话工作树存放在此目录。更改后，已有工作树继续使用原位置。</p>
+            <h3>{t("工作树根目录")}</h3>
+            <p>{t("新建的会话工作树存放在此目录。更改后，已有工作树继续使用原位置。")}</p>
           </div>
           <div className="worktree-actions">
-            <button type="button" className="btn" disabled={busy} onClick={() => void chooseRoot()}>更改根目录</button>
-            <button type="button" className="btn secondary worktree-btn-quiet" disabled={busy} onClick={() => void chooseRoot(true)}>恢复默认目录</button>
+            <button type="button" className="btn" disabled={busy} onClick={() => void chooseRoot()}>{t("更改根目录")}</button>
+            <button type="button" className="btn secondary worktree-btn-quiet" disabled={busy} onClick={() => void chooseRoot(true)}>{t("恢复默认目录")}</button>
           </div>
         </div>
         {overview && (
@@ -196,12 +197,12 @@ export function WorktreeSettingsPanel({
             <button
               type="button"
               className={`worktree-path-copy${copiedKey === "root" ? " copied" : ""}`}
-              title={`${overview.root}（点击复制）`}
+              title={t("{path}（点击复制）", { path: overview.root })}
               onClick={() => copyPath("root", overview.root)}
             >
               <code>{overview.root}</code>
               <span className="worktree-copy-hint" aria-hidden="true">
-                {copiedKey === "root" ? <><CheckIcon size={12} weight="bold" /> 已复制</> : <><CopyIcon size={12} /> {t("复制")}</>}
+                {copiedKey === "root" ? <><CheckIcon size={12} weight="bold" /> {t("已复制")}</> : <><CopyIcon size={12} /> {t("复制")}</>}
               </span>
             </button>
           </div>
@@ -211,9 +212,9 @@ export function WorktreeSettingsPanel({
       <section className="worktree-section worktree-list-section">
         <div className="worktree-section-heading">
           <div className="worktree-list-heading-left">
-            <h3>托管工作树</h3>
+            <h3>{t("托管工作树")}</h3>
             {allEntries.length > 0 && (
-              <div className="worktree-filter-tabs" role="tablist" aria-label="筛选托管工作树">
+              <div className="worktree-filter-tabs" role="tablist" aria-label={t("筛选托管工作树")}>
                 <button
                   type="button"
                   role="tab"
@@ -239,7 +240,7 @@ export function WorktreeSettingsPanel({
                   className={`worktree-filter-tab${filter === "collab" ? " active" : ""}`}
                   onClick={() => setFilter("collab")}
                 >
-                  协作任务 {collabCount}
+                  {t("协作任务")} {collabCount}
                 </button>
               </div>
             )}
@@ -250,16 +251,16 @@ export function WorktreeSettingsPanel({
           </button>
         </div>
 
-        {!overview && !error && <p role="status" className="worktree-empty">正在读取工作树…</p>}
+        {!overview && !error && <p role="status" className="worktree-empty">{t("正在读取工作树…")}</p>}
         {overview && !allEntries.length && (
-          <p className="worktree-empty">暂无托管工作树。新建会话时可勾选「使用独立工作树」。</p>
+          <p className="worktree-empty">{t("暂无托管工作树。新建会话时可勾选「使用独立工作树」。")}</p>
         )}
         {overview && allEntries.length > 0 && !visibleEntries.length && (
-          <p className="worktree-empty">当前筛选下没有工作树。</p>
+          <p className="worktree-empty">{t("当前筛选下没有工作树。")}</p>
         )}
 
         {visibleEntries.length > 0 && viewStyle === "greenhouse" && (
-          <div className="wt-greenhouse-grid" aria-label="工作树温室苗圃架">
+          <div className="wt-greenhouse-grid" aria-label={t("工作树温室苗圃架")}>
             {visibleEntries.map((entry) => {
               const entryKey = entry.sessionId || entry.path;
               const subdir = resolveSubdirectory(entry.path, entry.cwd);
@@ -274,9 +275,9 @@ export function WorktreeSettingsPanel({
                   className={`wt-pot-card${isSelected ? " selected" : ""}`}
                 >
                   <div className="wt-pot-top">
-                    <span className={`wt-pot-pill ${pot.toneClass}`}>{pot.label}</span>
+                    <span className={`wt-pot-pill ${pot.toneClass}`}>{t(pot.label)}</span>
                     <span className="wt-pot-kind">
-                      {entry.project || t("未分组")} · {entry.runtime ? RUNTIME_LABELS[entry.runtime] : "协作任务"}
+                      {entry.project || t("未分组")} · {entry.runtime ? RUNTIME_LABELS[entry.runtime] : t("协作任务")}
                     </span>
                   </div>
 
@@ -307,17 +308,17 @@ export function WorktreeSettingsPanel({
                       <button
                         type="button"
                         className={`worktree-path-copy${isCopied ? " copied" : ""}`}
-                        title={`${entry.path}（点击复制）`}
+                        title={t("{path}（点击复制）", { path: entry.path })}
                         onClick={() => copyPath(entryKey, entry.path)}
                       >
                         <code>{entry.path}</code>
                         <span className="worktree-copy-hint" aria-hidden="true">
-                          {isCopied ? <><CheckIcon size={12} weight="bold" /> 已复制</> : <><CopyIcon size={12} /> {t("复制")}</>}
+                          {isCopied ? <><CheckIcon size={12} weight="bold" /> {t("已复制")}</> : <><CopyIcon size={12} /> {t("复制")}</>}
                         </span>
                       </button>
                       {subdir && (
-                        <span className="worktree-subdir" title={`会话工作目录：${entry.cwd}`}>
-                          子目录 <code>{subdir}</code>
+                        <span className="worktree-subdir" title={t("会话工作目录：{path}", { path: entry.cwd })}>
+                          {t("子目录")} <code>{subdir}</code>
                         </span>
                       )}
                     </div>
@@ -332,7 +333,7 @@ export function WorktreeSettingsPanel({
                         })}
                       >
                         <FolderOpenIcon size={13} aria-hidden="true" />
-                        <span>打开目录</span>
+                        <span>{t("打开目录")}</span>
                       </button>
                       {entry.sessionId && (
                         <>
@@ -342,7 +343,7 @@ export function WorktreeSettingsPanel({
                             disabled={busy}
                             onClick={() => inspect(entry)}
                           >
-                            种子与恢复
+                            {t("种子与恢复")}
                           </button>
                           <button
                             type="button"
@@ -350,7 +351,7 @@ export function WorktreeSettingsPanel({
                             disabled={busy || !!entry.blocked || !entry.present}
                             onClick={() => { setConfirming(entry.sessionId); setNotice(""); }}
                           >
-                            修剪回收
+                            {t("修剪回收")}
                           </button>
                         </>
                       )}
@@ -358,9 +359,9 @@ export function WorktreeSettingsPanel({
 
                     {confirming === entry.sessionId && entry.sessionId && (
                       <div className="worktree-confirm">
-                        <p>清理「{entry.title}」的检出目录？将先保存恢复快照，并保留 Git 分支与会话记录。</p>
+                        <p>{t("清理「{title}」的检出目录？将先保存恢复快照，并保留 Git 分支与会话记录。", { title: entry.title })}</p>
                         <div className="worktree-actions">
-                          <button type="button" className="btn primary" disabled={busy} onClick={() => void clean(entry)}>确认清理</button>
+                          <button type="button" className="btn primary" disabled={busy} onClick={() => void clean(entry)}>{t("确认清理")}</button>
                           <button type="button" className="btn secondary worktree-btn-quiet" disabled={busy} onClick={() => setConfirming(null)}>{t("取消")}</button>
                         </div>
                       </div>
@@ -391,22 +392,22 @@ export function WorktreeSettingsPanel({
                   </strong>
 
                   <div className="worktree-entry-body">
-                    <p className="worktree-entry-meta">{formatEntryMeta(entry)}</p>
+                    <p className="worktree-entry-meta">{formatEntryMeta(entry, t)}</p>
                     <div className="worktree-path-row">
                       <button
                         type="button"
                         className={`worktree-path-copy${isCopied ? " copied" : ""}`}
-                        title={`${entry.path}（点击复制）`}
+                        title={t("{path}（点击复制）", { path: entry.path })}
                         onClick={() => copyPath(entryKey, entry.path)}
                       >
                         <code>{entry.path}</code>
                         <span className="worktree-copy-hint" aria-hidden="true">
-                          {isCopied ? <><CheckIcon size={12} weight="bold" /> 已复制</> : <><CopyIcon size={12} /> {t("复制")}</>}
+                          {isCopied ? <><CheckIcon size={12} weight="bold" /> {t("已复制")}</> : <><CopyIcon size={12} /> {t("复制")}</>}
                         </span>
                       </button>
                       {subdir && (
-                        <span className="worktree-subdir" title={`会话工作目录：${entry.cwd}`}>
-                          子目录 <code>{subdir}</code>
+                        <span className="worktree-subdir" title={t("会话工作目录：{path}", { path: entry.cwd })}>
+                          {t("子目录")} <code>{subdir}</code>
                         </span>
                       )}
                     </div>
@@ -423,7 +424,7 @@ export function WorktreeSettingsPanel({
                       })}
                     >
                       <FolderOpenIcon size={14} aria-hidden="true" />
-                      <span>打开目录</span>
+                      <span>{t("打开目录")}</span>
                     </button>
                     {entry.sessionId && (
                       <>
@@ -433,7 +434,7 @@ export function WorktreeSettingsPanel({
                           disabled={busy}
                           onClick={() => inspect(entry)}
                         >
-                          管理环境与恢复
+                          {t("管理环境与恢复")}
                         </button>
                         <button
                           type="button"
@@ -441,7 +442,7 @@ export function WorktreeSettingsPanel({
                           disabled={busy || !!entry.blocked || !entry.present}
                           onClick={() => { setConfirming(entry.sessionId); setNotice(""); }}
                         >
-                          清理工作树
+                          {t("清理工作树")}
                         </button>
                       </>
                     )}
@@ -449,9 +450,9 @@ export function WorktreeSettingsPanel({
 
                   {confirming === entry.sessionId && entry.sessionId && (
                     <div className="worktree-confirm">
-                      <p>清理「{entry.title}」的检出目录？将先保存恢复快照，并保留 Git 分支与会话记录。</p>
+                      <p>{t("清理「{title}」的检出目录？将先保存恢复快照，并保留 Git 分支与会话记录。", { title: entry.title })}</p>
                       <div className="worktree-actions">
-                        <button type="button" className="btn primary" disabled={busy} onClick={() => void clean(entry)}>确认清理</button>
+                        <button type="button" className="btn primary" disabled={busy} onClick={() => void clean(entry)}>{t("确认清理")}</button>
                         <button type="button" className="btn secondary worktree-btn-quiet" disabled={busy} onClick={() => setConfirming(null)}>{t("取消")}</button>
                       </div>
                     </div>
@@ -466,11 +467,11 @@ export function WorktreeSettingsPanel({
       <section className="worktree-section worktree-repo-section" ref={repoSectionRef}>
         <div className="worktree-section-heading">
           <div className="worktree-section-copy">
-            <h3>仓库环境</h3>
-            {!repository && <p>选择仓库可配置新工作树的环境准备，或查看已保存的恢复快照。</p>}
+            <h3>{t("仓库环境")}</h3>
+            {!repository && <p>{t("选择仓库可配置新工作树的环境准备，或查看已保存的恢复快照。")}</p>}
             {repository && (
               <p className="worktree-repo-context">
-                <span>当前仓库</span>
+                <span>{t("当前仓库")}</span>
                 <code className="worktree-inline-code">{repository}</code>
                 {selectedEntry && <span className="worktree-repo-selected">· 已关联「{selectedEntry.title}」</span>}
               </p>
@@ -485,7 +486,7 @@ export function WorktreeSettingsPanel({
               if (typeof path === "string") { setRepository(path); setSelected(null); }
             })}
           >
-            选择仓库
+            {t("选择仓库")}
           </button>
         </div>
         {repository && (

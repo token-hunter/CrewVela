@@ -636,7 +636,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                   }
                 >
                   <span aria-hidden="true">
-                    <small className="appearance-bg-hint">{option.hint}</small>
+                    <small className="appearance-bg-hint">{t(option.hint)}</small>
                     {selected && (
                       <i className="appearance-option-check">
                         <CheckIcon size={13} weight="bold" />
@@ -763,7 +763,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
           </div>
           <div className="appearance-terminal-preview" aria-hidden="true">
             <span>&gt; claude</span>
-            <span>正在分析项目文件...</span>
+            <span>{t("正在分析项目文件...")}</span>
             <i />
           </div>
         </div>
@@ -771,12 +771,12 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
 
       <SettingsSection
         className="appearance-settings-section appearance-more-styles-section"
-        title="更多页面风格"
-        description="为工作区开始页、项目管理、常规、Git、Worktrees、通知、自动化、浏览器控制、归档会话与隐私开启可选创意模式，默认均保持现有设计。"
+        title={t("更多页面风格")}
+        description={t("为工作区开始页、项目管理、常规、Git、Worktrees、通知、自动化、浏览器控制、归档会话与隐私开启可选创意模式，默认均保持现有设计。")}
       >
         <div className="appearance-more-styles-bar">
           <span className="appearance-more-styles-summary">
-            已开启创意模式：<strong>{extraCreativeCount} / {totalStyleModules}</strong>
+            {t("已开启创意模式：")}<strong>{extraCreativeCount} / {totalStyleModules}</strong>
           </span>
           <div className="appearance-more-styles-actions">
             <button
@@ -805,7 +805,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                 }))
               }
             >
-              一键全部创意
+              {t("一键全部创意")}
             </button>
             <button
               type="button"
@@ -827,7 +827,7 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                 }))
               }
             >
-              全部恢复默认
+              {t("全部恢复默认")}
             </button>
           </div>
         </div>
@@ -843,17 +843,17 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
               <div className="appearance-more-style-copy">
                 <strong>
                   {t("工作区开始页")}
-                  {isStartStyleCreative && <em>创意中</em>}
+                  {isStartStyleCreative && <em>{t("创意中")}</em>}
                 </strong>
-                <small>{currentStartStyleOption.hint}</small>
+                <small>{t(currentStartStyleOption.hint)}</small>
               </div>
               <div className="appearance-more-style-top-end">
                 <span className="appearance-more-mode-tag">
-                  {currentStartStyleOption.label} · {currentStartStyleOption.tag}
+                  {t(currentStartStyleOption.label)} · {t(currentStartStyleOption.tag)}
                 </span>
               </div>
             </div>
-            <div className="appearance-pm-pills is-four-cols" role="group" aria-label="工作区开始页模式">
+            <div className="appearance-pm-pills is-four-cols" role="group" aria-label={t("工作区开始页模式")}>
               {START_STYLE_OPTIONS.map((option) => {
                 const selected = activeStartStyle === option.id;
                 return (
@@ -887,13 +887,13 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
               <div className="appearance-more-style-copy">
                 <strong>
                   {t("项目管理")}
-                  {isProjectStyleCreative && <em>创意中</em>}
+                  {isProjectStyleCreative && <em>{t("创意中")}</em>}
                 </strong>
-                <small>{currentProjectStyleOption.hint}</small>
+                <small>{t(currentProjectStyleOption.hint)}</small>
               </div>
               <div className="appearance-more-style-top-end">
                 <span className="appearance-more-mode-tag">
-                  {currentProjectStyleOption.label} · {currentProjectStyleOption.tag}
+                  {t(currentProjectStyleOption.label)} · {t(currentProjectStyleOption.tag)}
                 </span>
               </div>
             </div>
@@ -933,16 +933,16 @@ export function AppearanceSettingsPanel({ appearance, onChange }: Props) {
                   <ExtraStylePreview module={mod.id} mode={mod.activeMode} />
                   <div className="appearance-more-style-copy">
                     <strong>
-                      {mod.title}
-                      {isCreative && <em>创意中</em>}
+                      {t(mod.title)}
+                      {isCreative && <em>{t("创意中")}</em>}
                     </strong>
-                    <small>{currentOpt.hint}</small>
+                    <small>{t(currentOpt.hint)}</small>
                   </div>
                 </div>
                 <div
                   className="appearance-more-style-pills"
                   role="group"
-                  aria-label={`${mod.title}页面风格`}
+                  aria-label={t("{name}页面风格", { name: t(mod.title) })}
                 >
                   {mod.options.map((opt) => {
                     const selected = mod.activeMode === opt.id;

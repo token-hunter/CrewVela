@@ -25,6 +25,22 @@ try {
   await search.fill("archived sessions");
   await page.getByRole("button", { name: "Archived sessions", exact: true }).click();
   await page.getByRole("heading", { name: "Archived sessions", exact: true }).waitFor();
+  await search.fill("browser control");
+  await page.getByRole("button", { name: "Browser control", exact: true }).click();
+  await page.getByText("Allow agents to control the browser", { exact: true }).waitFor();
+  await page.getByText("Prefer the built-in browser panel", { exact: true }).waitFor();
+  await search.fill("privacy");
+  await page.getByRole("button", { name: "Privacy", exact: true }).click();
+  await page.getByText("Local-first storage", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Where your data is stored", exact: true }).click();
+  await page.getByRole("heading", { name: "Local application records", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Close privacy information", exact: true }).click();
+  await search.fill("shared memory");
+  await page.getByRole("button", { name: "Shared memory", exact: true }).click();
+  await page.getByRole("button", { name: "More options", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Legacy shared memory", exact: true }).click();
+  await page.getByRole("button", { name: "Advanced settings", exact: true }).click();
+  await page.getByRole("heading", { name: "Local service information", exact: true }).waitFor();
   await page.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("button", { name: "New session", exact: true }).waitFor();
   await page.getByRole("button", { name: "Dismiss messaging tip" }).click();
@@ -38,11 +54,21 @@ try {
 
   const runtimePage = await context.newPage();
   await runtimePage.goto(new URL("/tests/fixtures/app-session-async-ui.html?cli-launch=1", base).href);
+  await runtimePage.waitForFunction(() => window.appSessionMock?.nativeLanguageUpdates.at(-1) === "en");
   await runtimePage.getByRole("button", { name: "Select agent" }).click();
   await runtimePage.getByRole("button", { name: "Manage agents" }).click();
   const runtimes = runtimePage.getByRole("dialog", { name: "Manage runtimes" });
   await runtimes.getByRole("heading", { name: "Manage runtimes" }).waitFor();
-  await runtimePage.close();
+
+  const failedTrayUpdate = await context.newPage();
+  await failedTrayUpdate.goto(new URL("/tests/fixtures/app-session-async-ui.html?cli-launch=1&tray-language-failure=1", base).href);
+  const trayAlert = failedTrayUpdate.getByRole("alert").filter({ hasText: "Could not update the system tray language" });
+  await trayAlert.waitFor();
+  const details = trayAlert.getByText("无法写入偏好文件", { exact: false });
+  assert.equal(await details.isVisible(), false);
+  await trayAlert.getByText("Error details", { exact: true }).click();
+  await details.waitFor();
+  await failedTrayUpdate.close();
 
   const teamPage = await context.newPage();
   await teamPage.goto(new URL("/tests/fixtures/collaboration-conversation-ui.html", base).href);
@@ -57,6 +83,8 @@ try {
   assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 860);
 
   await language.selectOption("zh-CN");
+  await runtimePage.waitForFunction(() => window.appSessionMock?.nativeLanguageUpdates.at(-1) === "zh-CN");
+  await runtimePage.close();
   await teamPage.getByRole("tab", { name: "团队聊天" }).waitFor();
   await page.getByRole("combobox", { name: "界面语言" }).waitFor();
   await page.getByRole("button", { name: "关闭设置" }).click();

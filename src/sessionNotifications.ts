@@ -2,6 +2,8 @@ import type { SessionRecord, SessionStatus } from "./types";
 import { deliverDesktopNotice } from "./notificationCenter";
 import { loadNotificationSettings } from "./notificationSettings";
 import { PRODUCT_FULL_NAME } from "./brand";
+import { getInterfaceLanguage, translateCurrent } from "./interfaceLanguage";
+import { localizeError } from "./localizedError";
 
 const NOTIFY_STATUSES: ReadonlySet<SessionStatus> = new Set(["waiting", "completed", "error"]);
 const notified = new Map<string, SessionStatus>();
@@ -31,9 +33,10 @@ export function notifySessionTransitions(previous: SessionRecord[], next: Sessio
     if (session.status === "completed" && !settings.taskComplete) continue;
     if (session.status === "error" && !settings.taskFailed) continue;
     if (session.status === "waiting" && !settings.waitingForUser) continue;
-    const title = session.status === "completed" ? `${PRODUCT_FULL_NAME} · 任务完成` : session.status === "error" ? `${PRODUCT_FULL_NAME} · 执行失败` : `${PRODUCT_FULL_NAME} · 等待处理`;
+    const status = session.status === "completed" ? "任务完成" : session.status === "error" ? "执行失败" : "等待处理";
+    const title = `${PRODUCT_FULL_NAME} · ${translateCurrent(status)}`;
     const body = session.status === "error" && session.lastError
-      ? `${session.title}：${session.lastError.slice(0, 120)}`
+      ? `${session.title} · ${localizeError(getInterfaceLanguage(), session.lastError).message.slice(0, 120)}`
       : session.title;
     void deliverDesktopNotice({ id: `session:${session.id}:${session.status}`, title, body, category: "task" });
   }

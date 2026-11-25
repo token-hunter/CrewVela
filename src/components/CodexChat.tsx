@@ -1,3 +1,4 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
 import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -462,7 +463,7 @@ export function CodexChat({ session, preview = false, onSessionRecord, active = 
         {!connecting && !snapshot?.connected && <div className="harness-chat-info">{t("会话已停止或未连接。点击“恢复会话”继续原会话。")}</div>}
         <div ref={messagesEnd} />
       </div>
-      {error && <pre className="harness-chat-error" role="alert">{error}</pre>}
+      {error && <pre className="harness-chat-error" role="alert"><LocalizedErrorText source={error} /></pre>}
       <CodexGoalPanel snapshot={snapshot} open={goalOpen} onClose={() => { setGoalOpen(false); composerInput.current?.focus(); }} onEdit={() => setGoalOpen(true)} onControl={controlGoal} />
       <CodexPluginPicker sessionId={session.id} preview={preview} open={pluginOpen} selected={plugins} onClose={() => { setPluginOpen(false); composerInput.current?.focus(); }} onSelect={plugin => setPlugins(current => current.some(item => item.id === plugin.id) ? current : [...current, plugin])} />
       <form className="harness-chat-composer" onSubmit={(event) => void send(event)}>

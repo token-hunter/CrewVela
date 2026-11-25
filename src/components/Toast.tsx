@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { localizeError } from "../localizedError";
+import { translate } from "../interfaceLanguage";
+import { useInterfaceLanguage } from "../useInterfaceLanguage";
 
 export interface ToastItem {
   id: number;
@@ -16,11 +19,15 @@ function ToastCard({
   onDismiss: (id: number) => void;
 }) {
   const [leaving, setLeaving] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const language = useInterfaceLanguage();
+  const { message, details } = localizeError(language, toast.message);
 
   useEffect(() => {
+    if (expanded) return;
     const timer = window.setTimeout(() => setLeaving(true), AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [expanded]);
 
   useEffect(() => {
     if (!leaving) return;
@@ -30,8 +37,14 @@ function ToastCard({
 
   return (
     <div className={`toast${leaving ? " leaving" : ""}`} role="alert">
-      <span>{toast.message}</span>
-      <button aria-label="关闭通知" onClick={() => setLeaving(true)}>
+      <div className="toast-message">
+        {message}
+        {details && <details onToggle={event => setExpanded(event.currentTarget.open)}>
+          <summary>{translate(language, "错误详情")}</summary>
+          <div>{details}</div>
+        </details>}
+      </div>
+      <button aria-label={translate(language, "关闭通知")} onClick={() => setLeaving(true)}>
         ×
       </button>
     </div>

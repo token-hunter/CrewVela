@@ -93,20 +93,20 @@ export function scopeSessions(sessions: readonly SessionRecord[], scope: QuickSc
   if (scope === "project") return context.projectId ? candidates.filter(s => s.projectId === context.projectId) : [];
   return candidates;
 }
-export function quickCommandCatalog(probes: RuntimeProbe[], providers: ProviderConfig[], keys: Record<string, boolean>, enabled: (kind: AgentRuntimeKind) => boolean): QuickCommand[] {
+export function quickCommandCatalog(probes: RuntimeProbe[], providers: ProviderConfig[], keys: Record<string, boolean>, enabled: (kind: AgentRuntimeKind) => boolean, t: (key: string, values?: Record<string, string | number>) => string = (key, values) => values ? key.replace("{agent}", String(values.agent)) : key): QuickCommand[] {
   const commands: QuickCommand[] = [
-    { id: "builtin:send", title: "向会话发送消息", action: "send", body: "检查当前项目并给出下一步建议", scope: "workspace" },
+    { id: "builtin:send", title: t("向会话发送消息"), action: "send", body: t("检查当前项目并给出下一步建议"), scope: "workspace" },
   ];
   for (const kind of TERMINAL_RUNTIMES) {
     if (!enabled(kind) || !probes.some(p => p.kind === kind && p.installed && !p.error)) continue;
-    commands.push({ id: `runtime:${kind}`, title: `启动 ${RUNTIME_LABELS[kind]}`, action: "launch", runtimeKind: kind, scope: "workspace", body: "" });
-    if (kind === "codex") commands.push({ id: "builtin:review", title: "请 Codex 审查当前改动", action: "send", runtimeKind: "codex", scope: "workspace", body: "请审查当前工作目录的未提交改动，按严重程度列出有依据的问题、文件位置及验证建议。不要修改代码。" });
+    commands.push({ id: `runtime:${kind}`, title: t("启动 {agent}", { agent: RUNTIME_LABELS[kind] ?? kind }), action: "launch", runtimeKind: kind, scope: "workspace", body: "" });
+    if (kind === "codex") commands.push({ id: "builtin:review", title: t("请 Codex 审查当前改动"), action: "send", runtimeKind: "codex", scope: "workspace", body: t("请审查当前工作目录的未提交改动，按严重程度列出有依据的问题、文件位置及验证建议。不要修改代码。") });
     if (kind === "claude_code") for (const provider of providers.filter(p => !p.hidden && keys[p.id])) commands.push({
-      id: `provider:${provider.id}`, title: `启动 Claude Code · ${provider.name}`, action: "launch", runtimeKind: kind, providerId: provider.id, scope: "workspace", body: "",
+      id: `provider:${provider.id}`, title: `${t("启动 {agent}", { agent: "Claude Code" })} · ${provider.name}`, action: "launch", runtimeKind: kind, providerId: provider.id, scope: "workspace", body: "",
     });
   }
-  commands.push({ id: "builtin:stop", title: "批量停止会话", action: "stop", body: "", scope: "workspace" },
-    { id: "builtin:delete", title: "批量从列表删除会话", action: "delete", body: "", scope: "workspace" });
+  commands.push({ id: "builtin:stop", title: t("批量停止会话"), action: "stop", body: "", scope: "workspace" },
+    { id: "builtin:delete", title: t("批量从列表删除会话"), action: "delete", body: "", scope: "workspace" });
   return commands;
 }
 export function targetIdentity(s: SessionRecord): string {

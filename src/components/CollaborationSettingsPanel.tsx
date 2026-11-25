@@ -1,3 +1,5 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
+import { useTranslation } from "../useInterfaceLanguage";
 import { CollaborationRecordsPanel } from "./CollaborationRecordsPanel";
 import { createPortal } from "react-dom";
 import { CollaborationTaskDetails } from "./CollaborationTaskDetails";
@@ -215,6 +217,7 @@ function runtimeVersion(value: string | null | undefined): string {
 }
 
 export function CollaborationSettingsPanel({ onClose, initialTab = "overview", initialDiagnosticGlobal = false, initialProjectId, taskRequest }: Props) {
+  const t = useTranslation();
   const [projects, setProjects] = useState<MultiAgentProject[]>(
     UI_PREVIEW ? [PREVIEW_PROJECT] : [],
   );
@@ -313,7 +316,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   };
   const checks = health ? diagnosticChecks(health) : [];
   const diagnosticIssues = checks.filter((check) => check.state === "异常").map((check) => check.label);
-  const checkSummary = summarizeDiagnosticChecks(checks);
+  const checkSummary = summarizeDiagnosticChecks(checks, t);
   const selectionRef = useRef(selectedProjectId);
   const snapshotRequest = useRef(0);
   const selectProject = useCallback((projectId: string | null) => {
@@ -623,26 +626,26 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   const activity = useMemo(() => [...(currentSnapshot?.events ?? [])].sort((a, b) => b.createdAt - a.createdAt), [currentSnapshot?.events]);
   const sessionName = (id: string) => health?.sessions.find((item) => item.id === id)?.title ?? agents.find((item) => item.id === id)?.name ?? currentSnapshot?.tasks.find((item) => item.id === id)?.title ?? id;
   return <div className="collaboration-settings-panel collab-overview-page collab-task-first">
-    <header className="collab-page-header"><div><h2>协作中心</h2><p>管理团队、任务与协作通信</p></div><div className="collab-guide-actions"><CommunicationGuideButton scope="project" projectId={selectedProjectId} className="btn secondary communication-workspace-entry" /><button className="btn secondary" disabled={!currentSnapshot} onClick={() => void openWorkspace()}><ArrowSquareOutIcon size={16} />打开工作台</button></div></header>
-    {Object.entries(loadingErrors).map(([source, message]) => <p role="alert" key={source}>{source}失败：{message}</p>)}
-    {error && <p role="alert" className="collaboration-settings-error">{error}</p>}
+    <header className="collab-page-header"><div><h2>{t("协作中心")}</h2><p>{t("管理团队、任务与协作通信")}</p></div><div className="collab-guide-actions"><CommunicationGuideButton scope="project" projectId={selectedProjectId} className="btn secondary communication-workspace-entry" /><button className="btn secondary" disabled={!currentSnapshot} onClick={() => void openWorkspace()}><ArrowSquareOutIcon size={16} />{t("打开工作台")}</button></div></header>
+    {Object.entries(loadingErrors).map(([source, message]) => <p role="alert" key={source}>{t(source)} · <LocalizedErrorText source={message} /></p>)}
+    {error && <p role="alert" className="collaboration-settings-error"><LocalizedErrorText source={error} /></p>}
     <section className="collab-project-toolbar">
-      <div className="collab-project-picker"><select aria-label="当前项目" value={selectedProjectId ?? ""} disabled={!projects.length} onChange={(event) => selectProject(event.target.value || null)}>{!selectedProjectId && <option value="" disabled={projects.length > 0}>{projects.length ? "请选择协作项目" : "暂无协作项目"}</option>}{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-      <span className="collab-project-counts"><b>{taskSnapshot?.tasks.length ?? "—"}</b> 个任务<span>· <b>{memberCount}</b> 位成员</span></span></div>
-      <span className={"collab-project-state " + (currentSnapshot?.project.status ?? "")}><i />{currentSnapshot ? projectStatusLabel(currentSnapshot.project) : selectedProjectId ? "加载中…" : "未选择项目"}</span>
-      <div className="collab-project-actions"><button className="btn secondary" disabled={!currentSnapshot || projectBusy} onClick={() => void pauseProject()}>{projectBusy ? "处理中…" : currentSnapshot?.project.status === "active" ? "暂停项目" : "继续项目"}</button><button type="button" className="btn secondary" disabled={projectsLoading} onClick={() => setCreatingProject(true)}>创建项目</button><button className="btn collab-primary" disabled={Boolean(selectedProjectId && !currentSnapshot)} onClick={() => requestHandoff()}>交接工作</button></div>
+      <div className="collab-project-picker"><select aria-label={t("当前项目")} value={selectedProjectId ?? ""} disabled={!projects.length} onChange={(event) => selectProject(event.target.value || null)}>{!selectedProjectId && <option value="" disabled={projects.length > 0}>{projects.length ? t("请选择协作项目") : t("暂无协作项目")}</option>}{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+      <span className="collab-project-counts"><b>{taskSnapshot?.tasks.length ?? "—"}</b> {t("个任务")}<span>· <b>{memberCount}</b> {t("位成员")}</span></span></div>
+      <span className={"collab-project-state " + (currentSnapshot?.project.status ?? "")}><i />{currentSnapshot ? t(projectStatusLabel(currentSnapshot.project)) : selectedProjectId ? t("加载中…") : t("未选择项目")}</span>
+      <div className="collab-project-actions"><button className="btn secondary" disabled={!currentSnapshot || projectBusy} onClick={() => void pauseProject()}>{projectBusy ? t("处理中…") : currentSnapshot?.project.status === "active" ? t("暂停项目") : t("继续项目")}</button><button type="button" className="btn secondary" disabled={projectsLoading} onClick={() => setCreatingProject(true)}>{t("创建项目")}</button><button className="btn collab-primary" disabled={Boolean(selectedProjectId && !currentSnapshot)} onClick={() => requestHandoff()}>{t("交接工作")}</button></div>
     </section>
-    <section className="collab-runtime-toolbar" aria-label="协作 Runtime">
+    <section className="collab-runtime-toolbar" aria-label={t("协作 Runtime")}>
       <div className="collab-runtime-heading">
-        <button type="button" className="collab-runtime-toggle" aria-expanded={runtimeExpanded} aria-controls={runtimeContentId} onClick={() => setRuntimeExpanded(current => !current)}><CaretRightIcon size={16} aria-hidden="true" /><strong>协作 Runtime · {availability.ready ? `${visibleRuntimeOrder.length} 个已启用` : "配置加载中…"}</strong><span>{upgradingRuntimes.size ? `${upgradingRuntimes.size} 个升级中…` : checkingRuntimes ? "正在检查更新…" : runtimeExpanded ? "收起运行环境" : "需要时展开查看"}</span></button>
+        <button type="button" className="collab-runtime-toggle" aria-expanded={runtimeExpanded} aria-controls={runtimeContentId} onClick={() => setRuntimeExpanded(current => !current)}><CaretRightIcon size={16} aria-hidden="true" /><strong>{t("协作 Runtime ·")} {availability.ready ? t("{count} 个已启用", { count: visibleRuntimeOrder.length }) : t("配置加载中…")}</strong><span>{upgradingRuntimes.size ? t("{count} 个升级中…", { count: upgradingRuntimes.size }) : checkingRuntimes ? t("正在检查更新…") : runtimeExpanded ? t("收起运行环境") : t("需要时展开查看")}</span></button>
         <div className="collab-runtime-actions">
-          <button type="button" className="btn secondary" onClick={() => setManagingRuntimes(true)}>管理 Runtime</button>
+          <button type="button" className="btn secondary" onClick={() => setManagingRuntimes(true)}>{t("管理 Runtime")}</button>
         </div>
       </div>
       <div className="collab-runtime-content" id={runtimeContentId} hidden={!runtimeExpanded}>
         <div className="collab-runtime-actions collab-runtime-expanded-actions">
-          <button className="btn secondary collab-check-updates" disabled={checkingRuntimes || upgradingRuntimes.size > 0} onClick={() => void checkRuntimeUpdates()}><ArrowClockwiseIcon size={16} />{checkingRuntimes ? "检查中…" : "检查更新"}</button>
-          <details className="collab-upgrade-menu"><summary aria-label="运行时升级选项">⋯</summary><button className="btn secondary" disabled={checkingRuntimes || !runtimes.some((runtime) => availability.isRuntimeEnabled(runtime.kind) && runtime.updateAvailable && runtime.canAutoUpdate)} onClick={() => { if (!UI_PREVIEW) void upgradeAllRuntimes(); }}>升级全部可更新运行时</button></details>
+          <button className="btn secondary collab-check-updates" disabled={checkingRuntimes || upgradingRuntimes.size > 0} onClick={() => void checkRuntimeUpdates()}><ArrowClockwiseIcon size={16} />{checkingRuntimes ? t("检查中…") : t("检查更新")}</button>
+          <details className="collab-upgrade-menu"><summary aria-label={t("运行时升级选项")}>⋯</summary><button className="btn secondary" disabled={checkingRuntimes || !runtimes.some((runtime) => availability.isRuntimeEnabled(runtime.kind) && runtime.updateAvailable && runtime.canAutoUpdate)} onClick={() => { if (!UI_PREVIEW) void upgradeAllRuntimes(); }}>{t("升级全部可更新运行时")}</button></details>
         </div>
       <div className="collab-runtime-chips">{visibleRuntimeOrder.map((kind, index) => {
       const runtime = runtimeMap.get(kind);
@@ -665,55 +668,55 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
           setDraggingRuntime(null);
           setDropTarget(null);
         }}>
-        <span className="collab-runtime-order-grip" draggable title={`拖动以调整 ${RUNTIME_LABELS[kind]} 的位置`} aria-hidden="true"
+        <span className="collab-runtime-order-grip" draggable title={t("拖动以调整 {agent} 的位置", { agent: RUNTIME_LABELS[kind] })} aria-hidden="true"
           onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", kind); setDraggingRuntime(kind); }}
           onDragEnd={() => { setDraggingRuntime(null); setDropTarget(null); }}>⠿</span>
         <details className="collab-runtime-chip" onToggle={(event) => alignRuntimePopover(event.currentTarget)}><summary><img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><span>{RUNTIME_LABELS[kind]}</span><i className={runtime?.installed ? runtime.error ? "warning" : "installed" : "missing"} /></summary>
-        <div className="collab-runtime-popover"><strong>{RUNTIME_LABELS[kind]}</strong><p>{!runtime ? "检测结果尚未返回" : runtime.installed ? "命令可发现" : "未发现命令"} · {runtimeVersion(runtime?.version)}</p><p>{runtime?.error ?? runtime?.updateError ?? (runtime?.latestVersion ? "最新版本 " + runtimeVersion(runtime.latestVersion) : "更新状态尚未确认")}</p>
-        <div className="collab-runtime-reorder-controls" aria-label={`${RUNTIME_LABELS[kind]} 位置调整`}><button type="button" aria-label={`将 ${RUNTIME_LABELS[kind]} 左移`} title="左移" disabled={index === 0} onClick={() => moveVisibleRuntime(kind, -1)}>←</button><button type="button" aria-label={`将 ${RUNTIME_LABELS[kind]} 右移`} title="右移" disabled={index === visibleRuntimeOrder.length - 1} onClick={() => moveVisibleRuntime(kind, 1)}>→</button></div>
+        <div className="collab-runtime-popover"><strong>{RUNTIME_LABELS[kind]}</strong><p>{!runtime ? t("检测结果尚未返回") : runtime.installed ? t("命令可发现") : t("未发现命令")} · {runtimeVersion(runtime?.version)}</p><p>{runtime?.error ?? runtime?.updateError ?? (runtime?.latestVersion ? "最新版本 " + runtimeVersion(runtime.latestVersion) : t("更新状态尚未确认"))}</p>
+        <div className="collab-runtime-reorder-controls" aria-label={t("{agent} 位置调整", { agent: RUNTIME_LABELS[kind] })}><button type="button" aria-label={t("将 {agent} 左移", { agent: RUNTIME_LABELS[kind] })} title={t("左移")} disabled={index === 0} onClick={() => moveVisibleRuntime(kind, -1)}>←</button><button type="button" aria-label={t("将 {agent} 右移", { agent: RUNTIME_LABELS[kind] })} title={t("右移")} disabled={index === visibleRuntimeOrder.length - 1} onClick={() => moveVisibleRuntime(kind, 1)}>→</button></div>
         {upgradeResults[kind] && <p role="status">{upgradeResults[kind]?.message}</p>}
-        {runtime?.updateAvailable && <button className="btn secondary" disabled={checkingRuntimes || upgradingRuntimes.has(kind)} onClick={() => { if (UI_PREVIEW) return; if (runtime.canAutoUpdate) void upgradeRuntime(kind); else void navigator.clipboard.writeText(runtime.updateCommand ?? "").catch((reason) => setError(`复制升级命令失败：${String(reason)}`)); }}>{upgradingRuntimes.has(kind) ? "升级中…" : runtime.canAutoUpdate ? "升级运行时" : "复制命令"}</button>}</div></details></div>;
-    })}{!visibleRuntimeOrder.length && <span className="collab-runtime-management-empty">{availability.ready ? "暂无启用的 Runtime" : "Runtime 配置未就绪"}</span>}</div>
+        {runtime?.updateAvailable && <button className="btn secondary" disabled={checkingRuntimes || upgradingRuntimes.has(kind)} onClick={() => { if (UI_PREVIEW) return; if (runtime.canAutoUpdate) void upgradeRuntime(kind); else void navigator.clipboard.writeText(runtime.updateCommand ?? "").catch((reason) => setError(`复制升级命令失败：${String(reason)}`)); }}>{upgradingRuntimes.has(kind) ? t("升级中…") : runtime.canAutoUpdate ? t("升级运行时") : t("复制命令")}</button>}</div></details></div>;
+    })}{!visibleRuntimeOrder.length && <span className="collab-runtime-management-empty">{availability.ready ? t("暂无启用的 Runtime") : t("Runtime 配置未就绪")}</span>}</div>
       </div>
       {Object.entries(upgradeResults).filter(([, result]) => result?.error).map(([kind, result]) => <p key={kind} role="alert" className="collab-runtime-preference-error">{RUNTIME_LABELS[kind as AgentRuntimeKind]}：{result!.message}</p>)}
       {(availability.error || runtimePreferences.error) && <div className="collab-runtime-status">{availability.error && <span role="alert" className="collab-runtime-preference-error">{availability.error}</span>}{runtimePreferences.error && <span className="collab-runtime-preference-error" role="alert">{runtimePreferences.error}</span>}</div>}
     </section>
     {managingRuntimes && <RuntimeManagementDialog order={runtimePreferences.order} onReorder={runtimePreferences.reorder} orderError={runtimePreferences.error} onClose={() => setManagingRuntimes(false)} />}
-    <nav className="collab-tabs" role="tablist" aria-label="协作视图">{[["overview","概览"],["team","团队"],["archive","项目档案"],["records","协作记录"],["diagnostics","协作诊断"]].map(([id,title]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{title}{id === "team" && <b>{memberCount}</b>}{id === "diagnostics" && !!diagnosticIssues.length && <b className="warning">{diagnosticIssues.length}</b>}</button>)}</nav>
+    <nav className="collab-tabs" role="tablist" aria-label={t("协作视图")}>{[["overview",t("概览")],["team",t("团队")],["archive",t("项目档案")],["records",t("协作记录")],["diagnostics",t("协作诊断")]].map(([id,title]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{title}{id === "team" && <b>{memberCount}</b>}{id === "diagnostics" && !!diagnosticIssues.length && <b className="warning">{diagnosticIssues.length}</b>}</button>)}</nav>
     {tab === "records" && (currentSnapshot
       ? <CollaborationRecordsPanel key={currentSnapshot.project.id} snapshot={currentSnapshot} preview={UI_PREVIEW} />
-      : <p className="collab-empty">{selectedProjectId ? "正在加载协作记录…" : "请选择项目后查看协作记录"}</p>)}
+      : <p className="collab-empty">{selectedProjectId ? t("正在加载协作记录…") : t("请选择项目后查看协作记录")}</p>)}
     {tab === "archive" && <KnowledgeBaseDialog embedded projectId={selectedProjectId} snapshot={UI_PREVIEW ? currentSnapshot : undefined} onOpenRecord={openArchiveRecord} />}
     {tab === "overview" && <>
-      {currentSnapshot && <details className="collab-project-info" key={currentSnapshot.project.id}><summary><CaretRightIcon size={14}/><span>项目信息</span></summary><dl><dt>项目目录</dt><dd><code>{currentSnapshot.project.rootPath || "尚未提供项目目录"}</code></dd></dl></details>}
-      <section className="collab-diagnostic-summary" aria-label="协作诊断摘要"><i className={diagnosticIssues.length ? "warning" : "unknown"} /><strong>{health ? checkSummary : "尚未取得检查结果"}</strong><button onClick={() => setTab("diagnostics")} title={health ? `${health.scopeLabel} · ${checks.length} 项检查${health.checkedAt ? " · " + new Date(health.checkedAt).toLocaleTimeString("zh-CN") : ""}` : undefined}>查看诊断 →</button></section>
-      <div className="collab-main-grid"><section ref={taskPanel} tabIndex={-1} className="collab-task-panel" aria-label="项目任务"><header><h3>项目任务</h3><div className="collab-task-filters" role="group" aria-label="任务筛选">{[["attention","待处理"],["all","全部"],["running","执行中"],["in_review","待审核"]].map(([id,title]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>{title}</button>)}</div></header>
-      {updatedDeliveryProject && updatedDeliveryProject === selectedProjectId && <p role="status">交付已更新，等待批准。</p>}
+      {currentSnapshot && <details className="collab-project-info" key={currentSnapshot.project.id}><summary><CaretRightIcon size={14}/><span>{t("项目信息")}</span></summary><dl><dt>{t("项目目录")}</dt><dd><code>{currentSnapshot.project.rootPath || t("尚未提供项目目录")}</code></dd></dl></details>}
+      <section className="collab-diagnostic-summary" aria-label={t("协作诊断摘要")}><i className={diagnosticIssues.length ? "warning" : "unknown"} /><strong>{health ? checkSummary : t("尚未取得检查结果")}</strong><button onClick={() => setTab("diagnostics")} title={health ? t("{scope} · {count} 项检查", { scope: t(health.scopeLabel ?? "当前范围"), count: checks.length }) + (health.checkedAt ? " · " + new Date(health.checkedAt).toLocaleTimeString(document.documentElement.lang) : "") : undefined}>{t("查看诊断 →")}</button></section>
+      <div className="collab-main-grid"><section ref={taskPanel} tabIndex={-1} className="collab-task-panel" aria-label={t("项目任务")}><header><h3>{t("项目任务")}</h3><div className="collab-task-filters" role="group" aria-label={t("任务筛选")}>{[["attention",t("待处理")],["all",t("全部")],["running",t("执行中")],["in_review",t("待审核")]].map(([id,title]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>{title}</button>)}</div></header>
+      {updatedDeliveryProject && updatedDeliveryProject === selectedProjectId && <p role="status">{t("交付已更新，等待批准。")}</p>}
       {currentSnapshot?.runs.filter(run => run.sessionLocator?.stopUnverified === true).map(run => <UnverifiedRunNotice key={run.id} run={run} taskTitle={currentSnapshot.tasks.find(task => task.id === run.taskId)?.title} onConfirmed={refreshSnapshot}/>)}
-      <div className="collab-task-columns"><span>任务</span><span>负责人</span><span>状态</span><span>更新</span><span /></div>
-      {groupTasksByStage(taskSnapshot).filter((group) => group.tasks.some((task) => taskMatchesFilter(task.status, filter))).map((group) => <div key={group.stage} className="collab-stage"><button className="collab-stage-title" aria-expanded={!collapsed.has(group.stage)} onClick={() => setCollapsed((current) => { const next = new Set(current); if (next.has(group.stage)) next.delete(group.stage); else next.add(group.stage); return next; })}><span>{collapsed.has(group.stage) ? "›" : "⌄"} 阶段 {group.stage}{UI_PREVIEW ? " · " + (["调研与方案","实现","验证与交付"][group.stage] ?? "") : ""}</span><span>{group.done}/{group.total} 已完成 <i className={group.allDone ? "done" : ""}>{group.allDone ? "✓" : ""}</i></span></button>
+      <div className="collab-task-columns"><span>{t("任务")}</span><span>{t("负责人")}</span><span>{t("状态")}</span><span>{t("更新")}</span><span /></div>
+      {groupTasksByStage(taskSnapshot).filter((group) => group.tasks.some((task) => taskMatchesFilter(task.status, filter))).map((group) => <div key={group.stage} className="collab-stage"><button className="collab-stage-title" aria-expanded={!collapsed.has(group.stage)} onClick={() => setCollapsed((current) => { const next = new Set(current); if (next.has(group.stage)) next.delete(group.stage); else next.add(group.stage); return next; })}><span>{collapsed.has(group.stage) ? "›" : "⌄"} {t("阶段")} {group.stage}{UI_PREVIEW ? " · " + ([t("调研与方案"),t("实现"),t("验证与交付")][group.stage] ?? "") : ""}</span><span>{group.done}/{group.total} {t("已完成")} <i className={group.allDone ? "done" : ""}>{group.allDone ? "✓" : ""}</i></span></button>
       {!collapsed.has(group.stage) && [...group.tasks].sort((a,b) => taskPriority(a.status) - taskPriority(b.status) || b.updatedAt - a.updatedAt).filter((task) => taskMatchesFilter(task.status, filter)).map((task) => {
         const owner = agents.find((agent) => agent.id === task.assigneeAgentId);
         const canUpdateDelivery = task.id.startsWith("conversation-task-") && task.workspaceMode === "worktree"
           && owner?.role === "worker" && ["in_review", "done"].includes(task.status)
           && currentSnapshot?.approvals.some(approval => approval.taskId === task.id && approval.approvalType === "task_review"
             && approval.status === (task.status === "done" ? "approved" : "pending"));
-        return <div className={"collab-task-row" + (task.status === "running" ? " selected" : "")} key={task.id}><strong><i className={"task-mark " + task.status}>{task.status === "done" ? "✓" : ""}</i>{task.title}</strong><span className="collab-task-owner">{owner && <AgentAvatar avatarId={owner.avatarId} runtimeKind={owner.runtimeKind} decorative />}{owner?.name ?? "未指派"}</span><span className={"collab-status " + task.status}><i />{TASK_STATUS_LABELS[task.status]}</span><time>{formatDateTime(task.updatedAt)}</time><details className="collab-task-menu"><summary aria-label={task.title + "操作"}>⋯</summary><div>
-          <button onClick={() => showTask(task)}>查看任务详情</button>
-          {!["done","waiting_approval","in_review"].includes(task.status) && <button onClick={() => requestHandoff(task.id)}>交接此任务</button>}
-          {canUpdateDelivery && <button title="原会话续做完成后，保存并登记工作树的实际提交" disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_update_resumed_delivery")}>更新交付</button>}
-          {task.status === "in_review" && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_approve_task")}>批准交付</button>}
-          {["failed","cancelled","changes_requested"].includes(task.status) && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_retry_task")}>重试任务</button>}
+        return <div className={"collab-task-row" + (task.status === "running" ? " selected" : "")} key={task.id}><strong><i className={"task-mark " + task.status}>{task.status === "done" ? "✓" : ""}</i>{task.title}</strong><span className="collab-task-owner">{owner && <AgentAvatar avatarId={owner.avatarId} runtimeKind={owner.runtimeKind} decorative />}{owner?.name ?? t("未指派")}</span><span className={"collab-status " + task.status}><i />{t(TASK_STATUS_LABELS[task.status])}</span><time>{formatDateTime(task.updatedAt)}</time><details className="collab-task-menu"><summary aria-label={task.title + t("操作")}>⋯</summary><div>
+          <button onClick={() => showTask(task)}>{t("查看任务详情")}</button>
+          {!["done","waiting_approval","in_review"].includes(task.status) && <button onClick={() => requestHandoff(task.id)}>{t("交接此任务")}</button>}
+          {canUpdateDelivery && <button title={t("原会话续做完成后，保存并登记工作树的实际提交")} disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_update_resumed_delivery")}>{t("更新交付")}</button>}
+          {task.status === "in_review" && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_approve_task")}>{t("批准交付")}</button>}
+          {["failed","cancelled","changes_requested"].includes(task.status) && <button disabled={approvingTaskId !== null} onClick={() => void mutateTask(task.id, "ma_retry_task")}>{t("重试任务")}</button>}
         </div></details></div>;
       })}</div>)}
-      {!taskSnapshot?.tasks.some((task) => taskMatchesFilter(task.status, filter)) && <p className="collab-empty">{projectsLoading || (selectedProjectId && !currentSnapshot) ? "正在加载项目任务…" : taskSnapshot?.tasks.length ? "当前筛选暂无任务" : "暂无协作任务"}</p>}</section>
-      <details className="collab-activity-disclosure"><summary><CaretRightIcon size={16} aria-hidden="true" /><strong>最近活动</strong><span>{activity.length} 条活动 · {health?.handoffs.length ?? 0} 条交接</span></summary><aside className="collab-side-panels"><section className="collab-activity-panel"><header><h3>最近活动</h3><button onClick={() => setTab("records")}>查看全部活动</button></header><div>{activity.slice(0,4).map((event) => <article key={event.seq}><i className={String(event.payload.tone ?? "")} /><time>{formatDateTime(event.createdAt)}</time><p>{activityLabel(event.eventType)}{eventTask(event) && <button onClick={() => showTask(eventTask(event)!)}> · {eventTask(event)!.title}</button>}</p></article>)}{!activity.length && <p className="collab-empty">暂无活动记录</p>}</div></section>
-      <section className="collab-handoff-panel"><header><h3>交接记录</h3></header>{health?.handoffs.slice(0,3).map((record) => <article key={record.id}><div><p>{sessionName(record.sourceId)} → {sessionName(record.targetId)}</p><small>{HANDOFF_LABELS[record.state] ?? record.state} · {record.consequence}</small></div><button onClick={() => requestHandoff(undefined,record.id)}>查看</button></article>)}{!health?.handoffs.length && <p className="collab-empty">暂无交接记录</p>}</section></aside></details></div>
-      <p className="collab-sync-note"><ArrowClockwiseIcon size={16} />任务依赖与执行状态自动同步</p>
+      {!taskSnapshot?.tasks.some((task) => taskMatchesFilter(task.status, filter)) && <p className="collab-empty">{projectsLoading || (selectedProjectId && !currentSnapshot) ? t("正在加载项目任务…") : taskSnapshot?.tasks.length ? t("当前筛选暂无任务") : t("暂无协作任务")}</p>}</section>
+      <details className="collab-activity-disclosure"><summary><CaretRightIcon size={16} aria-hidden="true" /><strong>{t("最近活动")}</strong><span>{activity.length} {t("条活动 ·")} {health?.handoffs.length ?? 0} {t("条交接")}</span></summary><aside className="collab-side-panels"><section className="collab-activity-panel"><header><h3>{t("最近活动")}</h3><button onClick={() => setTab("records")}>{t("查看全部活动")}</button></header><div>{activity.slice(0,4).map((event) => <article key={event.seq}><i className={String(event.payload.tone ?? "")} /><time>{formatDateTime(event.createdAt)}</time><p>{activityLabel(event.eventType)}{eventTask(event) && <button onClick={() => showTask(eventTask(event)!)}> · {eventTask(event)!.title}</button>}</p></article>)}{!activity.length && <p className="collab-empty">{t("暂无活动记录")}</p>}</div></section>
+      <section className="collab-handoff-panel"><header><h3>{t("交接记录")}</h3></header>{health?.handoffs.slice(0,3).map((record) => <article key={record.id}><div><p>{sessionName(record.sourceId)} → {sessionName(record.targetId)}</p><small>{HANDOFF_LABELS[record.state] ?? record.state} · {record.consequence}</small></div><button onClick={() => requestHandoff(undefined,record.id)}>{t("查看")}</button></article>)}{!health?.handoffs.length && <p className="collab-empty">{t("暂无交接记录")}</p>}</section></aside></details></div>
+      <p className="collab-sync-note"><ArrowClockwiseIcon size={16} />{t("任务依赖与执行状态自动同步")}</p>
     </>}
-    {tab === "team" && <div className="collab-team-page-toggle" role="group" aria-label="团队配置范围">
-      <button type="button" className={`collab-team-scope${teamPage === "project" ? " active" : ""}`} aria-pressed={teamPage === "project"} onClick={() => setTeamPage("project")}>当前项目</button>
-      <button type="button" className={`collab-team-scope${teamPage === "library" ? " active" : ""}`} aria-pressed={teamPage === "library"} onClick={() => setTeamPage("library")}>全局成员库</button>
+    {tab === "team" && <div className="collab-team-page-toggle" role="group" aria-label={t("团队配置范围")}>
+      <button type="button" className={`collab-team-scope${teamPage === "project" ? " active" : ""}`} aria-pressed={teamPage === "project"} onClick={() => setTeamPage("project")}>{t("当前项目")}</button>
+      <button type="button" className={`collab-team-scope${teamPage === "library" ? " active" : ""}`} aria-pressed={teamPage === "library"} onClick={() => setTeamPage("library")}>{t("全局成员库")}</button>
     </div>}
     {tab === "team" && teamPage === "library" && <CollaborationMemberLibrary projects={projects} project={currentSnapshot?.project} onProjectChanged={() => void refreshSnapshot()} />}
     {tab === "team" && teamPage === "project" && (() => {
@@ -723,13 +726,13 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
         && (query === "" || `${agent.name} ${agent.description} ${RUNTIME_LABELS[agent.runtimeKind]}`.toLowerCase().includes(query)));
       const roleCount = (role: AgentRole) => enabledAgents.filter((agent) => agent.role === role).length;
       return <><div className={`collab-team-toolbar${memberUnavailableReason ? " collab-team-unavailable" : ""}`}><div className="collab-team-filter-row">
-        {([["all", "全部"], ["orchestrator", ROLE_LABELS.orchestrator], ["worker", ROLE_LABELS.worker], ["reviewer", ROLE_LABELS.reviewer], ["integrator", ROLE_LABELS.integrator]] as const).map(([value, label]) => (
+        {([["all", t("全部")], ["orchestrator", ROLE_LABELS.orchestrator], ["worker", ROLE_LABELS.worker], ["reviewer", ROLE_LABELS.reviewer], ["integrator", ROLE_LABELS.integrator]] as const).map(([value, label]) => (
           <button key={value} type="button" className={`collab-team-filter-pill${teamRoleFilter === value ? " active" : ""}`} aria-pressed={teamRoleFilter === value} onClick={() => setTeamRoleFilter(value)}>{label}<b>{value === "all" ? enabledAgents.length : roleCount(value)}</b></button>
         ))}
-        <div className="collab-team-search"><input aria-label="搜索成员" placeholder="搜索成员 / 职责…" value={teamSearch} onChange={(event) => setTeamSearch(event.target.value)} /></div>
-        <button className="btn secondary" disabled={!currentSnapshot} title={memberUnavailableReason ?? undefined} aria-describedby={memberUnavailableReason ? "collab-member-unavailable" : undefined} onClick={() => { setEditorProjectId(currentSnapshot!.project.id); setEditingAgent(null); }}>新增成员</button>
-      </div>{memberUnavailableReason ? <p id="collab-member-unavailable" role="status">{memberUnavailableReason}</p> : <p>在此编辑当前项目的成员配置。跨项目配置可在全局成员库维护。{hiddenMemberCount > 0 && ` 共 ${teamAgents.length} 位，隐藏 ${hiddenMemberCount} 位（对应 Runtime 未启用）。`}</p>}
-      </div><SettingsSection title="团队"><div className="collab-agent-card-grid">
+        <div className="collab-team-search"><input aria-label={t("搜索成员")} placeholder={t("搜索成员 / 职责…")} value={teamSearch} onChange={(event) => setTeamSearch(event.target.value)} /></div>
+        <button className="btn secondary" disabled={!currentSnapshot} title={memberUnavailableReason ?? undefined} aria-describedby={memberUnavailableReason ? "collab-member-unavailable" : undefined} onClick={() => { setEditorProjectId(currentSnapshot!.project.id); setEditingAgent(null); }}>{t("新增成员")}</button>
+      </div>{memberUnavailableReason ? <p id="collab-member-unavailable" role="status">{memberUnavailableReason}</p> : <p>{t("在此编辑当前项目的成员配置。跨项目配置可在全局成员库维护。")}{hiddenMemberCount > 0 && t("共 {count} 位，隐藏 {hidden} 位（对应 Runtime 未启用）。", { count: teamAgents.length, hidden: hiddenMemberCount })}</p>}
+      </div><SettingsSection title={t("团队")}><div className="collab-agent-card-grid">
         {filteredAgents.map((agent) => {
           const active = currentSnapshot?.runs.some((run) => run.agentId === agent.id && ["queued", "starting", "running", "waiting_input", "waiting_approval"].includes(run.status));
           const busyHint = "该成员有执行中的任务，请完成或停止任务后编辑";
@@ -743,23 +746,23 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
             <details className="collab-member-actions" name={memberMenuGroup} onBlur={event => {
               if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
             }}>
-              <summary aria-label={`${agent.name}的更多操作`} title="更多操作"><DotsThreeIcon size={19} /></summary>
+              <summary aria-label={t("{name}的更多操作", { name: agent.name })} title={t("更多操作")}><DotsThreeIcon size={19} /></summary>
               <div className="collab-member-action-list">
                 <button type="button" className="btn secondary" disabled={active} title={active ? busyHint : undefined} onClick={event => {
                   closeMenu(event.currentTarget);
                   editAgent();
-                }}>编辑</button>
+                }}>{t("编辑")}</button>
                 <button type="button" className="btn secondary collab-member-remove-action" onClick={event => {
                   closeMenu(event.currentTarget);
                   setRemovingAgent(agent);
-                }}>从团队移除</button>
+                }}>{t("从团队移除")}</button>
               </div>
             </details>
-            {active && <span className="collab-agent-card-busy" title={busyHint}>执行中 · 暂不可编辑</span>}
+            {active && <span className="collab-agent-card-busy" title={busyHint}>{t("执行中 · 暂不可编辑")}</span>}
           </div>;
         })}
-        {currentSnapshot && !filteredAgents.length && <p className="collab-empty">{enabledAgents.length === 0 ? "暂无可用成员，点击右上角「新增成员」创建。" : "没有匹配的成员。"}</p>}
-      </div></SettingsSection>{suggestedSkillSets.length > 0 && <SettingsSection title="Skill 配置建议">{suggestedSkillSets.map((set) => <article key={set.id}><strong>{set.name}</strong><p>{set.description}</p><button className="btn secondary" onClick={() => { if (!UI_PREVIEW) void applySkillSet(set); }}>应用配置集</button></article>)}</SettingsSection>}</>;
+        {currentSnapshot && !filteredAgents.length && <p className="collab-empty">{enabledAgents.length === 0 ? t("暂无可用成员，点击右上角「新增成员」创建。") : t("没有匹配的成员。")}</p>}
+      </div></SettingsSection>{suggestedSkillSets.length > 0 && <SettingsSection title={t("Skill 配置建议")}>{suggestedSkillSets.map((set) => <article key={set.id}><strong>{set.name}</strong><p>{set.description}</p><button className="btn secondary" onClick={() => { if (!UI_PREVIEW) void applySkillSet(set); }}>{t("应用配置集")}</button></article>)}</SettingsSection>}</>;
     })()}
     {creatingProject && <CollaborationProjectDialog preview={UI_PREVIEW} onClose={() => setCreatingProject(false)} onCreate={async (draft, gitSetup) => {
       const created = UI_PREVIEW ? { ...PREVIEW_PROJECT, ...draft, id: crypto.randomUUID(), status: "active" as const, createdAt: Date.now(), updatedAt: Date.now() } : await invoke<MultiAgentProject>("ma_create_project", { input: { ...draft, defaultBranch: "main" }, gitSetup });
@@ -794,7 +797,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
         void refreshSnapshot();
       }} />}
     <CollaborationSupportPanel initialGlobal={initialDiagnosticGlobal} snapshot={currentSnapshot} enabledRuntimes={visibleRuntimeOrder} onChanged={() => { if (!UI_PREVIEW) void refreshSnapshot(); }} view={tab} request={handoffRequest} onHealthChange={setHealth} onHandoffClose={() => setHandoffRequest(null)} />
-    {taskDetail && currentSnapshot?.project.id === taskDetail.projectId && createPortal(<Modal className="collaboration-handoff-dialog collab-task-detail-dialog" onClose={() => setTaskDetail(null)} ariaLabel="协作任务详情"><button className="collab-modal-close" aria-label="关闭任务详情" onClick={() => setTaskDetail(null)}>×</button><h3>{currentSnapshot.tasks.find(task => task.id === taskDetail.taskId)?.title ?? "任务已不可用"}</h3><CollaborationTaskDetails snapshot={currentSnapshot} taskId={taskDetail.taskId} onChanged={refreshSnapshot}/></Modal>, document.body)}
-    {detail && <Modal className="collaboration-handoff-dialog" onClose={() => setDetail(null)} ariaLabel={detail.title}><button className="collab-modal-close" aria-label="关闭详情" onClick={() => setDetail(null)}>×</button><h3>{detail.title}</h3><pre>{detail.content}</pre></Modal>}
+    {taskDetail && currentSnapshot?.project.id === taskDetail.projectId && createPortal(<Modal className="collaboration-handoff-dialog collab-task-detail-dialog" onClose={() => setTaskDetail(null)} ariaLabel={t("协作任务详情")}><button className="collab-modal-close" aria-label={t("关闭任务详情")} onClick={() => setTaskDetail(null)}>×</button><h3>{currentSnapshot.tasks.find(task => task.id === taskDetail.taskId)?.title ?? t("任务已不可用")}</h3><CollaborationTaskDetails snapshot={currentSnapshot} taskId={taskDetail.taskId} onChanged={refreshSnapshot}/></Modal>, document.body)}
+    {detail && <Modal className="collaboration-handoff-dialog" onClose={() => setDetail(null)} ariaLabel={detail.title}><button className="collab-modal-close" aria-label={t("关闭详情")} onClick={() => setDetail(null)}>×</button><h3>{detail.title}</h3><pre>{detail.content}</pre></Modal>}
   </div>;
 }

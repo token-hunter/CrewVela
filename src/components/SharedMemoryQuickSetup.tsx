@@ -1,3 +1,4 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
 import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -120,42 +121,43 @@ export function SharedMemoryQuickSetup({ hidden, disabled, onRunningChange, onCo
     finally { setSubmitting(false); callbacks.current.onRunningChange(false); }
   };
 
+  const failedStep = job?.steps.find(step => step.state === "failed");
   return <section hidden={hidden} className="sm-card sm-quick" aria-labelledby="sm-quick-title">
-    <div className="sm-quick-heading"><div><h3 id="sm-quick-title">共享记忆服务与接入</h3><p className="sm-muted">独立更新本地服务，或为项目配置智能体接入。</p></div>
-      <div className="sm-actions"><button type="button" className="sm-button" disabled={locked} onClick={() => void load()}>{t("检查更新")}</button><button type="button" className="sm-button" disabled={loading || disabled || running} aria-expanded={expanded} onClick={() => { if (expanded && info) setExpanded(false); else void load(); }}>{loading ? "检查环境中…" : expanded && info ? "收起向导" : "开始配置"}</button></div>
+    <div className="sm-quick-heading"><div><h3 id="sm-quick-title">{t("共享记忆服务与接入")}</h3><p className="sm-muted">{t("独立更新本地服务，或为项目配置智能体接入。")}</p></div>
+      <div className="sm-actions"><button type="button" className="sm-button" disabled={locked} onClick={() => void load()}>{t("检查更新")}</button><button type="button" className="sm-button" disabled={loading || disabled || running} aria-expanded={expanded} onClick={() => { if (expanded && info) setExpanded(false); else void load(); }}>{loading ? t("检查环境中…") : expanded && info ? t("收起向导") : t("开始配置")}</button></div>
     </div>
     {expanded && <div className="sm-quick-content">
-      {error && <p role="alert" className="sm-error">{error}</p>}
-      {!info && !loading && <button type="button" className="sm-button" onClick={() => void load()}>重新检查环境</button>}
+      {error && <p role="alert" className="sm-error"><LocalizedErrorText source={error} /></p>}
+      {!info && !loading && <button type="button" className="sm-button" onClick={() => void load()}>{t("重新检查环境")}</button>}
       {info && <>
-        <p className="sm-muted">当前版本：{info.installedVersion ? `v${info.installedVersion}` : "未安装"} · 官方最新稳定版：{info.version ? `v${info.version}` : "未获取"}{info.package && ` · ${info.package.platform}`}。默认无需模型 API Key，记忆保存在当前电脑。</p>
-        {info.updateError && <p role="status">{info.updateError}。不会影响当前版本继续运行。</p>}
-        {info.installedVersion && !info.managed && <p className="sm-muted">检测到外部安装，请通过 Homebrew、Scoop 或原安装方式更新；CrewVela 不会覆盖。</p>}
-        {info.recoveryPending && <div role="alert"><p>上次更新未完成，请先恢复升级前快照。候选数据会保留在备份目录，不会自动合并升级后的写入。</p><label><input type="checkbox" checked={confirmRecovery} onChange={e=>setConfirmRecovery(e.target.checked)} />确认恢复旧快照，并保留候选数据供核对</label><button type="button" className="sm-button" disabled={locked||!confirmRecovery} onClick={()=>void recover()}>恢复升级前快照</button></div>}
-        {!info.supported && <p role="status">当前平台暂不支持快速启用，请使用接入配置中的手动操作。</p>}
-        {info.version && !info.updateError && <details className="sm-quick-download"><summary>下载较慢？使用本地官方安装包</summary><p><a href={`https://github.com/akitaonrails/ai-memory/releases/tag/v${info.version}`} target="_blank" rel="noreferrer">下载 v{info.version} 的 {info.package?.asset ?? "对应平台安装包"}</a>。导入时同样校验 SHA256 和架构；仍需联网读取官方校验信息。</p><div className="sm-quick-archive"><button type="button" className="sm-button" disabled={locked} onClick={() => void choose("archive")}>选择本地{info.package?.asset.endsWith(".zip") ? " ZIP" : " TAR.GZ"}</button>{archive && <><code>{archive}</code><button type="button" className="sm-button" disabled={locked} onClick={() => setArchive(null)}>改用在线下载</button></>}</div></details>}
+        <p className="sm-muted">{t("当前版本：")}{info.installedVersion ? `v${info.installedVersion}` : t("未安装")} {t("· 官方最新稳定版：")}{info.version ? `v${info.version}` : t("未获取")}{info.package && ` · ${info.package.platform}`}{t("。默认无需模型 API Key，记忆保存在当前电脑。")}</p>
+        {info.updateError && <p role="status">{info.updateError}{t("。不会影响当前版本继续运行。")}</p>}
+        {info.installedVersion && !info.managed && <p className="sm-muted">{t("检测到外部安装，请通过 Homebrew、Scoop 或原安装方式更新；CrewVela 不会覆盖。")}</p>}
+        {info.recoveryPending && <div role="alert"><p>{t("上次更新未完成，请先恢复升级前快照。候选数据会保留在备份目录，不会自动合并升级后的写入。")}</p><label><input type="checkbox" checked={confirmRecovery} onChange={e=>setConfirmRecovery(e.target.checked)} />{t("确认恢复旧快照，并保留候选数据供核对")}</label><button type="button" className="sm-button" disabled={locked||!confirmRecovery} onClick={()=>void recover()}>{t("恢复升级前快照")}</button></div>}
+        {!info.supported && <p role="status">{t("当前平台暂不支持快速启用，请使用接入配置中的手动操作。")}</p>}
+        {info.version && !info.updateError && <details className="sm-quick-download"><summary>{t("下载较慢？使用本地官方安装包")}</summary><p><a href={`https://github.com/akitaonrails/ai-memory/releases/tag/v${info.version}`} target="_blank" rel="noreferrer">{t("下载 v")}{info.version} 的 {info.package?.asset ?? t("对应平台安装包")}</a>{t("。导入时同样校验 SHA256 和架构；仍需联网读取官方校验信息。")}</p><div className="sm-quick-archive"><button type="button" className="sm-button" disabled={locked} onClick={() => void choose("archive")}>{t("选择本地")}{info.package?.asset.endsWith(".zip") ? " ZIP" : " TAR.GZ"}</button>{archive && <><code>{archive}</code><button type="button" className="sm-button" disabled={locked} onClick={() => setArchive(null)}>{t("改用在线下载")}</button></>}</div></details>}
         {info.installedVersion && info.managed && <section className="sm-quick-update" aria-labelledby="sm-update-title">
-          <h4 id="sm-update-title">更新服务</h4>
-          <p className="sm-muted">沿用已有服务配置、项目标记和 Agent 接入，不需要选择项目或重新安装 Agent CLI。</p>
-          {newer && <><p className="sm-muted">更新会短暂停止记忆服务，备份原安装、完整记忆数据与服务配置。请先暂停依赖记忆的会话；失败时恢复旧快照，候选数据另行保留。</p>
-            {majorChange && <label className="sm-quick-confirm"><input type="checkbox" checked={confirmMajor} disabled={locked} onChange={e => setConfirmMajor(e.target.checked)} />确认跨大版本迁移，已暂停依赖会话并了解快照恢复范围</label>}
-            <div className="sm-quick-actions"><button type="button" className="sm-button sm-primary" aria-describedby="sm-update-reason" disabled={!!updateDisabledReason} onClick={() => void start(true)}>{running && job?.update ? "正在更新…" : "安装更新"}</button><span id="sm-update-reason" className="sm-muted">{updateDisabledReason || "仅更新服务，已有 MCP 与 Hooks 配置不改写。"}</span></div>
+          <h4 id="sm-update-title">{t("更新服务")}</h4>
+          <p className="sm-muted">{t("沿用已有服务配置、项目标记和 Agent 接入，不需要选择项目或重新安装 Agent CLI。")}</p>
+          {newer && <><p className="sm-muted">{t("更新会短暂停止记忆服务，备份原安装、完整记忆数据与服务配置。请先暂停依赖记忆的会话；失败时恢复旧快照，候选数据另行保留。")}</p>
+            {majorChange && <label className="sm-quick-confirm"><input type="checkbox" checked={confirmMajor} disabled={locked} onChange={e => setConfirmMajor(e.target.checked)} />{t("确认跨大版本迁移，已暂停依赖会话并了解快照恢复范围")}</label>}
+            <div className="sm-quick-actions"><button type="button" className="sm-button sm-primary" aria-describedby="sm-update-reason" disabled={!!updateDisabledReason} onClick={() => void start(true)}>{running && job?.update ? t("正在更新…") : t("安装更新")}</button><span id="sm-update-reason" className="sm-muted">{updateDisabledReason || t("仅更新服务，已有 MCP 与 Hooks 配置不改写。")}</span></div>
           </>}
-          {!newer && <p className="sm-muted">{info.updateError ? "暂时无法检查新版本，现有服务可继续使用。" : "当前未发现可安装的新版本。"}</p>}
+          {!newer && <p className="sm-muted">{info.updateError ? t("暂时无法检查新版本，现有服务可继续使用。") : t("当前未发现可安装的新版本。")}</p>}
         </section>}
-        <button type="button" className="sm-inline-link" disabled={locked} onClick={() => void load()}>重新检查 CLI 安装状态</button>
+        <button type="button" className="sm-inline-link" disabled={locked} onClick={() => void load()}>{t("重新检查 CLI 安装状态")}</button>
         <fieldset disabled={locked || !info.supported} className="sm-quick-fields">
-          <legend>配置项目接入</legend>
-          <div className="sm-project-picker"><code className="sm-project-path">{project || "尚未选择项目目录"}</code><button type="button" className="sm-button" onClick={() => void choose("project")}>选择启用项目</button></div>
-          <div className="sm-quick-agents">{info.agents.map(agent => <label key={agent.id}><input type="checkbox" checked={agents.includes(agent.id)} disabled={!agent.installed} onChange={event => setAgents(current => event.target.checked ? [...current, agent.id] : current.filter(id => id !== agent.id))} />{labels[agent.id] ?? agent.id}{!agent.installed && <small>未检测到 CLI，请先安装并重新检查</small>}</label>)}</div>
-          <p className="sm-muted">Claude Code 的钩子写入所选项目；MCP 和 Codex 钩子写入用户配置。使用 allowlist，仅捕获有 <code>.ai-memory.toml</code> 标记的项目。已有记忆、其他服务和自定义路由会保留。</p>
-          <div className="sm-quick-actions"><button type="button" className="sm-button sm-primary" aria-describedby="sm-setup-reason" disabled={!!setupDisabledReason} onClick={() => void start()}>{running && !job?.update ? "正在启用…" : job?.state === "failed" && !job.update ? "重试启用" : job?.state === "awaiting-session" ? "重新检查并配置" : info.installedVersion ? "配置项目接入" : "安装并启用"}</button><span id="sm-setup-reason" className="sm-muted">{setupDisabledReason || "仅配置所选项目与智能体，不更新已安装的服务。"}</span></div>
+          <legend>{t("配置项目接入")}</legend>
+          <div className="sm-project-picker"><code className="sm-project-path">{project || t("尚未选择项目目录")}</code><button type="button" className="sm-button" onClick={() => void choose("project")}>{t("选择启用项目")}</button></div>
+          <div className="sm-quick-agents">{info.agents.map(agent => <label key={agent.id}><input type="checkbox" checked={agents.includes(agent.id)} disabled={!agent.installed} onChange={event => setAgents(current => event.target.checked ? [...current, agent.id] : current.filter(id => id !== agent.id))} />{labels[agent.id] ?? agent.id}{!agent.installed && <small>{t("未检测到 CLI，请先安装并重新检查")}</small>}</label>)}</div>
+          <p className="sm-muted">{t("Claude Code 的钩子写入所选项目；MCP 和 Codex 钩子写入用户配置。使用 allowlist，仅捕获有")} <code>.ai-memory.toml</code> {t("标记的项目。已有记忆、其他服务和自定义路由会保留。")}</p>
+          <div className="sm-quick-actions"><button type="button" className="sm-button sm-primary" aria-describedby="sm-setup-reason" disabled={!!setupDisabledReason} onClick={() => void start()}>{running && !job?.update ? t("正在启用…") : job?.state === "failed" && !job.update ? t("重试启用") : job?.state === "awaiting-session" ? t("重新检查并配置") : info.installedVersion ? t("配置项目接入") : t("安装并启用")}</button><span id="sm-setup-reason" className="sm-muted">{setupDisabledReason || t("仅配置所选项目与智能体，不更新已安装的服务。")}</span></div>
         </fieldset>
-        <p className="sm-muted">不会自动重启正在运行的会话。</p>
+        <p className="sm-muted">{t("不会自动重启正在运行的会话。")}</p>
       </>}
-      {job && <div aria-live="polite" aria-atomic="false">{job.state === "failed" && <p role="alert" className="sm-error">{job.steps.find(step => step.state === "failed")?.label}：{job.steps.find(step => step.state === "failed")?.detail || "操作未完成，请检查上方提示后重试。"}</p>}<ol className="sm-quick-steps">{job.steps.map(step => <li key={step.id} data-state={step.state}><span aria-hidden="true">{step.state === "done" ? "✓" : step.state === "failed" ? "!" : step.state === "running" ? "…" : "·"}</span><div><strong>{step.label}</strong>{step.detail && <p>{step.detail}</p>}</div><small>{({ pending: "等待", running: "执行中", done: "完成", failed: "失败" })[step.state]}</small></li>)}</ol>
-        {job.state === "awaiting-session" && <div className="sm-quick-result"><strong>配置完成，待新会话验证</strong><p>请在该项目新建或重新加载所选智能体会话，确认 ai-memory 工具可用。完成一次会话后，再检查真实捕获记录。</p><button type="button" className="sm-button" onClick={() => onVerify(job.projectDir)}>前往接入检查</button></div>}
-        {job.state === "updated" && <div className="sm-quick-result"><strong>服务更新完成，已有接入配置保持不变</strong><p>升级前快照已保留。请复核原 Agent 的工具连接与捕获；跨版本接入如需调整，可在“配置项目接入”区域单独配置，服务健康不代表原会话已验证。</p></div>}
+      {job && <div aria-live="polite" aria-atomic="false">{job.state === "failed" && <p role="alert" className="sm-error">{failedStep && <>{t(failedStep.label)} · </>}<LocalizedErrorText source={failedStep?.detail || "操作未完成，请检查上方提示后重试。"} /></p>}<ol className="sm-quick-steps">{job.steps.map(step => <li key={step.id} data-state={step.state}><span aria-hidden="true">{step.state === "done" ? "✓" : step.state === "failed" ? "!" : step.state === "running" ? "…" : "·"}</span><div><strong>{t(step.label)}</strong>{step.detail && <p><LocalizedErrorText source={step.detail} fallback="查看原始诊断" /></p>}</div><small>{({ pending: t("等待"), running: t("执行中"), done: t("完成"), failed: t("失败") })[step.state]}</small></li>)}</ol>
+        {job.state === "awaiting-session" && <div className="sm-quick-result"><strong>{t("配置完成，待新会话验证")}</strong><p>{t("请在该项目新建或重新加载所选智能体会话，确认 ai-memory 工具可用。完成一次会话后，再检查真实捕获记录。")}</p><button type="button" className="sm-button" onClick={() => onVerify(job.projectDir)}>{t("前往接入检查")}</button></div>}
+        {job.state === "updated" && <div className="sm-quick-result"><strong>{t("服务更新完成，已有接入配置保持不变")}</strong><p>{t("升级前快照已保留。请复核原 Agent 的工具连接与捕获；跨版本接入如需调整，可在“配置项目接入”区域单独配置，服务健康不代表原会话已验证。")}</p></div>}
       </div>}
     </div>}
   </section>;

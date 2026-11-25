@@ -1,3 +1,4 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
 import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -409,7 +410,7 @@ export function PiChat({ session, preview = false, onSessionRecord, active = tru
         {!connecting && !snapshot?.connected && <div className="harness-chat-info">{t("会话已停止或未连接。点击“恢复会话”继续原 pi 会话。")}</div>}
         <div ref={messagesEnd} />
       </div>
-      {error && <pre className="harness-chat-error" role="alert">{error}</pre>}
+      {error && <pre className="harness-chat-error" role="alert"><LocalizedErrorText source={error} /></pre>}
       <form className="harness-chat-composer" onSubmit={(event) => void send(event)}>
         {commandMenu && <div className="harness-command-menu" role="menu" aria-label={t("Pi 命令")}>
           <button type="button" role="menuitem" onClick={() => { setCommandMenu(false); void addFiles(); }}>{t("文件 file")} <small>{t("添加本地文件引用")}</small></button>

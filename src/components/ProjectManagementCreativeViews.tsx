@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Archive,
@@ -123,6 +124,7 @@ export function ProjectManagementStyleSwitcher({
   onChange: (next: ProjectManagementStyle) => void;
   onOpenAppearanceSettings?: () => void;
 }) {
+  const t = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -149,18 +151,18 @@ export function ProjectManagementStyleSwitcher({
       <button
         type="button"
         className="pm-style-trigger"
-        aria-label="切换项目管理模式"
-        title="切换项目管理模式"
+        aria-label={t("切换项目管理模式")}
+        title={t("切换项目管理模式")}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
         <Palette size={14} aria-hidden="true" />
-        <span>模式</span>
+        <span>{t("模式")}</span>
       </button>
       {open && (
-        <div className="pm-style-popover" role="menu" aria-label="切换项目管理模式">
-          <div className="pm-style-popover-title">项目管理模式</div>
+        <div className="pm-style-popover" role="menu" aria-label={t("切换项目管理模式")}>
+          <div className="pm-style-popover-title">{t("项目管理模式")}</div>
           {PROJECT_STYLE_MENU.map((option) => {
             const active = style === option.id;
             return (
@@ -192,7 +194,7 @@ export function ProjectManagementStyleSwitcher({
                   onOpenAppearanceSettings();
                 }}
               >
-                <span>前往「外观」设置</span>
+                <span>{t("前往「外观」设置")}</span>
                 <span aria-hidden="true">↗</span>
               </button>
             </>
@@ -233,6 +235,7 @@ function ProjectActionMenu({
   onOpenDialog: (project: Project, kind: ProjectEditKind) => void;
   compact?: boolean;
 }) {
+  const t = useTranslation();
   const archived = project.archivedAt != null;
   return (
     <details className={`project-management-menu${compact ? " pm-menu-compact" : ""}`}>
@@ -241,10 +244,10 @@ function ProjectActionMenu({
       </summary>
       <div>
         {([
-          ["rename", PencilSimple, "改名"],
-          ["directory", FolderSimple, "修改目录"],
-          ["collaboration", LinkSimple, "关联协作"],
-          ["archive", Archive, archived ? "恢复项目" : "归档"],
+          ["rename", PencilSimple, t("改名")],
+          ["directory", FolderSimple, t("修改目录")],
+          ["collaboration", LinkSimple, t("关联协作")],
+          ["archive", Archive, archived ? t("恢复项目") : t("归档")],
         ] as const).map(([kind, Icon, label]) => (
           <button
             type="button"
@@ -277,10 +280,11 @@ function ArchivedStrip({
   search: string;
   onOpenDialog: (project: Project, kind: ProjectEditKind) => void;
 }) {
+  const t = useTranslation();
   if (!archived.length) return null;
   return (
     <details className="pm-archived-strip" open={search ? true : undefined}>
-      <summary>已归档（{archived.length}）</summary>
+      <summary>{t("已归档（")}{archived.length}）</summary>
       <div className="pm-archived-grid">
         {archived.map((project) => {
           const [c1] = resolveProjectColors(project);
@@ -296,7 +300,7 @@ function ArchivedStrip({
                 className="btn secondary pm-mini-btn"
                 onClick={() => onOpenDialog(project, "archive")}
               >
-                恢复项目
+                {t("恢复项目")}
               </button>
             </div>
           );
@@ -307,6 +311,7 @@ function ArchivedStrip({
 }
 
 export function ProjectManagementCreativeViews(props: CreativeViewProps) {
+  const t = useTranslation();
   const {
     style,
     active,
@@ -360,13 +365,13 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
       <div className="pm-creative pm-gallery">
         <div className="pm-subbar">
           <span className="pm-subbar-meta">
-            {active.length} 个活跃项目 · {runningCount} 个服务运行中
+            {active.length} {t("个活跃项目 ·")} {runningCount} {t("个服务运行中")}
           </span>
-          <div className="pm-density-group" role="group" aria-label="相簿密度">
+          <div className="pm-density-group" role="group" aria-label={t("相簿密度")}>
             {([
-              ["large", "大"],
-              ["medium", "中"],
-              ["compact", "密"],
+              ["large", t("大")],
+              ["medium", t("中")],
+              ["compact", t("密")],
             ] as const).map(([id, label]) => (
               <button
                 key={id}
@@ -400,12 +405,12 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       <>
                         <span className="pm-live-dot" aria-hidden="true" />
                         <span>
-                          {status?.state === "starting" ? "正在启动" : "运行中"}
+                          {status?.state === "starting" ? t("正在启动") : t("运行中")}
                           {status?.url ? ` · ${formatShortUrl(status.url)}` : ""}
                         </span>
                       </>
                     ) : (
-                      <span>{serviceError ? "启动异常" : formatRecency(project)}</span>
+                      <span>{serviceError ? t("启动异常") : formatRecency(project)}</span>
                     )}
                   </span>
 
@@ -418,7 +423,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                         onClick={() => onChangeService(project.id, running ? "stop" : "start")}
                       >
                         {running ? <Stop size={13} /> : <Play size={13} />}
-                        <span>{running ? "停止" : "启动"}</span>
+                        <span>{running ? t("停止") : t("启动")}</span>
                       </button>
                     )}
                     <button
@@ -427,7 +432,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       disabled={opening !== null}
                       onClick={() => onOpenProject(project)}
                     >
-                      <span>打开</span>
+                      <span>{t("打开")}</span>
                     </button>
                   </div>
                 </div>
@@ -442,7 +447,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                   {linked.length > 0 && isHero && (
                     <span className="pm-glass-pill">
                       <LinkSimple size={12} aria-hidden="true" />
-                      <span>{linked.length} 项协作</span>
+                      <span>{linked.length} {t("项协作")}</span>
                     </span>
                   )}
                 </div>
@@ -467,7 +472,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                 <button
                   type="button"
                   className="pm-glass-btn pm-sheet-close"
-                  aria-label="关闭详情"
+                  aria-label={t("关闭详情")}
                   onClick={() => setSheetId(null)}
                 >
                   <X size={15} />
@@ -481,10 +486,10 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
               <div className="pm-sheet-body">
                 <div className="pm-sheet-section">
                   <div>
-                    <strong>本地开发服务</strong>
+                    <strong>{t("本地开发服务")}</strong>
                     <span className="project-management-status" data-state={status?.state ?? "idle"}>
                       {status?.state === "running" && <span className="project-management-dot" />}
-                      {working && !running ? "正在准备启动" : STATUS_LABELS[status?.state ?? "idle"]}
+                      {working && !running ? t("正在准备启动") : STATUS_LABELS[status?.state ?? "idle"]}
                       {status?.url ? ` · ${status.url}` : ""}
                     </span>
                   </div>
@@ -492,13 +497,13 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                     {status?.state === "running" && status.url && onBrowse && (
                       <button type="button" className="btn secondary" onClick={() => onBrowse(status.url!)}>
                         <ArrowSquareOut size={15} />
-                        打开页面
+                        {t("打开页面")}
                       </button>
                     )}
                     {status && (
                       <button type="button" className="btn secondary" onClick={() => onOpenLogs(sheetProject)}>
                         <FileText size={15} />
-                        日志
+                        {t("日志")}
                       </button>
                     )}
                     {services && (
@@ -509,7 +514,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                         onClick={() => onChangeService(sheetProject.id, running ? "stop" : "start")}
                       >
                         {running ? <Stop size={15} /> : <Play size={15} />}
-                        {running ? "停止项目" : "启动项目"}
+                        {running ? t("停止项目") : t("启动项目")}
                       </button>
                     )}
                   </div>
@@ -526,7 +531,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                         onClick={() => onChangeService(sheetProject.id, "recheck")}
                       >
                         <ArrowCounterClockwise size={14} />
-                        重新识别启动方式
+                        {t("重新识别启动方式")}
                       </button>
                     )}
                   </div>
@@ -543,7 +548,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       }}
                     >
                       <LinkSimple size={15} />
-                      <span>关联协作</span>
+                      <span>{t("关联协作")}</span>
                     </button>
                     {linked.map((item) => (
                       <button
@@ -573,7 +578,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       }}
                     >
                       <PencilSimple size={14} />
-                      改名
+                      {t("改名")}
                     </button>
                     <button
                       type="button"
@@ -585,7 +590,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       }}
                     >
                       <FolderSimple size={14} />
-                      修改目录
+                      {t("修改目录")}
                     </button>
                     <button
                       type="button"
@@ -597,7 +602,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       }}
                     >
                       <Archive size={14} />
-                      归档
+                      {t("归档")}
                     </button>
                   </div>
                   <button
@@ -610,7 +615,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                     }}
                   >
                     <ArrowSquareOut size={15} />
-                    打开工作区
+                    {t("打开工作区")}
                   </button>
                 </footer>
               </div>
@@ -629,7 +634,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
     return (
       <div className="pm-creative pm-vinyl">
         <div className="pm-subbar">
-          <span className="pm-subbar-meta">启动本地服务时黑胶唱片从封套滑出并旋转，点选唱片可在下方唱机台操控。</span>
+          <span className="pm-subbar-meta">{t("启动本地服务时黑胶唱片从封套滑出并旋转，点选唱片可在下方唱机台操控。")}</span>
         </div>
 
         <div className="pm-vinyl-grid">
@@ -665,7 +670,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
         </div>
 
         {selected && selectedInfo && (
-          <section className="pm-turntable-deck" aria-label="唱机控制台">
+          <section className="pm-turntable-deck" aria-label={t("唱机控制台")}>
             <div className="pm-turntable-main">
               <div
                 className={`pm-turntable-platter${selectedInfo.running ? " spinning" : ""}`}
@@ -678,7 +683,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                   <span className="project-management-status" data-state={selectedInfo.status?.state ?? "idle"}>
                     {selectedInfo.running && <span className="pm-live-dot" aria-hidden="true" />}
                     {selectedInfo.working && !selectedInfo.running
-                      ? "正在准备启动"
+                      ? t("正在准备启动")
                       : STATUS_LABELS[selectedInfo.status?.state ?? "idle"]}
                     {selectedInfo.status?.url ? ` · ${selectedInfo.status.url}` : ""}
                   </span>
@@ -691,7 +696,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                     onClick={() => onOpenDialog(selected, "collaboration")}
                   >
                     <LinkSimple size={14} />
-                    <span>关联协作</span>
+                    <span>{t("关联协作")}</span>
                   </button>
                   {selectedInfo.linked.map((item) => (
                     <button
@@ -716,7 +721,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                     onClick={() => onChangeService(selected.id, selectedInfo.running ? "stop" : "start")}
                   >
                     {selectedInfo.running ? <Stop size={15} /> : <Play size={15} />}
-                    {selectedInfo.running ? "停止项目" : "启动项目"}
+                    {selectedInfo.running ? t("停止项目") : t("启动项目")}
                   </button>
                 )}
                 <button
@@ -726,7 +731,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                   onClick={() => onOpenProject(selected)}
                 >
                   <ArrowSquareOut size={15} />
-                  打开工作区
+                  {t("打开工作区")}
                 </button>
                 {selectedInfo.status?.state === "running" && selectedInfo.status.url && onBrowse && (
                   <button
@@ -734,7 +739,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                     className="btn secondary"
                     onClick={() => onBrowse(selectedInfo.status!.url!)}
                   >
-                    打开页面
+                    {t("打开页面")}
                   </button>
                 )}
                 {selectedInfo.status && (
@@ -744,7 +749,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                     onClick={() => onOpenLogs(selected)}
                   >
                     <FileText size={15} />
-                    日志
+                    {t("日志")}
                   </button>
                 )}
                 <ProjectActionMenu
@@ -767,7 +772,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                     disabled={selectedInfo.working}
                     onClick={() => onChangeService(selected.id, "recheck")}
                   >
-                    重新识别启动方式
+                    {t("重新识别启动方式")}
                   </button>
                 )}
               </div>
@@ -787,14 +792,14 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
     return (
       <div className="pm-creative pm-pinboard">
         <div className="pm-subbar">
-          <span className="pm-subbar-meta">将项目相纸钉在灵感墙上，运行中亮起状态指示灯。</span>
+          <span className="pm-subbar-meta">{t("将项目相纸钉在灵感墙上，运行中亮起状态指示灯。")}</span>
           <button
             type="button"
             className="btn secondary pm-mini-btn"
             onClick={toggleAndSaveNeat}
           >
             {pinboardNeat ? <Sparkle size={14} /> : <GridFour size={14} />}
-            <span>{pinboardNeat ? "自然散落" : "整齐对齐"}</span>
+            <span>{pinboardNeat ? t("自然散落") : t("整齐对齐")}</span>
           </button>
         </div>
 
@@ -860,7 +865,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                           disabled={working}
                           onClick={() => onChangeService(project.id, "recheck")}
                         >
-                          重新识别
+                          {t("重新识别")}
                         </button>
                       )}
                     </div>
@@ -891,7 +896,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                         onClick={() => onChangeService(project.id, running ? "stop" : "start")}
                       >
                         {running ? <Stop size={13} /> : <Play size={13} />}
-                        <span>{running ? "停止" : "启动"}</span>
+                        <span>{running ? t("停止") : t("启动")}</span>
                       </button>
                     )}
                     <button
@@ -900,7 +905,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       disabled={opening !== null}
                       onClick={() => onOpenProject(project)}
                     >
-                      工作区
+                      {t("工作区")}
                     </button>
                     {status?.state === "running" && status.url && onBrowse && (
                       <button
@@ -909,7 +914,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                         onClick={() => onBrowse(status.url!)}
                         title={status.url}
                       >
-                        页面
+                        {t("页面")}
                       </button>
                     )}
                     {status && (
@@ -918,7 +923,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                         className="btn secondary pm-mini-btn"
                         onClick={() => onOpenLogs(project)}
                       >
-                        日志
+                        {t("日志")}
                       </button>
                     )}
                   </div>
@@ -940,13 +945,13 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
   return (
     <div className="pm-creative pm-studio">
       <div className="pm-subbar">
-        <span className="pm-subbar-meta">启动本地开发服务即可点亮对应工作室灯火，直观掌握园区运行态。</span>
+        <span className="pm-subbar-meta">{t("启动本地开发服务即可点亮对应工作室灯火，直观掌握园区运行态。")}</span>
         <span className="pm-studio-counter">
           <span className={litCount > 0 ? "pm-live-dot" : "pm-dim-dot"} aria-hidden="true" />
           <strong>
             {litCount} / {active.length}
           </strong>
-          <span>栋亮灯运行中</span>
+          <span>{t("栋亮灯运行中")}</span>
         </span>
       </div>
 
@@ -972,7 +977,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                   </small>
                   <span className="project-management-status" data-state={status?.state ?? "idle"}>
                     {working && !running
-                      ? "正在准备启动"
+                      ? t("正在准备启动")
                       : running
                         ? `亮灯运行中${status?.url ? ` · ${status.url}` : ""}`
                         : `熄灯休眠 · ${formatRecency(project)}`}
@@ -997,7 +1002,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       disabled={working}
                       onClick={() => onChangeService(project.id, "recheck")}
                     >
-                      重新识别启动方式
+                      {t("重新识别启动方式")}
                     </button>
                   )}
                 </div>
@@ -1030,7 +1035,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       onClick={() => onChangeService(project.id, running ? "stop" : "start")}
                     >
                       {running ? <Moon size={14} /> : <Lightbulb size={14} />}
-                      <span>{running ? "熄灯停止" : "点灯启动"}</span>
+                      <span>{running ? t("熄灯停止") : t("点灯启动")}</span>
                     </button>
                   )}
                   <button
@@ -1040,7 +1045,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                     onClick={() => onOpenProject(project)}
                   >
                     <ArrowSquareOut size={14} />
-                    <span>打开工作区</span>
+                    <span>{t("打开工作区")}</span>
                   </button>
                   {status?.state === "running" && status.url && onBrowse && (
                     <button
@@ -1048,7 +1053,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       className="btn secondary pm-mini-btn"
                       onClick={() => onBrowse(status.url!)}
                     >
-                      打开页面
+                      {t("打开页面")}
                     </button>
                   )}
                 </div>
@@ -1061,7 +1066,7 @@ export function ProjectManagementCreativeViews(props: CreativeViewProps) {
                       onClick={() => onOpenLogs(project)}
                     >
                       <FileText size={14} />
-                      <span>日志</span>
+                      <span>{t("日志")}</span>
                     </button>
                   )}
                   <ProjectActionMenu

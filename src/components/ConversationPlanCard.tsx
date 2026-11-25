@@ -1,3 +1,5 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
+import { useTranslation } from "../useInterfaceLanguage";
 import { useState } from "react";
 import { CaretDown, Check, Copy, GitBranch, Play, Square } from "@phosphor-icons/react";
 import { AgentAvatar } from "./AgentAvatar";
@@ -16,6 +18,7 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
   onTasks: () => void;
   onTaskRecords: (taskId: string) => void;
 }) {
+  const t = useTranslation();
   const [foldOpen, setFoldOpen] = useState(true);
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
   const agents = snapshot?.agents ?? [];
@@ -39,17 +42,17 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
       .slice(0, 3);
     if (managed.status === "completed") {
       const hasReceipt = Boolean(receipt && receipt.commit === managed.commit);
-      return <section className="conversation-plan team-plan-card team-delivery-card grok-delivery-card" aria-label="全自动托管结果">
+      return <section className="conversation-plan team-plan-card team-delivery-card grok-delivery-card" aria-label={t("全自动托管结果")}>
         <ProjectPreviewActions key={plan.id} projectId={plan.projectId} planId={plan.id} config={managed.preview} demo={managed.demo} root={managed.target.root}
           subtitle={hasReceipt ? "已通过验收并合入仓库" : undefined}
           onTasks={plan.status === "applied" ? onTasks : undefined}>
           {hasReceipt && receipt && <div className="team-plan-acceptance grok-delivery-receipt">
             <div className="grok-delivery-checks">
               <div className="grok-check-pills">
-                <span className="grok-check-pill is-ok"><Check size={12} weight="bold" aria-hidden="true" />宿主测试通过</span>
+                <span className="grok-check-pill is-ok"><Check size={12} weight="bold" aria-hidden="true" />{t("宿主测试通过")}</span>
                 <span className={`grok-check-pill ${receipt.reviewRunId ? "is-ok" : "is-muted"}`}>
                   {receipt.reviewRunId && <Check size={12} weight="bold" aria-hidden="true" />}
-                  {receipt.reviewRunId ? "独立只读审查通过" : "本轮未安排独立审查"}
+                  {receipt.reviewRunId ? t("独立只读审查通过") : t("本轮未安排独立审查")}
                 </span>
               </div>
               {uniqueAssignees.length > 0 && (
@@ -64,20 +67,20 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
             </div>
             {receipt.verificationCommand && <div className="grok-cmd-box grok-delivery-cmd">
               <code title={receipt.verificationCommand}>{receipt.verificationCommand}</code>
-              <button type="button" className="grok-icon-btn sm" aria-label="复制验收命令"
-                title={copiedCommand === receipt.verificationCommand ? "已复制" : "复制验收命令"}
+              <button type="button" className="grok-icon-btn sm" aria-label={t("复制验收命令")}
+                title={copiedCommand === receipt.verificationCommand ? t("已复制") : t("复制验收命令")}
                 onClick={() => copyCommand(receipt.verificationCommand)}>
                 {copiedCommand === receipt.verificationCommand ? <Check size={13} /> : <Copy size={13} />}
               </button>
             </div>}
             <div className="grok-delivery-git">
               <GitBranch size={13} aria-hidden="true" />
-              <span>已合入</span>
+              <span>{t("已合入")}</span>
               <span className="grok-git-branch">{managed.target.branch}</span>
               <span aria-hidden="true">·</span>
               <code className="grok-git-commit" title={receipt.commit}>{receipt.commit.slice(0, 12)}</code>
-              <button type="button" className="grok-icon-btn sm" aria-label="复制提交哈希"
-                title={copiedCommand === receipt.commit ? "已复制" : "复制提交哈希"}
+              <button type="button" className="grok-icon-btn sm" aria-label={t("复制提交哈希")}
+                title={copiedCommand === receipt.commit ? t("已复制") : t("复制提交哈希")}
                 onClick={() => copyCommand(receipt.commit)}>
                 {copiedCommand === receipt.commit ? <Check size={13} /> : <Copy size={13} />}
               </button>
@@ -99,7 +102,7 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
           : "全自动托管中";
     const tone = managed.status === "failed" ? "fail" : (managed.status === "waiting_login" || paused) ? "warn" : "running";
     const stepCount = Math.max(plan.tasks.length, plan.taskIds.length);
-    return <section className="conversation-plan team-plan-card grok-plan-wrap" data-tone={tone} aria-label="全自动托管结果">
+    return <section className="conversation-plan team-plan-card grok-plan-wrap" data-tone={tone} aria-label={t("全自动托管结果")}>
       <div className={`grok-process-fold${foldOpen ? " is-open" : ""}`}>
         <button type="button" className="grok-fold-trigger" aria-expanded={foldOpen} onClick={() => setFoldOpen(value => !value)}>
           <span className="grok-fold-left">
@@ -113,24 +116,24 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
                 ))}
               </span>
             )}
-            <h3 className="grok-fold-heading">{headingText}</h3>
-            {stepCount > 0 && <span className="grok-fold-count">{stepCount} 步</span>}
+            <h3 className="grok-fold-heading">{t(headingText)}</h3>
+            {stepCount > 0 && <span className="grok-fold-count">{stepCount} {t("步")}</span>}
           </span>
           <span className="grok-fold-toggle">
-            <span>{foldOpen ? "收起" : "展开"}</span>
+            <span>{foldOpen ? t("收起") : t("展开")}</span>
             <CaretDown size={13} aria-hidden="true" />
           </span>
         </button>
         {foldOpen && <div className="grok-fold-body">
-          {deliveryTask && deliveryOwner && <p className="team-plan-acceptance">{deliveryOwner.name} 兼任联调 · {deliveryTask.title}</p>}
+          {deliveryTask && deliveryOwner && <p className="team-plan-acceptance">{deliveryOwner.name} {t("兼任联调 ·")} {deliveryTask.title}</p>}
           <ManagedDeliveryMembers plan={plan} snapshot={snapshot} onRecords={onTaskRecords} />
-          {commands.length > 0 && <div className="grok-fold-commands" aria-label="计划验收命令">
-            <span className="grok-fold-cmd-label">计划验收命令</span>
+          {commands.length > 0 && <div className="grok-fold-commands" aria-label={t("计划验收命令")}>
+            <span className="grok-fold-cmd-label">{t("计划验收命令")}</span>
             {commands.map(command => (
               <div className="grok-cmd-box" key={command}>
                 <code>{command}</code>
-                <button type="button" className="grok-icon-btn sm" aria-label="复制验收命令"
-                  title={copiedCommand === command ? "已复制" : "复制验收命令"}
+                <button type="button" className="grok-icon-btn sm" aria-label={t("复制验收命令")}
+                  title={copiedCommand === command ? t("已复制") : t("复制验收命令")}
                   onClick={() => copyCommand(command!)}>
                   {copiedCommand === command ? <Check size={13} /> : <Copy size={13} />}
                 </button>
@@ -139,10 +142,10 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
           </div>}
         </div>}
       </div>
-      {summary && <p className={`team-plan-summary grok-verdict is-${tone}`}>{summary}</p>}
+      {summary && <p className={`team-plan-summary grok-verdict is-${tone}`}>{managed.status === "failed" ? <LocalizedErrorText source={summary} /> : t(summary)}</p>}
       {(onCodexLogin || plan.status === "applied") && <div className="team-plan-actions grok-plan-actions">
-        {onCodexLogin && <button type="button" className="grok-pill-btn primary" disabled={blocked} onClick={onCodexLogin}>登录 Codex</button>}
-        {plan.status === "applied" && <button type="button" className="conversation-text-button grok-pill-btn" onClick={onTasks}>查看任务执行</button>}
+        {onCodexLogin && <button type="button" className="grok-pill-btn primary" disabled={blocked} onClick={onCodexLogin}>{t("登录 Codex")}</button>}
+        {plan.status === "applied" && <button type="button" className="conversation-text-button grok-pill-btn" onClick={onTasks}>{t("查看任务执行")}</button>}
       </div>}
     </section>;
   }
@@ -151,16 +154,16 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
   const planHeading = pending ? "待确认分工" : plan.status === "applied" ? "分工已确认" : "分工已更新";
   const tone = pending ? "warn" : plan.status === "applied" ? "done" : "idle";
 
-  return <section className="conversation-plan team-plan-card grok-plan-wrap" data-tone={tone} aria-label={pending ? "待确认分工" : "项目分工"}>
+  return <section className="conversation-plan team-plan-card grok-plan-wrap" data-tone={tone} aria-label={pending ? t("待确认分工") : t("项目分工")}>
     <div className={`grok-process-fold${foldOpen ? " is-open" : ""}`}>
       <button type="button" className="grok-fold-trigger" aria-expanded={foldOpen} onClick={() => setFoldOpen(value => !value)}>
         <span className="grok-fold-left">
           <span className={`grok-status-dot is-${tone}`} aria-hidden="true" />
-          <h3 className="grok-fold-heading">{planHeading}</h3>
-          <span className="grok-fold-count">{plan.tasks.length} 项任务</span>
+          <h3 className="grok-fold-heading">{t(planHeading)}</h3>
+          <span className="grok-fold-count">{plan.tasks.length} {t("项任务")}</span>
         </span>
         <span className="grok-fold-toggle">
-          <span>{foldOpen ? "收起" : "展开"}</span>
+          <span>{foldOpen ? t("收起") : t("展开")}</span>
           <CaretDown size={13} aria-hidden="true" />
         </span>
       </button>
@@ -169,23 +172,23 @@ export function ConversationPlanCard({ plan, snapshot, blocked, paused, onConfir
           const agent = agents.find(item => item.id === task.assigneeAgentId);
           return <div className="team-plan-row" key={task.key}>
             <strong><Square size={16} aria-hidden="true" />{task.title}</strong>
-            <span className="team-task-agent">{agent && <AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative />}<span>{agent?.name ?? "历史成员"}</span></span>
+            <span className="team-task-agent">{agent && <AgentAvatar avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative />}<span>{agent?.name ?? t("历史成员")}</span></span>
             <span className="team-plan-description" title={task.description}>{task.description}</span>
           </div>;
         })}</div>
-        {acceptance && <p className="team-plan-acceptance">验收标准：{acceptance}</p>}
-        <details className="team-plan-contract grok-plan-contract"><summary>查看完整分工</summary>{plan.tasks.map(task => <div key={task.key}>
-          <strong>{task.title}</strong><p>{task.description}</p><p>{task.workspaceMode === "worktree" ? "独立工作树" : "只读任务"} · 写入：{task.writePaths.join("、") || "无"}</p>
-          <p>依赖：{task.dependsOn.map(key => plan.tasks.find(item => item.key === key)?.title ?? key).join("、") || "无"}</p>
-          <p>验收：{task.acceptanceCriteria}</p><p>验收命令：<code>{task.verificationCommand ?? "未指定命令"}</code></p>
-          {task.reviewerAgentId && <p>审查：{agents.find(agent => agent.id === task.reviewerAgentId)?.name ?? "历史成员"}</p>}
+        {acceptance && <p className="team-plan-acceptance">{t("验收标准：")}{acceptance}</p>}
+        <details className="team-plan-contract grok-plan-contract"><summary>{t("查看完整分工")}</summary>{plan.tasks.map(task => <div key={task.key}>
+          <strong>{task.title}</strong><p>{task.description}</p><p>{task.workspaceMode === "worktree" ? t("独立工作树") : t("只读任务")} {t("· 写入：")}{task.writePaths.join("、") || t("无")}</p>
+          <p>{t("依赖：")}{task.dependsOn.map(key => plan.tasks.find(item => item.key === key)?.title ?? key).join("、") || t("无")}</p>
+          <p>{t("验收：")}{task.acceptanceCriteria}</p><p>{t("验收命令：")}<code>{task.verificationCommand ?? t("未指定命令")}</code></p>
+          {task.reviewerAgentId && <p>{t("审查：")}{agents.find(agent => agent.id === task.reviewerAgentId)?.name ?? t("历史成员")}</p>}
         </div>)}</details>
       </div>}
     </div>
     {plan.summary && <p className={`team-plan-summary grok-verdict is-${tone}`}>{plan.summary}</p>}
     <div className="team-plan-actions grok-plan-actions">{pending ? <>
-      <button type="button" className="conversation-primary grok-pill-btn primary" disabled={blocked} onClick={onCodexLogin ?? onConfirm}><Play size={15} weight="fill" />{onCodexLogin ? "登录 Codex" : "确认并开始执行"}</button>
-      <button type="button" className="conversation-text-button team-plan-adjust grok-pill-btn" disabled={blocked} onClick={onAdjust}>调整分工</button>
-    </> : plan.status === "applied" ? <button type="button" className="conversation-text-button grok-pill-btn" onClick={onTasks}>查看任务执行</button> : <span>请使用最新的分工计划。</span>}</div>
+      <button type="button" className="conversation-primary grok-pill-btn primary" disabled={blocked} onClick={onCodexLogin ?? onConfirm}><Play size={15} weight="fill" />{onCodexLogin ? t("登录 Codex") : t("确认并开始执行")}</button>
+      <button type="button" className="conversation-text-button team-plan-adjust grok-pill-btn" disabled={blocked} onClick={onAdjust}>{t("调整分工")}</button>
+    </> : plan.status === "applied" ? <button type="button" className="conversation-text-button grok-pill-btn" onClick={onTasks}>{t("查看任务执行")}</button> : <span>{t("请使用最新的分工计划。")}</span>}</div>
   </section>;
 }

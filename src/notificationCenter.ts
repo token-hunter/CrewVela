@@ -7,6 +7,7 @@ import {
 } from "@tauri-apps/plugin-notification";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { normalizeNotificationTitle } from "./brand";
+import { translateCurrent } from "./interfaceLanguage";
 export { normalizeNotificationTitle } from "./brand";
 import {
   loadNotificationSettings,
@@ -59,13 +60,14 @@ export async function deliverDesktopNotice(
 ): Promise<boolean> {
   const settings = loadNotificationSettings();
   if (!settings.enabled && !notice.force) return false;
-  const displayTitle = normalizeNotificationTitle(notice.title);
+  const displayTitle = normalizeNotificationTitle(translateCurrent(notice.title));
+  const displayBody = notice.category === "test" ? translateCurrent(notice.body) : notice.body;
   await appendNotificationHistory({
     id:
       notice.id ??
       `notice:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`,
     title: displayTitle,
-    body: notice.body,
+    body: displayBody,
     category: notice.category ?? "general",
     createdAt: Date.now(),
     url: notice.url,
@@ -75,7 +77,7 @@ export async function deliverDesktopNotice(
     if (windows) {
       await invoke<boolean>("show_notification_overlay", {
         title: displayTitle,
-        body: notice.body,
+        body: displayBody,
         url: notice.url ?? null,
       });
       playNotificationSound(settings);
@@ -84,7 +86,7 @@ export async function deliverDesktopNotice(
     if (!(await ensurePermission())) return false;
     sendNotification({
       title: displayTitle,
-      body: notice.body,
+      body: displayBody,
       sound: settings.sound === "system" ? "Default" : undefined,
       extra: notice.url ? { url: notice.url } : undefined,
       autoCancel: true,

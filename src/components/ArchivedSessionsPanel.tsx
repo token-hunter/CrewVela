@@ -108,16 +108,16 @@ export function ArchivedSessionsPanel({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索归档会话"
-              aria-label="搜索归档会话"
+              placeholder={t("搜索归档会话")}
+              aria-label={t("搜索归档会话")}
             />
           </label>
           <select
             value={projectId}
             onChange={(event) => setProjectId(event.target.value)}
-            aria-label="按项目筛选归档会话"
+            aria-label={t("按项目筛选归档会话")}
           >
-            <option value="all">所有项目</option>
+            <option value="all">{t("所有项目")}</option>
             {projects
               .filter((project) => archivedProjectIds.has(project.id))
               .map((project) => (
@@ -130,19 +130,19 @@ export function ArchivedSessionsPanel({
         </div>
 
         <div className="archived-settings-summary">
-          <span>{filteredSessions.length} 个会话</span>
-          <small>归档只会从首页隐藏会话，不会删除记录或项目文件。</small>
+          <span>{filteredSessions.length} {t("个会话")}</span>
+          <small>{t("归档只会从首页隐藏会话，不会删除记录或项目文件。")}</small>
         </div>
 
         {groups.length === 0 || !selectedSession ? (
           <div className="archived-settings-empty">
             <ArchiveIcon size={28} aria-hidden="true" />
-            <strong>{sessions.length === 0 ? "还没有归档会话" : "没有匹配的归档会话"}</strong>
-            <span>归档后的会话会保留在这里，可随时恢复。</span>
+            <strong>{sessions.length === 0 ? t("还没有归档会话") : t("没有匹配的归档会话")}</strong>
+            <span>{t("归档后的会话会保留在这里，可随时恢复。")}</span>
           </div>
         ) : (
           <>
-            <section className="archived-tea-stage unsealed" aria-label="当前启盖查看的归档会话">
+            <section className="archived-tea-stage unsealed" aria-label={t("当前启盖查看的归档会话")}>
               <div className="archived-tea-visual">
                 <svg className="archived-tea-svg" viewBox="0 0 248 150" aria-hidden="true">
                   <defs>
@@ -170,7 +170,7 @@ export function ArchivedSessionsPanel({
                   <rect x="112" y="65" width="24" height="54" rx="4" fill="#f1e6d2" opacity="0.92" />
                   <line x1="124" y1="73" x2="124" y2="108" stroke="var(--accent)" strokeWidth="1.35" strokeDasharray="3 3" />
                   <circle cx="124" cy="112" r="3.4" fill="var(--accent)" />
-                  <text x="124" y="85" textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#3a2c20">茶罐</text>
+                  <text x="124" y="85" textAnchor="middle" fontSize="8.5" fontWeight="700" fill="#3a2c20">{t("茶罐")}</text>
                   <text x="124" y="99" textAnchor="middle" fontSize="8" fontWeight="600" fill="#7d4a34">#{selectedTinNo}</text>
                   <g className="archived-tea-lid">
                     <rect x="92" y="42" width="64" height="12" rx="5" fill="var(--warn, #e5a94c)" fillOpacity="0.72" stroke="var(--warn, #e5a94c)" strokeWidth="1.1" />
@@ -181,7 +181,7 @@ export function ArchivedSessionsPanel({
 
               <div className="archived-tea-inspect">
                 <span className="archived-tea-kicker">
-                  当前启盖查香 · {selectedProjectName} · 藏罐 #{selectedTinNo}
+                  {t("当前启盖查香 ·")} {selectedProjectName} {t("· 藏罐 #")}{selectedTinNo}
                 </span>
                 <h3 className="archived-tea-title" title={sessionDisplayTitle(selectedSession)}>
                   {sessionDisplayTitle(selectedSession)}
@@ -192,7 +192,7 @@ export function ArchivedSessionsPanel({
                   >
                     {selectedProviderLabel}
                   </em>
-                  <span>封存于 {formatDate(selectedSession.archivedAt ?? selectedSession.updatedAt)}</span>
+                  <span>{t("封存于")} {formatDate(selectedSession.archivedAt ?? selectedSession.updatedAt)}</span>
                 </div>
                 <small className="archived-tea-path" title={selectedSession.cwd}>
                   {selectedSession.cwd}
@@ -214,7 +214,7 @@ export function ArchivedSessionsPanel({
                     onClick={() => void onRestore(selectedSession)}
                   >
                     <ArrowCounterClockwiseIcon size={14} aria-hidden="true" />
-                    取消归档
+                    {t("取消归档")}
                   </button>
                   <button
                     type="button"
@@ -222,7 +222,7 @@ export function ArchivedSessionsPanel({
                     onClick={() => void onDelete(selectedSession)}
                   >
                     <TrashIcon size={14} aria-hidden="true" />
-                    永久删除
+                    {t("永久删除")}
                   </button>
                 </div>
               </div>
@@ -234,7 +234,7 @@ export function ArchivedSessionsPanel({
                   <header className="archived-tea-shelf-head">
                     <FolderIcon size={15} aria-hidden="true" />
                     <strong>{group.projectName}</strong>
-                    <span>{group.sessions.length} 罐</span>
+                    <span>{group.sessions.length} {t("罐")}</span>
                   </header>
                   <div className="archived-tea-plank">
                     {group.sessions.map((session) => {
@@ -311,16 +311,16 @@ export function ArchivedSessionsPanel({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索归档会话"
-            aria-label="搜索归档会话"
+            placeholder={t("搜索归档会话")}
+            aria-label={t("搜索归档会话")}
           />
         </label>
         <select
           value={projectId}
           onChange={(event) => setProjectId(event.target.value)}
-          aria-label="按项目筛选归档会话"
+          aria-label={t("按项目筛选归档会话")}
         >
-          <option value="all">所有项目</option>
+          <option value="all">{t("所有项目")}</option>
           {projects
             .filter((project) => archivedProjectIds.has(project.id))
             .map((project) => (
@@ -333,15 +333,15 @@ export function ArchivedSessionsPanel({
       </div>
 
       <div className="archived-settings-summary">
-        <span>{filteredSessions.length} 个会话</span>
-        <small>归档只会从首页隐藏会话，不会删除记录或项目文件。</small>
+        <span>{filteredSessions.length} {t("个会话")}</span>
+        <small>{t("归档只会从首页隐藏会话，不会删除记录或项目文件。")}</small>
       </div>
 
       {groups.length === 0 ? (
         <div className="archived-settings-empty">
           <ArchiveIcon size={28} aria-hidden="true" />
-          <strong>{sessions.length === 0 ? "还没有归档会话" : "没有匹配的归档会话"}</strong>
-          <span>归档后的会话会保留在这里，可随时恢复。</span>
+          <strong>{sessions.length === 0 ? t("还没有归档会话") : t("没有匹配的归档会话")}</strong>
+          <span>{t("归档后的会话会保留在这里，可随时恢复。")}</span>
         </div>
       ) : (
         <div className="archived-settings-groups">
@@ -378,7 +378,7 @@ export function ArchivedSessionsPanel({
                         )}
                         <button type="button" className="archived-action-restore" onClick={() => void onRestore(session)}>
                           <ArrowCounterClockwiseIcon size={14} aria-hidden="true" />
-                          取消归档
+                          {t("取消归档")}
                         </button>
                         <button
                           className="danger archived-action-delete"
@@ -386,7 +386,7 @@ export function ArchivedSessionsPanel({
                           onClick={() => void onDelete(session)}
                         >
                           <TrashIcon size={14} aria-hidden="true" />
-                          永久删除
+                          {t("永久删除")}
                         </button>
                       </div>
                     </article>

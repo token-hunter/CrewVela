@@ -21,7 +21,7 @@ test('接收对象仅为本项目具体成员，任务详情和人工处理仍�
  assert.match(control,/agent\.projectId === projectId && agent\.enabled/);
  assert.match(control,/aria-label=\{t\("选择参与成员"\)\}/);
  assert.match(control,/onOpenProjectSettings\?\.\(projectId, "tasks"\)/);
- assert.match(settings,/ariaLabel="协作任务详情"/);
+ assert.match(settings,/ariaLabel=\{t\("协作任务详情"\)\}/);
  assert.match(taskDetails,/<UnverifiedRunNotice/);
  assert.match(sidebar,/<InterventionCenter/);
  assert.match(control,/<UnverifiedRunNotice/);

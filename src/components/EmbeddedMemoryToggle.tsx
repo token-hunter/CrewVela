@@ -1,3 +1,4 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
 import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -80,14 +81,14 @@ export function EmbeddedMemoryToggle({ memory }: { memory: ReturnType<typeof use
     <div className="sm-embedded-row">
       <div>
         <h3>{t("内置共享记忆")}</h3>
-        <p className="sm-muted">记忆保存在本机，已打开的会话将在下次启动或恢复时接入。</p>
+        <p className="sm-muted">{t("记忆保存在本机，已打开的会话将在下次启动或恢复时接入。")}</p>
       </div>
       <Switch className="pet-switch sm-embedded-switch" label={t("内置共享记忆")} checked={Boolean(status?.enabled)}
         disabled={busy || checking || Boolean(statusError) || !status || Boolean(unavailable)}
         onChange={checked => void setEnabled(checked)} />
     </div>
-    {error && <p role="alert" className="sm-error">{error}</p>}
-    <p role="status" className={busy || needsRestart || unavailable ? "sm-muted" : "sm-sr-only"}>{statusText}</p>
+    {error && <p role="alert" className="sm-error"><LocalizedErrorText source={error} /></p>}
+    <p role="status" className={busy || needsRestart || unavailable ? "sm-muted" : "sm-sr-only"}>{t(statusText)}</p>
     {(statusError || needsRestart) && <div className="sm-actions sm-embedded-recovery">
       <button className="sm-button" type="button" disabled={busy || checking}
         onClick={statusError ? refresh : () => void setEnabled(true)}>{statusError ? t("重新检测") : t("重试启动")}</button>

@@ -469,8 +469,24 @@
   background: var(--danger);
 }
 
-.toast > span {
+.toast-message {
   padding: 9px 4px 9px 10px;
+  overflow-wrap: anywhere;
+}
+
+.localized-error-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.localized-error-details:not([hidden]) {
+  display: block;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 

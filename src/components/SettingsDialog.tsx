@@ -530,7 +530,7 @@ export function SettingsDialog({
                   )}
               </div>
             </div>}
-            {sectionCopy.note && <p className="settings-page-note">{sectionCopy.note}</p>}
+            {sectionCopy.note && <p className="settings-page-note">{t(sectionCopy.note)}</p>}
 
             {activeSection === "privacy" ? (
               <PrivacySettingsPanel

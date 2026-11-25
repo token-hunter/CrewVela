@@ -1,3 +1,5 @@
+import { LocalizedErrorText } from "./LocalizedErrorText";
+import { useTranslation } from "../useInterfaceLanguage";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
@@ -30,6 +32,7 @@ export function ProjectPreviewActions({ projectId, planId, config, demo, root, o
   subtitle?: string;
   children?: ReactNode;
 }) {
+  const t = useTranslation();
   const [saved, setSaved] = useState<ProjectPreviewConfig>();
   const [status, setStatus] = useState<PreviewStatus>({ state: "idle" });
   const [busy, setBusy] = useState(false);
@@ -124,7 +127,7 @@ export function ProjectPreviewActions({ projectId, planId, config, demo, root, o
       <div className="delivery-heading-main">
         <span className="delivery-heading-badge" aria-hidden="true"><Check size={14} weight="bold" /></span>
         <div className="delivery-heading-text">
-          <h3>成品已交付</h3>
+          <h3>{t("成品已交付")}</h3>
           {subtitle && <span className="delivery-heading-sub">{subtitle}</span>}
         </div>
       </div>
@@ -134,48 +137,48 @@ export function ProjectPreviewActions({ projectId, planId, config, demo, root, o
       {(!demo || stored || !editable) && <div className="project-preview-buttons">
         {demo ? (stored && <button type="button" className="project-preview-open" disabled={busy || preparing || status.state === "stopFailed"}
           onClick={() => void withAction(launch)}><Play size={13} weight="fill" aria-hidden="true" /><span>{demoAction}</span></button>)
-          : status.state === "running" && status.url ? <button type="button" className="project-preview-open" onClick={() => browse(status.url!)}><Play size={13} weight="fill" aria-hidden="true" /><span>打开网页</span></button>
+          : status.state === "running" && status.url ? <button type="button" className="project-preview-open" onClick={() => browse(status.url!)}><Play size={13} weight="fill" aria-hidden="true" /><span>{t("打开网页")}</span></button>
           : <button type="button" className="project-preview-open" disabled={busy || !editable}
-            onClick={() => stored ? void withAction(launch) : showConfig()}><Play size={13} weight="fill" aria-hidden="true" /><span>{status.state === "starting" ? "启动中…" : "启动项目"}</span></button>}
+            onClick={() => stored ? void withAction(launch) : showConfig()}><Play size={13} weight="fill" aria-hidden="true" /><span>{status.state === "starting" ? t("启动中…") : t("启动项目")}</span></button>}
         {(!!(demo && stored) || !editable) && <button type="button" className="project-preview-stop"
           data-compact={editable ? "true" : undefined}
-          title={editable ? "当前未运行" : (demo ? "停止 Demo" : "停止项目")}
+          title={editable ? t("当前未运行") : (demo ? t("停止 Demo") : t("停止项目"))}
           disabled={busy || editable} onClick={() => void withAction(async () => {
           openAfterStart.current = false;
           setStatus(await invoke<PreviewStatus>("ma_project_preview_stop", { projectId, planId }));
-        })}><Square size={12} weight="fill" aria-hidden="true" /><span className="delivery-stop-label">{demo ? "停止 Demo" : "停止项目"}</span></button>}
+        })}><Square size={12} weight="fill" aria-hidden="true" /><span className="delivery-stop-label">{demo ? t("停止 Demo") : t("停止项目")}</span></button>}
       </div>}
       <div className="project-preview-links">
         <button type="button" onClick={() => void withAction(async () => {
           await invoke("workspace_reveal_path", { root, relativePath: "README.md" });
-        })}><FileText size={14} aria-hidden="true" /><span>查看启动说明</span></button>
-        {!demo && stored && editable && <button type="button" disabled={busy} onClick={showConfig}><SlidersHorizontal size={14} aria-hidden="true" /><span>配置启动</span></button>}
-        {onTasks && <button type="button" onClick={onTasks}><ListBullets size={14} aria-hidden="true" /><span>查看任务执行</span></button>}
+        })}><FileText size={14} aria-hidden="true" /><span>{t("查看启动说明")}</span></button>
+        {!demo && stored && editable && <button type="button" disabled={busy} onClick={showConfig}><SlidersHorizontal size={14} aria-hidden="true" /><span>{t("配置启动")}</span></button>}
+        {onTasks && <button type="button" onClick={onTasks}><ListBullets size={14} aria-hidden="true" /><span>{t("查看任务执行")}</span></button>}
       </div>
     </div>
     {(children || preparing || feedback || showLogs) && <div className="delivery-sunken-panel">
       {children}
-      {preparing && <p className="project-preview-feedback" role="status">正在等待本地服务响应…</p>}
-      {feedback && <p className="project-preview-feedback" role="alert"><WarningCircle size={14} aria-hidden="true" /><span>{demo && "Demo 暂不可用。"}{feedback}</span></p>}
+      {preparing && <p className="project-preview-feedback" role="status">{t("正在等待本地服务响应…")}</p>}
+      {feedback && <p className="project-preview-feedback" role="alert"><WarningCircle size={14} aria-hidden="true" /><span>{demo && t("Demo 暂不可用。")} <LocalizedErrorText source={feedback} /></span></p>}
       {showLogs && <footer className="project-preview-footer">
         {status.state === "running" && status.url && <code className="project-preview-url">{status.url}</code>}
         <details className="project-preview-logs" onToggle={event => setLogsOpen(event.currentTarget.open)}>
-          <summary><CaretRight size={13} aria-hidden="true" />启动日志</summary><pre>{status.logs || "暂无启动输出"}</pre>
+          <summary><CaretRight size={13} aria-hidden="true" />{t("启动日志")}</summary><pre>{status.logs || t("暂无启动输出")}</pre>
         </details>
       </footer>}
     </div>}
     {form && createPortal(<Modal className="collab-agent-editor project-preview-config" overlayClassName="dialog-overlay collab-agent-editor-overlay"
-      ariaLabel="配置项目启动" onClose={() => { if (!busy) setForm(null); }}>
-      <header><h3>配置项目启动</h3></header>
+      ariaLabel={t("配置项目启动")} onClose={() => { if (!busy) setForm(null); }}>
+      <header><h3>{t("配置项目启动")}</h3></header>
       <form onSubmit={save}>
-        <label>启动程序<input autoComplete="off" required value={form.program} placeholder="node" onChange={event => setForm({ ...form, program: event.target.value })} /></label>
-        <label>启动参数（每行一个）<textarea rows={2} value={form.args} placeholder="server.js" onChange={event => setForm({ ...form, args: event.target.value })} /></label>
-        <label>工作目录<input value={form.workingDirectory} placeholder="." onChange={event => setForm({ ...form, workingDirectory: event.target.value })} /></label>
-        {form.url !== null && <label>本地地址<input required value={form.url} placeholder="http://127.0.0.1:3000/" onChange={event => setForm({ ...form, url: event.target.value })} /></label>}
+        <label>{t("启动程序")}<input autoComplete="off" required value={form.program} placeholder="node" onChange={event => setForm({ ...form, program: event.target.value })} /></label>
+        <label>{t("启动参数（每行一个）")}<textarea rows={2} value={form.args} placeholder="server.js" onChange={event => setForm({ ...form, args: event.target.value })} /></label>
+        <label>{t("工作目录")}<input value={form.workingDirectory} placeholder="." onChange={event => setForm({ ...form, workingDirectory: event.target.value })} /></label>
+        {form.url !== null && <label>{t("本地地址")}<input required value={form.url} placeholder="http://127.0.0.1:3000/" onChange={event => setForm({ ...form, url: event.target.value })} /></label>}
         <label className="project-preview-dynamic"><input type="checkbox" checked={form.url === null}
-          onChange={event => setForm({ ...form, url: event.target.checked ? null : defaultConfig.url })} />从启动输出读取地址（PORT=0）</label>
+          onChange={event => setForm({ ...form, url: event.target.checked ? null : defaultConfig.url })} />{t("从启动输出读取地址（PORT=0）")}</label>
         {formError && <p role="alert">{formError}</p>}
-        <footer><button type="button" className="btn secondary" disabled={busy} onClick={() => setForm(null)}>取消</button><button type="submit" className="btn primary" disabled={busy}>保存并启动</button></footer>
+        <footer><button type="button" className="btn secondary" disabled={busy} onClick={() => setForm(null)}>{t("取消")}</button><button type="submit" className="btn primary" disabled={busy}>{t("保存并启动")}</button></footer>
       </form>
     </Modal>, document.body)}
   </>;

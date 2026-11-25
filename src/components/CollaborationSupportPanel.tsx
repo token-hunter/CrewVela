@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Modal } from "./ui/Modal";
@@ -51,6 +52,7 @@ export function CollaborationSupportPanel({ snapshot, enabledRuntimes, onChanged
   onHealthChange: (health: Health | null) => void; onHandoffClose: () => void;
   initialGlobal?: boolean;
 }) {
+  const t = useTranslation();
   const [rawHealth, setHealth] = useState<Health | null>(PREVIEW ? { ...fixture, checkedAt: Date.now() } : null);
   const [global, setGlobal] = useState(initialGlobal);
   const [diagnosticTab, setDiagnosticTab] = useState("checks");
@@ -158,58 +160,58 @@ export function CollaborationSupportPanel({ snapshot, enabledRuntimes, onChanged
   const handoffHistory = handoffRecoveryHistory(rawHealth, snapshot?.project.id);
   const name = (id?: string) => id ? rawHealth?.sessions.find((session) => session.id === id)?.title ?? id : "外部发送方";
   return <div className="collaboration-support">
-    {view === "diagnostics" && <><nav className="collab-tabs" aria-label="诊断内容">{[["checks", "环境与会话检查"], ["messages", "消息投递"]].map(([id, label]) => <button key={id} className={diagnosticTab === id ? "active" : ""} onClick={() => setDiagnosticTab(id)}>{label}</button>)}</nav>
-      <div className="collaboration-support-toolbar"><label>检查范围 <select value={global ? "global" : "project"} onChange={(event) => setGlobal(event.target.value === "global")}><option value="project">当前项目</option><option value="global">全局</option></select></label><span>仅启用的 Runtime · {global ? "全部关联会话" : snapshot?.project.name ?? "未选择项目"} · {health?.checkedAt ? `检查于 ${new Date(health.checkedAt).toLocaleTimeString("zh-CN")}` : "尚未检查"}</span></div></>}
+    {view === "diagnostics" && <><nav className="collab-tabs" aria-label={t("诊断内容")}>{[["checks", t("环境与会话检查")], ["messages", t("消息投递")]].map(([id, label]) => <button key={id} className={diagnosticTab === id ? "active" : ""} onClick={() => setDiagnosticTab(id)}>{label}</button>)}</nav>
+      <div className="collaboration-support-toolbar"><label>{t("检查范围")} <select value={global ? "global" : "project"} onChange={(event) => setGlobal(event.target.value === "global")}><option value="project">{t("当前项目")}</option><option value="global">{t("全局")}</option></select></label><span>{t("仅启用的 Runtime ·")} {global ? t("全部关联会话") : snapshot?.project.name ?? t("未选择项目")} · {health?.checkedAt ? `检查于 ${new Date(health.checkedAt).toLocaleTimeString("zh-CN")}` : t("尚未检查")}</span></div></>}
 
     {["diagnostics", "messages"].includes(view) && error && <p className="collaboration-support-error" role="alert">{error}</p>}
-    {shownView === "diagnostics" && <><SettingsSection title="协作健康检查" description="检查 Skill 与当前会话证据；不会发送测试消息或启动 Agent。">
-      <div className="collaboration-support-toolbar"><button className="btn secondary" disabled={checking || busy} onClick={() => void refresh()}>{checking ? "检查中…" : "重新检查"}</button>
-        <span>{PREVIEW ? "演示数据" : "只读诊断"}</span></div>
+    {shownView === "diagnostics" && <><SettingsSection title={t("协作健康检查")} description={t("检查 Skill 与当前会话证据；不会发送测试消息或启动 Agent。")}>
+      <div className="collaboration-support-toolbar"><button className="btn secondary" disabled={checking || busy} onClick={() => void refresh()}>{checking ? t("检查中…") : t("重新检查")}</button>
+        <span>{PREVIEW ? t("演示数据") : t("只读诊断")}</span></div>
       {health && <>
-        <p className="collaboration-support-cli">权威 CLI：<code>{health.cliPath}</code> · {health.cliPathExists ? "文件存在" : "路径不可用"}。子进程实际环境仍需核验。</p>
+        <p className="collaboration-support-cli">{t("权威 CLI：")}<code>{health.cliPath}</code> · {health.cliPathExists ? t("文件存在") : t("路径不可用")}{t("。子进程实际环境仍需核验。")}</p>
         <div className="collaboration-support-grid">{health.runtimes.map((runtime) => <article key={runtime.runtime}>
-          <strong>{runtime.label}</strong><span>{!runtime.supported ? "未验证：尚未支持此 Runtime 的 Skill 与通道检查" : !runtime.skills.length ? "Skill 未发现" : runtime.skills.every((skill) => skill.matches) ? "Skill 内容与内置版本一致" : "Skill 内容不一致 / 读取失败"}</span>
-          <small>{!runtime.supported ? "检查未覆盖" : runtime.installed ? "命令可发现" : "命令未发现"} · 安装成功不代表通信成功</small>
-          <details><summary>发现路径</summary>{runtime.skills.map((skill) => <p key={skill.path}><code>{skill.path}</code>{skill.error && `：${skill.error}`}</p>)}
+          <strong>{runtime.label}</strong><span>{!runtime.supported ? t("未验证：尚未支持此 Runtime 的 Skill 与通道检查") : !runtime.skills.length ? t("Skill 未发现") : runtime.skills.every((skill) => skill.matches) ? t("Skill 内容与内置版本一致") : t("Skill 内容不一致 / 读取失败")}</span>
+          <small>{!runtime.supported ? t("检查未覆盖") : runtime.installed ? t("命令可发现") : t("命令未发现")} {t("· 安装成功不代表通信成功")}</small>
+          <details><summary>{t("发现路径")}</summary>{runtime.skills.map((skill) => <p key={skill.path}><code>{skill.path}</code>{skill.error && `：${skill.error}`}</p>)}
             {!runtime.skills.length && runtime.searchedRoots.map((root) => <p key={root}><code>{root}</code></p>)}</details>
         </article>)}</div>
-        <details className="collaboration-support-details" open><summary>当前会话与投递就绪</summary>
-          {!health.sessions.length && <p>当前范围没有关联 Agent 会话。</p>}
+        <details className="collaboration-support-details" open><summary>{t("当前会话与投递就绪")}</summary>
+          {!health.sessions.length && <p>{t("当前范围没有关联 Agent 会话。")}</p>}
           {health.sessions.map((session) => <article className="collaboration-support-session" key={session.id}>
             <strong>{session.title}</strong><code>{session.id}</code><span>{sessionCheckState(session)}</span>
-            <small>{session.commandHost ? "项目后台执行宿主，不支持直接聊天输入检查" : sessionCheckState(session) === "未验证" ? "当前检查缺少适用通道或明确状态证据；不判断为故障" : sessionCheckState(session) === "忙碌" ? "会话正在执行，暂不可接收输入" : sessionCheckState(session) === "已停止" ? "会话已停止或归档，不作为故障告警" : session.reason}</small><details><summary>身份与桥证据</summary><p>{session.cwd} · PTY {session.ptyId ?? "无"}</p><p>{session.identityEnvironment}</p>
-              <p>{session.runtime === "pi" ? session.bridge.configured ? "私有桥启动配置存在；接收确认见消息记录" : "未观察到私有桥启动配置" : "使用 PTY 通道，无需 Pi 私有桥"}</p>
+            <small>{session.commandHost ? t("项目后台执行宿主，不支持直接聊天输入检查") : sessionCheckState(session) === "未验证" ? t("当前检查缺少适用通道或明确状态证据；不判断为故障") : sessionCheckState(session) === "忙碌" ? t("会话正在执行，暂不可接收输入") : sessionCheckState(session) === "已停止" ? t("会话已停止或归档，不作为故障告警") : session.reason}</small><details><summary>{t("身份与桥证据")}</summary><p>{session.cwd} · PTY {session.ptyId ?? t("无")}</p><p>{session.identityEnvironment}</p>
+              <p>{session.runtime === "pi" ? session.bridge.configured ? t("私有桥启动配置存在；接收确认见消息记录") : t("未观察到私有桥启动配置") : t("使用 PTY 通道，无需 Pi 私有桥")}</p>
               {(session.error || session.bridge.error || session.waitingReason) && <p role="alert">{session.error ?? session.bridge.error ?? session.waitingReason}</p>}</details>
           </article>)}</details>
       </>}
     </SettingsSection></>}
-    {shownView === "messages" && <SettingsSection title="消息投递" description="只展示真实投递证据；消息提交不等于模型已处理或回复。">
-      <button className="btn secondary" disabled={checking || busy} onClick={() => void refresh()}>{checking ? "检查中…" : "刷新记录"}</button>
-      {health ? <details open className="collaboration-support-details"><summary>消息投递证据（{health.messages.length}）</summary><p>{health.replyEvidence}。成功投递记录为本次应用运行内存记录，排队消息持久保留。</p>
-          {health.messages.map((message) => <article key={message.id}><strong>{STAGES[message.stage] ?? message.stage}</strong><p><time>{message.at ? new Date(message.at).toLocaleString("zh-CN") : "时间未记录"}</time> · 来源：{message.fromLabel ?? name(message.fromSessionId)} → 接收：{name(message.toSessionId)}</p><p>{message.body}</p>{message.error && <p role="alert">{message.error}</p>}</article>)}
-          {!health.messages.length && <p>暂无可展示的排队或投递证据。</p>}</details> : <p>尚未取得通信记录。</p>}
+    {shownView === "messages" && <SettingsSection title={t("消息投递")} description={t("只展示真实投递证据；消息提交不等于模型已处理或回复。")}>
+      <button className="btn secondary" disabled={checking || busy} onClick={() => void refresh()}>{checking ? t("检查中…") : t("刷新记录")}</button>
+      {health ? <details open className="collaboration-support-details"><summary>{t("消息投递证据（")}{health.messages.length}）</summary><p>{health.replyEvidence}{t("。成功投递记录为本次应用运行内存记录，排队消息持久保留。")}</p>
+          {health.messages.map((message) => <article key={message.id}><strong>{STAGES[message.stage] ?? message.stage}</strong><p><time>{message.at ? new Date(message.at).toLocaleString("zh-CN") : t("时间未记录")}</time> {t("· 来源：")}{message.fromLabel ?? name(message.fromSessionId)} {t("→ 接收：")}{name(message.toSessionId)}</p><p>{message.body}</p>{message.error && <p role="alert">{message.error}</p>}</article>)}
+          {!health.messages.length && <p>{t("暂无可展示的排队或投递证据。")}</p>}</details> : <p>{t("尚未取得通信记录。")}</p>}
     </SettingsSection>}
-    {handoffOpen && <Modal className="collaboration-handoff-dialog" overlayClassName="dialog-overlay collaboration-handoff-overlay" onClose={closeHandoff} ariaLabel="交接当前工作" closeOnOverlayClick={false}>
-      <button className="collab-modal-close" aria-label="关闭交接窗口" disabled={busy} onClick={closeHandoff}>×</button>
-      <SettingsSection title="交接当前工作" description="交接会停止原执行并转交负责人；普通发消息仍使用 CrewVela 会话通信。">
+    {handoffOpen && <Modal className="collaboration-handoff-dialog" overlayClassName="dialog-overlay collaboration-handoff-overlay" onClose={closeHandoff} ariaLabel={t("交接当前工作")} closeOnOverlayClick={false}>
+      <button className="collab-modal-close" aria-label={t("关闭交接窗口")} disabled={busy} onClick={closeHandoff}>×</button>
+      <SettingsSection title={t("交接当前工作")} description={t("交接会停止原执行并转交负责人；普通发消息仍使用 CrewVela 会话通信。")}>
       {error && <p className="collaboration-support-error" role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
       {!draft || !["queued", "transferred", "cancelled"].includes(draft.state) ? <div className="collaboration-support-form">
-        <label>交接类型<select value={mode} disabled={busy} onChange={(event) => { setMode(event.target.value); setSourceId(""); setTargetId(""); setDraft(null); }}><option value="session">现有交互会话 → 另一现有会话</option><option value="task" disabled={!snapshot}>项目任务 → 另一成员</option></select></label>
-        <label>原会话 / 任务<select value={sourceId} disabled={busy} onChange={(event) => { setSourceId(event.target.value); setDraft(null); }}><option value="">选择来源</option>{sources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-        <label>接收负责人<select value={targetId} disabled={busy} onChange={(event) => { setTargetId(event.target.value); setDraft(null); }}><option value="">选择接收方</option>{targets.filter((item) => item.id !== sourceId).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-        <div className="collaboration-support-toolbar"><button type="button" className="btn secondary" disabled={busy || !sourceId || (mode === "task" && !snapshot)} onClick={() => void autofill()}>{busy ? "处理中…" : "自动起草（规则摘要）"}</button><span>零 LLM 确定性提取；起草结果仅为草稿，需逐项核对</span></div>
-        {Object.entries({ goal: "目标（必填）", progress: "已完成内容", remaining: "剩余步骤（必填）", blockers: "阻塞点", files: "相关文件 / 工作树", verification: "已执行验证及实际结果" }).map(([key, label]) => <label key={key}>{label}<textarea rows={2} disabled={busy} value={notes[key as keyof typeof notes]} onChange={(event) => { setNotes({ ...notes, [key]: event.target.value }); setDraft(null); }} /></label>)}
+        <label>{t("交接类型")}<select value={mode} disabled={busy} onChange={(event) => { setMode(event.target.value); setSourceId(""); setTargetId(""); setDraft(null); }}><option value="session">{t("现有交互会话 → 另一现有会话")}</option><option value="task" disabled={!snapshot}>{t("项目任务 → 另一成员")}</option></select></label>
+        <label>{t("原会话 / 任务")}<select value={sourceId} disabled={busy} onChange={(event) => { setSourceId(event.target.value); setDraft(null); }}><option value="">{t("选择来源")}</option>{sources.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+        <label>{t("接收负责人")}<select value={targetId} disabled={busy} onChange={(event) => { setTargetId(event.target.value); setDraft(null); }}><option value="">{t("选择接收方")}</option>{targets.filter((item) => item.id !== sourceId).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+        <div className="collaboration-support-toolbar"><button type="button" className="btn secondary" disabled={busy || !sourceId || (mode === "task" && !snapshot)} onClick={() => void autofill()}>{busy ? t("处理中…") : t("自动起草（规则摘要）")}</button><span>{t("零 LLM 确定性提取；起草结果仅为草稿，需逐项核对")}</span></div>
+        {Object.entries({ goal: t("目标（必填）"), progress: t("已完成内容"), remaining: t("剩余步骤（必填）"), blockers: t("阻塞点"), files: t("相关文件 / 工作树"), verification: t("已执行验证及实际结果") }).map(([key, label]) => <label key={key}>{label}<textarea rows={2} disabled={busy} value={notes[key as keyof typeof notes]} onChange={(event) => { setNotes({ ...notes, [key]: event.target.value }); setDraft(null); }} /></label>)}
       </div> : null}
-      {(!draft || !["queued", "transferred", "cancelled"].includes(draft.state)) && <button className="btn secondary" disabled={busy || !sourceId || !targetId || !notes.goal.trim() || !notes.remaining.trim()} onClick={() => void preview()}>{busy ? "处理中…" : "生成交接预览"}</button>}
-      {draft && <div className="collaboration-handoff-preview" role="region" aria-label="交接预览">
-        <h4>交接预览 · {HANDOFF_LABELS[draft.state] ?? draft.state}</h4><p className="collaboration-support-consequence">{draft.consequence}</p><pre>{draft.context}</pre>
-        {!["queued", "transferred", "cancelled"].includes(draft.state) && <><label className="collaboration-support-confirm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={(event) => setConfirmed(event.target.checked)} />我确认停止范围及接收负责人，并已核对上下文</label>
-        <div className="collaboration-support-toolbar"><button className="btn" disabled={busy || !confirmed} onClick={() => void confirm(draft)}>确认交接</button><button className="btn secondary" disabled={busy} onClick={() => void cancel(draft)}>取消交接</button></div></>}
+      {(!draft || !["queued", "transferred", "cancelled"].includes(draft.state)) && <button className="btn secondary" disabled={busy || !sourceId || !targetId || !notes.goal.trim() || !notes.remaining.trim()} onClick={() => void preview()}>{busy ? t("处理中…") : t("生成交接预览")}</button>}
+      {draft && <div className="collaboration-handoff-preview" role="region" aria-label={t("交接预览")}>
+        <h4>{t("交接预览 ·")} {HANDOFF_LABELS[draft.state] ?? draft.state}</h4><p className="collaboration-support-consequence">{draft.consequence}</p><pre>{draft.context}</pre>
+        {!["queued", "transferred", "cancelled"].includes(draft.state) && <><label className="collaboration-support-confirm"><input type="checkbox" checked={confirmed} disabled={busy} onChange={(event) => setConfirmed(event.target.checked)} />{t("我确认停止范围及接收负责人，并已核对上下文")}</label>
+        <div className="collaboration-support-toolbar"><button className="btn" disabled={busy || !confirmed} onClick={() => void confirm(draft)}>{t("确认交接")}</button><button className="btn secondary" disabled={busy} onClick={() => void cancel(draft)}>{t("取消交接")}</button></div></>}
       </div>}
-      {!!handoffHistory.length && <details className="collaboration-support-details"><summary>交接记录与恢复（{handoffHistory.length}）</summary>{handoffHistory.map((item) => <article key={item.id}>
+      {!!handoffHistory.length && <details className="collaboration-support-details"><summary>{t("交接记录与恢复（")}{handoffHistory.length}）</summary>{handoffHistory.map((item) => <article key={item.id}>
         <strong>{HANDOFF_LABELS[item.state] ?? item.state}</strong><p><code>{item.sourceId}</code> → <code>{item.targetId}</code></p><p>{item.consequence}</p>{item.error && <p role="alert">{item.error}</p>}
-        <details><summary>持久化交接上下文</summary><pre>{item.context}</pre><button className="btn secondary" onClick={() => void navigator.clipboard.writeText(item.context).catch((reason) => setError(`复制失败：${String(reason)}`))}>复制上下文</button></details>
-        {!["queued", "transferred", "cancelled"].includes(item.state) && <div className="collaboration-support-toolbar"><button className="btn secondary" disabled={busy} onClick={() => { setDraft(item); setConfirmed(false); }}>检查并重试</button><button className="btn secondary" disabled={busy} onClick={() => void cancel(item)}>取消并解除交接锁</button></div>}
+        <details><summary>{t("持久化交接上下文")}</summary><pre>{item.context}</pre><button className="btn secondary" onClick={() => void navigator.clipboard.writeText(item.context).catch((reason) => setError(`复制失败：${String(reason)}`))}>{t("复制上下文")}</button></details>
+        {!["queued", "transferred", "cancelled"].includes(item.state) && <div className="collaboration-support-toolbar"><button className="btn secondary" disabled={busy} onClick={() => { setDraft(item); setConfirmed(false); }}>{t("检查并重试")}</button><button className="btn secondary" disabled={busy} onClick={() => void cancel(item)}>{t("取消并解除交接锁")}</button></div>}
       </article>)}</details>}
     </SettingsSection>
     </Modal>}

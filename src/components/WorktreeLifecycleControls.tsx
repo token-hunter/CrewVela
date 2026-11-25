@@ -1,3 +1,4 @@
+import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
@@ -47,6 +48,7 @@ const STATE_LABEL: Record<Preparation["state"], string> = {
 };
 
 function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
+  const t = useTranslation();
   const [view, setView] = useState<LifecycleView | null>(null);
   const [command, setCommand] = useState("");
   const [files, setFiles] = useState("");
@@ -119,20 +121,20 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
 
   return (
     <div className="worktree-lifecycle-body git-settings-rows" aria-busy={busy}>
-      {!view && !error && <p role="status" className="worktree-lifecycle-status">正在读取项目配置…</p>}
+      {!view && !error && <p role="status" className="worktree-lifecycle-status">{t("正在读取项目配置…")}</p>}
       {view?.warning && <p role="status" className="worktree-lifecycle-status">{view.warning}</p>}
       {view && (
         <>
           <label className="git-settings-row worktree-lifecycle-row">
             <span>
-              <strong>准备命令</strong>
-              <small>保存后，新建的 Worktree 会在启动会话前执行此命令。Windows 使用 cmd，macOS 和 Linux 使用 sh。</small>
+              <strong>{t("准备命令")}</strong>
+              <small>{t("保存后，新建的 Worktree 会在启动会话前执行此命令。Windows 使用 cmd，macOS 和 Linux 使用 sh。")}</small>
             </span>
             <input
               className="worktree-lifecycle-input"
-              aria-label="准备命令"
+              aria-label={t("准备命令")}
               value={command}
-              placeholder="例如：npm ci"
+              placeholder={t("例如：npm ci")}
               onChange={(e) => setCommand(e.target.value)}
               disabled={busy}
             />
@@ -140,13 +142,13 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
 
           <label className="git-settings-row worktree-lifecycle-row worktree-lifecycle-row-top">
             <span>
-              <strong>所需文件</strong>
-              <small>每行填写一个项目相对路径。从原仓库复制到 Worktree 中的相同位置。</small>
+              <strong>{t("所需文件")}</strong>
+              <small>{t("每行填写一个项目相对路径。从原仓库复制到 Worktree 中的相同位置。")}</small>
             </span>
             <textarea
               className="worktree-lifecycle-textarea"
               rows={3}
-              aria-label="所需文件"
+              aria-label={t("所需文件")}
               placeholder=".env.local"
               value={files}
               onChange={(e) => setFiles(e.target.value)}
@@ -156,13 +158,13 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
 
           <label className="git-settings-row worktree-lifecycle-row worktree-lifecycle-toggle-row">
             <span>
-              <strong>归档时自动回收</strong>
-              <small>回收无占用的干净 Worktree 前会保存恢复快照。含本地改动或忽略文件时保留目录。</small>
+              <strong>{t("归档时自动回收")}</strong>
+              <small>{t("回收无占用的干净 Worktree 前会保存恢复快照。含本地改动或忽略文件时保留目录。")}</small>
             </span>
             <input
               className="worktree-toggle-checkbox"
               type="checkbox"
-              aria-label="归档时自动回收"
+              aria-label={t("归档时自动回收")}
               checked={autoCleanup}
               onChange={(e) => setAutoCleanup(e.target.checked)}
               disabled={busy}
@@ -170,7 +172,7 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
           </label>
 
           <div className="settings-heading-actions worktree-lifecycle-actions">
-            {changed && <span className="worktree-lifecycle-dirty">未保存更改</span>}
+            {changed && <span className="worktree-lifecycle-dirty">{t("未保存更改")}</span>}
             <button
               className="btn primary"
               type="button"
@@ -181,7 +183,7 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
                 "已保存此项目的配置",
               )}
             >
-              保存项目配置
+              {t("保存项目配置")}
             </button>
             {sessionId && (
               <button
@@ -194,7 +196,7 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
                   "环境准备完成",
                 )}
               >
-                {run?.state === "failed" ? "重试准备" : "执行准备"}
+                {run?.state === "failed" ? t("重试准备") : t("执行准备")}
               </button>
             )}
           </div>
@@ -203,7 +205,7 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
             <details className="worktree-sub-details worktree-log-details" key={run.updatedAtMs} open={run.state !== "ready"}>
               <summary>
                 <CaretRightIcon size={12} aria-hidden="true" />
-                <span>准备日志 · {STATE_LABEL[run.state]}</span>
+                <span>{t("准备日志 ·")} {t(STATE_LABEL[run.state])}</span>
               </summary>
               <pre className="worktree-log-pre">{run.lines.join("\n")}</pre>
             </details>
@@ -213,7 +215,7 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
             <details className="worktree-sub-details worktree-snapshots-details">
               <summary>
                 <CaretRightIcon size={12} aria-hidden="true" />
-                <span>恢复快照（{view.snapshots.length}）</span>
+                <span>{t("恢复快照（")}{view.snapshots.length}）</span>
               </summary>
               <div className="worktree-snapshots-list">
                 {view.snapshots.map((snapshot) => (
@@ -222,7 +224,7 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
                       <strong>{snapshot.branch} · {snapshot.commit.slice(0, 10)}</strong>
                       <small>{new Date(snapshot.createdAtMs).toLocaleString()} · {snapshot.path}</small>
                       <small className="worktree-snapshot-ref">{snapshot.gitRef}</small>
-                      <small className="worktree-snapshot-ref" title={snapshot.archivePath}>文件快照 · {snapshot.archivePath}</small>
+                      <small className="worktree-snapshot-ref" title={snapshot.archivePath}>{t("文件快照 ·")} {snapshot.archivePath}</small>
                     </span>
                     <button
                       className="btn secondary"
@@ -234,7 +236,7 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
                         "已恢复到原 Worktree 路径",
                       )}
                     >
-                      恢复到原路径
+                      {t("恢复到原路径")}
                     </button>
                   </div>
                 ))}
@@ -247,7 +249,7 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
       {error && <div className="git-settings-feedback error" role="alert">{error}</div>}
       {!view && error && (
         <div className="worktree-lifecycle-actions">
-          <button className="btn secondary" type="button" onClick={() => { setError(""); void load(true); }}>重新读取配置</button>
+          <button className="btn secondary" type="button" onClick={() => { setError(""); void load(true); }}>{t("重新读取配置")}</button>
         </div>
       )}
     </div>
@@ -255,6 +257,7 @@ function LifecycleEditor({ repoRoot, sessionId, refreshKey, onChange }: Props) {
 }
 
 export function WorktreeLifecycleControls(props: Props) {
+  const t = useTranslation();
   const [expanded, setExpanded] = useState(false);
   return (
     <details
@@ -263,7 +266,7 @@ export function WorktreeLifecycleControls(props: Props) {
     >
       <summary className="worktree-lifecycle-summary">
         <CaretRightIcon size={13} aria-hidden="true" />
-        <span>环境准备与恢复</span>
+        <span>{t("环境准备与恢复")}</span>
       </summary>
       {expanded && <LifecycleEditor key={JSON.stringify([props.repoRoot, props.sessionId])} {...props} />}
     </details>
