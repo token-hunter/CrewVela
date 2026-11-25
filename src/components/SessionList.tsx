@@ -14,6 +14,7 @@ import { DotsThreeIcon } from "@phosphor-icons/react/dist/csr/DotsThree";
 import { FileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
 import { FolderIcon } from "@phosphor-icons/react/dist/csr/Folder";
 import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
+import { FunnelSimpleIcon } from "@phosphor-icons/react/dist/csr/FunnelSimple";
 import { PencilSimpleIcon } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { PushPinIcon } from "@phosphor-icons/react/dist/csr/PushPin";
@@ -204,13 +205,22 @@ export function SessionList({
     const place = () => {
       const anchor = filterTriggerRef.current?.getBoundingClientRect();
       if (!anchor) return;
-      const width = Math.min(Math.max(anchor.width, 224), innerWidth - 16);
-      const desiredHeight = Math.min(filterMenuRef.current?.scrollHeight ?? 360, 400);
-      const below = innerHeight - anchor.bottom - 12, above = anchor.top - 12;
-      const flipped = below < desiredHeight && above > below;
-      const maxHeight = Math.max(40, Math.min(400, flipped ? above : below));
+      const sidebarRect = filterTriggerRef.current?.closest(".sidebar, .unified-sidebar, .session-section")?.getBoundingClientRect();
+      const width = Math.min(242, innerWidth - 16);
+      const desiredHeight = Math.min(filterMenuRef.current?.scrollHeight ?? 360, 460);
+      const rightCandidate = sidebarRect ? sidebarRect.right + 8 : anchor.right + 8;
+      const fitsRight = rightCandidate + width <= innerWidth - 8;
+      const left = fitsRight
+        ? rightCandidate
+        : Math.max(8, Math.min(anchor.left, innerWidth - width - 8));
+      const maxHeight = Math.max(120, Math.min(460, innerHeight - 24));
       const height = Math.min(desiredHeight, maxHeight);
-      setFilterMenuPosition({ left: Math.max(8, Math.min(anchor.left, innerWidth - width - 8)), top: flipped ? anchor.top - height - 4 : anchor.bottom + 4, width, maxHeight });
+      const top = fitsRight
+        ? Math.max(12, Math.min(anchor.top, innerHeight - height - 12))
+        : (innerHeight - anchor.bottom - 12 < height && anchor.top - 12 > innerHeight - anchor.bottom - 12
+          ? Math.max(12, anchor.top - height - 4)
+          : Math.min(anchor.bottom + 4, innerHeight - height - 12));
+      setFilterMenuPosition({ left, top, width, maxHeight });
     };
     place(); window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
     const observer = new ResizeObserver(place);
@@ -744,6 +754,16 @@ export function SessionList({
     });
   }
 
+  const isFiltered = typeFilter !== "all" || filter !== "running";
+  const filterBadgeText = [
+    typeFilter === "claude" ? t("会话") : typeFilter === "terminal" ? t("终端") : "",
+    filter !== "running" ? t(selectedFilter.label) : "",
+  ].filter(Boolean).join(" · ");
+  const resetFilters = () => {
+    onTypeFilter("all");
+    selectFilter("running");
+  };
+
   return (
     <>
     <section className="session-section">
@@ -763,61 +783,80 @@ export function SessionList({
         )}
       </div>
 
-      <div className="session-type-filters" role="group" aria-label={t("会话类型")}>
-        {([
-          ["all", "全部", sessions.length],
-          ["claude", "会话", claudeCount],
-          ["terminal", "终端", terminalCount],
-        ] as const).map(([id, label, count]) => (
-          <button
-            key={id}
-            type="button"
-            className={typeFilter === id ? "active" : ""}
-            aria-pressed={typeFilter === id}
-            onClick={() => onTypeFilter(id)}
-          >
-            {label}
-            <small>{count}</small>
-          </button>
-        ))}
-      </div>
-
       <div
         ref={filterSelectRef}
         className={`session-filter-select${filterMenuOpen ? " open" : ""}`}
         onKeyDown={handleFilterMenuKeyDown}
       >
-        <button
-          ref={filterTriggerRef}
-          className="session-filter-trigger"
-          type="button"
-          aria-label={t("会话状态：{status}", { status: t(selectedFilter.label) })}
-          aria-haspopup="menu"
-          aria-controls={filterMenuOpen ? filterMenuId : undefined}
-          aria-expanded={filterMenuOpen}
-          onClick={() => {
-            filterInitialFocus.current = "selected";
-            if (filterMenuOpen) setFilterMenuOpen(false);
-            else setFilterMenuOpen(true);
-          }}
-        >
-          {selectedFilter.id === "favorites" ? (
-            <StarIcon size={15} weight="regular" />
-          ) : (
-            <CircleIcon
-              size={11}
-              weight={selectedFilter.id === "running" ? "fill" : "regular"}
-            />
+        <div className="session-filter-trigger-wrap">
+          <button
+            ref={filterTriggerRef}
+            className="session-filter-trigger"
+            type="button"
+            aria-label={t("会话状态：{status}", { status: t(selectedFilter.label) })}
+            aria-haspopup="menu"
+            aria-controls={filterMenuOpen ? filterMenuId : undefined}
+            aria-expanded={filterMenuOpen}
+            onClick={() => {
+              filterInitialFocus.current = "selected";
+              if (filterMenuOpen) setFilterMenuOpen(false);
+              else setFilterMenuOpen(true);
+            }}
+          >
+            <span className="session-filter-trigger-icon" aria-hidden="true">
+              <FunnelSimpleIcon size={16} />
+            </span>
+            <span className="session-filter-trigger-label">{t("筛选")}</span>
+          </button>
+          {isFiltered && (
+            <button
+              type="button"
+              className="session-filter-active-badge"
+              title={t("重置")}
+              aria-label={t("重置")}
+              onClick={resetFilters}
+            >
+              <span>{filterBadgeText}</span>
+              <span aria-hidden="true">×</span>
+            </button>
           )}
-          <span>{t(selectedFilter.label)}</span>
-          <strong className={`filter-count ${selectedFilter.tone}`}>
-            {selectedFilter.count}
-          </strong>
-          <CaretDownIcon className="session-filter-caret" size={14} weight="bold" />
-        </button>
+        </div>
 
         {filterMenuOpen && createPortal(
-          <div ref={filterMenuRef} id={filterMenuId} className="session-filter-menu" role="menu" aria-label={t("会话管理")} style={filterMenuPosition}>
+          <div ref={filterMenuRef} id={filterMenuId} className="session-filter-menu session-filter-popover" role="menu" aria-label={t("会话管理")} style={filterMenuPosition}>
+            <div className="session-filter-section-head">
+              <span>{t("显示类型")}</span>
+              {isFiltered && (
+                <button
+                  type="button"
+                  className="session-filter-reset"
+                  onClick={resetFilters}
+                >
+                  {t("重置")}
+                </button>
+              )}
+            </div>
+            <div className="session-type-filters session-filter-type-seg" role="group" aria-label={t("会话类型")}>
+              {([
+                ["all", "全部", sessions.length],
+                ["claude", "会话", claudeCount],
+                ["terminal", "终端", terminalCount],
+              ] as const).map(([id, label, count]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={typeFilter === id ? "active" : ""}
+                  aria-pressed={typeFilter === id}
+                  onClick={() => onTypeFilter(id)}
+                >
+                  {t(label)}
+                  {count > 0 && <small>{count}</small>}
+                </button>
+              ))}
+            </div>
+            <div className="session-filter-section-head">
+              <span>{t("会话状态")}</span>
+            </div>
             <div role="group" aria-label={t("查看范围")}>
             {filters.map((item) => (
               <button
@@ -833,20 +872,20 @@ export function SessionList({
                 }}
               >
                 {filter === item.id ? (
-                  <CheckIcon size={16} weight="bold" aria-hidden="true" />
+                  <CheckIcon size={14} weight="bold" aria-hidden="true" />
                 ) : item.id === "favorites" ? (
-                  <StarIcon size={16} weight="regular" aria-hidden="true" />
+                  <StarIcon size={14} weight="regular" aria-hidden="true" />
                 ) : (
-                  <CircleIcon size={16} weight="regular" aria-hidden="true" />
+                  <CircleIcon size={9} weight={item.id === "running" && item.count > 0 ? "fill" : "regular"} aria-hidden="true" />
                 )}
                 <span>{t(item.label)}</span>
                 <strong className={`filter-count ${item.tone}`}>{item.count}</strong>
               </button>
             ))}
             </div>
-            {bulkActions && <div role="group" aria-label={t("批量操作")} aria-description={`仅作用于当前工作区「${bulkActions.workspaceName}」`}>
-                <button className="session-filter-option session-filter-action" type="button" role="menuitem" disabled={bulkActions.stopDisabled} title={`当前工作区「${bulkActions.workspaceName}」 · ${bulkActions.stopDisabled ? liveCount ? "操作暂不可用" : "暂无运行会话" : "停止运行中的会话"}`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onStop(); }}><StopIcon size={16} aria-hidden="true" /><span>{t("停止运行会话")}</span></button>
-                <button className="session-filter-option session-filter-action" type="button" role="menuitem" disabled={bulkActions.deleteDisabled} title={`删除当前工作区「${bulkActions.workspaceName}」的全部会话`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onDelete(); }}><TrashIcon size={16} aria-hidden="true" /><span>{t("删除全部会话")}</span></button>
+            {bulkActions && <div className="session-filter-bulk-group" role="group" aria-label={t("批量操作")} aria-description={`仅作用于当前工作区「${bulkActions.workspaceName}」`}>
+                <button className="session-filter-option session-filter-action" type="button" role="menuitem" disabled={bulkActions.stopDisabled} title={`当前工作区「${bulkActions.workspaceName}」 · ${bulkActions.stopDisabled ? liveCount ? "操作暂不可用" : "暂无运行会话" : "停止运行中的会话"}`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onStop(); }}><StopIcon size={14} aria-hidden="true" /><span>{t("停止运行会话")}</span></button>
+                <button className="session-filter-option session-filter-action is-danger" type="button" role="menuitem" disabled={bulkActions.deleteDisabled} title={`删除当前工作区「${bulkActions.workspaceName}」的全部会话`} onClick={() => { setFilterMenuOpen(false); filterTriggerRef.current?.focus(); bulkActions.onDelete(); }}><TrashIcon size={14} aria-hidden="true" /><span>{t("删除全部会话")}</span></button>
               </div>
             }
           </div>
@@ -863,17 +902,19 @@ export function SessionList({
       {groupByProject && (
         <div className="session-projects-toolbar">
           <span>{t("项目")}</span>
-          {onManageProjects && <button type="button" aria-label={t("项目管理")} title={t("项目管理")} onClick={onManageProjects}><DotsThreeIcon size={16} /></button>}
-          {onAddProject && (
-            <button
-              type="button"
-              aria-label={t("添加项目")}
-              title={t("添加项目")}
-              onClick={onAddProject}
-            >
-              <PlusIcon size={14} weight="bold" />
-            </button>
-          )}
+          <span className="session-projects-toolbar-actions">
+            {onManageProjects && <button type="button" aria-label={t("项目管理")} title={t("项目管理")} onClick={onManageProjects}><DotsThreeIcon size={16} /></button>}
+            {onAddProject && (
+              <button
+                type="button"
+                aria-label={t("添加项目")}
+                title={t("添加项目")}
+                onClick={onAddProject}
+              >
+                <PlusIcon size={14} weight="bold" />
+              </button>
+            )}
+          </span>
         </div>
       )}
 

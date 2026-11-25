@@ -2287,5 +2287,9 @@
   "移动": "Navigate",
   "打开": "Open",
   "切换": "Cycle",
-  "清空": "Clear"
+  "清空": "Clear",
+  "筛选": "Filter",
+  "显示类型": "Type",
+  "会话状态": "Status",
+  "重置": "Reset"
 }
