@@ -11,7 +11,7 @@
 
 ## v0.1.0 Beta · 2026-11-25
 
-[Windows x64 Beta 安装包](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261125)。以下是 11 月 18 日 Windows Beta 之后合入的主要变化。
+以下是 11 月 18 日至 25 日合入的主要变化。
 
 - **接入与兼容性**：新增 Antigravity CLI，支持在 Windows 管理官方安装及版本。ZCode CLI 支持检测并选择现有安装。ZCode Desktop 支持读取回复语言并同步官方模型目录。
 - **项目托管**：支持单人和双人成品交付，多成员开发时可由实现成员兼任联调。改进 Claude Code 待审批后的会话保留、ZCode CLI 审查预检，以及交付卡片和 Demo 操作。
