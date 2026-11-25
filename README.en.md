@@ -167,8 +167,6 @@ The Windows source commit and SHA-256 are listed on the [download page](docs/dow
 
 ## Help shape the workflow
 
-The near-term priorities are clean-machine installation, bidirectional messaging, session recovery and handoff, native Mac regression, and signing/release work. Follow the [changelog](CHANGELOG.md).
-
 | Your contribution | How it helps |
 | --- | --- |
 | **Star the project** | Bookmark it for future updates and help other developers discover it |
