@@ -11,9 +11,7 @@
 
 通用图形来源与其他素材核对范围见 [素材记录](../asset-provenance.md)。
 
-- 产品宣传片更新于 2026-11-25。中英文 README 使用同一份 [GitHub 原生视频附件](https://github.com/user-attachments/assets/1fa71278-c7fc-4a16-a31e-156cfbea7600)，60 秒、1920×1080、30 fps，H.264/AAC。根据上传上限重新压缩为 9,695,624 字节，保留完整时长和音轨。附件 SHA-256 为 `ebc8340cffee14f596c8fe1c8d77db59fae980e86d08ef9da5f1836355393167`。
-
-  私有仓库的附件沿用仓库访问权限。迁移到新的公开仓库时，重新上传视频并更新中英文 README 的附件链接。
+- 产品宣传片更新于 2026-11-25，公开仓库于 2026-11-26 重新上传。中英文 README 使用同一份 [GitHub 原生视频附件](https://github.com/user-attachments/assets/a3eb08ee-a30e-4619-92aa-b2854f8d690f)，60 秒、1920×1080、30 fps，H.264/AAC。播放版为 9,695,624 字节，保留完整时长和音轨。附件 SHA-256 为 `ebc8340cffee14f596c8fe1c8d77db59fae980e86d08ef9da5f1836355393167`。
 
 - `collaboration-workflow.zh.svg` / `collaboration-workflow.en.svg`：将 README 原有 Mermaid 的四个节点及实现、审查、反馈、接手连线改为静态 SVG；用于去掉 GitHub 自动附带的图表缩放、移动、重置与复制工具，属于工作方式示意。
 

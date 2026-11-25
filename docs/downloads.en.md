@@ -2,7 +2,7 @@
 
 [简体中文](downloads.md)
 
-The latest download is [Windows x64 Beta · 2026-11-25](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261125), built from [`81e4f28`](https://github.com/token-hunter/CrewVela/commit/81e4f2836053352111d7089ea9ccbff5f2779477). The installer reports app version `0.1.0`. See [GitHub Releases](https://github.com/token-hunter/CrewVela/releases) for earlier builds.
+The latest download is [Windows x64 Beta · 2026-11-25](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261125), built from [`81e4f28`](https://github.com/token-hunter/CrewVela/commit/81e4f2836053352111d7089ea9ccbff5f2779477). The installer reports app version `0.1.0`.
 
 ## Windows x64
 
