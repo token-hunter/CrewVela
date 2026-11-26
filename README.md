@@ -192,6 +192,15 @@ Agent 在干活，作者在等开饭。
 
 </div>
 
+## Star 趋势
+
+<a href="https://www.star-history.com/?repos=token-hunter%2FCrewVela&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=token-hunter/CrewVela&amp;type=Date&amp;theme=dark" />
+    <img alt="CrewVela 的 GitHub Star 趋势" src="https://api.star-history.com/svg?repos=token-hunter/CrewVela&amp;type=Date" />
+  </picture>
+</a>
+
 ## 开源许可
 
 CrewVela 项目代码采用 [MIT 许可证](LICENSE)。第三方依赖与素材的相关说明，请参阅[第三方声明](THIRD_PARTY_NOTICES.md)。

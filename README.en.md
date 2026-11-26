@@ -192,6 +192,15 @@ A star, a helpful report, or a contribution all count as a treat.
 
 </div>
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=token-hunter%2FCrewVela&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=token-hunter/CrewVela&amp;type=Date&amp;theme=dark" />
+    <img alt="CrewVela GitHub star history" src="https://api.star-history.com/svg?repos=token-hunter/CrewVela&amp;type=Date" />
+  </picture>
+</a>
+
 ## License
 
 CrewVela project code uses the [MIT License](LICENSE). See the [third-party notices](THIRD_PARTY_NOTICES.md) for dependency and asset information.
