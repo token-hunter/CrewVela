@@ -6,10 +6,21 @@ export const CONVERSATION_STATUS: Record<ConversationStatus, string> = {
   completed: "回复结束", failed: "失败", cancelled: "已取消", paused: "已暂停",
   unconfirmed: "结果未确认", needs_decision: "等待你补充",
 };
+export function conversationInputText(body: string): string {
+  return body.replace(/^[ \t]*>.*$/gm, "");
+}
+
+export function conversationQuote(source: string, body: string): string {
+  const limit = 4_000;
+  const characters = Array.from(body.trim());
+  const text = characters.slice(0, limit).join("") + (characters.length > limit ? "\n…" : "");
+  return [source.replace(/\s+/g, " "), ...text.split(/\r?\n/)].map(line => `> ${line}`).join("\n");
+}
+
 /** Conservative routing: uncertain requests stay in chat; a plan still needs explicit execution approval. */
 export function conversationRequestMode(body: string, selectedMode: ConversationMode = "discussion", mentionTokens: readonly string[] = []): ConversationMode {
   if (selectedMode === "execution_plan") return selectedMode;
-  const text = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+  const text = conversationInputText(body).replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
   const opening = withoutMentionTokens(text, mentionTokens).trim().replace(/^(?:@[^\s@]+\s+)+/u, "");
   const firstRequest = opening.split(/[。！？!?；;\n，,]/u, 1)[0];
   // Negative instructions about execution take precedence over an imperative goal.
@@ -37,10 +48,10 @@ function withoutMentionTokens(body: string, mentionTokens: readonly string[]): s
     .reduce((text, token) => replaceMentionToken(text, token, ""), body);
 }
 export function hasConversationPlanGoal(body: string, mentionTokens: readonly string[]): boolean {
-  return /[\p{L}\p{N}]/u.test(withoutMentionTokens(body, mentionTokens));
+  return /[\p{L}\p{N}]/u.test(withoutMentionTokens(conversationInputText(body), mentionTokens));
 }
 export function conversationRequestIntent(body: string): "chat" | "exchange" {
-  const text = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+  const text = conversationInputText(body).replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
   if (/(?:不要|(?<!分)别|无需|不需要|先不).{0,8}(?:互聊|互相|讨论|交流|回应)|\b(?:don't|do not|no need to).{0,12}(?:discuss|debate|exchange)/iu.test(text)) return "chat";
   return /(?:互相|彼此).{0,12}(?:聊|讨论|交流|回应|回复)|(?:你们|大家|一起|共同).{0,12}(?:聊|讨论|交流)|(?:聊聊|讨论|交流).{0,12}(?:方案|思路|问题)|(?:对方|另一位).{0,12}(?:回复|回应|意见)|\b(?:discuss|debate|talk about|exchange ideas|exchange views|respond to each other)\b/iu.test(text) ? "exchange" : "chat";
 }
@@ -68,7 +79,7 @@ export function conversationRecipients(
   preferredRecipient?: string,
 ): string[] {
   const enabled = agents.filter(agent => agent.enabled && agent.projectId === projectId);
-  let remaining = body;
+  let remaining = conversationInputText(body);
   const mentioned = new Set<string>();
   const tokens = enabled.map(agent => ({ agent, token: conversationMentionToken(agent, enabled) })).sort((a, b) => b.token.length - a.token.length);
   for (const { agent, token } of tokens) {
@@ -92,7 +103,7 @@ export function conversationChatDispatch(body: string, recipients: readonly Agen
   intent: "chat" | "exchange";
   chatDispatch?: ConversationChatDispatch;
 } {
-  const request = body.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+  const request = conversationInputText(body).replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
   const launch = /(?:启动|运行|重启|停止|关掉).{0,18}(?:项目|服务|程序|应用|游戏|成品)|(?:把|将).{0,12}(?:项目|服务|程序|应用|游戏).{0,8}(?:启动|运行|重启|停止|关掉)|(?:跑|运行|启动)起来|(?:打不开|访问不了|连不上).{0,12}(?:地址|网页|服务|页面)|(?:地址|网页|服务|页面).{0,12}(?:打不开|访问不了|连不上)|\b(?:start|run|restart|stop|launch)\s+(?:(?:this|the|my|our)\s+)?(?:project|server|app|application|game)\b/iu.test(request);
   const explanation = /(?:只|仅|先)\s*(?:分析|讨论|解释|说明)|(?:如何|怎么|怎样|何时|什么时候)\s*(?:启动|运行|重启|停止|执行|操作)|(?:不要|无需|先不|别)\s*(?:启动|运行|重启|执行|动手)|\b(?:how to|how do (?:i|we)|do not|don't)\b/iu.test(request);
   const review = /(?:审查|审阅|复审).{0,16}(?:代码|改动|提交|实现)|\breview\s+(?:(?:this|the|my|our)\s+)?(?:code|changes|commit|implementation)\b/iu.test(request);

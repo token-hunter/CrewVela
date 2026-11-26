@@ -193,7 +193,7 @@ pub struct OutboxMessage {
     pub body: String,
 }
 
-/// 投递时给 Agent 消息包装来源与回复指引（Orca preamble 的迷你版）；
+/// 投递时为 Agent 消息附加来源和定向回复指引；
 /// 无来源的消息（广播、初始任务）逐字投递，不加任何包装。
 pub fn render_delivery(message: &QueuedMessage) -> String {
     match &message.from {

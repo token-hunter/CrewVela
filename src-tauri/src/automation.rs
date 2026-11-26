@@ -13,6 +13,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 mod execution;
+mod templates;
+pub(crate) use templates::{TemplateAction, TemplateReceipt, TemplateRuntime};
 #[cfg(test)]
 mod execution_tests;
 #[cfg(test)]
@@ -92,6 +94,7 @@ pub enum SessionEventKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AutomationAction {
+    ConversationTemplate(TemplateAction),
     #[serde(rename_all = "camelCase")]
     RunAgent { runtime_kind: crate::multi_agent::AgentRuntimeKind, #[serde(skip)] provider_id: Option<String>, #[serde(skip)] model: Option<String>, cwd: String, prompt: String },
     #[serde(rename_all = "camelCase")]
@@ -130,6 +133,8 @@ pub enum AutomationAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationRun {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) topic: Option<TemplateReceipt>,
     #[serde(default)]
     pub id: String,
     #[serde(default)]
@@ -164,7 +169,7 @@ pub fn is_active_stage(stage: &str) -> bool {
 }
 
 fn new_run(now: u64, origin: &str, retry_of: Option<String>) -> AutomationRun {
-    AutomationRun { id: uuid::Uuid::new_v4().to_string(), origin: origin.into(), retry_of,
+    AutomationRun { id: uuid::Uuid::new_v4().to_string(), origin: origin.into(), retry_of, topic: None,
         targets: Vec::new(), updated_at: now, stage: Some("dispatching".into()), at: now, ok: true,
         detail: "执行已登记，正在准备派发".into() }
 }
@@ -208,6 +213,7 @@ struct AutomationFile {
 }
 
 pub struct AutomationManager {
+    pub(crate) template_runtime: std::sync::OnceLock<TemplateRuntime>,
     items: Mutex<Vec<Automation>>,
     path: Option<PathBuf>,
     dispatching: Mutex<std::collections::HashSet<String>>,
@@ -452,9 +458,13 @@ fn migrate_legacy_cron_schedules(items: &mut [Automation], now: u64) {
 }
 
 fn append_skipped(item: &mut Automation, now: u64) {
+    append_skipped_with_reason(item, now, "上一轮尚未完成，本轮已跳过；未启动或排队新任务");
+}
+
+fn append_skipped_with_reason(item: &mut Automation, now: u64, reason: &str) {
     let mut run = new_run(now, "schedule", None);
     run.stage = Some("skipped".into());
-    run.detail = "上一轮尚未完成，本轮已跳过；未启动或排队新任务".into();
+    run.detail = reason.into();
     item.recent_runs.push(run);
     trim_history(item);
 }
@@ -463,6 +473,7 @@ impl AutomationManager {
     #[cfg(test)]
     pub fn new() -> Self {
         Self {
+            template_runtime: Default::default(),
             items: Mutex::new(Vec::new()),
             path: None,
             dispatching: Mutex::new(std::collections::HashSet::new()),
@@ -508,6 +519,7 @@ impl AutomationManager {
             }
         }
         let manager = Self {
+            template_runtime: Default::default(),
             items: Mutex::new(items),
             path: Some(path),
             dispatching: Mutex::new(std::collections::HashSet::new()),
@@ -588,6 +600,12 @@ impl AutomationManager {
             _ => {}
         }
         match &input.action {
+            AutomationAction::ConversationTemplate(template) => {
+                if let Some(id) = &template.creation_id { uuid::Uuid::parse_str(id).context("无效的模板计划编号")?; }
+                if matches!(&input.trigger, AutomationTrigger::OnSessionEvent { .. } | AutomationTrigger::OnSessionEventFiltered { .. }) {
+                    return Err(anyhow!("话题模板需要时间触发"));
+                }
+            }
             AutomationAction::RunAgent { runtime_kind, provider_id, model, cwd, .. } => {
                 crate::automation_runtime::validate_launch(*runtime_kind, provider_id.as_deref(), model.as_deref(), cwd)?;
             }
@@ -599,6 +617,7 @@ impl AutomationManager {
             _ => {}
         }
         let body = match &input.action {
+            AutomationAction::ConversationTemplate(template) => &template.body,
             AutomationAction::RunAgent { prompt, .. } => prompt,
             AutomationAction::SendAgent { body, .. } | AutomationAction::BroadcastAgent { body, .. } => body,
             AutomationAction::Launch { prompt, .. } => prompt,
@@ -625,9 +644,18 @@ impl AutomationManager {
 
     pub fn create(&self, input: NewAutomation, now: u64) -> Result<Automation> {
         Self::validate(&input, now)?;
+        let mut items = self.items.lock().unwrap();
+        let requested_id = match &input.action { AutomationAction::ConversationTemplate(action) => action.creation_id.clone(), _ => None };
+        if let Some(existing) = requested_id.as_ref().and_then(|id| items.iter().find(|item| item.id == *id)) {
+            if serde_json::to_value(&existing.action)? != serde_json::to_value(&input.action)?
+                || serde_json::to_value(&existing.trigger)? != serde_json::to_value(&input.trigger)? {
+                return Err(anyhow!("相同的模板计划编号已用于其他内容"));
+            }
+            return Ok(existing.clone());
+        }
         let automation = Automation {
             request_receipts: Default::default(),
-            id: uuid::Uuid::new_v4().to_string(),
+            id: requested_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             name: input.name.trim().to_string(),
             enabled: true,
             next_run_at: schedule_initial(&input.trigger, now),
@@ -645,7 +673,6 @@ impl AutomationManager {
             overlap_policy: input.overlap_policy,
             active_session_ids: Vec::new(),
         };
-        let mut items = self.items.lock().unwrap();
         let mut updated = items.clone();
         updated.push(automation.clone());
         self.persist(&updated)?;
@@ -737,6 +764,9 @@ impl AutomationManager {
         self.collect_due_with_busy(now, &std::collections::HashSet::new())
     }
     pub fn collect_due_with_busy(&self, now: u64, busy: &std::collections::HashSet<String>) -> Result<Vec<(String, String, AutomationAction)>> {
+        self.collect_due_for_projects(now, busy, None)
+    }
+    pub(crate) fn collect_due_for_projects(&self, now: u64, busy: &std::collections::HashSet<String>, store: Option<&crate::multi_agent::MultiAgentStore>) -> Result<Vec<(String, String, AutomationAction)>> {
         let mut due = Vec::new();
         let mut items = self.items.lock().unwrap();
         let mut snapshot = items.clone();
@@ -749,6 +779,13 @@ impl AutomationManager {
                 continue;
             }
             changed = true;
+            if let (AutomationAction::ConversationTemplate(template), Some(store)) = (&item.action, store) {
+                if let Some(reason) = store.template_schedule_hold(&template.project_id)? {
+                    item.next_run_at = advance_after_run(&item.trigger, now, item.run_count, item.max_runs);
+                    append_skipped_with_reason(item, now, reason);
+                    continue;
+                }
+            }
             if item.recent_runs.iter().filter(|r| is_active_stage(r.stage.as_deref().unwrap_or("unconfirmed"))).count() >= MAX_RECENT_RUNS || (item.overlap_policy == OverlapPolicy::Skip && (busy.contains(&item.id) || self.dispatching.lock().unwrap().contains(&item.id))) {
                 item.next_run_at = advance_after_run(&item.trigger, now, item.run_count, item.max_runs);
                 append_skipped(item, now);
@@ -1567,7 +1604,7 @@ mod tests {
         let mut items = vec![legacy_cron_item("0 13 * * MON", due)];
         migrate_legacy_cron_schedules(&mut items, now);
         assert_eq!(items[0].next_run_at, Some(due));
-        let manager = AutomationManager { items: Mutex::new(items), path: None, dispatching: Mutex::new(std::collections::HashSet::new()) };
+        let manager = AutomationManager { items: Mutex::new(items), ..AutomationManager::new() };
         assert_eq!(manager.collect_due(now).unwrap().len(), 1);
         assert!(manager.collect_due(now).unwrap().is_empty());
         assert_eq!(manager.list()[0].next_run_at, Some(cron_migration_time(2026, 6, 29, 13)));
@@ -1584,7 +1621,7 @@ mod tests {
             let mut items = vec![legacy_cron_item("0 13 * * 1", old_sunday)];
             migrate_legacy_cron_schedules(&mut items, now);
             assert_eq!(items[0].next_run_at, Some(corrected_monday));
-            let manager = AutomationManager { items: Mutex::new(items), path: None, dispatching: Mutex::new(std::collections::HashSet::new()) };
+            let manager = AutomationManager { items: Mutex::new(items), ..AutomationManager::new() };
             assert_eq!(manager.collect_due(now).unwrap().len(), expected_due);
             assert!(manager.collect_due(now).unwrap().is_empty());
         }
@@ -1620,7 +1657,7 @@ mod tests {
         let now = cron_migration_time(2026, 6, 25, 12);
         migrate_legacy_cron_schedules(&mut items, now);
         assert_eq!(items[0].next_run_at, Some(cron_migration_time(2026, 6, 29, 13)));
-        let manager = AutomationManager { items: Mutex::new(items), path: None, dispatching: Mutex::new(std::collections::HashSet::new()) };
+        let manager = AutomationManager { items: Mutex::new(items), ..AutomationManager::new() };
         assert!(manager.collect_due(now).unwrap().is_empty());
         assert_eq!(manager.list()[0].run_count, 1);
     }

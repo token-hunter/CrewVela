@@ -1,10 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, Copy } from "@phosphor-icons/react";
+import { Check, Copy, Quotes } from "@phosphor-icons/react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { useTranslation } from "../useInterfaceLanguage";
+import { conversationQuote } from "../collaborationConversation";
 import "../styles/conversation-message-copy.css";
 
 /** Copy the authoritative message body, never DOM text containing status/actions. */
-export function ConversationMessageCopy({body}: {body:string}) {
+export function ConversationMessageCopy({body, quoteSource}: {body:string; quoteSource?: string}) {
+  const t = useTranslation();
   const [copiedBody,setCopiedBody] = useState<string | null>(null);
   const [error,setError] = useState<{body:string;text:string} | null>(null);
   const [busy,setBusy] = useState(false);
@@ -18,13 +21,13 @@ export function ConversationMessageCopy({body}: {body:string}) {
     return()=>{mounted.current=false;if(timer.current)clearTimeout(timer.current);};
   },[]);
   const copied = copiedBody === body;
-  const copy = async()=>{
+  const copy = async(asQuote = false)=>{
     if(pending.current || !body.trim())return;
     const content=body;
     pending.current=true;setBusy(true);setCopiedBody(null);setError(null);
     if(timer.current)clearTimeout(timer.current);
     try {
-      await writeText(content);
+      await writeText(asQuote && quoteSource ? conversationQuote(quoteSource, content) : content);
       if(mounted.current && current.current===content){
         setCopiedBody(content);
         timer.current=setTimeout(()=>setCopiedBody(null),2000);
@@ -40,5 +43,8 @@ export function ConversationMessageCopy({body}: {body:string}) {
     {error?.body===body && <span className="conversation-copy-error" role="alert">{error.text}</span>}
     <span className="conversation-copy-feedback" role="status">{copied ? "已复制" : ""}</span>
     <span className="conversation-copy-action"><button type="button" className="conversation-copy-button" aria-label="复制消息" aria-describedby={tooltip} aria-busy={busy} disabled={busy} onClick={()=>void copy()}>{copied ? <Check size={17} aria-hidden="true"/> : <Copy size={17} aria-hidden="true"/>}</button><span id={tooltip} role="tooltip" className="conversation-copy-tooltip">{busy ? "正在复制…" : copied ? "已复制" : "复制消息"}</span></span>
+    {quoteSource && <button type="button" className="conversation-copy-button" title={t("复制为话题引用")} aria-label={t("复制为话题引用")} disabled={busy} onClick={() => void copy(true)}>
+      <Quotes size={17} aria-hidden="true" />
+    </button>}
   </div>;
 }

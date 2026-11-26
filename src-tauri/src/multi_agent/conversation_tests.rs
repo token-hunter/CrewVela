@@ -123,7 +123,7 @@ fn conversation_attachments_are_snapshotted_scoped_and_delivered() {
     assert_eq!(images[0].1, "image/png");
     assert_eq!(std::fs::read(&images[0].0).unwrap(), png);
     let prompt = discussion_prompt(&fixture.store, &fixture.store.connection.lock().unwrap(),
-        &round, "chat", 0, &fixture.agents[0]).unwrap();
+        &round, "chat", 0, &fixture.agents[0], None, None).unwrap();
     assert!(prompt.contains("ORIGINAL_ATTACHMENT_TEXT"));
     assert!(!prompt.contains("CHANGED_SOURCE"));
     assert!(prompt.contains("操作演示.MP4") && prompt.contains("video/mp4"));
@@ -597,6 +597,37 @@ fn conversation_export_preserves_complete_markdown_and_current_session_scope() {
         conversation_id: conversation_id.clone(),
     }).unwrap();
     assert_eq!(fixture.store.export_conversation_markdown(&fixture.project, conversation_id).unwrap().1, exported);
+}
+
+#[test]
+fn work_queue_restores_saved_requests_without_crossing_project_or_cleared_history() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let old = fixture.run(&Replies::default());
+    let draft = fixture.draft();
+    let plan = store.save_conversation_plan(&old.rounds[0].id, &old.messages.last().unwrap().id,
+        &json!({"summary":draft.summary,"tasks":draft.tasks}).to_string()).unwrap();
+    let saved = store.conversation_snapshot(&fixture.project).unwrap();
+    let next = store.new_conversation(clear_input(&saved)).unwrap();
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    let snapshot = reopened.conversation_snapshot(&fixture.project).unwrap();
+    assert_eq!(snapshot.conversation.id, next.conversation.id);
+    let item = snapshot.work_items.iter().find(|item| item.kind == "plan" && item.id == plan.id).unwrap();
+    assert_eq!(item.conversation_id, saved.conversation.id);
+    assert_eq!(item.message_id, plan.message_id);
+    assert_eq!(item.request, fixture.input().body);
+    let other = reopened.create_project(CreateProjectInput {
+        name: "Other".into(), goal: "Separate project".into(),
+        root_path: fixture.root.join("other").display().to_string(), default_branch: "main".into(),
+    }).unwrap();
+    assert!(reopened.conversation_snapshot(&other.id).unwrap().work_items.is_empty());
+    let original = reopened.switch_conversation(ConversationSwitchInput {
+        project_id: fixture.project.clone(), expected_conversation_id: next.conversation.id, conversation_id: item.conversation_id.clone(),
+    }).unwrap();
+    assert!(original.messages.iter().any(|message| message.id == item.message_id));
+    assert!(original.execution_plans.iter().any(|record| record.id == item.id && record.status == "pending"));
+    let cleared = reopened.clear_conversation(clear_input(&original)).unwrap();
+    assert!(cleared.work_items.iter().all(|record| record.conversation_id != original.conversation.id));
 }
 
 #[test]
@@ -1312,6 +1343,81 @@ fn restart_requires_decision_and_does_not_replay_stale_round() {
         "needs_decision"
     );
     assert!(!fixture.store.begin_conversation(fixture.input()).unwrap().1);
+}
+
+#[test]
+fn delivery_receipts_follow_the_exact_member_run_and_survive_reopening() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let (round, _) = store.begin_conversation(fixture.input()).unwrap();
+    let turn = prepare_turn(store, &round.id, 0, "chat", 0, &fixture.agents[0]).unwrap();
+    let run = store.claim_task(ClaimTaskInput {
+        task_id: turn.task_id, agent_id: fixture.agents[0].clone(), lease_seconds: 120,
+    }).unwrap();
+    store.update_run(UpdateRunInput { run_id: run.id.clone(), status: RunStatus::Running,
+        output_summary: None, error: None, session_locator: None }).unwrap();
+    let receipts = |store: &MultiAgentStore| store.conversation_snapshot(&fixture.project).unwrap()
+        .delivery_receipts.remove(&round.user_message_id).unwrap();
+    let initial = receipts(store);
+    assert_eq!(initial[0].status, "awaiting_receipt");
+    assert_eq!(initial[0].run_id.as_deref(), Some(run.id.as_str()));
+    assert_eq!(initial[1].status, "queued");
+    store.append_runtime_event(super::super::AppendRuntimeEventInput {
+        run_id: run.id.clone(), event_type: "conversation_prompt_received".into(), payload: json!({}),
+    }).unwrap();
+    assert_eq!(receipts(store)[0].status, "received");
+    store.append_runtime_event(super::super::AppendRuntimeEventInput {
+        run_id: run.id.clone(), event_type: "analysis_activity".into(), payload: json!({}),
+    }).unwrap();
+    assert_eq!(receipts(store)[0].status, "running");
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    reopened.recover_interrupted_runs_at_startup().unwrap();
+    reopened.recover_conversations_at_startup().unwrap();
+    assert_eq!(receipts(&reopened)[0].status, "unconfirmed");
+    assert!(!reopened.begin_conversation(fixture.input()).unwrap().1);
+}
+
+#[test]
+fn topic_resume_is_member_and_topic_scoped_and_current_request_appears_once() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let agent = &fixture.agents[0];
+    let binding = json!({"runtime":"codex","permissionProfile":"default","version":1});
+    let (round, _) = store.begin_conversation(fixture.input()).unwrap();
+    let turn = prepare_turn(store, &round.id, 0, "chat", 0, agent).unwrap();
+    let run = store.claim_task(ClaimTaskInput {
+        task_id: turn.task_id, agent_id: agent.clone(), lease_seconds: 120,
+    }).unwrap();
+    store.update_run(UpdateRunInput { run_id: run.id.clone(), status: RunStatus::Running,
+        output_summary: None, error: None, session_locator: None }).unwrap();
+    store.update_run(UpdateRunInput { run_id: run.id, status: RunStatus::Succeeded,
+        output_summary: Some("old topic response".into()), error: None,
+        session_locator: Some(json!({"topicBinding":binding,"sessionId":"provider-topic-a"})) }).unwrap();
+    store.finish_conversation(&round.id, "completed", None).unwrap();
+    let mut request = fixture.input();
+    request.client_message_id = "topic-a-2".into();
+    request.body = "unique-current-request-marker".into();
+    let (next, _) = store.begin_conversation(request).unwrap();
+    let next_turn = prepare_turn(store, &next.id, 0, "chat", 0, agent).unwrap();
+    let (locator, cutoff, prior) = store.topic_session(&next_turn.task_id, &fixture.project, agent, &binding).unwrap().unwrap();
+    assert_eq!(locator["sessionId"], "provider-topic-a");
+    assert!(store.topic_session(&next_turn.task_id, &fixture.project, &fixture.agents[1], &binding).unwrap().is_none());
+    assert!(store.topic_session(&next_turn.task_id, &fixture.project, agent, &json!({"version":2})).unwrap().is_none());
+    let prompt = store.topic_delta_prompt(&next_turn.task_id, cutoff, &prior).unwrap();
+    assert_eq!(prompt.matches("unique-current-request-marker").count(), 1);
+    assert!(!prompt.contains("old topic response"));
+    store.finish_conversation(&next.id, "completed", None).unwrap();
+    let snapshot = store.conversation_snapshot(&fixture.project).unwrap();
+    let topic = store.new_conversation(ConversationClearInput {
+        project_id: fixture.project.clone(), expected_conversation_id: snapshot.conversation.id,
+        expected_message_ids: snapshot.messages.into_iter().map(|message| message.id).collect(),
+    }).unwrap();
+    let mut request = fixture.input();
+    request.client_message_id = "topic-b-1".into();
+    request.expected_conversation_id = Some(topic.conversation.id);
+    let (other, _) = store.begin_conversation(request).unwrap();
+    let other_turn = prepare_turn(store, &other.id, 0, "chat", 0, agent).unwrap();
+    assert!(store.topic_session(&other_turn.task_id, &fixture.project, agent, &binding).unwrap().is_none());
 }
 
 #[test]
@@ -2769,6 +2875,8 @@ fn conversation_plan_prompt_names_actual_roles_and_requires_the_shared_review_gr
         "summary",
         1,
         &fixture.agents[0],
+        None,
+        None,
     )
     .unwrap();
     assert!(prompt.contains("runtime=claude_code | role=reviewer"));
@@ -2778,3 +2886,6 @@ fn conversation_plan_prompt_names_actual_roles_and_requires_the_shared_review_gr
     assert!(prompt.contains("仅设置 reviewerAgentId 不构成独立 Review 任务"));
     assert!(prompt.contains("真实成员不足"));
 }
+
+#[path = "conversation_template_tests.rs"]
+mod template_cases;

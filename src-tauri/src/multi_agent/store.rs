@@ -629,6 +629,7 @@ impl MultiAgentStore {
         let task = get_task_with(&tx, &input.task_id)?;
         ensure_no_handoff(&tx, &task.project_id)?;
         let project_status = self.get_project_with(&tx, &task.project_id)?.status;
+        super::conversation::validate_template_claim(&tx, &task.id, &task.project_id, &input.agent_id)?;
         let message_only = (task.id.starts_with("cli-message-")
             && matches!(project_status, ProjectStatus::Draft | ProjectStatus::Completed))
             || (super::conversation::is_conversation_task(&task.id)

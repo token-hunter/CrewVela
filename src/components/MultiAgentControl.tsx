@@ -16,10 +16,14 @@ import { ConversationApprovalRequests } from "./ConversationApprovalRequests";
 import { ConversationMemberActivity } from "./ConversationMemberActivity";
 import { ConversationMemberModels } from "./ConversationMemberModels";
 import { ConversationMessageQueue } from "./ConversationMessageQueue";
+import { CollaborationWorkRail, WorkSourceDialog } from "./CollaborationWorkRail";
+import { buildCollaborationWorkQueue, type CollaborationWorkItem } from "../collaborationWorkQueue";
+import { ConversationDeliveryStatus } from "./ConversationDeliveryStatus";
+import { CollaborationTemplateShortcuts } from "./CollaborationTemplateShortcuts";
 import { conversationMemberActivity } from "../conversationActivity";
 import { ConversationPlanCard } from "./ConversationPlanCard";
 import { ConversationHistoryDialog, conversationTitle } from "./ConversationHistoryDialog";
-import { ConversationSwitcher } from "./ConversationSwitcher";
+import { ConversationSwitcher, ConversationTopicStrip } from "./ConversationSwitcher";
 import { ConversationDelegationDetails } from "./ConversationDelegationDetails";
 import { ConversationTaskView } from "./ConversationTaskView";
 import { AgentMentionMenu, type AgentMentionOption } from "./AgentMentionMenu";
@@ -28,7 +32,7 @@ import { CollaborationProjectNavigation } from "./CollaborationProjectNavigation
 import { GrokExecutionDrawer } from "./GrokExecutionDrawer";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
 import { Modal } from "./ui/Modal";
-import { conversationChatDispatch, conversationIsActive, conversationMentionToken, conversationRecipients, conversationRequestIntent, conversationRequestMode, CONVERSATION_STATUS, hasConversationPlanGoal, latestConversationRound, orderedConversationMessages } from "../collaborationConversation";
+import { conversationChatDispatch, conversationInputText, conversationIsActive, conversationMentionToken, conversationRecipients, conversationRequestIntent, conversationRequestMode, CONVERSATION_STATUS, hasConversationPlanGoal, latestConversationRound, orderedConversationMessages } from "../collaborationConversation";
 import { RUNTIME_LABELS } from "../runtimeLogos";
 import { visibleProjectTasks } from "../collaborationTasks";
 import { hasMentionToken, mentionTextSegments, selectMentionTokens } from "../multiAgentMention";
@@ -39,6 +43,7 @@ import "../styles/team-work-views.css";
 import "../styles/conversation-member-activity.css";
 import "../styles/conversation-policy.css";
 import "../styles/multi-agent-grok-noir.css";
+import "../styles/collaboration-work-queue.css";
 
 interface Props {
   sessions?: SessionRecord[];
@@ -108,6 +113,21 @@ function projectFromStorage(): string | null { return stored(PROJECT_KEY) || nul
 export function MultiAgentControl({ sessions = [], active = true, defaultCwd, focusedProjectId, focusedProjectRequest, projectOverview = false, onReturnToSidebar, modeButtonRef, onOpenSession, onOpenProjectSettings }: Props) {
   const t = useTranslation();
   const [execDrawerOpen, setExecDrawerOpen] = useState(false);
+  const [railPreference, setRailPreference] = useState<boolean | null>(null);
+  const [wideWorkArea, setWideWorkArea] = useState(false);
+  const [workTarget, setWorkTarget] = useState<CollaborationWorkItem | null>(null);
+  const [sourceId, setSourceId] = useState<string | null>(null);
+  const workLayout = useRef<HTMLDivElement>(null);
+  const workRailId = useId();
+  useLayoutEffect(() => {
+    const node = workLayout.current;
+    if (!node) return;
+    const measure = () => setWideWorkArea(node.clientWidth >= 820);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   const [expandedUserMsgs, setExpandedUserMsgs] = useState<Record<string, boolean>>({});
   const { ready: runtimeReady, error: runtimeError, isRuntimeEnabled, refresh: refreshAvailability } = useRuntimeAvailability();
   const [projects, setProjects] = useState<MultiAgentProject[]>([]);
@@ -157,6 +177,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const [showOlder, setShowOlder] = useState(false);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [topicRevision, setTopicRevision] = useState(0);
   const [planIssues, setPlanIssues] = useState<PlanIssue[]>([]);
   const [loggingIn, setLoggingIn] = useState(false);
   const [loginRetryRound, setLoginRetryRound] = useState<string | null>(null);
@@ -234,6 +255,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     setHistoryMenuOpen(false); setHistoryOpen(false); setClearConfirmation(null); setClearError("");
     setSessionAction(null); setSessionActionError("");
     setWorkView("chat"); setSelectedTaskId(null); setSelectedDeliveryId(null);
+    setWorkTarget(null); setSourceId(null); setRailPreference(null);
     setArchivedRuleId("");
     setPlanIssues([]);
     setDraft(id ? stored(draftKey(id)) : ""); setDraftFiles([]); setPending(id ? storedPending(id) : null); followMessages.current = true;
@@ -800,6 +822,43 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       return false;
     }
   };
+  const workItems = useMemo(() => buildCollaborationWorkQueue(snapshot, conversation), [snapshot, conversation]);
+  const openWork = async (item: CollaborationWorkItem) => {
+    if (!active || !healthy || busy || item.projectId !== currentProject.current) return;
+    if (!wideWorkArea) setRailPreference(false);
+    setSourceId(null); setSelectedDeliveryId(null);
+    if (item.taskId) {
+      setSelectedTaskId(item.taskId);
+      setWorkView("tasks"); setWorkTarget(item);
+      return;
+    }
+    const origin = item.origin;
+    if (!origin) { setSourceId(item.id); return; }
+    if (origin.conversationId !== currentConversation.current && !await switchConversation(origin.conversationId)) {
+      if (currentProject.current === item.projectId && mounted.current) setSourceId(item.id);
+      return;
+    }
+    if (currentProject.current !== item.projectId || !mounted.current) return;
+    followMessages.current = false;
+    setWorkView("chat"); setShowOlder(true); setWorkTarget(item);
+  };
+  useLayoutEffect(() => {
+    if (!workTarget || !active || workTarget.projectId !== projectId) return;
+    const frame = requestAnimationFrame(() => {
+      const root = workLayout.current?.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])');
+      const find = (attr: string, id?: string) => id && root?.querySelector<HTMLElement>(`[data-${attr}="${CSS.escape(id)}"]`);
+      const element = workTarget.approval ? find("approval-id", workTarget.approval.id) : find("work-task", workTarget.taskId)
+        || find("message-id", workTarget.origin?.messageId) || (workTarget.origin?.kind === "plan" && find("work-plan", workTarget.origin.id));
+      if (element) {
+        element.tabIndex = -1;
+        element.focus({ preventScroll: true });
+        element.scrollIntoView({ block: "center", inline: "nearest" });
+      } else if ((workTarget.origin || workTarget.approval) && workItems.some(item => item.id === workTarget.id)) setSourceId(workTarget.id);
+      else setOperationError(t("原任务已更新，请重新查看任务队列"));
+      setWorkTarget(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [active, projectId, workItems, workTarget, t]);
   const startRename = (id: string, label: string) => {
     setSessionActionError("");
     const title = label === "空白会话" ? "" : Array.from(label).slice(0, 60).join("");
@@ -821,6 +880,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       }
       if (!mounted.current || currentProject.current !== projectId || generation.current !== epoch) return;
       if (target.kind === "delete") setWorkView("chat");
+      if (target.kind === "rename") setTopicRevision(value => value + 1);
       setSessionAction(null);
     } catch (reason) {
       if (mounted.current && currentProject.current === projectId && generation.current === epoch) setSessionActionError(String(reason));
@@ -976,7 +1036,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   };
   const allRecipientsSelected = availablePlanMembers.length > 0
     && availablePlanMembers.length === selected.length && availablePlanMembers.every(id => selected.includes(id));
-  const mentionCount = new Set(mentionTokens.filter(token => hasMentionToken(draft, token))).size;
+  const inputText = conversationInputText(draft);
+  const mentionCount = new Set(mentionTokens.filter(token => hasMentionToken(inputText, token))).size;
   const planning = conversationRequestMode(draft, "discussion", mentionTokens) === "execution_plan";
   const showChatRecipient = !planning && !mentionCount && !!chatRecipientId;
   const sendScopeLabel = planning
@@ -1036,6 +1097,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     }}>{t("查看委派")}<CaretRight size={16} /></button>;
 
   const showExecDrawer = projectOverview && workView === "chat" && execDrawerOpen && !delegation;
+  const showWorkRail = !!(active && conversation && projectId && workView === "chat" && !delegation && !showExecDrawer
+    && (railPreference ?? (wideWorkArea && projectOverview)));
+  const sourceItem = active && sourceId ? workItems.find(item => item.id === sourceId && item.projectId === projectId) : undefined;
+  const workToggle = workView === "chat" && !delegation && <button type="button" className="conversation-icon collab-work-toggle"
+    aria-label={t(showWorkRail ? "收起任务队列" : "展开任务队列")} title={t("任务队列")} aria-expanded={showWorkRail}
+    aria-controls={showWorkRail ? workRailId : undefined} disabled={!conversation} data-attention={workItems.some(item => item.group === "attention")}
+    onClick={() => { setExecDrawerOpen(false); setRailPreference(!showWorkRail); }}><ListChecks size={17} /></button>;
   const projectTitleText = snapshot?.project.name ?? projects.find(project => project.id === projectId)?.name ?? "团队协作";
   const projectSelectEl = <span className="conversation-project-select"><select aria-label={t("协作项目")} title={snapshot?.project.rootPath ? `${snapshot.project.name}\n项目目录：${snapshot.project.rootPath}` : projects.find(project => project.id === projectId)?.name} value={projectId ?? ""} onChange={event => chooseProject(event.target.value || null)}><option value="" disabled>{t("选择协作项目")}</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select><CaretDown size={15} aria-hidden="true" /></span>;
   const createProjectBtnEl = <button type="button" className="conversation-icon" aria-label={t("创建协作项目")} title={t("创建协作项目")} onClick={() => setCreatingProject(true)}><Plus size={16} /></button>;
@@ -1085,7 +1153,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         }
         return updated;
       }} />}
-    <div className={`conversation-delegation-layout${delegation ? " has-delegation" : showExecDrawer ? " has-grok-drawer" : ""}`}>
+    <div ref={workLayout} className={`conversation-delegation-layout${delegation ? " has-delegation" : showExecDrawer ? " has-grok-drawer" : showWorkRail && wideWorkArea ? " has-work-rail" : ""}`}>
     <section className="collaboration-conversation team-work-views" aria-label={t("团队协作会话")}>
     <header className="conversation-header is-grok-noir">
       {projectOverview ? (
@@ -1098,6 +1166,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           <div className="grok-top-right">
             {!showExecDrawer && onOpenProjectSettings && <div className="grok-top-task-wrap">{taskLinkEl}</div>}
             {membersTriggerEl}
+            {workToggle}
             {workView === "chat" && !delegation && (
               <button type="button" className={`conversation-icon grok-drawer-toggle${execDrawerOpen ? " is-active" : ""}`}
                 aria-label={execDrawerOpen ? "收起右侧执行画布" : "展开右侧执行画布"}
@@ -1131,12 +1200,16 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
             <div className="grok-docked-subbar-left">{switcherEl}</div>
             <div className="grok-docked-subbar-right">
               {onOpenProjectSettings && taskLinkEl}
+              {workToggle}
               {createProjectBtnEl}
             </div>
           </div>
         </>
       )}
     </header>
+    {active && workView === "chat" && projectId && conversation && <ConversationTopicStrip key={projectId} projectId={projectId}
+      currentId={conversation.conversation.id} currentTitle={currentTitle} busy={newConversationBlocked} fullWidth={projectOverview}
+      revision={topicRevision} onSwitch={switchConversation} onCreate={startNewConversation} />}
     {membersOpen === "header" && createPortal(<div id={membersId} ref={membersMenu} className="conversation-member-menu-wrap"
       style={{ left:membersPosition.left, top:membersPosition.top, width:membersPosition.width, "--conversation-member-menu-height":`${membersPosition.maxHeight}px` } as React.CSSProperties}>
       <div className="conversation-member-menu" role="group" aria-label={t("选择参与成员")}><header>{t("参与成员")}</header>{agents.map(agent => {
@@ -1202,7 +1275,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
             </div>
           </article>;
         }
-        if (message.senderType === "system") return <div className={`conversation-event ${message.status}`} key={message.id}><span className="conversation-status-dot" /><p>{message.body || t(CONVERSATION_STATUS[message.status])}{delegated?.phase === "source" && delegationLink(delegated.item)}</p>{openOriginal && <button type="button" className="conversation-text-button" onClick={openOriginal}>{t("查看原会话")}<ArrowSquareOut size={13} /></button>}</div>;
+        if (message.senderType === "system") return <div className={`conversation-event ${message.status}`} data-message-id={message.id} key={message.id}><span className="conversation-status-dot" /><p>{message.body || t(CONVERSATION_STATUS[message.status])}{delegated?.phase === "source" && delegationLink(delegated.item)}</p>{openOriginal && <button type="button" className="conversation-text-button" onClick={openOriginal}>{t("查看原会话")}<ArrowSquareOut size={13} /></button>}</div>;
         const previous = visibleMessages[index - 1];
         const continuation = !!plan && previous?.senderType === "agent" && previous.agentId === message.agentId;
         const fromUser = message.senderType === "user";
@@ -1212,7 +1285,9 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const compactReply = projectOverview && !delegation && !planReplyRound && !message.queuedInput
           && activity?.phase === "completed" && !activity.live;
         const memberHeading = !fromUser && <><strong>{agent?.name ?? t("历史成员")}</strong>{memberModelChips(agent?.id)}</>;
-        const copyAction = !plan && !generatingPlan && !rawPlanReply && !!message.body.trim() && <ConversationMessageCopy body={message.body} />;
+        const copyAction = !plan && !generatingPlan && !rawPlanReply && !!message.body.trim() && <ConversationMessageCopy body={message.body}
+          quoteSource={t("引用自「{topic}」· {author}", { topic: currentTitle,
+            author: message.senderType === "user" ? t("我") : agent?.name ?? t("历史成员") })} />;
         const attachments = !!message.attachments?.length && <div className="conversation-attachments" aria-label={t("消息附件")}>{message.attachments.map(file => {
           const source = { kind: "message" as const, projectId: message.projectId,
             conversationId: message.conversationId, messageId: message.id, attachmentId: file.id };
@@ -1257,6 +1332,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
               {activity && <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={activity} now={activityNow} onOpen={message.runId ? openOriginal : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"} completedLabel={planReplyRound ? "规划成员已回复" : undefined} compactHeading={compactReply ? memberHeading : undefined} compactActions={compactReply ? copyAction : undefined}>{message.body && !generatingPlan && !rawPlanReply ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity>}
               {attachments}
             </>}
+            {fromUser && conversation?.deliveryReceipts?.[message.id]?.length ? <ConversationDeliveryStatus
+              receipts={conversation.deliveryReceipts[message.id]} agents={snapshot?.agents ?? []}
+              onOpenRun={onOpenSession ? runId => {
+                const reply = messages.find(item => item.runId === runId && item.senderType === "agent");
+                if (reply) void openAgentSession(reply, snapshot?.agents.find(item => item.id === reply.agentId)?.name ?? t("历史成员"));
+                else void openSessionRecord(null, { projectId: message.projectId, runId, agentName: t("团队成员"), request: message.body, reply: "", error: null });
+              } : undefined} /> : null}
             {message.kind === "codex_login_required" && message.status === "failed" && <div className="conversation-progress">
               <span>{loginRetryRound === message.roundId ? "已登录，等待本轮结束后重试失败成员" : loggingIn ? "正在等待 Codex 登录…" : CODEX_LOGIN_REQUIRED}</span>
               <button type="button" className="conversation-text-button" disabled={loggingIn || !!loginRetryRound || busy || !!pending || !healthy || !active || (discussing && (round?.id !== message.roundId || !!planReplyRound))}
@@ -1299,7 +1381,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           </div>
         </article>;
       })}
-      {conversation?.executionPlans.filter(plan => !messages.some(message => message.id === plan.messageId)).map(renderPlan)}
+      {conversation?.executionPlans.filter(plan => !messages.some(message => message.id === plan.messageId)).map(plan => <div key={plan.id} data-work-plan={plan.id}>{renderPlan(plan)}</div>)}
       {snapshot?.runs.filter(run => run.sessionLocator?.stopUnverified === true).map(run => <UnverifiedRunNotice key={run.id} run={run} taskTitle={snapshot.tasks.find(task => task.id === run.taskId)?.title} onConfirmed={refresh} />)}
       </div>
     </div>
@@ -1476,6 +1558,17 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       <div><button ref={cancelClear} type="button" disabled={busy} onClick={() => setClearConfirmation(null)}>{t("取消")}</button><button type="button" className="conversation-clear-confirm" disabled={clearBlocked || clearChanged} onClick={() => void confirmClear()}>{busy ? "正在清空…" : "清空记录"}</button></div>
     </Modal>, document.body)}
     </section>
+    {showWorkRail && conversation && projectId && <CollaborationWorkRail id={workRailId} items={workItems}
+      agents={snapshot?.agents ?? []} currentId={conversation.conversation.id} compact={!wideWorkArea} disabled={busy || !healthy}
+      onOpen={item => void openWork(item)} onClose={() => {
+        setRailPreference(false);
+        requestAnimationFrame(() => workLayout.current?.querySelector<HTMLButtonElement>(".collab-work-toggle")?.focus());
+      }}>
+      <CollaborationTemplateShortcuts projectId={projectId} conversationId={conversation.conversation.id}
+        agents={agents.filter(agent => !manualMembers.has(agent.id))}
+        supportedRuntimes={supported} disabled={busy || !!pending || !healthy || !active || discussing} onChanged={() => void refresh()} />
+    </CollaborationWorkRail>}
+    {sourceItem && <WorkSourceDialog item={sourceItem} disabled={busy || !healthy} onChanged={() => void refresh()} onClose={() => setSourceId(null)} />}
     {delegation && projectId && conversationId && <ConversationDelegationDetails key={delegation.id}
       item={delegation} agents={agents} projectId={projectId} conversationId={conversationId} onClose={closeDelegation} />}
     {showExecDrawer && <GrokExecutionDrawer

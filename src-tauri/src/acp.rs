@@ -1297,8 +1297,10 @@ impl AcpConnection {
         }
         if value.get("method").and_then(Value::as_str) == Some("session/update") {
             if let Some(update) = value.pointer("/params/update") {
+                let current_prompt_echo = update["sessionUpdate"] != "user_message_chunk"
+                    || (collector.is_some() && value.pointer("/params/sessionId").and_then(Value::as_str) == Some(self.session_id.as_str()));
                 self.apply_update(update, collector);
-                if let Some(handler) = self.update_handler.as_mut() {
+                if let Some(handler) = self.update_handler.as_mut().filter(|_| current_prompt_echo) {
                     handler(update);
                 }
             }
@@ -2029,7 +2031,7 @@ pub(crate) struct ManagedCodexThread {
     pub opened: Box<dyn FnOnce(&str) -> Result<()> + Send>,
 }
 
-pub(crate) type ConversationConfigurator = Box<dyn FnOnce(&mut AcpConnection) -> Result<()> + Send>;
+pub(crate) type ConversationConfigurator = Box<dyn FnOnce(&mut AcpConnection) -> Result<Option<String>> + Send>;
 
 /// Discover values with a fresh, message-free handshake. Never resume a
 /// member's live session or attach collaboration tools just to open settings.
@@ -2172,7 +2174,11 @@ fn execute_managed_acp_inner(
     if cancelled.load(Ordering::Acquire) {
         return Err(anyhow!("ACP Agent 任务已取消"));
     }
-    if let Some(configure) = conversation_config { configure(&mut connection)?; }
+    let continued_prompt = match conversation_config {
+        Some(configure) => configure(&mut connection)?,
+        None => None,
+    };
+    let prompt = continued_prompt.as_deref().unwrap_or(prompt);
     let content = if connection.prompt_images_supported && !images.is_empty() {
         Some(managed_image_prompt(prompt, images)?)
     } else { None };

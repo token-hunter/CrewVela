@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// 会话级独立 Git Worktree 元数据，随 SessionRecord 持久化。
 ///
-/// 借鉴 Orca 的「一个 Agent 任务 = 一个隔离 checkout」模型：多会话并行改同一个
+/// 每个 Agent 任务使用独立的 checkout。多会话并行改同一个
 /// 仓库时，每个会话落在自己的 worktree（独立分支）里，互不踩踏。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

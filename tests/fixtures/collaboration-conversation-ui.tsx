@@ -13,6 +13,7 @@ import type { CollaborationTasksRequest } from "../../src/collaborationTasks";
 import "../../src/styles.css";
 
 const params = new URLSearchParams(location.search);
+const workQueueFixture = params.has("work-queue");
 document.documentElement.dataset.theme = params.get("theme") === "light" ? "light" : "dark";
 document.documentElement.dataset.appearanceAccent = params.get("accent") ?? "clay";
 const dualViews = params.get("dual-views") === "1";
@@ -226,10 +227,22 @@ const mock = {
       project, activity: ({ A: "pending_approval", B: "running", C: "running", D: "delivered" } as Record<string, string>)[project.id] ?? project.status,
     })));
     if (command === "ma_list_interventions") {
+      if (workQueueFixture) return activityApprovals.filter(approval => approval.status === "pending").map(approval => ({
+        id: `gate-${approval.id}`, projectId: approval.projectId, taskId: approval.taskId, runId: approval.runId,
+        kind: "approval_required", status: "open", metadata: { approvalId: approval.id },
+      }));
       const item={id:"permission-current",projectId:"A",taskId:"activity-task-claude",runId:"run-claude",kind:"approval_required",status:"open",metadata:{approvalId:"permission-claude"}};
       return mock.stalePermission ? [] : [{...item,id:"foreign-project",projectId:"B"},{...item,id:"old-run",runId:"previous-run"},item];
     }
     if (command === "ma_resolve_intervention") {
+      if (workQueueFixture) {
+        const approval = activityApprovals.find(approval => `gate-${approval.id}` === args.input.interventionId && approval.status === "pending");
+        if (!approval || args.input.action !== "approve") throw Error("Unknown fixture approval");
+        approval.status = "approved";
+        if (!activityApprovals.some(item => item.taskId === approval.taskId && item.status === "pending"))
+          tasks.find(task => task.id === approval.taskId)!.status = "running";
+        return { interventionId: args.input.interventionId, projectId: approval.projectId, resumeProject: false, message: "已批准" };
+      }
       if(args.input.interventionId!=="permission-current"||args.input.action!=="approve")throw Error("Wrong permission identity");
       if(mock.failPermission)throw Error("隔离测试：批准未保存，请重试");
       activityApprovals[0].status="approved";
@@ -237,7 +250,7 @@ const mock = {
       chats.A.rounds[0].status="running";chats.A.messages.find((item:any)=>item.id==="a1").status="running";
       return {interventionId:"permission-current",projectId:"A",resumeProject:false,message:"已批准本次工具操作"};
     }
-    if (command === "ma_snapshot") { const result=snapshot(args.projectId); if(params.get("activity")==="1"&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} if(resumedDelivery && args.projectId==="A")result.approvals=[resumedDelivery]; if(params.has("logs-only"))result.runLogs=[]; return structuredClone(result); }
+    if (command === "ma_snapshot") { const result=snapshot(args.projectId); if((params.get("activity")==="1" || workQueueFixture)&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} if(resumedDelivery && args.projectId==="A")result.approvals=[resumedDelivery]; if(params.has("logs-only"))result.runLogs=[]; return structuredClone(result); }
     if (resumedDelivery && args.taskId === resumedDelivery.taskId && command === "ma_update_resumed_delivery") {
       resumedDelivery.status = "pending";
       tasks[1].status = "in_review";
@@ -260,7 +273,8 @@ const mock = {
           model: selection.model === "fixture-a" ? "测试模型 A" : selection.model,
           reasoning: selection.reasoning === "high" ? "高" : selection.reasoning,
         }]));
-      return structuredClone({ ...chats[args.projectId], memberModelSummaries: modelSummaries });
+      return structuredClone({ ...chats[args.projectId], memberModelSummaries: modelSummaries,
+        ...(workQueueFixture && args.projectId === "A" ? { workItems: workFixtureOrigins() } : {}) });
     }
     if (["ma_conversation_member_models", "ma_set_conversation_member_models"].includes(command)) {
       const key = `${args.projectId}:${args.agentId}`;
@@ -497,6 +511,46 @@ const mock = {
     throw Error(`隔离页面未模拟 ${command}`);
   },
 };
+function workFixtureOrigins() {
+  const original = [chats.A, ...mock.archivedConversations].find(chat => chat.conversation.id === "installer-topic");
+  if (!original) return [];
+  const plan = original.executionPlans[0];
+  const base = { projectId: "A", conversationId: original.conversation.id, topicTitle: original.conversation.title,
+    messageId: plan.messageId, request: original.messages[0].body, summary: plan.summary, updatedAt: clock };
+  const records = [{ ...base, kind: "origin", id: "installer-task", status: "waiting_approval" }];
+  if (chats.A !== original && plan.status === "pending") records.push({ ...base, kind: "plan", id: plan.id, status: plan.status });
+  return records;
+}
+if (workQueueFixture) {
+  projects[0].name = "交付验证";
+  chats.A.conversation.title = "发布核对";
+  chats.A.executionPlans = [];
+  chats.A.rounds[0] = { ...chats.A.rounds[0], mode: "discussion", phase: "chat", status: params.has("locked-topic") ? "running" : "completed" };
+  chats.A.messages = [message("m1", "user", "请梳理本次发布需要的检查项。", null, "completed", "message"),
+    { ...message("m2", "agent", "清单已整理，构建结束后可以核对安装流程。", "codex"), runId: "release-reply" }];
+  chats.A.deliveryReceipts = { m1: [
+    { agentId: "codex", runId: "release-reply", status: "completed" },
+    { agentId: "claude", runId: null, status: "queued" }, { agentId: "kimi", runId: null, status: "awaiting_receipt" },
+  ] };
+  tasks[1].title = "构建检查";
+  tasks[2].title = "核对发布产物";
+  tasks.push({ ...tasks[1], id: "installer-task", title: "复核 Windows 安装流程", status: "waiting_approval", assigneeAgentId: "claude" });
+  for (const [id, summary] of [["installer-read", "读取安装器签名"], ["installer-verify", "运行安装验证"]])
+    activityApprovals.push({ id, projectId: "A", taskId: "installer-task", runId: "installer-run",
+      approvalType: "runtime_permission", summary, status: "pending", createdAt: clock, decidedAt: null });
+  const old = emptyChat("A");
+  old.conversation = { id: "installer-topic", projectId: "A", title: "安装流程", createdAt: clock - 1000 };
+  old.rounds = [{ ...chats.A.rounds[0], id: "installer-round", conversationId: "installer-topic", userMessageId: "old-request", mode: "execution_plan", status: "completed" }];
+  const row = (id: string, sender: string, body: string, index: number) => ({
+    ...message("m1", sender, body, sender === "agent" ? "claude" : null, "completed", sender === "user" ? "message" : "reply"),
+    id, roundId: "installer-round", conversationId: "installer-topic", createdAt: clock + index, updatedAt: clock + index,
+  });
+  old.messages = [row("old-request", "user", "检查安装器签名并验证安装流程。", 0), row("old-plan-message", "agent", "", 1),
+    ...Array.from({ length: 103 }, (_, index) => row(`old-note-${index}`, "system", `校验记录 ${index + 1}`, index + 2))];
+  old.executionPlans = [{ id: "installer-plan", roundId: "installer-round", projectId: "A", messageId: "old-plan-message",
+    summary: "复核安装流程的分工", tasks: planned, status: "pending", taskIds: [], createdAt: clock }];
+  mock.archivedConversations.push(old);
+}
 window.addEventListener("crewvela:browse", (event) => {
   mock.previewBrowsed.push((event as CustomEvent<{ url: string }>).detail.url);
 });

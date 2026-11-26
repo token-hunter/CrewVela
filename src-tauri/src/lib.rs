@@ -1442,7 +1442,7 @@ fn ma_conversation_open_attachment(project_id: String, conversation_id: String, 
 }
 
 #[tauri::command]
-fn ma_conversation_send(input: multi_agent::ConversationSendInput,
+fn ma_conversation_send(input: multi_agent::ConversationSendInput, template_trial: Option<bool>,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
     engineering: State<'_, MultiAgentSupervisor>,
@@ -1450,9 +1450,12 @@ fn ma_conversation_send(input: multi_agent::ConversationSendInput,
 ) -> Result<multi_agent::ConversationSnapshot, String> {
     let _admission = admission.admit().map_err(to_err)?;
     let project_id = input.project_id.clone();
-    supervisor.send(state.inner().clone(), input,
-        multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone(),
-        engineering.inner().clone()).map_err(to_err)?;
+    let host = multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone());
+    if template_trial == Some(true) {
+        supervisor.send_template(state.inner().clone(), input, host, bridge.inner().clone(), false)
+    } else {
+        supervisor.send(state.inner().clone(), input, host, bridge.inner().clone(), engineering.inner().clone())
+    }.map_err(to_err)?;
     state.conversation_snapshot(&project_id).map_err(to_err)
 }
 
@@ -5329,7 +5332,7 @@ fn dispatch_due_automations(
     automation_state.reconcile(action_queue, session_state, multi_agent_store, now).map_err(to_err)?;
     let mut report_error = None;
     let busy = busy_automation_ids(automation_state, session_state, action_queue, Some(multi_agent_store));
-    for (automation_id, execution_id, action) in automation_state.collect_due_with_busy(now, &busy).map_err(to_err)? {
+    for (automation_id, execution_id, action) in automation_state.collect_due_for_projects(now, &busy, Some(multi_agent_store)).map_err(to_err)? {
         let mut targets = Vec::new();
         let (ok, detail) = execute_automation_action_tracked(
             &action,
@@ -5581,6 +5584,18 @@ fn execute_automation_action_tracked(
     }
 
     match action {
+        AutomationAction::ConversationTemplate(template) => {
+            let result = (|| -> anyhow::Result<()> {
+                let (manager, run_id) = execution.ok_or_else(|| anyhow::anyhow!("缺少模板执行编号"))?;
+                let store = multi_agent_store.ok_or_else(|| anyhow::anyhow!("协作项目服务不可用"))?;
+                manager.dispatch_template(template, run_id, store,
+                    multi_agent::AgentTerminalHost::new(pty_state.clone(), session_state.clone()))
+            })();
+            match result {
+                Ok(()) => (true, "模板已提交到原话题，等待成员回复".into()),
+                Err(reason) => (false, format!("{reason:#}")),
+            }
+        }
         AutomationAction::RunAgent { runtime_kind, provider_id, model, cwd, prompt } => {
             let result = (|| -> Result<SessionRecord, String> {
                 automation_runtime::validate_launch(*runtime_kind, provider_id.as_deref(), model.as_deref(), cwd).map_err(to_err)?;
@@ -5763,6 +5778,7 @@ fn run_automation_now(id: String, request_id: String, retry_of: Option<String>,
 
 #[tauri::command(async)]
 fn stop_automation_run(id: String, run_id: String, state: State<'_, AutomationManager>, queue: State<'_, SessionActionQueue>, store: State<'_, MultiAgentStore>, supervisor: State<'_, MultiAgentSupervisor>) -> Result<Vec<Automation>, String> {
+    if state.stop_template(&id, &run_id, &store).map_err(to_err)? { return Ok(state.list()); }
     if state.cancel_queued_run(&id, &run_id, &queue).is_err() {
         let run = state.list().into_iter().find(|a| a.id == id).and_then(|a| a.recent_runs.into_iter().find(|r| r.id == run_id)).ok_or("执行不存在")?;
         if run.targets.is_empty() || !automation::is_active_stage(run.stage.as_deref().unwrap_or("unconfirmed")) { return Err("本轮没有可停止的活动任务".into()); }
@@ -5826,6 +5842,7 @@ fn save_automation_inner(id: Option<&str>, input: NewAutomation, session_state: 
     }
     // 模块外校验：provider / 目标会话真实存在（模块内只校验自洽性）。
     match &input.action {
+        AutomationAction::ConversationTemplate(template) => template.validate(multi_agent_store).map_err(to_err)?,
         AutomationAction::RunAgent { runtime_kind, provider_id, model, cwd, .. } => {
             automation_runtime::validate_launch(*runtime_kind, provider_id.as_deref(), model.as_deref(), cwd).map_err(to_err)?;
             runtime_kind.ensure_available().map_err(to_err)?;
@@ -6519,6 +6536,11 @@ pub fn run() {
                 collaboration_bridge.endpoint()
             );
             app.manage(collaboration_bridge);
+            app.state::<AutomationManager>().template_runtime.set(automation::TemplateRuntime {
+                supervisor: app.state::<multi_agent::ConversationSupervisor>().inner().clone(),
+                bridge: app.state::<CollaborationBridge>().inner().clone(),
+                admission: app.state::<runtime_admission::RuntimeAdmission>().inner().clone(),
+            }).map_err(|_| std::io::Error::other("模板执行服务已初始化"))?;
             }
             // Dynamic application listeners must be bound before restoring the
             // embedded engine's saved port so an in-process clash is detectable.

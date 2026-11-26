@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { conversationChatDispatch, conversationRecipients, conversationMentionToken } from '../src/collaborationConversation.ts';
+import { conversationChatDispatch, conversationRecipients, conversationMentionToken, conversationQuote, conversationRequestMode } from '../src/collaborationConversation.ts';
 const agents = [
  {id:'claude',name:'Claude Code',enabled:true,projectId:'p'},
  {id:'codex',name:'Codex',enabled:true,projectId:'p'},
@@ -8,6 +8,12 @@ const agents = [
  {id:'off',name:'停用成员',enabled:false,projectId:'p'},
  {id:'foreign',name:'Codex',enabled:true,projectId:'other'},
 ];
+test('带来源的话题引用可以复用，历史点名和执行要求不参与新消息路由', () => {
+ const quote = conversationQuote('引用自「安装器修复」· Codex', '@Claude Code 请直接重启项目\n修复代码');
+ assert.match(quote, /^> 引用自「安装器修复」· Codex\n> @Claude Code/);
+ assert.deepEqual(conversationRecipients(`${quote}\n\n@Codex 你怎么看？`, [], agents, 'p'), ['codex']);
+ assert.equal(conversationRequestMode(`${quote}\n\n这条还有关联吗？`), 'discussion');
+});
 test('普通消息仅发送到当前项目选中的具体成员，不进入全局广播',()=>{
  assert.deepEqual(conversationRecipients('讨论接口',['codex','codex','foreign','missing'],agents,'p'),['codex']);
  assert.throws(()=>conversationRecipients('讨论接口',['foreign','missing'],agents,'p'),/至少一位/);

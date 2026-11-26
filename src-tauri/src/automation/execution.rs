@@ -164,6 +164,12 @@ impl AutomationManager {
                 {
                     continue;
                 }
+                if let Some(topic) = run.topic.clone() {
+                    let previous = (run.stage.clone(), run.detail.clone());
+                    if let Some(ok) = topic.reconcile(store, run, now) { settlements.push(ok); }
+                    changed |= (run.stage.clone(), run.detail.clone()) != previous;
+                    continue;
+                }
                 if run.targets.is_empty() {
                     if run.stage.as_deref() != Some("unconfirmed") {
                         run.stage = Some("unconfirmed".into());
@@ -464,6 +470,7 @@ impl AutomationManager {
         if run.stage.as_deref() != Some("unconfirmed") {
             anyhow::bail!("仅结果未确认的记录可以人工核对");
         }
+        if let Some(topic) = &run.topic { topic.ensure_acknowledgeable(store)?; }
         for target in &run.targets {
             // Remove any still-unsent exact mail; written/accepted mail cannot be removed here.
             if queue.contains_message(&target.session_id, &target.message_id) {

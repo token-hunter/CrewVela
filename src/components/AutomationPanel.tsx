@@ -7,6 +7,7 @@ import "../styles/settings-creative-modes.css";
 import { SettingsStyleMenu } from "./SettingsStyleMenu";
 import { buildAutomationAction, buildEditedAutomationAction, automationFormFromAction, eventAutomationTrigger, automationSessions, automationProjectRuntime, AUTOMATION_LABELS, type AutomationFormAction } from "../automationForm";
 import { TERMINAL_RUNTIMES } from "../runtimeTaxonomy";
+import { collaborationTemplates } from "../collaborationTemplates";
 import { open as openDirectory } from "@tauri-apps/plugin-dialog";
 import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
 import { StackIcon } from "@phosphor-icons/react/dist/csr/Stack";
@@ -440,6 +441,7 @@ export function AutomationPanel({
   };
 
   const actionText = (action: AutomationAction): string => {
+    if (action.kind === "conversation_template") return t("{template} · 回复原话题", { template: t(collaborationTemplates[action.templateId].title) });
     if (action.kind === "run_agent") return `${AUTOMATION_LABELS[action.runtimeKind]} · ${action.providerId ? providers.find(p => p.id === action.providerId)?.name ?? action.providerId : "本地配置"}${action.model ? ` · ${action.model}` : ""} · 新建会话 · ${action.cwd}`;
     if (action.kind === "send_agent") return action.agentId ? `${AUTOMATION_LABELS[action.runtimeKind]} · 项目成员 ${action.agentId.slice(0, 8)}` : `${AUTOMATION_LABELS[action.runtimeKind]} · 复用「${sessions.find(s => s.id === action.sessionId)?.title ?? action.sessionId.slice(0, 8)}」`;
     if (action.kind === "broadcast_agent") return `${AUTOMATION_LABELS[action.runtimeKind]} · 全部运行会话 · “${truncate(action.body, 24)}”`;
@@ -543,7 +545,11 @@ export function AutomationPanel({
               </label>
                 </section>
 
-                <section className="automation-section automation-agent-section">
+                {editing?.item.action.kind === "conversation_template" ? <section className="automation-section">
+                  <h3><ChatCircleText size={18} aria-hidden="true" />{actionText(editing.item.action)}</h3>
+                  <p>{t("执行成员")} · {targetAgents.find(agent => agent.id === form.agentId)?.name ?? form.agentId}</p>
+                  <label className="automation-setting-row automation-prompt-row"><span>{t("执行任务")}</span><textarea rows={4} maxLength={32000} value={form.prompt} onChange={e => patchForm({ prompt: e.target.value })} /></label>
+                </section> : <><section className="automation-section automation-agent-section">
                   <h3><StackIcon size={18} aria-hidden="true" />{t("执行 Agent")}</h3>
                   {probeError && <p role="alert" className="automation-error">{t("检测 Agent 失败：")} <LocalizedErrorText source={probeError} /></p>}
                   <label className="automation-setting-row"><span>{t("执行 Agent")}</span><select aria-label={t("执行 Agent")} value={form.runtime} disabled={!availabilityReady || probeLoading} onChange={e => {
@@ -565,6 +571,7 @@ export function AutomationPanel({
                   {form.mode === "broadcast" && <p className="automation-scope-note">{t("仅发送到所选 Agent 类型的未归档运行会话；执行时解析目标，包含其他工作区。不会广播给普通 Shell。")}</p>}
                   <label className="automation-setting-row automation-prompt-row"><span>Prompt</span><textarea aria-label={t("执行任务")} rows={3} value={form.prompt} placeholder={t("检查当前项目的代码改动、测试与依赖，汇总问题和下一步建议。")} onChange={e => patchForm({ prompt: e.target.value })} /></label>
                 </section>
+                </>}
                 <section className="automation-section">
                   <h3><ClockIcon size={18} aria-hidden="true" />{t("触发与运行")}</h3>
               <div className="automation-form-row">
@@ -579,8 +586,8 @@ export function AutomationPanel({
                     <option value="daily">{t("每天")}</option>
                     <option value="weekly">{t("每周 / 工作日")}</option>
                     <option value="cron">{t("cron 表达式")}</option>
-                    <option value="on_completed">{t("会话完成时")}</option>
-                    <option value="on_failed">{t("会话失败时")}</option>
+                    {editing?.item.action.kind !== "conversation_template" && <><option value="on_completed">{t("会话完成时")}</option>
+                    <option value="on_failed">{t("会话失败时")}</option></>}
                   </select>
                 </label>
                 {(triggerKind === "on_completed" || triggerKind === "on_failed") && (
@@ -933,7 +940,7 @@ export function AutomationPanel({
                 {[...item.recentRuns].reverse().map((run,index) => {
                   const stage=runStage(run), StateIcon=statusIcon(stage);
                   const target=run.targets?.find(t => sessions.some(s => s.id === t.sessionId));
-                  return <details key={run.id ?? index}><summary><span className="automation-history-id" title={run.id}>{shortId(run)}</span><time>{formatDateTime(run.at)}</time><span className={`automation-history-stage tone-${stage}`}><StateIcon size={17} aria-hidden="true" />{t(displayStage(stage))}</span><span className="automation-history-origin">{({manual:t("手动执行"),retry:t("重试"),event:t("事件触发"),schedule:t("计划触发")} as Record<string,string>)[run.origin ?? ""] ?? t("历史记录")}</span><span className="automation-history-detail" title={run.detail}>{run.detail}</span>{target && <button className="automation-history-session" aria-label={`打开执行 ${shortId(run)} 的会话`} onClick={event => {event.preventDefault();event.stopPropagation();openSession(target.sessionId);}}><ArrowSquareOut size={15} />{t("打开会话")}</button>}</summary><p>{t("执行编号：")}{run.id ?? t("旧记录未提供")}{run.retryOf && ` · 重试自 ${run.retryOf}`}</p><p><LocalizedErrorText source={run.detail} fallback="查看原始诊断" /></p>{run.targets?.map(target => <div className="automation-target-receipt" key={target.messageId}><strong>{t(displayStage(target.stage))}</strong><LocalizedErrorText source={target.detail} fallback="查看原始诊断" /><code>{t("消息")} {target.messageId}</code><code>{t("任务")} {target.taskId ?? t("无项目任务")} · Run {target.runId ?? t("未取得")}</code>{sessions.some(s => s.id === target.sessionId) && <button className="btn" onClick={() => openSession(target.sessionId)}>{t("打开会话")}</button>}</div>)}</details>;
+                  return <details key={run.id ?? index}><summary><span className="automation-history-id" title={run.id}>{shortId(run)}</span><time>{formatDateTime(run.at)}</time><span className={`automation-history-stage tone-${stage}`}><StateIcon size={17} aria-hidden="true" />{t(displayStage(stage))}</span><span className="automation-history-origin">{({manual:t("手动执行"),retry:t("重试"),event:t("事件触发"),schedule:t("计划触发")} as Record<string,string>)[run.origin ?? ""] ?? t("历史记录")}</span><span className="automation-history-detail" title={run.detail}>{run.detail}</span>{target && <button className="automation-history-session" aria-label={`打开执行 ${shortId(run)} 的会话`} onClick={event => {event.preventDefault();event.stopPropagation();openSession(target.sessionId);}}><ArrowSquareOut size={15} />{t("打开会话")}</button>}</summary><p>{t("执行编号：")}{run.id ?? t("旧记录未提供")}{run.retryOf && ` · 重试自 ${run.retryOf}`}</p><p><LocalizedErrorText source={run.detail} fallback="查看原始诊断" /></p>{run.topic && <div className="automation-target-receipt"><strong>{t("原话题")}</strong><code>{run.topic.conversationId}</code><code>{t("消息")} {run.topic.clientMessageId}</code></div>}{run.targets?.map(target => <div className="automation-target-receipt" key={target.messageId}><strong>{t(displayStage(target.stage))}</strong><LocalizedErrorText source={target.detail} fallback="查看原始诊断" /><code>{t("消息")} {target.messageId}</code><code>{t("任务")} {target.taskId ?? t("无项目任务")} · Run {target.runId ?? t("未取得")}</code>{sessions.some(s => s.id === target.sessionId) && <button className="btn" onClick={() => openSession(target.sessionId)}>{t("打开会话")}</button>}</div>)}</details>;
                 })}
               </section>)}
             </section>}

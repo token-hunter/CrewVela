@@ -1,0 +1,20 @@
+.collab-template-shortcuts { display: grid; gap: 2px; min-width: 0; }
+.collab-template-shortcuts h3 { margin: 0 0 5px; color: var(--text-dim); font-size: 12px; font-weight: 600; }
+.collab-template-shortcuts > button { display: flex; gap: 8px; align-items: center; min-height: 29px; padding: 3px 6px; background: transparent; border: 0; border-radius: 5px; color: var(--text); text-align: start; }
+.collab-template-shortcuts > button > span { flex: 1; font-size: 12px; }
+.collab-template-shortcuts > button > svg { color: var(--text-dim); flex: none; }
+.collab-template-shortcuts > button > svg:last-child { opacity: .55; }
+.collab-template-shortcuts > button:hover:not(:disabled) { background: var(--bg-hover); }
+.collab-template-dialog.collab-agent-editor { width: min(545px, calc(100vw - 26px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
+.collab-template-fields { display: grid; gap: 13px; min-height: 0; overflow: auto; }
+.collab-template-fields > small, .collab-template-schedule small { color: var(--text-dim); font-size: 12px; }
+.collab-template-material { position: relative; }
+.collab-template-material label { width: 100%; }
+.collab-template-material > button { position: absolute; inset-inline-end: 0; top: 0; background: transparent; border: 0; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.collab-template-preview { border-bottom: 1px solid var(--border); padding-bottom: 7px; }
+.collab-template-preview summary { color: var(--text); cursor: pointer; font-size: 13px; }
+.collab-template-preview pre, .collab-template-preview p { max-height: 185px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 7px 0 0; color: var(--text-dim); font: inherit; font-size: 12px; }
+.collab-template-schedule { display: grid; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.collab-template-schedule > div, .collab-template-schedule strong { display: flex; gap: 9px; align-items: center; }
+.collab-template-schedule > div label { flex: 1; }
+.collab-template-dialog .collab-template-receipt { color: var(--accent); margin: 0; }

@@ -4,6 +4,7 @@ mod coordinator;
 pub(crate) mod conversation;
 pub(crate) mod conversation_models;
 mod conversation_activity;
+mod work_queue;
 mod direct_message;
 mod domain;
 mod executor;
