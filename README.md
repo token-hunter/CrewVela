@@ -178,7 +178,7 @@ APPLE_SIGNING_IDENTITY=- npm run build:macos
 
 ### 加入 Agent 交流群
 
-用微信扫码加入群聊，交流 Agent 和 CrewVela 的使用经验。本次二维码在 2026 年 12 月 4 日前有效。
+用微信扫码加入群聊，交流 Agent相关技术。本次二维码在 2026 年 12 月 4 日前有效。
 
 <img src="docs/media/wechat-agent-group.jpg" alt="微信 Agent 交流群入群二维码" width="360" />
 
