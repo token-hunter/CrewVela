@@ -602,9 +602,11 @@
   "团队成员": "Team members",
   "从模板创建成员": "Create member from a template",
   "套用模板时会保留手动填写的名称和职责。": "Applying a template preserves the name and responsibilities you entered.",
+  "软件开发工程师": "Software Development Engineer",
   "代码审查工程师": "Code Review Engineer",
   "Bug 修复工程师": "Bug Fix Engineer",
   "软件测试工程师": "Software Test Engineer",
+  "实现新需求，运行相关测试，交付改动与验证结果。": "Implement new requirements, run relevant tests, and hand off the changes with verification results.",
   "审查改动、提交或 PR，定位回归风险和缺失测试。": "Review changes, commits, or PRs for regressions and missing tests.",
   "复现并定位 Bug，按授权修复，附上回归测试结果。": "Reproduce and diagnose bugs, apply authorized fixes, and report regression test results.",
   "用实际候选版本复测用户流程，记录通过、失败和未测项。": "Retest user workflows on the actual candidate and record passes, failures, and gaps.",
@@ -2478,5 +2480,12 @@
   "成员交接": "Member handoff",
   "成员消息": "Member message",
   "分工规划": "Task planning",
-  "输入包含缓存读写。重复派发按同一成员再次处理同一消息或任务计数，包含重试。缺少运行时用量时显示未知。": "Input includes cache reads and writes. A repeat is another start by the same member for the same message or task, including retries. Missing runtime usage is shown as unknown."
+  "输入包含缓存读写。重复派发按同一成员再次处理同一消息或任务计数，包含重试。缺少运行时用量时显示未知。": "Input includes cache reads and writes. A repeat is another start by the same member for the same message or task, including retries. Missing runtime usage is shown as unknown.",
+  "空白成员": "Blank member",
+  "从零开始自定义名称、职责与角色。": "Start from scratch with a custom name, responsibilities, and role.",
+  "执行引擎": "Execution engine",
+  "人格与职责": "Persona & responsibilities",
+  "只约束沟通风格": "Communication style only",
+  "托管与状态": "Managed & status",
+  "保存与生效说明": "Save & behavior notes"
 }

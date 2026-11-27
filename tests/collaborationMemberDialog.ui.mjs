@@ -25,11 +25,14 @@ try {
   let dialog = page.getByRole("dialog", { name: "新增团队成员" });
   await assertAboveParent(dialog);
   const managedSettings = page.locator(".collab-agent-managed-settings");
-  const role = page.getByLabel("托管角色", { exact: true });
-  assert.equal(await role.isVisible(), false);
+  const roleGroup = managedSettings.getByRole("radiogroup", { name: "托管角色", exact: true });
+  assert.equal(await roleGroup.isVisible(), false);
   await managedSettings.locator("summary").click();
-  assert.equal(await role.inputValue(), "worker");
-  assert.deepEqual(await role.locator("option").allTextContents(), ["开发执行", "独立审查", "联调交付", "任务规划"]);
+  assert.equal(await roleGroup.getByRole("radio", { name: /^开发执行/ }).isChecked(), true);
+  assert.deepEqual(
+    await roleGroup.locator("strong").allTextContents(),
+    ["开发执行", "独立审查", "联调交付", "任务规划"],
+  );
   await managedSettings.locator("summary").click();
   await dialog.getByRole("button", { name: "保存成员", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "请填写成员名称" }).waitFor();
@@ -113,7 +116,7 @@ try {
   await reasoning.locator('option[value="low"]').waitFor({ state: "attached" });
   await dialog.getByLabel("成员名称", { exact: true }).fill("修改回归成员");
   await managedSettings.locator("summary").click();
-  await role.selectOption("reviewer");
+  await roleGroup.getByRole("radio", { name: /^独立审查/ }).check();
   await managedSettings.getByText("在托管中独立进行只读审查，给出问题和审查结论。", { exact: true }).waitFor();
   await dialog.getByText("请核对当前托管角色与职责定位是否一致。", { exact: true }).waitFor();
   assert.equal(await dialog.getByRole("button", { name: /代码实现职责/ }).count(), 0);
@@ -195,10 +198,9 @@ try {
   await page.getByRole("dialog", { name: "新增团队成员" }).waitFor();
   const templates = dialog.locator(".collab-agent-templates");
   const memberName = dialog.getByLabel("成员名称", { exact: true });
-  await templates.locator("summary").click();
-  const templateHint = templates.locator(":scope > small");
+  const templateHint = templates.locator(".collab-agent-templates-head small");
   await templateHint.waitFor();
-  for (const width of [1280, 640]) {
+  for (const width of [1280, 640, 480]) {
     await page.setViewportSize({ width, height: 800 });
     const hint = await templateHint.boundingBox();
     for (const card of await templates.getByRole("button").all()) {
@@ -206,19 +208,23 @@ try {
       const description = await card.locator("small").boundingBox();
       assert.ok(description.y + description.height <= bounds.y + bounds.height,
         `template description must fit inside its card at ${width}px`);
-      assert.ok(bounds.y + bounds.height <= hint.y, `template hint must follow all cards at ${width}px`);
+      assert.ok(bounds.y >= hint.y + hint.height, `template cards must follow the header hint at ${width}px`);
     }
   }
   await page.setViewportSize({ width: 1280, height: 800 });
-  await templates.locator("summary").click();
   const chooseTemplate = async name => {
-    await templates.locator("summary").click();
-    await templates.getByRole("button", { name, exact: true }).click();
-    assert.equal(await templates.evaluate(element => element.open), false);
+    const btn = templates.getByRole("button", { name, exact: true });
+    await btn.click();
+    assert.equal(await btn.getAttribute("aria-pressed"), "true");
   };
   await chooseTemplate("代码审查工程师");
   assert.equal(await memberName.inputValue(), "代码审查工程师");
   assert.match(await responsibilities.inputValue(), /只读审查.*代码位置/);
+  await chooseTemplate("软件开发工程师");
+  assert.equal(await memberName.inputValue(), "软件开发工程师");
+  assert.equal(await responsibilities.inputValue(), implementationPreset);
+  assert.equal(await dialog.locator(".collab-agent-editor-preview .collab-tag.role").innerText(), "开发执行");
+  assert.equal(await dialog.getByRole("button", { name: /代码实现职责/ }).count(), 0, "the template already includes the implementation preset");
   await chooseTemplate("Bug 修复工程师");
   assert.equal(await memberName.inputValue(), "Bug 修复工程师");
   assert.match(await responsibilities.inputValue(), /最小复现步骤.*获准修复.*回归测试/);
@@ -234,11 +240,25 @@ try {
   await dialog.waitFor({ state: "detached" });
   const templateMember = page.locator(".collab-agent-card").filter({ hasText: "专用测试成员" });
   await templateMember.click();
-  await page.getByRole("dialog", { name: "编辑团队成员" }).waitFor();
+  dialog = page.getByRole("dialog", { name: "编辑团队成员" });
+  await dialog.waitFor();
   assert.equal(await responsibilities.inputValue(), "只复测本项目的保存和重开流程。");
   assert.equal(await templates.count(), 0, "a saved member is edited as an ordinary member");
   assert.equal(await page.evaluate(() => window.projectMock.agentSaves.at(-1).role), "worker");
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+  await add.click();
+  dialog = page.getByRole("dialog", { name: "新增团队成员" });
+  await chooseTemplate("软件开发工程师");
+  await dialog.getByRole("button", { name: "保存成员", exact: true }).click();
+  await dialog.waitFor({ state: "detached" });
+  await page.locator(".collab-agent-card").filter({ hasText: "软件开发工程师" }).click();
+  dialog = page.getByRole("dialog", { name: "编辑团队成员" });
+  await dialog.waitFor();
+  assert.equal(await dialog.getByLabel("成员名称", { exact: true }).inputValue(), "软件开发工程师");
+  assert.equal(await responsibilities.inputValue(), implementationPreset);
+  assert.equal(await page.evaluate(() => window.projectMock.agentSaves.at(-1).role), "worker");
   console.log("member dialogs: create/edit, validation, cancel and remove, task race, counts and history passed");
   console.log("empty project guidance, creation entry, loading and read failure regression passed");
-  console.log("all three member templates, manual overrides and reopening passed");
+  console.log("all four member templates, implementation preset reuse, manual overrides and reopening passed");
 } finally { await browser.close(); }

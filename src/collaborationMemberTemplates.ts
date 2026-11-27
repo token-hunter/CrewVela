@@ -8,7 +8,16 @@ export interface CollaborationMemberTemplate {
   description: string;
 }
 
+export const IMPLEMENTATION_RESPONSIBILITIES = "实现需求并验证改动。先确认改动范围和验收标准，在授权的工作区内实现，任务要求隔离时使用独立工作树。运行相关测试并注明失败和未验证的部分。交付时说明改动、验证结果和剩余风险，把改动与验证记录交给审查成员。";
+
 export const collaborationMemberTemplates: readonly CollaborationMemberTemplate[] = [
+  {
+    id: "software-development",
+    name: "软件开发工程师",
+    role: "worker",
+    summary: "实现新需求，运行相关测试，交付改动与验证结果。",
+    description: IMPLEMENTATION_RESPONSIBILITIES,
+  },
   {
     id: "code-review",
     name: "代码审查工程师",
