@@ -42,7 +42,7 @@ fn selection_preserves_required_review_and_legacy_grants() -> Result<()> {
     input.participant_agent_ids = vec![reviewer.clone()];
     assert!(gate(&input).contains("单人托管需要"));
     input.participant_agent_ids = vec![fixture.agents[0].clone(), integrator];
-    assert!(gate(&input).contains("双人托管需要"));
+    assert!(gate(&input).contains("本轮缺少一位「独立审查」成员"));
     input.participant_agent_ids.truncate(1);
     input.body = "请独立审查后交付".into();
     assert!(gate(&input).contains("要求独立审查"));

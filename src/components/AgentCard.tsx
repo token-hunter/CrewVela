@@ -2,13 +2,8 @@ import type { AgentPersona, AgentRole, AgentRuntimeKind } from "../types";
 import { AGENT_PERSONA_LABELS } from "../types";
 import { RUNTIME_LABELS } from "../runtimeLogos";
 import { AgentAvatar } from "./AgentAvatar";
-
-const ROLE_LABELS: Record<AgentRole, string> = {
-  orchestrator: "协调",
-  worker: "执行",
-  reviewer: "审查",
-  integrator: "集成",
-};
+import { COLLABORATION_ROLE_LABELS } from "../collaborationRoles";
+import { useTranslation } from "../useInterfaceLanguage";
 
 /** 名片座右铭：取职责首行、去空白、截断。 */
 export function agentMotto(description: string): string {
@@ -32,11 +27,15 @@ export function AgentCard({
   agent,
   onClick,
   dimmed,
+  reasoning,
 }: {
   agent: AgentCardData;
   onClick?: () => void;
   dimmed?: boolean;
+  reasoning?: string | null;
 }) {
+  const t = useTranslation();
+  const model = [agent.model || "默认模型", reasoning].filter(Boolean).join(" · ");
   return (
     <div
       className={`collab-agent-card${dimmed ? " dimmed" : ""}${onClick ? " clickable" : ""}`}
@@ -64,7 +63,7 @@ export function AgentCard({
         <div className="collab-agent-card-title">
           <strong>{agent.name || "未命名成员"}</strong>
           <span className="collab-agent-card-tags">
-            <i className="collab-tag role">{ROLE_LABELS[agent.role]}</i>
+            <i className="collab-tag role">{t(COLLABORATION_ROLE_LABELS[agent.role])}</i>
             <i className="collab-tag persona">{AGENT_PERSONA_LABELS[agent.persona]}</i>
             {agent.enabled === false && <i className="collab-tag off">已停用</i>}
           </span>
@@ -73,8 +72,8 @@ export function AgentCard({
       <p className="collab-agent-card-motto">{agentMotto(agent.description)}</p>
       <div className="collab-agent-card-foot">
         <span className="collab-agent-card-runtime">{RUNTIME_LABELS[agent.runtimeKind]}</span>
-        <span className="collab-agent-card-model" title={agent.model ?? undefined}>
-          {agent.model || "默认模型"}
+        <span className="collab-agent-card-model" title={reasoning ? model : agent.model ?? undefined}>
+          {model}
         </span>
       </div>
     </div>

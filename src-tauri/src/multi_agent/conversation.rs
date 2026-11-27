@@ -465,7 +465,7 @@ impl MultiAgentStore {
                     let required = match worker { "codex" => "Claude Code", "claude_code" => "Codex", _ => "Claude Code 或 Codex" };
                     let required = if input.managed { managed_reviewers(Some(worker)) } else { required.to_owned() };
                     issues.push(ConversationPlanIssue { kind: "member", message: format!(
-                        "本轮缺少能审查 {} 开发任务的成员。请选择 Runtime 为 {}、角色为「审查」的成员。",
+                        "本轮缺少能审查 {} 开发任务的成员。请选择 Runtime 为 {}、托管角色为「独立审查」的成员。",
                         plan_runtime_label(worker), required,
                     ) });
                 }
@@ -475,11 +475,11 @@ impl MultiAgentStore {
         })
             && !roster.iter().any(|(role, runtime)| role == "reviewer" && supports_read_only_plan(runtime, input.managed)) {
             let runtimes = if input.managed { managed_reviewers(None) } else { "Claude Code 或 Codex".into() };
-            issues.push(ConversationPlanIssue { kind: "member", message: format!("本轮缺少能执行只读审查的成员。请选择 Runtime 为 {runtimes}、角色为「审查」的成员。") });
+            issues.push(ConversationPlanIssue { kind: "member", message: format!("本轮缺少一位「独立审查」成员。请选择支持只读审查的 Runtime：{runtimes}。") });
         }
         if (parallel || ["由集成成员", "集成成员负责", "integrator"].iter().any(|term| goal.contains(*term)))
             && !has_integration_owner && !roster.iter().any(|(role, _)| role == "integrator") {
-            issues.push(ConversationPlanIssue { kind: "member", message: "本轮缺少「集成」角色。请选择负责联调和验收的集成成员。".into() });
+            issues.push(ConversationPlanIssue { kind: "member", message: "本轮缺少「联调交付」成员。请选择负责联调和验收的成员。".into() });
         }
         Ok(issues)
     }

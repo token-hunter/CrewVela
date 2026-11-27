@@ -9,7 +9,7 @@ import { DEFAULT_PET_SETTINGS } from "../../src/petSettings";
 import { DEFAULT_NOTIFICATION_SETTINGS } from "../../src/notificationSettings";
 import { GENERAL_SETTINGS_PREVIEW } from "../../src/generalSettings";
 import type { AppAppearance } from "../../src/types";
-import type { CollaborationTasksRequest } from "../../src/collaborationTasks";
+import type { CollaborationSettingsRequest } from "../../src/collaborationTasks";
 import "../../src/styles.css";
 
 const params = new URLSearchParams(location.search);
@@ -257,6 +257,16 @@ const mock = {
       return {interventionId:"permission-current",projectId:"A",resumeProject:false,message:"已批准本次工具操作"};
     }
     if (command === "ma_snapshot") { const result=snapshot(args.projectId); result.defaultReplyAgentId=sessionStorage.getItem(`fixture.reply-preference.${args.projectId}`); if((params.get("activity")==="1" || workQueueFixture)&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} if(resumedDelivery && args.projectId==="A")result.approvals=[resumedDelivery]; if(params.has("logs-only"))result.runLogs=[]; return structuredClone(result); }
+    if (command === "ma_create_agent" && params.has("member-templates")) {
+      const input = args.input;
+      if (input.projectId !== "A") throw Error("Unexpected member project");
+      const created = { ...agent("created-reviewer", input.name, input.runtimeKind, input.role, input.projectId), ...input };
+      agents.push(created);
+      return structuredClone(created);
+    }
+    if (command === "ma_conversation_draft_model_options" && params.has("member-templates")) {
+      return { supported: false, observed: false, selection: { model: null, reasoning: null }, model: [], reasoning: [] };
+    }
     if (resumedDelivery && args.taskId === resumedDelivery.taskId && command === "ma_update_resumed_delivery") {
       resumedDelivery.status = "pending";
       tasks[1].status = "in_review";
@@ -313,8 +323,8 @@ const mock = {
     }
     if (command === "ma_conversation_plan_preflight") return params.get("plan-blocked") === "1" ? [
       { kind: "git", message: "项目目录缺少 Git 工作区，请选择已初始化的 Git 项目目录。" },
-      { kind: "member", message: "本轮缺少 Codex 审查成员。" },
-      { kind: "member", message: "本轮缺少「集成」角色。" },
+      { kind: "member", message: "本轮缺少 Codex「独立审查」成员。" },
+      { kind: "member", message: "本轮缺少「联调交付」成员。" },
     ] : [];
     if (command === "ma_conversation_design_delivery") {
       if (args.projectId !== "A" || args.conversationId !== "conversation-A" || args.delegationId !== "login-design") throw Error("交付标识不匹配");
@@ -569,16 +579,16 @@ if(params.get("markdown")==="1") chats.A.messages.push(message("m90","agent",'# 
 (window as any).conversationMock = mock;
 (window as any).__TAURI_INTERNALS__ = { invoke: mock.invoke, transformCallback: () => 1, convertFileSrc: (path: string) => path };
 function Fixture() {
-  const [taskRequest,setTaskRequest] = useState<CollaborationTasksRequest>();
+  const [projectRequest,setProjectRequest] = useState<CollaborationSettingsRequest>();
   const taskSequence = useRef(0);
   const [appearance,setAppearance] = useState<AppAppearance>({...DEFAULT_APPEARANCE,theme:params.get("theme")==="light"?"light":"dark"});
   const [active, setActive] = useState(true);
   const [instance, setInstance] = useState(0);
   (mock as any).setActive = setActive;
   (mock as any).selectInstance = setInstance;
-  const panel = (index: number) => <MultiAgentControl active={active && index === instance} projectOverview={projectOverview} defaultCwd="/fixture/todo-app" onOpenSession={(id, original) => { calls.push({ command: "fixture_open_session", args: { sessionId: id, original } }); }} onOpenProjectSettings={(id,target) => { calls.push({ command: "fixture_open_settings", args: { projectId: id, target } }); if(id&&target==="tasks")setTaskRequest({projectId:id,requestId:++taskSequence.current}); }} />;
+  const panel = (index: number) => <MultiAgentControl active={active && index === instance} projectOverview={projectOverview} defaultCwd="/fixture/todo-app" onOpenSession={(id, original) => { calls.push({ command: "fixture_open_session", args: { sessionId: id, original } }); }} onOpenProjectSettings={(id,target) => { calls.push({ command: "fixture_open_settings", args: { projectId: id, target } }); if(id&&target)setProjectRequest({projectId:id,target,requestId:++taskSequence.current}); }} />;
   (mock as any).openTasks = (projectId:string) => setTaskRequest({projectId,requestId:++taskSequence.current});
-  return <main className="conversation-fixture-frame"><header className="conversation-fixture-resource"><span><Robot size={21} />多智能体<XMark /></span><small>隔离示例 · 无真实 Agent 调用</small><CornersOut size={19} /></header>{params.get("header")==="1"&&<div className="conversation-shell-header" aria-hidden="true"/>}{params.get("instances") === "2" ? [0,1].map(index => <div style={{ display: index === instance ? "flex" : "none", flex: 1, minHeight: 0 }} key={index} data-instance={index}>{panel(index)}</div>) : panel(0)}{taskRequest && <SettingsDialog initialSection="collaboration" initialCollaborationProjectId={taskRequest.projectId} initialCollaborationTasksRequest={taskRequest} sessions={[]} archivedSessions={[]} projects={[]} appearance={appearance} resolvedAppearanceTheme={params.get("theme")==="light"?"light":"dark"} petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS} onAppearanceChange={setAppearance} onPetSettingsChange={()=>{}} onNotificationSettingsChange={()=>{}} onRestoreArchivedSession={()=>{}} onDeleteArchivedSession={()=>{}} onViewArchivedTranscript={()=>{}} onClose={()=>setTaskRequest(undefined)}/>}</main>;
+  return <main className="conversation-fixture-frame"><header className="conversation-fixture-resource"><span><Robot size={21} />多智能体<XMark /></span><small>隔离示例 · 无真实 Agent 调用</small><CornersOut size={19} /></header>{params.get("header")==="1"&&<div className="conversation-shell-header" aria-hidden="true"/>}{params.get("instances") === "2" ? [0,1].map(index => <div style={{ display: index === instance ? "flex" : "none", flex: 1, minHeight: 0 }} key={index} data-instance={index}>{panel(index)}</div>) : panel(0)}{projectRequest && <SettingsDialog initialSection="collaboration" initialCollaborationProjectId={projectRequest.projectId} initialCollaborationSettingsRequest={projectRequest} sessions={[]} archivedSessions={[]} projects={[]} appearance={appearance} resolvedAppearanceTheme={params.get("theme")==="light"?"light":"dark"} petSettings={DEFAULT_PET_SETTINGS} notificationSettings={DEFAULT_NOTIFICATION_SETTINGS} onAppearanceChange={setAppearance} onPetSettingsChange={()=>{}} onNotificationSettingsChange={()=>{}} onRestoreArchivedSession={()=>{}} onDeleteArchivedSession={()=>{}} onViewArchivedTranscript={()=>{}} onClose={()=>setProjectRequest(undefined)}/>}</main>;
 }
 function XMark() { return <X size={17} aria-hidden="true" style={{ marginLeft: 18 }} />; }
 const style = document.createElement("style"); style.textContent = 'html,body,#root{height:100%;margin:0;overflow:hidden}.conversation-fixture-frame{height:100%;display:flex;flex-direction:column;background:var(--bg-elev);color:var(--text)}.conversation-fixture-resource{height:64px;flex:none;display:flex;align-items:center;gap:18px;padding:0 30px;border-bottom:1px solid var(--border);background:var(--bg)}.conversation-fixture-resource>span{white-space:nowrap;flex:none;display:flex;align-items:center;gap:9px;padding:8px 13px;border-radius:8px;background:var(--bg-hover);font:600 17px var(--display-font)}.conversation-fixture-resource>small{margin-left:auto;color:var(--text-dim);font:11px var(--display-font)}@media(max-width:480px){.conversation-fixture-resource{padding:0 14px;gap:8px}.conversation-fixture-resource>small{font-size:9px}}'; document.head.append(style);

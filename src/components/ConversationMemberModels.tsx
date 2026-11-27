@@ -6,16 +6,17 @@ import { AgentAvatar } from "./AgentAvatar";
 
 type Field = "model" | "reasoning";
 interface Choice { value: string; label: string }
-interface MemberModels {
+export type MemberModelSelection = Record<Field, string | null>;
+export interface MemberModels {
   supported: boolean;
   observed: boolean;
-  selection: Record<Field, string | null>;
+  selection: MemberModelSelection;
   model: Choice[];
   reasoning: Choice[];
 }
 const label: Record<Field, string> = { model: "模型", reasoning: "推理级别" };
 
-function summary(data: MemberModels): ConversationMemberModelSummary | null {
+export function memberModelSummary(data: MemberModels): ConversationMemberModelSummary | null {
   const display = (field: Field) => {
     const value = data.selection[field];
     return data[field].find(choice => choice.value === value)?.label ?? value;
@@ -72,7 +73,11 @@ export function ConversationMemberModels({ id, projectId, member, members, onSel
       if (generation.current === ticket) {
         setData(result);
         setSaved(true);
-        onSaved(member.id, summary(result));
+        onSaved(member.id, memberModelSummary(result));
+        if (selection.model !== data.selection.model) {
+          setData({ ...result, reasoning: [] });
+          await load(true);
+        }
       }
     } catch (error) {
       if (generation.current === ticket) setError(String(error));

@@ -39,6 +39,45 @@ struct Fixture {
 }
 
 #[test]
+fn member_editor_saves_chat_models_with_the_profile_and_supports_reset() {
+    use crate::multi_agent::conversation_models::{PreparedSelection, Selection};
+    use crate::multi_agent::UpdateAgentInput;
+
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let kind = AgentRuntimeKind::Codex;
+    let catalog = vec![
+        serde_json::json!({"id":"model","type":"select","options":[{"value":"review","name":"Review"}]}),
+        serde_json::json!({"id":"effort","type":"select","options":[{"value":"high","name":"High"}]}),
+    ];
+    assert!(PreparedSelection::from_catalog(catalog.clone(), Selection {
+        model: Some("review".into()), reasoning: Some("low".into()),
+    }).is_err());
+    let prepared = PreparedSelection::from_catalog(catalog, Selection {
+        model: Some("review".into()), reasoning: Some("high".into()),
+    }).unwrap();
+    let created = store.create_agent_with_chat_models(CreateAgentInput {
+        project_id: fixture.project.clone(), name: "模型配置成员".into(), runtime_kind: kind,
+        role: AgentRole::Reviewer, description: String::new(), persona: Default::default(),
+        persona_custom: String::new(), model: None, permission_profile: PermissionProfile::Default,
+        max_concurrency: 1, avatar_id: None,
+    }, Some(&prepared)).unwrap();
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    let preference = || serde_json::to_value(reopened.conversation_member_models(&fixture.project, &created.id).unwrap()).unwrap();
+    assert_eq!(preference()["selection"], serde_json::json!({"model":"review","reasoning":"high"}));
+    assert!(created.model.is_none());
+    let update = UpdateAgentInput {
+        project_id: fixture.project.clone(), agent_id: created.id.clone(), name: "更新配置的成员".into(),
+        runtime_kind: kind, role: created.role, description: created.description, persona: created.persona,
+        persona_custom: created.persona_custom, model: None, enabled: true, avatar_id: None,
+    };
+    let reset = PreparedSelection::check(kind, Selection::default()).unwrap();
+    store.update_agent_with_chat_models(update, Some(&reset)).unwrap();
+    assert_eq!(preference()["selection"], serde_json::json!({"model":null,"reasoning":null}));
+    assert_eq!(preference()["observed"], false, "reset drops the previous model's catalog");
+}
+
+#[test]
 fn member_model_settings_are_project_scoped_and_dispatched_round_keeps_its_selection() {
     use crate::multi_agent::conversation_models::Selection;
     use serde_json::json;
@@ -529,9 +568,9 @@ fn plan_preflight_reports_missing_git_commit_reviewers_and_integrator() {
     let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
     assert_eq!(issues.len(), 4);
     assert!(issues.iter().any(|issue| issue.kind == "git" && issue.message.contains("缺少 Git 工作区")));
-    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Claude Code、角色为「审查」")));
-    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Codex、角色为「审查」")));
-    assert!(issues.iter().any(|issue| issue.message.contains("缺少「集成」角色")));
+    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Claude Code、托管角色为「独立审查」")));
+    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Codex、托管角色为「独立审查」")));
+    assert!(issues.iter().any(|issue| issue.message.contains("缺少「联调交付」成员")));
     assert!(fixture.store.conversation_snapshot(&fixture.project).unwrap().messages.is_empty());
 
     let status = std::process::Command::new("git").arg("-C").arg(fixture.root.join("project"))
@@ -560,7 +599,7 @@ fn plan_preflight_reports_missing_git_commit_reviewers_and_integrator() {
     input.body = "开发一个贪吃蛇小游戏，交给其中一位开发成员。完成后安排只读审查。".into();
     let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
     assert_eq!(issues.len(), 1);
-    assert!(issues[0].message.contains("缺少能执行只读审查的成员"));
+    assert!(issues[0].message.contains("本轮缺少一位「独立审查」成员"));
 }
 
 #[test]
@@ -2374,7 +2413,7 @@ fn managed_plan_requires_all_roles_and_accepts_zcode_cli_static_review() {
     };
     crate::runtime_preferences::with_launch_default_for_test("claude_code", "auto", || {
         set_role("worker");
-        assert!(fixture.store.conversation_plan_preflight(&input).unwrap().iter().any(|issue| issue.message.contains("独立只读审查成员")));
+        assert!(fixture.store.conversation_plan_preflight(&input).unwrap().iter().any(|issue| issue.message.contains("本轮缺少一位「独立审查」成员")));
         set_role("reviewer");
         let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
         assert!(issues.is_empty(), "{:?}", issues.iter().map(|issue| &issue.message).collect::<Vec<_>>());

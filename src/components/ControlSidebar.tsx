@@ -8,6 +8,7 @@ import { MultiAgentControl } from "./MultiAgentControl";
 import { hasOpenModal } from "./ui/Modal";
 import { saveControlSurface, type ControlSurface } from "../controlSurface";
 import type { QuickContext } from "../quickCommands";
+import type { CollaborationSettingsTarget } from "../collaborationTasks";
 import type { ConversationOriginalSession, ProviderConfig, SessionRecord } from "../types";
 
 interface Props {
@@ -30,7 +31,7 @@ interface Props {
   isolatedSurface?: boolean;
   onSurfaceChange?: (surface: ControlSurface) => void;
   onOpenSession?: (sessionId: string | null, original?: ConversationOriginalSession) => void | Promise<void>;
-  onOpenProjectSettings?: (projectId?: string, target?: "tasks") => void;
+  onOpenProjectSettings?: (projectId?: string, target?: CollaborationSettingsTarget) => void;
 }
 
 /** Shared dock/detached shell. General commands remain available from their own application entry. */

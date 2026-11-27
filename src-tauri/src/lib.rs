@@ -998,11 +998,21 @@ async fn ma_agent_avatar_image(avatar_id: String, state: State<'_, MultiAgentSto
 }
 
 #[tauri::command]
-fn ma_create_agent(
+async fn ma_create_agent(
     input: CreateAgentInput,
+    chat_models: Option<multi_agent::conversation_models::Selection>,
     state: State<'_, MultiAgentStore>,
 ) -> Result<AgentProfile, String> {
-    state.create_agent(input).map_err(to_err)
+    let store = state.inner().clone();
+    blocking_command(move || {
+        match chat_models {
+            Some(selection) => {
+                let selection = multi_agent::conversation_models::PreparedSelection::check(input.runtime_kind, selection).map_err(to_err)?;
+                store.create_agent_with_chat_models(input, Some(&selection)).map_err(to_err)
+            }
+            None => store.create_agent(input).map_err(to_err),
+        }
+    }).await
 }
 
 fn ensure_member_terminal_idle(sessions: &SessionManager, agent_id: &str) -> Result<(), String> {
@@ -1048,15 +1058,28 @@ fn ma_remove_agent(
 }
 
 #[tauri::command]
-fn ma_update_agent(
+async fn ma_update_agent(
     input: UpdateAgentInput,
-    state: State<'_, MultiAgentStore>,
-    sessions: State<'_, SessionManager>,
-    pty: State<'_, PtyManager>,
-    action_queue: State<'_, SessionActionQueue>,
+    chat_models: Option<multi_agent::conversation_models::Selection>,
+    app: AppHandle,
+) -> Result<AgentProfile, String> {
+    blocking_command(move || {
+        let selection = chat_models.map(|selection| multi_agent::conversation_models::PreparedSelection::check(input.runtime_kind, selection)).transpose().map_err(to_err)?;
+        update_collaboration_agent(input, selection.as_ref(), &app.state::<MultiAgentStore>(),
+            &app.state::<SessionManager>(), &app.state::<PtyManager>(), &app.state::<SessionActionQueue>())
+    }).await
+}
+
+fn update_collaboration_agent(
+    input: UpdateAgentInput,
+    selection: Option<&multi_agent::conversation_models::PreparedSelection>,
+    state: &MultiAgentStore,
+    sessions: &SessionManager,
+    pty: &PtyManager,
+    action_queue: &SessionActionQueue,
 ) -> Result<AgentProfile, String> {
     let _lifecycle = state.agent_lifecycle_guard();
-    ensure_member_terminal_idle(&sessions, &input.agent_id)?;
+    ensure_member_terminal_idle(sessions, &input.agent_id)?;
     let previous = state.agent_profile(&input.agent_id).map_err(to_err)?;
     if previous.runtime_kind != input.runtime_kind && !input.runtime_kind.is_collaboration_cli() {
         return Err("切换协作成员请选择 CLI 执行引擎；ZCode Desktop 只保留已有成员兼容".into());
@@ -1071,9 +1094,12 @@ fn ma_update_agent(
     let _old_guards: Vec<_> = old_lifecycles.iter().map(|lock| lock.lock().unwrap()).collect();
     if previous.runtime_kind != input.runtime_kind {
         input.runtime_kind.ensure_available().map_err(to_err)?;
-        stop_member_runtime_ptys(&sessions, &pty, &input.project_id, &input.agent_id)?;
+        stop_member_runtime_ptys(sessions, pty, &input.project_id, &input.agent_id)?;
     }
-    let profile = state.update_agent(input).map_err(to_err)?;
+    let profile = match selection {
+        Some(selection) => state.update_agent_with_chat_models(input, Some(selection)),
+        None => state.update_agent(input),
+    }.map_err(to_err)?;
     if previous.runtime_kind != profile.runtime_kind {
         let switch_result = (|| -> Result<(), String> {
             let retired = sessions
@@ -1229,6 +1255,11 @@ fn ma_conversation_snapshot(project_id: String, state: State<'_, MultiAgentStore
 async fn ma_conversation_member_models(project_id: String, agent_id: String, refresh: Option<bool>, state: State<'_, MultiAgentStore>) -> Result<multi_agent::conversation_models::MemberOptions, String> {
     let store = state.inner().clone();
     blocking_command(move || store.load_conversation_member_models(&project_id, &agent_id, refresh.unwrap_or(false)).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_conversation_draft_model_options(runtime_kind: multi_agent::AgentRuntimeKind, model: Option<String>) -> Result<multi_agent::conversation_models::MemberOptions, String> {
+    blocking_command(move || multi_agent::conversation_models::draft_options(runtime_kind, model.as_deref()).map_err(to_err)).await
 }
 
 #[tauri::command]
@@ -6774,6 +6805,7 @@ pub fn run() {
             ma_conversation_snapshot,
             multi_agent::conversation_metrics::ma_conversation_round_metrics,
             ma_conversation_member_models,
+            ma_conversation_draft_model_options,
             ma_set_conversation_member_models,
             ma_conversation_export,
             ma_conversation_design_delivery,

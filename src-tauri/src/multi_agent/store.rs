@@ -223,13 +223,20 @@ impl MultiAgentStore {
     }
 
     pub fn create_agent(&self, input: CreateAgentInput) -> Result<AgentProfile> {
+        self.create_agent_with_chat_models(input, None)
+    }
+
+    pub(crate) fn create_agent_with_chat_models(&self, input: CreateAgentInput,
+        chat_models: Option<&super::conversation_models::PreparedSelection>) -> Result<AgentProfile> {
         input.runtime_kind.ensure_available()?;
         if !input.runtime_kind.is_collaboration_cli() {
             return Err(anyhow!("新增协作成员仅支持 CLI 执行引擎；ZCode Desktop 仅兼容已有成员，独立 Chat 不作为新成员"));
         }
         self.check_agent_avatar(input.avatar_id.as_deref())?;
         let name = required(&input.name, "Agent 名称")?;
-        let connection = self.connection.lock().unwrap();
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let connection = &tx;
         ensure_project_exists(&connection, &input.project_id)?;
         let duplicate: bool = connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM ma_agents WHERE project_id=?1 AND lower(name)=lower(?2))",
@@ -287,11 +294,19 @@ impl MultiAgentStore {
             }),
             now,
         )?;
-        get_agent_with(&connection, &id)
+        let profile = get_agent_with(connection, &id)?;
+        if let Some(selection) = chat_models { selection.save(connection, &profile)?; }
+        tx.commit()?;
+        Ok(profile)
     }
     /// Only model fields change; unrelated profile edits and task/session identity survive.
     /// 保存成员配置，不重建成员，也不改写已有任务、运行及会话关联。
     pub fn update_agent(&self, input: UpdateAgentInput) -> Result<AgentProfile> {
+        self.update_agent_with_chat_models(input, None)
+    }
+
+    pub(crate) fn update_agent_with_chat_models(&self, input: UpdateAgentInput,
+        chat_models: Option<&super::conversation_models::PreparedSelection>) -> Result<AgentProfile> {
         self.check_agent_avatar(input.avatar_id.as_deref())?;
         let name = required(&input.name, "Agent 名称")?;
         let previous_profile = self.agent_profile(&input.agent_id)?;
@@ -335,6 +350,7 @@ impl MultiAgentStore {
             // 当前会话是投递投影，历史 run/session 数据不修改。新 Runtime 必须重新绑定。
             tx.execute("UPDATE ma_agent_sessions SET app_session_id=NULL, current_task_id=NULL,
                 current_run_id=NULL, status='idle', control_mode='auto', last_output_at=NULL WHERE agent_id=?1", [&input.agent_id])?;
+            tx.execute("DELETE FROM ma_member_model_options WHERE project_id=?1 AND agent_id=?2", params![input.project_id, input.agent_id])?;
         }
         let now = now_millis();
         tx.execute(
@@ -373,6 +389,7 @@ impl MultiAgentStore {
             now,
         )?;
         let updated = get_agent_with(&tx, &input.agent_id)?;
+        if let Some(selection) = chat_models { selection.save(&tx, &updated)?; }
         if updated.name != previous.name || updated.runtime_kind != previous.runtime_kind
             || updated.role != previous.role || updated.description != previous.description
             || updated.persona != previous.persona || updated.persona_custom != previous.persona_custom

@@ -4,7 +4,8 @@ import { CollaborationRecordsPanel } from "./CollaborationRecordsPanel";
 import { createPortal } from "react-dom";
 import { CollaborationTaskDetails } from "./CollaborationTaskDetails";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
-import { visibleProjectTasks, type CollaborationTasksRequest } from "../collaborationTasks";
+import { visibleProjectTasks, type CollaborationSettingsRequest } from "../collaborationTasks";
+import { COLLABORATION_ROLE_LABELS } from "../collaborationRoles";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -53,7 +54,7 @@ interface Props {
   initialTab?: "overview" | "diagnostics" | "records";
   initialDiagnosticGlobal?: boolean;
   initialProjectId?: string;
-  taskRequest?: CollaborationTasksRequest;
+  projectRequest?: CollaborationSettingsRequest;
 }
 
 interface SuggestedSkillSet {
@@ -118,13 +119,6 @@ const RUNTIME_LABELS: Record<AgentRuntimeKind, string> = {
   zcode: "ZCode Desktop",
   zcode_cli: "ZCode CLI",
   antigravity: "Antigravity CLI",
-};
-
-const ROLE_LABELS: Record<AgentRole, string> = {
-  orchestrator: "总控",
-  worker: "执行",
-  reviewer: "审查",
-  integrator: "集成",
 };
 
 const TASK_STATUS_LABELS: Record<MultiAgentTaskStatus, string> = {
@@ -216,7 +210,7 @@ function runtimeVersion(value: string | null | undefined): string {
   return value?.match(/\d+(?:\.\d+)+/)?.[0] ?? value ?? "—";
 }
 
-export function CollaborationSettingsPanel({ onClose, initialTab = "overview", initialDiagnosticGlobal = false, initialProjectId, taskRequest }: Props) {
+export function CollaborationSettingsPanel({ onClose, initialTab = "overview", initialDiagnosticGlobal = false, initialProjectId, projectRequest }: Props) {
   const t = useTranslation();
   const [projects, setProjects] = useState<MultiAgentProject[]>(
     UI_PREVIEW ? [PREVIEW_PROJECT] : [],
@@ -259,7 +253,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   const [teamPage, setTeamPage] = useState<"project" | "library">("project");
   const [teamSearch, setTeamSearch] = useState("");
 
-  const [tab, setTab] = useState<string>(initialTab);
+  const [tab, setTab] = useState<string>(projectRequest?.target === "team" ? "team" : initialTab);
   const [health, setHealth] = useState<Health | null>(null);
   const [filter, setFilter] = useState("attention");
   const [collapsed, setCollapsed] = useState(new Set<number>());
@@ -272,31 +266,39 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   const [detail, setDetail] = useState<{ title: string; content: string } | null>(null);
   const [taskDetail, setTaskDetail] = useState<{ projectId: string; taskId: string } | null>(null);
   const taskPanel = useRef<HTMLElement>(null);
-  const appliedTaskRequest = useRef("");
-  const focusedTaskRequest = useRef("");
+  const teamPanel = useRef<HTMLDivElement>(null);
+  const appliedProjectRequest = useRef("");
+  const focusedProjectRequest = useRef("");
+  const projectRequestKey = projectRequest && `${projectRequest.projectId}:${projectRequest.requestId}:${projectRequest.target}`;
   const currentSnapshot = snapshot?.project.id === selectedProjectId && projects.some((project) => project.id === selectedProjectId) ? snapshot : null;
   const taskSnapshot = currentSnapshot ? { ...currentSnapshot, tasks: visibleProjectTasks(currentSnapshot.tasks) } : null;
-  const taskNavigationBlocked = editingAgent !== undefined || creatingProject || managingRuntimes || handoffRequest !== null;
+  const projectNavigationBlocked = editingAgent !== undefined || creatingProject || managingRuntimes || handoffRequest !== null;
   useEffect(() => { setTaskDetail(null); }, [selectedProjectId]);
   useEffect(() => {
-    if (!taskRequest || taskNavigationBlocked || currentSnapshot?.project.id !== taskRequest.projectId) return;
-    const key = `${taskRequest.projectId}:${taskRequest.requestId}`;
-    if (appliedTaskRequest.current === key) return;
-    appliedTaskRequest.current = key;
-    setTaskDetail(null); setDetail(null); setTab("overview"); setFilter("all"); setCollapsed(new Set());
-  }, [taskRequest, currentSnapshot, taskNavigationBlocked]);
+    if (!projectRequest || !projectRequestKey || projectNavigationBlocked || currentSnapshot?.project.id !== projectRequest.projectId) return;
+    if (appliedProjectRequest.current === projectRequestKey) return;
+    appliedProjectRequest.current = projectRequestKey;
+    setTaskDetail(null); setDetail(null);
+    if (projectRequest.target === "team") {
+      setTab("team"); setTeamPage("project"); setTeamRoleFilter("all"); setTeamSearch("");
+    } else {
+      setTab("overview"); setFilter("all"); setCollapsed(new Set());
+    }
+  }, [projectRequest, projectRequestKey, currentSnapshot?.project.id, projectNavigationBlocked]);
   useEffect(() => {
-    if (!taskRequest || taskNavigationBlocked || currentSnapshot?.project.id !== taskRequest.projectId || tab !== "overview" || filter !== "all") return;
-    const key = `${taskRequest.projectId}:${taskRequest.requestId}`;
-    if (appliedTaskRequest.current !== key || focusedTaskRequest.current === key) return;
+    if (!projectRequest || !projectRequestKey || projectNavigationBlocked || currentSnapshot?.project.id !== projectRequest.projectId) return;
+    const team = projectRequest.target === "team";
+    if (team ? tab !== "team" || teamPage !== "project" : tab !== "overview" || filter !== "all") return;
+    if (appliedProjectRequest.current !== projectRequestKey || focusedProjectRequest.current === projectRequestKey) return;
     const frame = requestAnimationFrame(() => {
-      if (!taskPanel.current) return;
-      taskPanel.current.scrollIntoView({ block: "start", behavior: "auto" });
-      taskPanel.current.focus({ preventScroll: true });
-      focusedTaskRequest.current = key;
+      const panel = team ? teamPanel.current : taskPanel.current;
+      if (!panel) return;
+      panel.scrollIntoView({ block: "start", behavior: "auto" });
+      panel.focus({ preventScroll: true });
+      focusedProjectRequest.current = projectRequestKey;
     });
     return () => cancelAnimationFrame(frame);
-  }, [taskRequest, currentSnapshot?.project.id, taskNavigationBlocked, tab, filter]);
+  }, [projectRequest, projectRequestKey, currentSnapshot?.project.id, projectNavigationBlocked, tab, filter, teamPage]);
   const requestHandoff = (taskId?: string, recordId?: string) => setHandoffRequest({ nonce: Date.now(), taskId, recordId });
   const pauseProject = async () => {
     if (!currentSnapshot || projectInFlight.current) return;
@@ -396,15 +398,15 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
   // A repeated deep link must still win after a manual project selection, even
   // when initialProjectId itself has not changed. Do not replay consumed links.
   useEffect(() => {
-    if (!taskRequest || taskNavigationBlocked || projectsLoading || appliedTaskRequest.current === `${taskRequest.projectId}:${taskRequest.requestId}`) return;
-    if (!projects.some(project => project.id === taskRequest.projectId)) {
+    if (!projectRequest || projectNavigationBlocked || projectsLoading || appliedProjectRequest.current === projectRequestKey) return;
+    if (!projects.some(project => project.id === projectRequest.projectId)) {
       if (selectionRef.current !== null) selectProject(null);
       setError("请求的项目已不可用，请明确选择其他项目。");
       return;
     }
     setError(null);
-    if (selectionRef.current !== taskRequest.projectId) selectProject(taskRequest.projectId);
-  }, [taskRequest, taskNavigationBlocked, projectsLoading, projects, selectProject]);
+    if (selectionRef.current !== projectRequest.projectId) selectProject(projectRequest.projectId);
+  }, [projectRequest, projectRequestKey, projectNavigationBlocked, projectsLoading, projects, selectProject]);
 
   const refreshSnapshot = useCallback(() => {
     if (!selectedProjectId) {
@@ -725,9 +727,9 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
         (teamRoleFilter === "all" || agent.role === teamRoleFilter)
         && (query === "" || `${agent.name} ${agent.description} ${RUNTIME_LABELS[agent.runtimeKind]}`.toLowerCase().includes(query)));
       const roleCount = (role: AgentRole) => enabledAgents.filter((agent) => agent.role === role).length;
-      return <><div className={`collab-team-toolbar${memberUnavailableReason ? " collab-team-unavailable" : ""}`}><div className="collab-team-filter-row">
-        {([["all", t("全部")], ["orchestrator", ROLE_LABELS.orchestrator], ["worker", ROLE_LABELS.worker], ["reviewer", ROLE_LABELS.reviewer], ["integrator", ROLE_LABELS.integrator]] as const).map(([value, label]) => (
-          <button key={value} type="button" className={`collab-team-filter-pill${teamRoleFilter === value ? " active" : ""}`} aria-pressed={teamRoleFilter === value} onClick={() => setTeamRoleFilter(value)}>{label}<b>{value === "all" ? enabledAgents.length : roleCount(value)}</b></button>
+      return <><div ref={teamPanel} tabIndex={-1} role="group" aria-label={t("团队成员")} className={`collab-team-toolbar${memberUnavailableReason ? " collab-team-unavailable" : ""}`}><div className="collab-team-filter-row">
+        {(["all", "worker", "reviewer", "integrator", "orchestrator"] as const).map(value => (
+          <button key={value} type="button" className={`collab-team-filter-pill${teamRoleFilter === value ? " active" : ""}`} aria-pressed={teamRoleFilter === value} onClick={() => setTeamRoleFilter(value)}>{t(value === "all" ? "全部" : COLLABORATION_ROLE_LABELS[value])}<b>{value === "all" ? enabledAgents.length : roleCount(value)}</b></button>
         ))}
         <div className="collab-team-search"><input aria-label={t("搜索成员")} placeholder={t("搜索成员 / 职责…")} value={teamSearch} onChange={(event) => setTeamSearch(event.target.value)} /></div>
         <button className="btn secondary" disabled={!currentSnapshot} title={memberUnavailableReason ?? undefined} aria-describedby={memberUnavailableReason ? "collab-member-unavailable" : undefined} onClick={() => { setEditorProjectId(currentSnapshot!.project.id); setEditingAgent(null); }}>{t("新增成员")}</button>
@@ -772,7 +774,7 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
       selectProject(created.id);
       setTab("team");
     }} />}
-    {editingAgent !== undefined && editorProjectId && <CollaborationAgentEditor agent={editingAgent} runtimeLocked={false} onClose={() => setEditingAgent(undefined)} onSave={async (draft: AgentDraft) => {
+    {editingAgent !== undefined && editorProjectId && <CollaborationAgentEditor agent={editingAgent} projectId={editorProjectId} runtimeLocked={false} onClose={() => setEditingAgent(undefined)} onSave={async (draft: AgentDraft, chatModels) => {
       if (!currentSnapshot || currentSnapshot.project.id !== editorProjectId) throw new Error("项目已切换，请关闭后重新编辑");
       if (currentSnapshot.agents.some((item) => item.id !== editingAgent?.id && item.name.toLocaleLowerCase() === draft.name.toLocaleLowerCase())) throw new Error("本项目已存在同名成员，请使用不同名称");
       if (UI_PREVIEW) {
@@ -780,8 +782,8 @@ export function CollaborationSettingsPanel({ onClose, initialTab = "overview", i
         setSnapshot({ ...currentSnapshot, agents: editingAgent ? currentSnapshot.agents.map((item) => item.id === updated.id ? updated : item) : [...currentSnapshot.agents, updated] });
         return;
       }
-      if (editingAgent) await invoke("ma_update_agent", { input: { ...draft, projectId: editorProjectId, agentId: editingAgent.id } });
-      else await invoke("ma_create_agent", { input: { ...draft, projectId: editorProjectId, permissionProfile: "default", maxConcurrency: 1 } });
+      if (editingAgent) await invoke("ma_update_agent", { input: { ...draft, projectId: editorProjectId, agentId: editingAgent.id }, chatModels });
+      else await invoke("ma_create_agent", { input: { ...draft, projectId: editorProjectId, permissionProfile: "default", maxConcurrency: 1 }, chatModels });
       if (selectionRef.current === editorProjectId) await refreshSnapshot();
     }} />}
 

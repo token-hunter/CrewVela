@@ -1920,10 +1920,13 @@ mod conversation_policy_tests {
     fn model_catalog_handshake_without_prompt_or_project_tools() {
         let cwd = env!("CARGO_MANIFEST_DIR");
         let mut command = Command::new(which::which("node").unwrap());
-        command.arg(Path::new(cwd).join("../tests/fixtures/native-harness-acp.mjs")).arg("--team-models").arg("--catalog-only");
-        let catalog = catalog_from_adapter(ManagedAcpKind::DeepSeekHarness, cwd, command).unwrap();
+        command.arg(Path::new(cwd).join("../tests/fixtures/native-harness-acp.mjs"))
+            .args(["--team-models", "--catalog-only", "--model-dependent-reasoning"]);
+        let catalog = catalog_from_adapter(ManagedAcpKind::DeepSeekHarness, cwd, command, Some("model-b")).unwrap();
         assert_eq!(catalog[0]["id"], "model");
+        assert_eq!(catalog[0]["currentValue"], "model-b");
         assert_eq!(catalog[1]["category"], "thought_level");
+        assert_eq!(catalog[1]["options"], json!([{"name":"高","value":"high"}]));
     }
     #[test]
     fn native_group_approval_selects_allow_once_and_never_persists_permissions() {
@@ -2035,7 +2038,7 @@ pub(crate) type ConversationConfigurator = Box<dyn FnOnce(&mut AcpConnection) ->
 
 /// Discover values with a fresh, message-free handshake. Never resume a
 /// member's live session or attach collaboration tools just to open settings.
-pub(crate) fn conversation_model_catalog(kind: ManagedAcpKind, cwd: &str) -> Result<Vec<Value>> {
+pub(crate) fn conversation_model_catalog(kind: ManagedAcpKind, cwd: &str, model: Option<&str>) -> Result<Vec<Value>> {
     if matches!(kind, ManagedAcpKind::ClaudeCode | ManagedAcpKind::Codex) {
         anyhow::ensure!(chat_adapter_installed(kind), "{} 的 ACP 适配器尚未就绪，请先在运行时管理中检查", kind.label());
     }
@@ -2045,22 +2048,28 @@ pub(crate) fn conversation_model_catalog(kind: ManagedAcpKind, cwd: &str) -> Res
         storage.prepare()?;
         storage.configure(&mut command, true)?;
     }
-    catalog_from_adapter(kind, cwd, command)
+    catalog_from_adapter(kind, cwd, command, model)
 }
 
-fn catalog_from_adapter(kind: ManagedAcpKind, cwd: &str, command: Command) -> Result<Vec<Value>> {
+fn catalog_from_adapter(kind: ManagedAcpKind, cwd: &str, command: Command, model: Option<&str>) -> Result<Vec<Value>> {
     let claude = (kind == ManagedAcpKind::ClaudeCode).then_some(ManagedResearchPolicy { tools_enabled: false });
     let modes: &[&str] = if kind == ManagedAcpKind::DeepSeekHarness { &["read-only"] } else { &[] };
     let mut connection = AcpConnection::spawn_for_with_cli_identity_policy(
         kind, cwd, None, Vec::new(), modes, false, false,
         Arc::new(AtomicU32::new(0)), None, Some(command), None, claude, false,
     )?;
-    let catalog = connection.config_options().to_vec();
+    let catalog = (|| {
+        if let Some(model) = model {
+            crate::multi_agent::conversation_models::apply_acp(&mut connection,
+                &crate::multi_agent::conversation_models::Selection { model: Some(model.into()), reasoning: None })?;
+        }
+        Ok(connection.config_options().to_vec())
+    })();
     if let Err(error) = connection.stop_checked() {
         quarantine_acp_connection(connection);
         return Err(error);
     }
-    Ok(catalog)
+    catalog
 }
 
 pub(crate) fn execute_managed_acp(
