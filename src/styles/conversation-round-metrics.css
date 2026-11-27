@@ -1,0 +1,44 @@
+.conversation-round-metrics {
+  min-width: 0;
+  margin-top: 5px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.conversation-round-metrics-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.conversation-round-metrics-toggle:hover,
+.conversation-round-metric-tasks summary:hover { color: var(--text); }
+.conversation-round-metrics section {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elev);
+  overflow-wrap: anywhere;
+}
+.conversation-round-metrics p { margin: 6px 0; }
+.conversation-round-metric-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(6.4rem, 100%), 1fr));
+  gap: 3px 10px;
+  margin: 0;
+}
+.conversation-round-metric-values dd {
+  margin: 2px 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.conversation-round-metric-tasks { margin-top: 7px; }
+.conversation-round-metric-tasks summary { cursor: pointer; }
+.conversation-round-metric-tasks ul { margin: 0; padding: 0; list-style: none; }
+.conversation-round-metric-tasks li { margin: 6px 0; padding-top: 5px; border-top: 1px solid var(--border); }
+.conversation-round-metric-tasks strong { display: block; margin-bottom: 3px; }

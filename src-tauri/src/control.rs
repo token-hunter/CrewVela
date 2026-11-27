@@ -970,6 +970,14 @@ impl SessionActionQueue {
         session_state: &SessionManager,
         mut on_ingested: impl FnMut(&OutboxMessage, &str) -> Result<()>,
     ) -> Result<usize> {
+        self.ingest_outbox_with_timestamp(session_state, |message,id,_| on_ingested(message,id))
+    }
+
+    pub(crate) fn ingest_outbox_with_timestamp(
+        &self,
+        session_state: &SessionManager,
+        mut on_ingested: impl FnMut(&OutboxMessage, &str, i64) -> Result<()>,
+    ) -> Result<usize> {
         let _delivery = self.delivery_lock.lock().unwrap();
         let Some(outbox_dir) = &self.outbox_dir else {
             return Ok(0);
@@ -1002,8 +1010,9 @@ impl SessionActionQueue {
             let outcome = (|| -> Result<bool> {
                 let message_id = outbox_message_id(&path)?;
                 if self.processed_outbox_ids.lock().unwrap().contains(&message_id) { return Ok(false); }
-                let raw = std::fs::read_to_string(&path)?;
-                let message: OutboxMessage = serde_json::from_str(&raw)?;
+                let file = std::fs::File::open(&path)?;
+                let published_at = i64::try_from(file.metadata()?.modified()?.duration_since(UNIX_EPOCH)?.as_millis())?;
+                let message: OutboxMessage = serde_json::from_reader(file)?;
                 let Some(target) = session_state.get(&message.to) else {
                     self.record_receipt_stage(&message_id, "rejected")?;
                     eprintln!("[crewvela] 丢弃目标不存在的会话消息 to={}", message.to);
@@ -1051,7 +1060,14 @@ impl SessionActionQueue {
                 }
                 let mut queued = QueuedMessage::new(message.body.clone(), message.from.clone());
                 queued.id = message_id;
-                on_ingested(&message, &queued.id)?;
+                if let Err(error) = on_ingested(&message, &queued.id, published_at) {
+                    if crate::multi_agent::member_messages::permanent_rejection(&error) {
+                        self.record_receipt_stage(&queued.id, "rejected")?;
+                        eprintln!("[crewvela] 会话消息未获来源任务授权：{error:#}");
+                        return Ok(false);
+                    }
+                    return Err(error);
+                }
                 let added = self.enqueue_outbox_message(&message.to, queued).map_err(|error| {
                     persistence_failed = true;
                     error
@@ -1092,6 +1108,15 @@ impl SessionActionQueue {
         let entries = log.entry(agent_pair_key(from, to)).or_default();
         while entries.front().is_some_and(|at| now.duration_since(*at) >= AGENT_MESSAGE_PAIR_WINDOW) { entries.pop_front(); }
         entries.len() < limit
+    }
+
+    /// Called under delivery_lock, shared with raw session outbox ingress.
+    pub(crate) fn admit_member_turn(&self, from: &str, to: &str, enqueue: impl FnOnce() -> Result<bool>) -> Result<bool> {
+        let now = Instant::now();
+        if self.activity(to) == AgentActivity::Muted || !self.agent_message_quota_available(from, to, now) { return Ok(false); }
+        if !enqueue()? { return Ok(false); }
+        self.record_agent_message_at(from, to, now);
+        Ok(true)
     }
 
     /// 记录一对会话间的 agent 消息（滑动窗口去旧）；返回 false 表示已达上限，消息应丢弃。

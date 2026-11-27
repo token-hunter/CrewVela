@@ -5,18 +5,30 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::control::{MessageOrigin, OutboxMessage};
 use crate::sessions::{self, SessionRecord};
+use crate::multi_agent::member_messages::{Handoff, Purpose};
+mod member;
+pub(crate) use member::configure_member_cli;
+pub use member::run_thread_args;
 
 /// 解析 `send` 子命令参数：--to <会话 id 前缀> --body <内容>。
 pub fn parse_send_args<I: Iterator<Item = String>>(args: I) -> Result<(String, String), String> {
-    let (to, body, _, _) = parse_receipt_send_args(args)?;
-    Ok((to, body))
+    let parsed = parse_receipt_send_args(args)?;
+    Ok((parsed.to, parsed.body))
 }
 
-fn parse_receipt_send_args<I: Iterator<Item = String>>(args: I) -> Result<(String, String, Option<String>, Option<String>), String> {
+#[derive(Default)]
+struct SendArgs {
+    to: String, body: String, request: Option<String>, reply_to: Option<String>,
+    purpose: Option<Purpose>, handoff: Option<Handoff>,
+}
+
+fn parse_receipt_send_args<I: Iterator<Item = String>>(args: I) -> Result<SendArgs, String> {
     let mut to = None;
     let mut body = None;
     let mut request = None;
     let mut reply_to = None;
+    let mut purpose = None;
+    let (mut todos,mut acceptance,mut artifacts) = (Vec::new(),Vec::new(),Vec::new());
     let mut args = args;
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -24,6 +36,13 @@ fn parse_receipt_send_args<I: Iterator<Item = String>>(args: I) -> Result<(Strin
             "--body" => body = Some(args.next().ok_or("send 缺少 --body 的值")?),
             "--request-id" => request = Some(args.next().ok_or("send 缺少 --request-id 的值")?),
             "--reply-to" => reply_to = Some(args.next().ok_or("send 缺少 --reply-to 的值")?),
+            "--purpose" => {
+                let value = args.next().ok_or("--purpose 缺少目的")?;
+                purpose = Some(serde_json::from_value(serde_json::Value::String(value)).map_err(|_| "消息目的可选 status、question、handoff")?);
+            }
+            "--todo" => todos.push(args.next().ok_or("--todo 缺少待办")?),
+            "--accept" => acceptance.push(args.next().ok_or("--accept 缺少验收条件")?),
+            "--artifact" => artifacts.push(args.next().ok_or("--artifact 缺少产物 ID")?),
             other => return Err(format!("send 无法识别的参数: {other}")),
         }
     }
@@ -33,7 +52,10 @@ fn parse_receipt_send_args<I: Iterator<Item = String>>(args: I) -> Result<(Strin
     if to.trim().is_empty() || body.trim().is_empty() {
         return Err("send 的 --to 与 --body 不能为空".to_string());
     }
-    Ok((to, body, request, reply_to))
+    let handoff = (!todos.is_empty() || !acceptance.is_empty() || !artifacts.is_empty())
+        .then_some(Handoff { todos, acceptance, artifact_ids:artifacts });
+    if handoff.is_some() && purpose != Some(Purpose::Handoff) { return Err("交接字段需要 --purpose handoff".into()); }
+    Ok(SendArgs {to,body,request,reply_to,purpose,handoff})
 }
 
 fn sessions_path() -> Result<PathBuf> {
@@ -83,20 +105,25 @@ pub(crate) fn session_view_at(path: &Path) -> Result<Vec<serde_json::Value>> {
 /// `crewvela send --to <前缀> --body <内容>`：把消息写入 outbox，
 /// 由运行中的 app 在下一轮轮询摄取并投递（会话就绪时写入其终端）。
 pub fn run_send_command(to: &str, body: &str) -> Result<()> {
-    send_command(to, body, None, None)
+    send_command(SendArgs {to:to.into(),body:body.into(),..Default::default()})
 }
 
 pub fn run_send_args(args: impl Iterator<Item = String>) -> Result<()> {
-    let (to, body, request, reply_to) = parse_receipt_send_args(args).map_err(anyhow::Error::msg)?;
-    send_command(&to, &body, request.as_deref(), reply_to.as_deref())
+    send_command(parse_receipt_send_args(args).map_err(anyhow::Error::msg)?)
 }
 
-fn send_command(to: &str, body: &str, request: Option<&str>, reply_to: Option<&str>) -> Result<()> {
+fn send_command(args: SendArgs) -> Result<()> {
     let identity = std::env::var("CREWVELA_SESSION_ID").ok();
+    let path = sessions_path()?;
+    if let Some(receipt) = member::send_if_bound(&path,identity.as_deref(),&args)? {
+        println!("{}",serde_json::to_string_pretty(&receipt)?);
+        return Ok(());
+    }
+    let (request,reply_to) = (args.request.as_deref(),args.reply_to.as_deref());
     let tracked = identity.as_deref().is_some_and(|id| !id.is_empty());
     anyhow::ensure!(tracked || (request.is_none() && reply_to.is_none()), "持久回执需要在 CrewVela 来源会话内使用");
     let outbox = outbox_dir()?;
-    let (receipt, id) = send_with_receipt_at(&sessions_path()?, &outbox, to, body, identity.as_deref(), request, reply_to, tracked, crate::runtime_preferences::ensure_session_available)?;
+    let (receipt, id) = send_with_receipt_at(&path, &outbox, &args.to, &args.body, identity.as_deref(), request, reply_to, tracked, crate::runtime_preferences::ensure_session_available)?;
     match (identity, id) {
         (Some(sender), Some(id)) => {
             let status = crate::message_receipts::lookup(&outbox, &sender, &id)?.stage;
@@ -378,6 +405,12 @@ mod tests {
         }
         let argv: Vec<String> = serde_json::from_str(&std::env::var("CREWVELA_MESSAGE_TEST_ARGS").unwrap()).unwrap();
         let result = match argv.first().map(String::as_str) {
+            Some("send") if std::env::var_os("CREWVELA_MEMBER_ENDPOINT").is_some() => {
+                let profile = crate::multi_agent::external_command_path(&root).join("isolated-cli-profile");
+                crate::test_profile::initialize(&profile).unwrap();
+                std::fs::copy(root.join("sessions.json"), sessions_path().unwrap()).unwrap();
+                run_send_args(argv.into_iter().skip(1))
+            }
             Some("sessions") => session_view_at(&root.join("sessions.json")).map(|value| {
                 println!("CLI_FIXTURE_JSON={}", serde_json::to_string(&value).unwrap());
             }),

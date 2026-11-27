@@ -27,9 +27,44 @@
   text-align: left;
 }
 .conversation-delivery-status button:hover { text-decoration: underline; }
+.conversation-delivery-action {
+  color: var(--text);
+}
 .conversation-delivery-status li[data-state="running"] .conversation-delivery-state,
 .conversation-delivery-status li[data-state="waiting_approval"] .conversation-delivery-state,
 .conversation-delivery-status li[data-state="needs_decision"] .conversation-delivery-state,
 .conversation-delivery-status li[data-state="unconfirmed"] .conversation-delivery-state {
   color: var(--accent);
+}
+
+.conversation-member-receipts {
+  margin-top: 5px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.conversation-member-receipts > summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.conversation-member-receipts ul {
+  list-style: none;
+  padding: 8px;
+  margin: 5px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-elev);
+  overflow-wrap: anywhere;
+}
+
+.conversation-member-receipts li + li {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.conversation-member-receipts pre {
+  margin: 5px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

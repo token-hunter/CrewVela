@@ -10,6 +10,10 @@ export function conversationInputText(body: string): string {
   return body.replace(/^[ \t]*>.*$/gm, "");
 }
 
+export function conversationRoutingText(body: string): string {
+  return conversationInputText(body).replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+}
+
 export function conversationQuote(source: string, body: string): string {
   const limit = 4_000;
   const characters = Array.from(body.trim());
@@ -20,7 +24,7 @@ export function conversationQuote(source: string, body: string): string {
 /** Conservative routing: uncertain requests stay in chat; a plan still needs explicit execution approval. */
 export function conversationRequestMode(body: string, selectedMode: ConversationMode = "discussion", mentionTokens: readonly string[] = []): ConversationMode {
   if (selectedMode === "execution_plan") return selectedMode;
-  const text = conversationInputText(body).replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+  const text = conversationRoutingText(body);
   const opening = withoutMentionTokens(text, mentionTokens).trim().replace(/^(?:@[^\s@]+\s+)+/u, "");
   const firstRequest = opening.split(/[。！？!?；;\n，,]/u, 1)[0];
   // Negative instructions about execution take precedence over an imperative goal.
@@ -51,9 +55,37 @@ export function hasConversationPlanGoal(body: string, mentionTokens: readonly st
   return /[\p{L}\p{N}]/u.test(withoutMentionTokens(conversationInputText(body), mentionTokens));
 }
 export function conversationRequestIntent(body: string): "chat" | "exchange" {
-  const text = conversationInputText(body).replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
-  if (/(?:不要|(?<!分)别|无需|不需要|先不).{0,8}(?:互聊|互相|讨论|交流|回应)|\b(?:don't|do not|no need to).{0,12}(?:discuss|debate|exchange)/iu.test(text)) return "chat";
-  return /(?:互相|彼此).{0,12}(?:聊|讨论|交流|回应|回复)|(?:你们|大家|一起|共同).{0,12}(?:聊|讨论|交流)|(?:聊聊|讨论|交流).{0,12}(?:方案|思路|问题)|(?:对方|另一位).{0,12}(?:回复|回应|意见)|\b(?:discuss|debate|talk about|exchange ideas|exchange views|respond to each other)\b/iu.test(text) ? "exchange" : "chat";
+  const text = conversationRoutingText(body);
+  if (/(?:不要|(?<!分)别|无需|不用|不必|不需要|先不).{0,8}(?:互聊|互相|讨论|交流|回应)|\b(?:don't|do not|no need to).{0,12}(?:discuss|debate|exchange)/iu.test(text)) return "chat";
+  const group = text.split(/[。！？!?；;，,\n]/u).some(part => {
+    const clause = part.trim().replace(/^(?:(?:请|帮我|麻烦|能否|能不能|可以|我想|希望|让|先)\s*)+/u, "");
+    return /^(?:你们|大家|各位|全员|全体成员|团队成员|成员们)(?:(?:请|都|先|一起|共同|互相|彼此|来)\s*)*(?:聊|讨论|交流)(?![过了的])|^(?:(?:你们|大家|各位|全员|团队成员)(?:都|先|请)?)?(?:互相|彼此|相互)(?:聊|讨论|交流|回应|回复)|^(?:回复|回应)(?:一下)?(?:对方|另一位)/u.test(clause)
+      || /^(?:(?:please|could|can|would|will)\s+)*(?:(?:everyone|team|you all|all of you)\s+(?:please\s+)?(?:discuss|debate|talk|exchange)\b|respond to each other\b|discuss (?:among|with) yourselves\b|exchange (?:ideas|views) with each other\b)/iu.test(clause);
+  });
+  const severalMentions = (text.match(/(?:^|\s)@[^\s@]+/gu)?.length ?? 0) >= 2;
+  return group || (severalMentions && /(?:聊聊|聊一下|聊一聊|讨论|交流|互相回应)|\b(?:discuss|debate|talk about|exchange ideas|exchange views)\b/iu.test(text)) ? "exchange" : "chat";
+}
+
+/** A group greeting alone leaves the project responder in charge. */
+export function conversationRequestsGroup(body: string): boolean {
+  if (conversationRequestIntent(body) === "exchange") return true;
+  const text = conversationRoutingText(body);
+  return text.split(/[。！？!?；;，,\n]/u).some(part => {
+    const clause = part.trim().replace(/^(?:(?:请问|麻烦|请|希望|我想|我希望|现在|想|能否|能不能|可以|让|向)\s*)+/u, "");
+    const address = /^(?:全体成员|全体|全员|所有成员|所有人|你们|大家|各位|每人|每个人|每位成员|每个成员|各自|分别)\s*/u;
+    if (address.test(clause)) {
+      const request = clause.replace(address, "").replace(/^(?:(?:都|也|先|来|各自|分别|独立|各|请)\s*)+/u, "");
+      if (/^(?:回复|答复|回答|说说|说一下|怎么看|认为呢|觉得(?:呢|如何|怎么样)|有(?:什么|没有)(?:意见|建议|想法|看法)|给.{0,6}(?:意见|建议|看法|观点|反馈)|(?:发表|征求).{0,4}(?:意见|看法)|做.{0,3}自我介绍|介绍一下自己|表个态)/u.test(request)) return true;
+    }
+    if (/^(?:发给|发送给)(?:全体(?:成员)?|全员|所有人|大家)(?:$|\s)/u.test(clause)
+      || /^(?:听听|听一下|听|征询|征求|收集)(?:一下)?(?:全体(?:成员)?|全员|所有人|每位成员|各位|大家)的?(?:意见|建议|看法|反馈|观点)/u.test(clause)) return true;
+    return /^(?:(?:please|could|can|would|will|have|ask|let)\s+)*(?:everyone|everybody|each of you|all of you|each member)\s+(?:(?:please|to)\s+)?(?:reply|respond|answer|share|give|weigh in|introduce)\b|^(?:what do (?:you all|all of you) think|what does everyone think)\b|^(?:(?:i'd|i would|we would|we'd) like (?:to hear )?|let's hear |please share )(?:everyone's|everybody's|each member's)\s+(?:opinions?|thoughts|input|feedback|views?)\b/iu.test(clause);
+  });
+}
+
+export function defaultConversationReplyMember(recipients: readonly AgentProfile[], preferredId?: string | null): AgentProfile | undefined {
+  return recipients.find(member => member.id === preferredId)
+    ?? recipients.find(member => member.role === "orchestrator") ?? recipients[0];
 }
 export const TASK_STATUS: Record<string, string> = {
   draft: "待安排", ready: "等待执行", blocked: "等待依赖", claimed: "已领取", running: "进行中",
@@ -79,7 +111,7 @@ export function conversationRecipients(
   preferredRecipient?: string,
 ): string[] {
   const enabled = agents.filter(agent => agent.enabled && agent.projectId === projectId);
-  let remaining = conversationInputText(body);
+  let remaining = conversationRoutingText(body);
   const mentioned = new Set<string>();
   const tokens = enabled.map(agent => ({ agent, token: conversationMentionToken(agent, enabled) })).sort((a, b) => b.token.length - a.token.length);
   for (const { agent, token } of tokens) {
@@ -90,7 +122,7 @@ export function conversationRecipients(
   const unknown = remaining.match(/(?:^|\s)(@[^\s@]+)/u)?.[1];
   if (unknown) throw new Error(`未找到明确的项目成员 ${unknown}，请从成员列表选择。`);
   if (!mentioned.size && preferredRecipient && !selected.includes(preferredRecipient)) {
-    throw new Error("当前收件成员不可用，请 @ 其他成员或切回发给全体。");
+    throw new Error("当前收件成员不可用，请 @ 其他成员或恢复项目默认。");
   }
   const candidates = enabled.filter(agent => mentioned.size
     ? mentioned.has(agent.id)
@@ -99,18 +131,22 @@ export function conversationRecipients(
   return candidates.map(agent => agent.id);
 }
 
-export function conversationChatDispatch(body: string, recipients: readonly AgentProfile[], ruleAgentId?: string): {
+export function conversationChatDispatch(body: string, recipients: readonly AgentProfile[], ruleAgentId?: string, defaultReplyAgentId?: string | null, keepParallel = false): {
   intent: "chat" | "exchange";
   chatDispatch?: ConversationChatDispatch;
 } {
-  const request = conversationInputText(body).replace(/```[\s\S]*?(?:```|$)/g, "").replace(/`[^`]*`/g, "");
+  const request = conversationRoutingText(body);
   const launch = /(?:启动|运行|重启|停止|关掉).{0,18}(?:项目|服务|程序|应用|游戏|成品)|(?:把|将).{0,12}(?:项目|服务|程序|应用|游戏).{0,8}(?:启动|运行|重启|停止|关掉)|(?:跑|运行|启动)起来|(?:打不开|访问不了|连不上).{0,12}(?:地址|网页|服务|页面)|(?:地址|网页|服务|页面).{0,12}(?:打不开|访问不了|连不上)|\b(?:start|run|restart|stop|launch)\s+(?:(?:this|the|my|our)\s+)?(?:project|server|app|application|game)\b/iu.test(request);
   const explanation = /(?:只|仅|先)\s*(?:分析|讨论|解释|说明)|(?:如何|怎么|怎样|何时|什么时候)\s*(?:启动|运行|重启|停止|执行|操作)|(?:不要|无需|先不|别)\s*(?:启动|运行|重启|执行|动手)|\b(?:how to|how do (?:i|we)|do not|don't)\b/iu.test(request);
   const review = /(?:审查|审阅|复审).{0,16}(?:代码|改动|提交|实现)|\breview\s+(?:(?:this|the|my|our)\s+)?(?:code|changes|commit|implementation)\b/iu.test(request);
   const operation = /(?:谁(?:能|来|可以)|请|帮我|麻烦|直接|马上|^\s*)(?:帮我|实际|先|去|直接|把|将|给我|你们|大家|每人|各自|分别|一起|\s)*(?:运行|执行|运行一下|跑一下|重跑|部署|发布|安装|提交|删除|写入|上传|修改|添加|启动|重启|停止)|\b(?:please\s+|can someone\s+)?(?:run|deploy|install|execute|restart|stop)\s+(?:the\s+)?(?:tests?|command|script|service|server|app|project)\b/iu.test(request.replace(/(?:^|\s)@[^\s@]+\s*/gu, " "));
   if (!ruleAgentId && (explanation || !(launch || operation || (review && !/(?:各自|每[人位]|分别|独立|everyone|each)/iu.test(request))))) {
     const intent = conversationRequestIntent(body);
-    return { intent, chatDispatch: intent === "chat" && recipients.length > 1 ? { kind: "parallel" } : undefined };
+    if (intent === "exchange" || recipients.length < 2) return { intent, chatDispatch: undefined };
+    // Explicit mentions have already narrowed the roster, including duplicate-name tokens.
+    if (keepParallel || /(?:^|\s)@/u.test(request) || conversationRequestsGroup(body)) return { intent, chatDispatch: { kind: "parallel" } };
+    const responder = defaultConversationReplyMember(recipients, defaultReplyAgentId)!;
+    return { intent, chatDispatch: { kind: "assigned", agentId: responder.id } };
   }
   const roles: AgentRole[] = launch ? ["integrator", "worker", "orchestrator", "reviewer"]
     : review ? ["reviewer", "worker", "integrator", "orchestrator"]

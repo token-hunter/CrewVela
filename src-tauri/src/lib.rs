@@ -162,7 +162,7 @@ pub fn run_session_statusline(events_dir: &str, app_session_id: &str) -> anyhow:
     telemetry::store_claude_statusline(std::path::Path::new(events_dir), app_session_id, &payload)
 }
 
-pub use messaging::{parse_send_args, run_message_status, run_send_args, run_send_command, run_sessions_command};
+pub use messaging::{parse_send_args, run_message_status, run_send_args, run_send_command, run_sessions_command, run_thread_args};
 
 #[tauri::command]
 fn test_profile_info() -> Option<test_profile::Profile> { test_profile::current().cloned() }
@@ -939,6 +939,12 @@ async fn ma_create_project(
 async fn ma_rename_project(project_id: String, name: String, state: State<'_, MultiAgentStore>) -> Result<MultiAgentProject, String> {
     let store = state.inner().clone();
     blocking_command(move || store.rename_project(&project_id, &name).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_set_project_reply_preference(project_id: String, agent_id: Option<String>, state: State<'_, MultiAgentStore>) -> Result<(), String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.set_project_reply_preference(&project_id, agent_id.as_deref()).map_err(to_err)).await
 }
 
 #[tauri::command]
@@ -6049,6 +6055,7 @@ fn persist_cli_collaboration_message_with_id(
     session_state: &SessionManager,
     message: &OutboxMessage,
     message_id: &str,
+    published_at: i64,
 ) -> anyhow::Result<()> {
     if session_state
         .get(&message.to)
@@ -6067,6 +6074,9 @@ fn persist_cli_collaboration_message_with_id(
     let Some(target) = session_state.get(&message.to) else {
         return Ok(());
     };
+    if store.record_bound_session_message(&sender, &target, message_id, &message.body, published_at)? {
+        return Ok(());
+    }
     let (Some(project_id), Some(sender_agent_id), Some(target_project_id), Some(target_agent_id)) = (
         sender.multi_agent_project_id.as_deref(),
         sender.multi_agent_agent_id.as_deref(),
@@ -6151,12 +6161,13 @@ fn flush_cli_messages_with_scheduler(
     }
     // 摄取 CLI `send` 写入的会话间消息，再随本轮 flush 投递。
     action_queue
-        .ingest_outbox_with_identity(&session_state, |message, message_id| {
+        .ingest_outbox_with_timestamp(&session_state, |message, message_id, published_at| {
             persist_cli_collaboration_message_with_id(
                 &multi_agent_store,
                 &session_state,
                 message,
                 message_id,
+                published_at,
             )
         })
         .map_err(to_err)?;
@@ -6204,12 +6215,13 @@ fn flush_cli_messages_with_scheduler(
         })?;
     }
     // 已入任务表但当前 Agent 忙碌/调度器正在退出时，下轮仍会重试唤醒。
-    let projects = session_state
+    let mut projects = session_state
         .list()
         .into_iter()
         .filter(|session| session.runtime_command_host)
         .filter_map(|session| session.multi_agent_project_id)
         .collect::<HashSet<_>>();
+    projects.extend(multi_agent_store.drain_member_inbox(action_queue).map_err(to_err)?);
     for project_id in projects {
         if multi_agent_store
             .runnable_tasks(&project_id)
@@ -6713,6 +6725,7 @@ pub fn run() {
             ma_resolve_intervention,
             ma_create_project,
             ma_rename_project,
+            ma_set_project_reply_preference,
             ma_project_git_status,
             ma_member_library,
             ma_member_library_import,
@@ -6759,6 +6772,7 @@ pub fn run() {
             ma_runtime_events,
             ma_send_message,
             ma_conversation_snapshot,
+            multi_agent::conversation_metrics::ma_conversation_round_metrics,
             ma_conversation_member_models,
             ma_set_conversation_member_models,
             ma_conversation_export,
@@ -9006,6 +9020,7 @@ mod tests {
                 body: "HELLO_CODEX".into(),
             },
             "exact-transport-id",
+            chrono::Utc::now().timestamp_millis(),
         )
         .unwrap();
 

@@ -217,6 +217,12 @@ const mock = {
     if (params.get("fail-aux") === "1" && ["ma_probe_runtimes", "skill_center_snapshot"].includes(command)) throw Error("隔离测试：辅助读取失败");
     if ((["ma_snapshot", "ma_conversation_snapshot"].includes(command) && mock.holdProject === args.projectId) || (command === "ma_conversation_send" && mock.holdSend) || (command === "ma_conversation_clear" && mock.holdClear) || (command === "ma_conversation_new" && mock.holdNew)) return new Promise((resolve, reject) => pending.push({ command, args, resolve, reject }));
     if (command === "ma_list_projects") return structuredClone(projects);
+    if (command === "ma_set_project_reply_preference") {
+      const key = `fixture.reply-preference.${args.projectId}`;
+      if (args.agentId) sessionStorage.setItem(key, args.agentId);
+      else sessionStorage.removeItem(key);
+      return;
+    }
     if (command === "ma_rename_project") {
       const project = projects.find(item => item.id === args.projectId);
       if (!project || mock.failProjectRename) throw Error("隔离测试：项目名称未保存");
@@ -250,7 +256,7 @@ const mock = {
       chats.A.rounds[0].status="running";chats.A.messages.find((item:any)=>item.id==="a1").status="running";
       return {interventionId:"permission-current",projectId:"A",resumeProject:false,message:"已批准本次工具操作"};
     }
-    if (command === "ma_snapshot") { const result=snapshot(args.projectId); if((params.get("activity")==="1" || workQueueFixture)&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} if(resumedDelivery && args.projectId==="A")result.approvals=[resumedDelivery]; if(params.has("logs-only"))result.runLogs=[]; return structuredClone(result); }
+    if (command === "ma_snapshot") { const result=snapshot(args.projectId); result.defaultReplyAgentId=sessionStorage.getItem(`fixture.reply-preference.${args.projectId}`); if((params.get("activity")==="1" || workQueueFixture)&&args.projectId==="A"){result.runtimeEvents=activityEvents;result.approvals=activityApprovals;} if(resumedDelivery && args.projectId==="A")result.approvals=[resumedDelivery]; if(params.has("logs-only"))result.runLogs=[]; return structuredClone(result); }
     if (resumedDelivery && args.taskId === resumedDelivery.taskId && command === "ma_update_resumed_delivery") {
       resumedDelivery.status = "pending";
       tasks[1].status = "in_review";

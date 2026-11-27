@@ -19,6 +19,8 @@ import { ConversationMessageQueue } from "./ConversationMessageQueue";
 import { CollaborationWorkRail, WorkSourceDialog } from "./CollaborationWorkRail";
 import { buildCollaborationWorkQueue, type CollaborationWorkItem } from "../collaborationWorkQueue";
 import { ConversationDeliveryStatus } from "./ConversationDeliveryStatus";
+import { ConversationMemberReceipts } from "./ConversationMemberReceipts";
+import { ConversationRoundMetrics } from "./ConversationRoundMetrics";
 import { CollaborationTemplateShortcuts } from "./CollaborationTemplateShortcuts";
 import { conversationMemberActivity } from "../conversationActivity";
 import { ConversationPlanCard } from "./ConversationPlanCard";
@@ -32,7 +34,7 @@ import { CollaborationProjectNavigation } from "./CollaborationProjectNavigation
 import { GrokExecutionDrawer } from "./GrokExecutionDrawer";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
 import { Modal } from "./ui/Modal";
-import { conversationChatDispatch, conversationInputText, conversationIsActive, conversationMentionToken, conversationRecipients, conversationRequestIntent, conversationRequestMode, CONVERSATION_STATUS, hasConversationPlanGoal, latestConversationRound, orderedConversationMessages } from "../collaborationConversation";
+import { conversationChatDispatch, conversationIsActive, conversationMentionToken, conversationRecipients, conversationRequestIntent, conversationRequestMode, conversationRequestsGroup, conversationRoutingText, defaultConversationReplyMember, CONVERSATION_STATUS, hasConversationPlanGoal, latestConversationRound, orderedConversationMessages } from "../collaborationConversation";
 import { RUNTIME_LABELS } from "../runtimeLogos";
 import { visibleProjectTasks } from "../collaborationTasks";
 import { hasMentionToken, mentionTextSegments, selectMentionTokens } from "../multiAgentMention";
@@ -308,7 +310,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     const timer = window.setInterval(() => void refresh(), 1500);
     return () => { clearInterval(timer); request.current++; };
   }, [active, projectId, refresh]);
-  const agents = useMemo(() => snapshot?.agents.filter(agent => agent.projectId === projectId && agent.enabled) ?? [], [snapshot, projectId]);
+  const agents = useMemo(() => snapshot?.agents.filter(agent => agent.projectId === projectId && agent.enabled && agent.removedAt == null) ?? [], [snapshot, projectId]);
   const supported = conversation?.supportedDiscussionRuntimes ?? [];
   const manualMembers = useMemo(() => new Set(snapshot?.agentSessions.filter(session => session.projectId === projectId && session.controlMode === "manual").map(session => session.agentId) ?? []), [snapshot, projectId]);
   const eligibleMembers = agents.filter(agent => supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind)).map(agent => agent.id);
@@ -317,6 +319,31 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const eligiblePlanMembers = eligibleMembers.filter(id => !discussionOnlyMembers.has(id));
   const availablePlanMembers = availableRecipients.filter(id => !discussionOnlyMembers.has(id));
   const chatRecipient = agents.find(agent => agent.id === chatRecipientId && availableRecipients.includes(agent.id));
+  const replyMembers = agents.filter(agent => availableRecipients.includes(agent.id));
+  const preferredReplyId = snapshot?.defaultReplyAgentId;
+  const automaticReplyMember = defaultConversationReplyMember(replyMembers);
+  const defaultReplyMember = defaultConversationReplyMember(replyMembers, preferredReplyId);
+  const chatRoute = (body: string, project: string, ruleAgentId?: string) => {
+    const pinned = conversationRequestsGroup(body) ? undefined : chatRecipientId;
+    const ids = conversationRecipients(body, availableRecipients, agents, project, pinned);
+    return { ids, ...conversationChatDispatch(body, agents.filter(agent => ids.includes(agent.id)), ruleAgentId, preferredReplyId) };
+  };
+  const setDefaultReplyMember = async (recipient: string) => {
+    if (!projectId || !active || mutation.current) return;
+    const project = projectId;
+    mutation.current = true; setBusy(true); request.current++; setOperationError("");
+    try {
+      await invoke("ma_set_project_reply_preference", { projectId: project, agentId: recipient || null });
+      if (mounted.current && currentProject.current === project) {
+        setSnapshot(current => current?.project.id === project ? { ...current, defaultReplyAgentId: recipient || null } : current);
+      }
+    } catch (reason) {
+      if (mounted.current && currentProject.current === project) setOperationError(String(reason));
+    } finally {
+      mutation.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  };
   const rememberChatRecipient = useCallback((project: string, chat: string, recipient?: string) => {
     save(chatRecipientKey(project, chat), recipient ?? "");
     if (mounted.current && currentProject.current === project && currentConversation.current === chat) setChatRecipientId(recipient);
@@ -685,7 +712,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const mode = conversationRequestMode(body, requestPlan ? "execution_plan" : "discussion", mentionTokens);
       const rule = archivedRuleId ? conversation?.archivedTaskRules?.find(value => value.id === archivedRuleId) : undefined;
       const chat = mode === "discussion";
-      const ids = conversationRecipients(body, chat ? availableRecipients : selected, agents, projectId, chat ? chatRecipientId : undefined);
+      const chatRouting = chat ? chatRoute(body, projectId, rule?.agentId ?? undefined) : undefined;
+      const ids = chatRouting?.ids ?? conversationRecipients(body, selected, agents, projectId);
       if ((!chat || managed || archivedRuleId) && ids.some(id => discussionOnlyMembers.has(id))) throw Error("Antigravity CLI 目前仅支持团队普通对话。");
       if (ids.some(id => !isRuntimeEnabled(agents.find(agent => agent.id === id)!.runtimeKind))) throw Error("目标成员的 Runtime 已停用，请在协作设置中启用后重试。");
       if (ids.some(id => !supported.includes(agents.find(agent => agent.id === id)!.runtimeKind))) throw Error("所选成员此 Runtime 尚未接入群聊，请调整成员或在原会话中操作。");
@@ -698,8 +726,8 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         if (discussing || !target || target.id !== projectId) throw Error("请等待当前讨论结束后再开始全自动托管。");
         if (rule) throw Error("全自动托管需要独立工程任务，请取消本次聊天附加规则。");
       }
-      const routing = mode === "discussion"
-        ? conversationChatDispatch(body, agents.filter(agent => ids.includes(agent.id)), rule?.agentId ?? undefined)
+      const routing = chatRouting
+        ? { intent: chatRouting.intent, chatDispatch: chatRouting.chatDispatch }
         : { intent: conversationRequestIntent(body) };
       const queue = queueFollowup && chat && !rule;
       const managedMembers = managed ? ids.map(id => agents.find(agent => agent.id === id)!) : [];
@@ -707,7 +735,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       const integrationOwner = managedMembers.length >= 3 && !dedicatedIntegrator
         ? [...managedMembers].reverse().find(member => member.role === "worker") : undefined;
       const item: PendingSend = { projectId, expectedConversationId: conversation.conversation.id, clientMessageId: crypto.randomUUID(), body, participantAgentIds: ids, mode, ...routing, managed, integrationOwner: integrationOwner?.id, nativeCapabilities: !managed, taskRules: rule ? { tools: "research", archivedRuleId: rule.id } : undefined, interrupt: discussing && !queue, queue };
-      if (chat && ids.length === 1 && mentionTokens.some(token => hasMentionToken(body, token))) item.rememberRecipientId = ids[0];
+      if (chat && ids.length === 1 && mentionTokens.some(token => hasMentionToken(conversationRoutingText(body), token))) item.rememberRecipientId = ids[0];
       setPlanIssues([]);
       if (mode === "execution_plan") {
         const checkedForm = planForm.current;
@@ -769,11 +797,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         // Editing plain text keeps the currently queued recipients. An explicit @ can change them.
         const original = message.queuedInput.participantAgentIds;
         const ids = conversationRecipients(clean, original.filter(id => availableRecipients.includes(id)), agents, projectId);
-        if (!mentionTokens.some(token => hasMentionToken(clean, token)) && ids.length !== original.length) {
+        if (!mentionTokens.some(token => hasMentionToken(conversationRoutingText(clean), token)) && ids.length !== original.length) {
           throw Error("原收件成员不可用，请用 @ 指定收件成员。");
         }
         if (ids.some(id => !availableRecipients.includes(id))) throw Error("排队消息的收件成员不可用。");
-        const routing = conversationChatDispatch(clean, agents.filter(agent => ids.includes(agent.id)));
+        const previous = message.queuedInput.chatDispatch;
+        const routing = conversationChatDispatch(clean, agents.filter(agent => ids.includes(agent.id)), undefined,
+          previous?.kind === "assigned" ? previous.agentId : preferredReplyId, previous?.kind === "parallel");
         input = { ...message.queuedInput, body: clean, participantAgentIds: ids, ...routing,
           chatDispatch: routing.chatDispatch, maxRounds: routing.intent === "exchange" ? 3 : 1 };
       }
@@ -1036,15 +1066,26 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   };
   const allRecipientsSelected = availablePlanMembers.length > 0
     && availablePlanMembers.length === selected.length && availablePlanMembers.every(id => selected.includes(id));
-  const inputText = conversationInputText(draft);
+  const inputText = conversationRoutingText(draft);
   const mentionCount = new Set(mentionTokens.filter(token => hasMentionToken(inputText, token))).size;
   const planning = conversationRequestMode(draft, "discussion", mentionTokens) === "execution_plan";
-  const showChatRecipient = !planning && !mentionCount && !!chatRecipientId;
+  const showChatRecipient = !planning && !mentionCount && !!chatRecipientId && !conversationRequestsGroup(draft);
+  const previewChatScope = () => {
+    if (!projectId || !availableRecipients.length) return t("暂无可答复成员");
+    try {
+      const rule = conversation?.archivedTaskRules?.find(item => item.id === archivedRuleId);
+      const route = chatRoute(draft, projectId, rule?.agentId ?? undefined);
+      if (route.intent === "exchange") return t("成员互聊 · {count} 位", { count: route.ids.length });
+      if (route.chatDispatch?.kind === "parallel") return t("全员答复 · {count} 位", { count: route.ids.length });
+      const responder = route.chatDispatch?.kind === "assigned" ? route.chatDispatch.agentId : route.ids[0];
+      return t("{name} 答复", { name: agents.find(member => member.id === responder)!.name });
+    } catch { return t("收件成员不可用"); }
+  };
   const sendScopeLabel = planning
     ? t("分工 · {count} 位", { count: mentionCount || selected.length })
     : mentionCount ? t("已 @ {count} 位", { count: mentionCount })
     : showChatRecipient ? (chatRecipient ? t("发给 {name}", { name: chatRecipient.name }) : t("收件成员不可用"))
-    : t("发给全体 · {count} 位", { count: availableRecipients.length });
+    : previewChatScope();
   const sendLabel = queueFollowup && !archivedRuleId && conversationRequestMode(draft, "discussion", mentionTokens) === "discussion"
     ? t("加入发送队列") : discussing ? t("发送插话") : t("发送消息");
   const renderPlan = (plan: ConversationExecutionPlan) => <ConversationPlanCard key={plan.id} plan={plan} snapshot={snapshot}
@@ -1212,7 +1253,23 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       revision={topicRevision} onSwitch={switchConversation} onCreate={startNewConversation} />}
     {membersOpen === "header" && createPortal(<div id={membersId} ref={membersMenu} className="conversation-member-menu-wrap"
       style={{ left:membersPosition.left, top:membersPosition.top, width:membersPosition.width, "--conversation-member-menu-height":`${membersPosition.maxHeight}px` } as React.CSSProperties}>
-      <div className="conversation-member-menu" role="group" aria-label={t("选择参与成员")}><header>{t("参与成员")}</header>{agents.map(agent => {
+      <div className="conversation-member-menu" role="group" aria-label={t("选择参与成员")}>
+      <div className="conversation-project-reply">
+        <label>{t("项目默认答复成员")}
+          <select aria-label={t("项目默认答复成员")} value={preferredReplyId ?? ""} disabled={busy || !!pending || !healthy || !runtimeReady || !!runtimeError}
+            onChange={event => void setDefaultReplyMember(event.target.value)}>
+            <option value="">{automaticReplyMember ? t("自动选择（{name}）", { name: automaticReplyMember.name }) : t("自动选择")}</option>
+            {preferredReplyId && !availableRecipients.includes(preferredReplyId) && <option value={preferredReplyId} disabled>
+              {t("{name}（当前不可用）", { name: snapshot?.agents.find(agent => agent.id === preferredReplyId)?.name ?? t("历史成员") })}
+            </option>}
+            {replyMembers.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
+          </select>
+        </label>
+        <small>{preferredReplyId && preferredReplyId !== defaultReplyMember?.id && defaultReplyMember
+          ? t("默认成员当前不可用，由 {name} 代答。", { name: defaultReplyMember.name })
+          : t("普通提问在群内可见，由一位成员答复。")}</small>
+      </div>
+      <header>{t("分工与托管成员")}</header>{agents.map(agent => {
       const eligible = supported.includes(agent.runtimeKind) && isRuntimeEnabled(agent.runtimeKind) && !manualMembers.has(agent.id);
       const discussionOnly = discussionOnlyMembers.has(agent.id);
       const reason = !runtimeReady ? "正在读取 Runtime 状态" : !isRuntimeEnabled(agent.runtimeKind) ? "Runtime 已停用" : !supported.includes(agent.runtimeKind) ? "此 Runtime 尚未接入群聊" : manualMembers.has(agent.id) ? "用户接管中" : discussionOnly ? "仅团队聊天" : "";
@@ -1301,7 +1358,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           {!fromUser && (agent ? <AgentAvatar className="conversation-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative /> : <span className="conversation-avatar"><Robot size={21} /></span>)}
           <div className="conversation-message-content">{!compactReply && <header>
             {memberHeading}
-            {requestRound?.chatDispatch?.kind === "assigned" && requestRound.participantAgentIds.length > 1 && <small>发给 {requestRound.participantAgentIds.length} 位</small>}
+            {requestRound?.chatDispatch?.kind === "assigned" && requestRound.participantAgentIds.length > 1 && <small>{t("群内可见")}</small>}
             {recipientId && <small>{t("接手成员 ·")} {snapshot?.agents.find(item => item.id === recipientId)?.name ?? t("历史成员")}</small>}
             {fromUser && <span className="conversation-avatar conversation-user-avatar" role="img" aria-label={t("我")}><User size={21} aria-hidden="true" /></span>}
           </header>}
@@ -1339,6 +1396,17 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
                 if (reply) void openAgentSession(reply, snapshot?.agents.find(item => item.id === reply.agentId)?.name ?? t("历史成员"));
                 else void openSessionRecord(null, { projectId: message.projectId, runId, agentName: t("团队成员"), request: message.body, reply: "", error: null });
               } : undefined} /> : null}
+            {fromUser && conversation?.memberReceipts?.[message.id]?.length ? <ConversationMemberReceipts
+              receipts={conversation.memberReceipts[message.id]} agents={snapshot?.agents ?? []}
+              onOpenRun={onOpenSession ? runId => {
+                const approval = workItems.find(item => item.approval?.runId === runId);
+                if (approval) { void openWork(approval); return; }
+                const run = snapshot?.runs.find(item => item.projectId === message.projectId && item.id === runId);
+                const task = run && snapshot?.tasks.find(item => item.id === run.taskId);
+                if (run && task) void openManagedRunRecord(run, task);
+                else void openSessionRecord(null, { projectId: message.projectId, runId, agentName: t("团队成员"), request: "", reply: "", error: null });
+              } : undefined} /> : null}
+            {requestRound && <ConversationRoundMetrics projectId={requestRound.projectId} roundId={requestRound.id} updatedAt={requestRound.updatedAt} />}
             {message.kind === "codex_login_required" && message.status === "failed" && <div className="conversation-progress">
               <span>{loginRetryRound === message.roundId ? "已登录，等待本轮结束后重试失败成员" : loggingIn ? "正在等待 Codex 登录…" : CODEX_LOGIN_REQUIRED}</span>
               <button type="button" className="conversation-text-button" disabled={loggingIn || !!loginRetryRound || busy || !!pending || !healthy || !active || (discussing && (round?.id !== message.roundId || !!planReplyRound))}
@@ -1495,13 +1563,13 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
           </div>
            <div className="conversation-composer-send-actions">
             {showChatRecipient && conversation && projectId ? <button type="button" className="conversation-send-scope-reset"
-              title={`${sendScopeLabel} · 切回发给全体`} aria-label={`${sendScopeLabel}，切回发给全体`} disabled={busy || !!pending}
+              title={t("{scope}，恢复项目默认", { scope: sendScopeLabel })} aria-label={t("{scope}，恢复项目默认", { scope: sendScopeLabel })} disabled={busy || !!pending}
               onClick={() => {
                 rememberChatRecipient(projectId, conversation.conversation.id);
                 editor.current?.focus();
               }}>
               <span id={sendScopeId} className="conversation-send-scope">{sendScopeLabel}</span><X size={13} aria-hidden="true" />
-            </button> : <span id={sendScopeId} className="conversation-send-scope">{sendScopeLabel}</span>}
+            </button> : <span id={sendScopeId} className="conversation-send-scope" title={sendScopeLabel}>{sendScopeLabel}</span>}
            <button type="submit" className="conversation-send" aria-label={sendLabel} title={sendLabel} aria-describedby={sendScopeId}
              disabled={busy || pickingFiles || (mentionOpen && mentionMultiple) || !healthy || !active || !runtimeReady || !!runtimeError || !projectId || (!draft.trim() && !draftFiles.length) || !!pending || ["stopping", "unconfirmed"].includes(round?.status ?? "")}>
              <ArrowElbowDownLeft size={17} aria-hidden="true" />

@@ -14,6 +14,10 @@ mod work_views;
 mod research_policy;
 #[path = "conversation_activity_tests.rs"]
 mod activity;
+#[path = "conversation_metrics_scenarios.rs"]
+mod metrics_scenarios;
+#[path = "member_round_tests.rs"]
+mod member_round_tests;
 #[path = "conversation_auth_tests.rs"]
 mod codex_login;
 #[path = "managed_native_tests.rs"]
@@ -1418,6 +1422,58 @@ fn topic_resume_is_member_and_topic_scoped_and_current_request_appears_once() {
     let (other, _) = store.begin_conversation(request).unwrap();
     let other_turn = prepare_turn(store, &other.id, 0, "chat", 0, agent).unwrap();
     assert!(store.topic_session(&other_turn.task_id, &fixture.project, agent, &binding).unwrap().is_none());
+}
+
+#[test]
+fn topic_context_includes_late_review_once_in_publication_order_and_bounds_long_evidence() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let mut input = fixture.input();
+    input.body = "current request marker".into();
+    let (round, _) = store.begin_conversation(input).unwrap();
+    let reader = prepare_turn(store, &round.id, 0, "chat", 0, &fixture.agents[0]).unwrap();
+    let mut review = message_with(&store.connection.lock().unwrap(), &round.user_message_id).unwrap();
+    review.id = id();
+    review.client_message_id = None;
+    review.created_at = 1;
+    review.sender_type = "agent".into();
+    review.agent_id = Some(fixture.agents[1].clone());
+    review.kind = "reply".into();
+    review.status = "running".into();
+    review.body = format!("审查起始证据\n{}\n晚到的审查结论", "中间长日志".repeat(2000));
+    let initial = {
+        let db = store.connection.lock().unwrap();
+        save_message(&db, "test:late-review", &review).unwrap();
+        topic_context::cursor(&db, &fixture.project, &round.conversation_id).unwrap()
+    };
+    assert!(!store.topic_delta_prompt(&reader.task_id, initial, &reader.id).unwrap().contains("晚到的审查结论"));
+    assert!(store.conversation_message_excerpt(&fixture.project, &reader.task_id, &review.id, 0).is_err());
+    let published = {
+        let db = store.connection.lock().unwrap();
+        review.status = "completed".into();
+        save_message(&db, "test:late-review", &review).unwrap();
+        topic_context::cursor(&db, &fixture.project, &round.conversation_id).unwrap()
+    };
+    assert!(published > initial);
+    let prompt = store.topic_delta_prompt(&reader.task_id, initial, &reader.id).unwrap();
+    assert!(prompt.contains("审查起始证据") && prompt.contains("晚到的审查结论"));
+    assert!(prompt.contains(&review.id));
+    assert!(prompt.chars().count() < review.body.chars().count());
+    assert_eq!(prompt.matches("current request marker").count(), 1);
+    let first = store.conversation_message_excerpt(&fixture.project, &reader.task_id, &review.id, 0).unwrap();
+    assert_eq!(first["body"].as_str().unwrap().chars().count(), 8_000);
+    let next = first["nextOffset"].as_u64().unwrap() as usize;
+    let last = store.conversation_message_excerpt(&fixture.project, &reader.task_id, &review.id, next).unwrap();
+    assert!(last["body"].as_str().unwrap().ends_with("晚到的审查结论"));
+    assert!(last["nextOffset"].is_null());
+    assert!(store.conversation_message_excerpt("another-project", &reader.task_id, &review.id, 0).is_err());
+    assert!(!store.topic_delta_prompt(&reader.task_id, published, &reader.id).unwrap().contains("晚到的审查结论"));
+    let db = store.connection.lock().unwrap();
+    assert_eq!(message_with(&db, &review.id).unwrap().body, review.body);
+    // Polling that changes metadata only does not create a second publication.
+    review.updated_at += 1;
+    save_message(&db, "test:late-review", &review).unwrap();
+    assert_eq!(topic_context::cursor(&db, &fixture.project, &round.conversation_id).unwrap(), published);
 }
 
 #[test]

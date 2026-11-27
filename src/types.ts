@@ -876,6 +876,7 @@ export interface AgentControlReceipt {
 }
 
 export interface MultiAgentSnapshot {
+  defaultReplyAgentId?: string | null;
   project: MultiAgentProject;
   agents: AgentProfile[];
   tasks: MultiAgentTask[];
@@ -1186,6 +1187,7 @@ export interface ConversationSnapshot {
   /** Safe per-run metadata; never raw reasoning or tool results. */
   activityEvents?: RuntimeEventRecord[];
   deliveryReceipts?: Record<string, ConversationDeliveryReceipt[]>;
+  memberReceipts?: Record<string, ConversationMemberReceipt[]>;
   conversation: CollaborationConversation;
   messages: ConversationMessage[];
   rounds: ConversationRound[];
@@ -1198,10 +1200,22 @@ export interface ConversationSnapshot {
   archivedTaskRules?: ConversationArchivedRule[];
 }
 export interface ConversationDeliveryReceipt {
+  messageId?: string;
+  purpose?: "question" | "handoff";
   agentId: string;
   runId: string | null;
   status: "queued" | "awaiting_receipt" | "received" | "running" | "waiting_approval" | "needs_decision"
-    | "completed" | "cancelled" | "failed" | "unconfirmed" | "not_dispatched";
+    | "completed" | "handled" | "cancelled" | "failed" | "unconfirmed" | "not_dispatched";
+}
+export interface ConversationMemberReceipt {
+  messageId: string;
+  senderId: string | null;
+  agentId: string | null;
+  runId: string | null;
+  purpose: "status" | "question" | "handoff";
+  status: ConversationDeliveryReceipt["status"] | "inbox";
+  arguments: Record<string, unknown>;
+  error: string | null;
 }
 export interface ConversationMemberModelSummary {
   model: string | null;
