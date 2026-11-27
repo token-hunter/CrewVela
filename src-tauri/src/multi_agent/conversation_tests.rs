@@ -1382,6 +1382,73 @@ fn delivery_receipts_follow_the_exact_member_run_and_survive_reopening() {
 }
 
 #[test]
+fn delivery_receipts_distinguish_silent_completion_from_a_reply() {
+    let fixture = Fixture::new();
+    let snapshot = fixture.run(&ScriptedReplies::new(vec![
+        controlled_reply("", json!({"action":"silent"})),
+        controlled_reply("这里有一条公开答复。", json!({"action":"done"})),
+    ]));
+    let request = &snapshot.rounds[0].user_message_id;
+    let check = |snapshot: &ConversationSnapshot| {
+        let receipts = &snapshot.delivery_receipts[request];
+        assert_eq!(receipts[0].agent_id, fixture.agents[0]);
+        assert_eq!(receipts[0].status, "handled");
+        assert_eq!(receipts[1].agent_id, fixture.agents[1]);
+        assert_eq!(receipts[1].status, "completed");
+        assert!(!snapshot.messages.iter().any(|message| message.run_id == receipts[0].run_id));
+        assert!(snapshot.messages.iter().any(|message| message.run_id == receipts[1].run_id
+            && message.body == "这里有一条公开答复。"));
+        assert!(snapshot.handled_turns.is_empty(), "silence without a member receipt stays off the timeline");
+    };
+    check(&snapshot);
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    check(&reopened.conversation_snapshot(&fixture.project).unwrap());
+}
+
+#[test]
+fn silent_communication_keeps_its_activity_row_separate_from_public_messages() {
+    use crate::multi_agent::member_messages::{MemberSend, Purpose};
+
+    struct StatusSender {
+        recipient: String,
+        reply: ScriptedReplies,
+    }
+    impl DiscussionExecutor for StatusSender {
+        fn execute(&self, store: &MultiAgentStore, task: &str, run: &str, agent: &str, cancelled: &AtomicBool) -> Result<()> {
+            let project = store.agent_profile(agent)?.project_id;
+            store.send_member_message(&project, task, run, agent, MemberSend {
+                body: "私有状态，只入收件箱".into(),
+                target_agent_id: Some(self.recipient.clone()),
+                purpose: Some(Purpose::Status),
+                handoff: None,
+                request_id: None,
+            }, false)?;
+            self.reply.execute(store, task, run, agent, cancelled)
+        }
+    }
+
+    let fixture = Fixture::new();
+    let mut input = fixture.input();
+    input.chat_dispatch = Some(ConversationChatDispatch::Assigned { agent_id: fixture.agents[0].clone() });
+    let snapshot = fixture.run_input(input, &StatusSender { recipient: fixture.agents[1].clone(),
+        reply: ScriptedReplies::new(vec![controlled_reply("", json!({"action":"silent"}))]) });
+    let check = |snapshot: &ConversationSnapshot| {
+        let round = &snapshot.rounds[0];
+        let activity = &snapshot.handled_turns[0];
+        assert_eq!(snapshot.handled_turns.len(), 1);
+        assert_eq!(activity.run_id, snapshot.delivery_receipts[&round.user_message_id][0].run_id);
+        assert_eq!(activity.reply_to_message_id.as_deref(), Some(round.user_message_id.as_str()));
+        assert_eq!(activity.kind, "silent");
+        assert_eq!(activity.status, "completed");
+        assert!(activity.body.is_empty() && activity.attachments.is_empty());
+        assert!(snapshot.messages.iter().all(|message| message.id != activity.id));
+    };
+    check(&snapshot);
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    check(&reopened.conversation_snapshot(&fixture.project).unwrap());
+}
+
+#[test]
 fn topic_resume_is_member_and_topic_scoped_and_current_request_appears_once() {
     let fixture = Fixture::new();
     let store = &fixture.store;

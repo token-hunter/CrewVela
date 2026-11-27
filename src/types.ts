@@ -1019,7 +1019,7 @@ export interface ConversationMessage {
   runId: string | null;
   agentId: string | null;
   senderType: "user" | "agent" | "system";
-  kind: "message" | "queued_message" | "reply" | "status" | "plan" | "codex_login_required";
+  kind: "message" | "queued_message" | "reply" | "status" | "plan" | "codex_login_required" | "silent";
   phase: ConversationPhase | null;
   body: string;
   attachments?: ConversationAttachment[];
@@ -1190,6 +1190,8 @@ export interface ConversationSnapshot {
   memberReceipts?: Record<string, ConversationMemberReceipt[]>;
   conversation: CollaborationConversation;
   messages: ConversationMessage[];
+  /** UI-only completion rows for silent communication turns. */
+  handledTurns?: ConversationMessage[];
   rounds: ConversationRound[];
   executionPlans: ConversationExecutionPlan[];
   retainedExecutionPlans?: ConversationExecutionPlan[];

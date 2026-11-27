@@ -1,4 +1,4 @@
-use super::{run_status, CollaborationConversation};
+use super::{decode, run_status, CollaborationConversation, ConversationMessage};
 use anyhow::Result;
 use rusqlite::{params, Connection};
 use serde::Serialize;
@@ -16,6 +16,31 @@ pub(super) struct MemberReceipt {
     status: &'static str,
     arguments: Value,
     error: Option<String>,
+}
+
+/// Keep the original activity row after a communication-only turn ends.
+/// Public messages and the context history continue to omit silent replies.
+pub(super) fn handled_turns(db: &Connection, topic: &CollaborationConversation) -> Result<Vec<ConversationMessage>> {
+    let mut statement = db.prepare(
+        "SELECT m.data_json FROM ma_conversation_rounds d
+         JOIN ma_conversation_turns t ON t.round_id=d.id
+         JOIN ma_conversation_messages m ON m.id=t.id AND m.project_id=d.project_id
+         JOIN ma_runs r ON r.id=json_extract(m.data_json,'$.runId') AND r.task_id=t.task_id AND r.project_id=d.project_id
+         WHERE d.project_id=?1 AND json_extract(d.data_json,'$.conversationId')=?2
+           AND json_extract(m.data_json,'$.kind')='silent' AND json_extract(m.data_json,'$.status')='completed'
+           AND r.status='succeeded' AND EXISTS(
+             SELECT 1 FROM ma_member_messages x JOIN ma_messages receipt ON receipt.id=x.message_id
+             WHERE x.round_id=d.id AND x.run_id=r.id AND receipt.project_id=d.project_id AND receipt.task_id=t.task_id
+               AND x.purpose IN ('status','question','handoff') AND json_extract(x.arguments,'$.purpose') IS NOT NULL
+           ) ORDER BY m.created_at,m.rowid",
+    )?;
+    let rows = statement.query_map(params![topic.project_id, topic.id], |row| row.get::<_, String>(0))?;
+    rows.map(|row| {
+        let mut activity: ConversationMessage = decode(row?)?;
+        activity.body.clear();
+        activity.attachments.clear();
+        Ok(activity)
+    }).collect()
 }
 
 pub(super) fn for_topic(

@@ -551,7 +551,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
     }
     setPending(null); setOperationError("");
   }, [conversation, pending, projectId, rememberChatRecipient]);
-  const visibleMessages = showOlder ? messages : messages.slice(-100);
+  const handledTurns = conversation?.handledTurns?.filter(message => message.conversationId === conversation.conversation.id) ?? [];
+  const timelineMessages = handledTurns.length
+    ? orderedConversationMessages([...messages, ...handledTurns], projectId ?? "")
+    : messages;
+  const visibleMessages = showOlder ? timelineMessages : timelineMessages.slice(-100);
   const planFailureInTranscript = !!round && round.mode === "execution_plan" && planCanRetry(round)
     && !conversation?.executionPlans.some(plan => plan.roundId === round.id)
     && visibleMessages.some(message => message.id === round.userMessageId);
@@ -561,7 +565,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
   const activeAgent = discussing ? agents.find(agent => conversation?.messages.some(message => message.roundId === round?.id && message.senderType === "agent" && message.agentId === agent.id && (waitingApproval ? message.runId === waitingApproval.runId : message.status === "running"))) : undefined;
   useEffect(() => {
     if (followMessages.current && transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight;
-  }, [messages.length, messages[messages.length - 1]?.updatedAt, projectId, conversation?.conversation.id]);
+  }, [timelineMessages.length, timelineMessages[timelineMessages.length - 1]?.updatedAt, projectId, conversation?.conversation.id]);
   const changeDraft = (value: string) => { setDraft(value); setPlanIssues([]); if (projectId) save(draftKey(projectId, currentConversation.current), value); };
   const changeDraftFiles = (paths: string[], id: string, conversationId: string) => {
     setDraftFiles(paths);
@@ -1286,7 +1290,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
       {!projectId ? <div className="conversation-empty"><ChatCircleText size={30} /><h2>{t("让 Agent 组成团队")}</h2><p>{t("创建一个协作项目，选择成员，在这里讨论或分工开发。")}</p><button type="button" className="conversation-primary" onClick={() => setCreatingProject(true)}>{t("创建协作项目")}</button></div>
         : !conversation ? <p className="conversation-empty" role="status">{loading ? "正在读取协作会话…" : "协作会话尚未读取，请重试。"}</p>
         : null}
-      {messages.length > 100 && !showOlder && <button type="button" className="conversation-text-button conversation-older" onClick={() => setShowOlder(true)}>{t("查看更早的")} {messages.length - 100} {t("条消息")}</button>}
+      {timelineMessages.length > 100 && !showOlder && <button type="button" className="conversation-text-button conversation-older" onClick={() => setShowOlder(true)}>{t("查看更早的")} {timelineMessages.length - 100} {t("条消息")}</button>}
       {visibleMessages.map((message, index) => {
         const agent = agents.find(item => item.id === message.agentId) ?? snapshot?.agents.find(item => item.id === message.agentId);
         const plan = conversation?.executionPlans.find(item => item.messageId === message.id);
@@ -1336,10 +1340,11 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
         const previous = visibleMessages[index - 1];
         const continuation = !!plan && previous?.senderType === "agent" && previous.agentId === message.agentId;
         const fromUser = message.senderType === "user";
+        const handledTurn = message.kind === "silent";
         const activity = !fromUser && !plan
           ? conversationMemberActivity(message, snapshot?.runs.find(run => run.id === message.runId), activityEvents, snapshot?.approvals ?? [], activityNow)
           : undefined;
-        const compactReply = projectOverview && !delegation && !planReplyRound && !message.queuedInput
+        const compactReply = projectOverview && !handledTurn && !delegation && !planReplyRound && !message.queuedInput
           && activity?.phase === "completed" && !activity.live;
         const memberHeading = !fromUser && <><strong>{agent?.name ?? t("历史成员")}</strong>{memberModelChips(agent?.id)}</>;
         const copyAction = !plan && !generatingPlan && !rawPlanReply && !!message.body.trim() && <ConversationMessageCopy body={message.body}
@@ -1386,7 +1391,7 @@ export function MultiAgentControl({ sessions = [], active = true, defaultCwd, fo
                 {attachments}
               </div>;
             })() : <>
-              {activity && <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={activity} now={activityNow} onOpen={message.runId ? openOriginal : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"} completedLabel={planReplyRound ? "规划成员已回复" : undefined} compactHeading={compactReply ? memberHeading : undefined} compactActions={compactReply ? copyAction : undefined}>{message.body && !generatingPlan && !rawPlanReply ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity>}
+              {activity && <ConversationMemberActivity agentName={agent?.name ?? "历史成员"} activity={activity} now={activityNow} onOpen={message.runId ? openOriginal : undefined} onStop={message.roundId === round?.id && discussing && ["running","waiting_approval"].includes(message.status) ? ()=>void control("cancel") : undefined} stopDisabled={busy || !active || !healthy || round?.status === "stopping"} completedLabel={handledTurn ? t("已处理") : planReplyRound ? "规划成员已回复" : undefined} compactHeading={compactReply ? memberHeading : undefined} compactActions={compactReply ? copyAction : undefined}>{message.body && !generatingPlan && !rawPlanReply ? <ConversationMarkdown body={message.body}/> : null}</ConversationMemberActivity>}
               {attachments}
             </>}
             {fromUser && conversation?.deliveryReceipts?.[message.id]?.length ? <ConversationDeliveryStatus

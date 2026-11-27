@@ -193,6 +193,8 @@ pub struct ConversationSnapshot {
     pub steerable_runs: HashMap<String, String>,
     pub delegations: Vec<super::store::delegation::DesignDelegation>,
     pub messages: Vec<ConversationMessage>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    handled_turns: Vec<ConversationMessage>,
     pub activity_events: Vec<super::RuntimeEventRecord>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub delivery_receipts: HashMap<String, Vec<ConversationDeliveryReceipt>>,
@@ -840,7 +842,11 @@ fn snapshot_with(connection: &Connection, project_id: &str) -> Result<Conversati
     let conversation = conversation_with(connection, project_id)?;
     sync_project_messages(connection, project_id)?;
     let messages = public_messages(connection, project_id)?;
-    let run_ids = messages.iter().filter_map(|message| message.run_id.clone()).collect::<Vec<_>>();
+    let handled_turns = member_receipts::handled_turns(connection, &conversation)?;
+    let mut activity_messages = messages.iter().chain(&handled_turns).collect::<Vec<_>>();
+    // Activity events are bounded to the newest runs across both transcript projections.
+    activity_messages.sort_by_key(|message| message.created_at);
+    let run_ids = activity_messages.into_iter().filter_map(|message| message.run_id.clone()).collect::<Vec<_>>();
     let activity_events = super::conversation_activity::events(connection, project_id, &run_ids)?;
     let rounds: Vec<ConversationRound> = rows(connection, "SELECT data_json FROM ma_conversation_rounds WHERE project_id=?1 AND json_extract(data_json,'$.conversationId')=(SELECT id FROM ma_conversations WHERE project_id=?1) ORDER BY created_at,rowid", project_id)?;
     let delivery_receipts = delivery_receipts(connection, &conversation, &messages, &rounds)?;
@@ -851,7 +857,7 @@ fn snapshot_with(connection: &Connection, project_id: &str) -> Result<Conversati
     let steerable_runs = active_steering_runs(connection, project_id, &conversation.id)?.into_iter()
         .filter(|(run, _, _)| crate::acp::conversation_steering_handle(run).is_some())
         .map(|(run, agent, _)| (agent, run)).collect();
-    Ok(ConversationSnapshot { conversation, steerable_runs, delegations, messages, activity_events, delivery_receipts, member_receipts,
+    Ok(ConversationSnapshot { conversation, steerable_runs, delegations, messages, handled_turns, activity_events, delivery_receipts, member_receipts,
         work_items: super::work_queue::records(connection, project_id)?,
         rounds,
         execution_plans: rows(connection,"SELECT p.data_json FROM ma_conversation_plans p JOIN ma_conversation_rounds r ON r.id=p.round_id JOIN ma_conversations c ON c.project_id=r.project_id WHERE p.project_id=?1 AND json_extract(r.data_json,'$.conversationId')=c.id ORDER BY p.rowid",project_id)?,
@@ -879,7 +885,9 @@ fn delivery_receipts(
     let mut statement = connection.prepare(
         "SELECT t.data_json, r.id, r.status, r.session_locator_json,
                 EXISTS(SELECT 1 FROM ma_runtime_events e WHERE e.run_id=r.id AND e.event_type='agent_activity'),
-                EXISTS(SELECT 1 FROM ma_runtime_events e WHERE e.run_id=r.id AND e.event_type='conversation_prompt_received')
+                EXISTS(SELECT 1 FROM ma_runtime_events e WHERE e.run_id=r.id AND e.event_type='conversation_prompt_received'),
+                EXISTS(SELECT 1 FROM ma_conversation_messages m WHERE m.id=t.id AND m.project_id=d.project_id
+                  AND json_extract(m.data_json,'$.runId')=r.id AND json_extract(m.data_json,'$.kind')='silent')
          FROM ma_conversation_turns t JOIN ma_conversation_rounds d ON d.id=t.round_id
          LEFT JOIN ma_runs r ON r.id=(SELECT rr.id FROM ma_runs rr WHERE rr.task_id=t.task_id ORDER BY rr.attempt DESC LIMIT 1)
          WHERE d.project_id=?1 AND json_extract(d.data_json,'$.conversationId')=?2 ORDER BY t.ordinal,t.rowid",
@@ -888,11 +896,11 @@ fn delivery_receipts(
     for row in statement.query_map(params![conversation.project_id, conversation.id], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?,
             row.get::<_, Option<String>>(2)?, row.get::<_, Option<String>>(3)?,
-            row.get::<_, bool>(4)?, row.get::<_, bool>(5)?))
+            row.get::<_, bool>(4)?, row.get::<_, bool>(5)?, row.get::<_, bool>(6)?))
     })? {
-        let (raw, run_id, phase, locator, activity, received) = row?;
+        let (raw, run_id, phase, locator, activity, received, silent) = row?;
         let turn: Turn = decode(raw)?;
-        turns.entry((turn.round_id, turn.agent_id)).or_insert((run_id, phase, locator, activity, received));
+        turns.entry((turn.round_id, turn.agent_id)).or_insert((run_id, phase, locator, activity, received, silent));
     }
     let recipients = |input: &[String], dispatch: Option<&ConversationChatDispatch>| match dispatch {
         Some(ConversationChatDispatch::Assigned { agent_id }) => vec![agent_id.clone()],
@@ -903,11 +911,12 @@ fn delivery_receipts(
         let receipts = recipients(&round.participant_agent_ids, round.chat_dispatch.as_ref()).into_iter().map(|agent_id| {
             let turn = turns.remove(&(round.id.clone(), agent_id.clone()));
             let status = match turn.as_ref() {
-                Some((_, Some(phase), locator, activity, received)) => {
+                Some((_, Some(phase), locator, activity, received, silent)) => {
                     match run_status(phase, locator.as_deref()) {
                         "running" if *activity => "running",
                         "running" if *received => "received",
                         "running" => "awaiting_receipt",
+                        "completed" if *silent => "handled",
                         "paused" | "unconfirmed" => "unconfirmed",
                         status => status,
                     }
