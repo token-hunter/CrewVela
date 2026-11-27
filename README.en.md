@@ -176,6 +176,14 @@ Source commits and SHA-256 files for each installer are listed on the [download 
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md). Sanitize public reports and follow [SECURITY.md](SECURITY.md) for security issues.
 
+### Join the Agent WeChat group
+
+Scan with WeChat to join the Chinese-language discussion on agents and CrewVela. This QR code is valid until December 4, 2026.
+
+<img src="docs/media/wechat-agent-group.jpg" alt="QR code to join the Agent WeChat group" width="360" />
+
+[Open the full-size QR code](docs/media/wechat-agent-group.jpg)
+
 ### Contact the maintainer
 
 For feedback, feature ideas, or collaboration, add me on WeChat at `weilegexinaaa`. Please include “CrewVela” in your contact request.
