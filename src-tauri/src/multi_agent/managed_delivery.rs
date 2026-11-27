@@ -340,20 +340,20 @@ pub(super) fn prepare(
     let mode = match members.len() {
         0 => bail!("全自动托管至少需要一位开发成员"),
         1 => {
-            ensure!(roles.contains("worker"), "单人托管需要一位可写的开发成员");
+            ensure!(roles.contains("worker"), "本轮缺少「开发执行」成员。单人托管需要一位可写的开发成员。");
             let goal: String = connection.query_row("SELECT goal FROM ma_projects WHERE id=?1", [&input.project_id], |r| r.get(0))?;
             ensure!(!requires_review(&input.body) && !requires_review(&goal),
-                "本轮请求或项目目标要求独立审查，请再选择一位只读审查成员");
+                "本轮请求或项目目标要求独立审查，请再选择一位「独立审查」成员。");
             ManagedTeamMode::Solo
         }
         2 => {
-            ensure!(roles.contains("worker") && roles.contains("reviewer"),
-                "双人托管需要一位开发成员负责开发和联调，另一位审查成员负责独立只读审查");
+            ensure!(roles.contains("worker"), "本轮缺少「开发执行」成员。双人托管需要一位开发成员负责开发和联调。");
+            ensure!(roles.contains("reviewer"), "本轮缺少一位「独立审查」成员。双人托管需要另一位成员负责只读审查。");
             ManagedTeamMode::Pair
         }
         _ => {
-            ensure!(roles.contains("worker") && roles.contains("reviewer"),
-                "团队托管需要至少一位可写开发成员和一位独立只读审查成员");
+            ensure!(roles.contains("worker"), "本轮缺少「开发执行」成员。团队托管需要至少一位可写的开发成员。");
+            ensure!(roles.contains("reviewer"), "本轮缺少一位「独立审查」成员。团队托管需要至少一位成员负责只读审查。");
             ManagedTeamMode::Team
         }
     };

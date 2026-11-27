@@ -37,6 +37,10 @@
 .conversation-member-menu-wrap { position: fixed; z-index: var(--z-dialog,1300); color: var(--text); font: 14px/1.35 var(--display-font); }
 .conversation-member-menu { box-sizing: border-box; max-height: var(--conversation-member-menu-height); overflow: auto; overscroll-behavior: contain; padding: 6px; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--bg-elev); box-shadow: 0 6px 18px rgb(0 0 0 / 14%); }
 .conversation-member-menu > header { padding: 2px 6px 6px; font-weight: 600; }
+.conversation-project-reply { display: grid; gap: 5px; margin: 0 0 6px; padding: 4px 6px 9px; border-bottom: 1px solid var(--border); }
+.conversation-project-reply label { display: grid; gap: 4px; font-weight: 600; }
+.conversation-project-reply select { width: 100%; min-width: 0; padding: 5px; color: var(--text); background: var(--bg-elev); border: 1px solid var(--border); border-radius: 5px; font: inherit; }
+.conversation-project-reply small { color: var(--text-dim); font-size: 12px; }
 .conversation-member-entry { display: flex; align-items: center; min-width: 0; border-radius: 6px; }
 .conversation-member-entry:hover { background: var(--bg-hover); }
 .conversation-member-entry > label { display: flex; position: relative; flex: 1; min-width: 0; align-items: center; gap: 8px; min-height: 44px; padding: 4px 6px; border-radius: 6px; }

@@ -4,12 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { PencilSimpleIcon } from "@phosphor-icons/react/dist/csr/PencilSimple";
 import { COLLABORATION_RUNTIMES } from "../runtimeTaxonomy";
 import { RUNTIME_LABELS } from "../runtimeLogos";
-import type { AgentProfile, AgentRole, MultiAgentProject, MultiAgentSnapshot } from "../types";
+import type { AgentProfile, MultiAgentProject, MultiAgentSnapshot } from "../types";
+import { COLLABORATION_ROLE_LABELS } from "../collaborationRoles";
+import { useTranslation } from "../useInterfaceLanguage";
 import { AgentAvatar } from "./AgentAvatar";
 import { CollaborationAgentEditor, type AgentDraft } from "./CollaborationAgentEditor";
 import { Modal } from "./ui/Modal";
 
-const ROLE: Record<AgentRole, string> = { orchestrator: "协调", worker: "执行", reviewer: "审查", integrator: "集成" };
 type LibraryProfile = Omit<AgentDraft, "model">;
 type LibrarySnapshot = { members: { id: string; profile: LibraryProfile; isDefault: boolean; runtimeLocked: boolean }[]; autoApply: boolean };
 type Application = { added: number; skipped: string[] };
@@ -20,6 +21,7 @@ function ImportTeamDialog({ projects, project, onSave, onClose }: {
   onSave: (sourceProjectId: string, agentIds: string[], applyToProjectId?: string) => Promise<void>;
   onClose: () => void;
 }) {
+  const t = useTranslation();
   const [sourceId, setSourceId] = useState(projects.find(item => item.id !== project?.id)?.id ?? project?.id ?? "");
   const [source, setSource] = useState<{ id: string; agents: AgentProfile[] }>();
   const [selected, setSelected] = useState<string[]>([]);
@@ -71,7 +73,7 @@ function ImportTeamDialog({ projects, project, onSave, onClose }: {
           setSelected(current => checked ? [...current, agent.id] : current.filter(id => id !== agent.id));
         }} />
         <AgentAvatar className="collab-library-avatar" avatarId={agent.avatarId} runtimeKind={agent.runtimeKind} decorative />
-        <strong>{agent.name}</strong><small>{RUNTIME_LABELS[agent.runtimeKind]} · {ROLE[agent.role]}</small>
+        <strong>{agent.name}</strong><small>{RUNTIME_LABELS[agent.runtimeKind]} · {t(COLLABORATION_ROLE_LABELS[agent.role])}</small>
       </label>)}</div>}
     {project && sourceId !== project.id && <label className="collab-agent-enabled"><input type="checkbox" checked={alsoApply} disabled={saving}
       onChange={event => setAlsoApply(event.target.checked)} />同时应用到「{project.name}」</label>}
@@ -86,6 +88,7 @@ export function CollaborationMemberLibrary({ projects, project, onProjectChanged
   project?: MultiAgentProject;
   onProjectChanged: () => void;
 }) {
+  const t = useTranslation();
   const [snapshot, setSnapshot] = useState<LibrarySnapshot>();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -127,11 +130,11 @@ export function CollaborationMemberLibrary({ projects, project, onProjectChanged
     {!snapshot && !error && <p role="status">正在读取成员库…</p>}
     {snapshot && <>
       {snapshot.members.length ? <div className="collab-library-table-wrap"><table className="collab-library-table">
-        <thead><tr><th scope="col">成员</th><th scope="col">Runtime</th><th scope="col">角色</th><th scope="col" aria-label="操作" /></tr></thead>
+        <thead><tr><th scope="col">成员</th><th scope="col">Runtime</th><th scope="col">{t("托管角色")}</th><th scope="col" aria-label="操作" /></tr></thead>
         <tbody>{snapshot.members.map(member => <tr key={member.id}>
           <td><span className="collab-library-member"><AgentAvatar className="collab-library-avatar" avatarId={member.profile.avatarId} runtimeKind={member.profile.runtimeKind} decorative />
             <strong>{member.profile.name}</strong>{!member.profile.enabled && <small>已停用</small>}</span></td>
-          <td>{RUNTIME_LABELS[member.profile.runtimeKind]}</td><td><span className="collab-tag role">{ROLE[member.profile.role]}</span></td>
+          <td>{RUNTIME_LABELS[member.profile.runtimeKind]}</td><td><span className="collab-tag role">{t(COLLABORATION_ROLE_LABELS[member.profile.role])}</span></td>
           <td><button className="btn secondary" type="button" disabled={locked} aria-label={`编辑 ${member.profile.name}`} onClick={() => setEditing(member)}><PencilSimpleIcon size={15} />编辑</button></td>
         </tr>)}</tbody>
       </table></div> : <p className="collab-library-empty">从现有项目导入成员，即可建立默认团队。</p>}

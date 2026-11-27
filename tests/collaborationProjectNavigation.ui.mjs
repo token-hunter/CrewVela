@@ -269,7 +269,7 @@ try {
   const collaborationTabs = workPanel.getByRole("tab", { name: "多智能体", exact: true });
   assert.equal(await collaborationTabs.count(), 2);
   assert.equal(await collaborationTabs.last().getAttribute("aria-selected"), "true");
-  const recipient = workPanel.getByRole("button", { name: "发给 成员 B，切回发给全体", exact: true });
+  const recipient = workPanel.getByRole("button", { name: "发给 成员 B，恢复项目默认", exact: true });
   const conversation = workPanel.getByRole("button", { name: /^切换会话：/ });
   await recipient.waitFor();
   const conversationName = await conversation.getAttribute("aria-label");
@@ -329,7 +329,7 @@ try {
   assert.equal(await planMembers.getByText("Antigravity").count(), 0);
   await agyEditor.fill("@Antigravity 记住项目验收标记。");
   await agySend.click();
-  const agyRecipient = antigravity.getByRole("button", { name: "发给 Antigravity，切回发给全体", exact: true });
+  const agyRecipient = antigravity.getByRole("button", { name: "发给 Antigravity，恢复项目默认", exact: true });
   await agyRecipient.waitFor();
   await antigravity.getByRole("button", { name: "返回辅助栏", exact: true }).click();
   await agyRecipient.waitFor();

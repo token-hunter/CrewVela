@@ -78,7 +78,7 @@ export function providerMeta(provider: ProviderConfig): ProviderMeta {
   return createDefaultProviderMeta(provider.meta ?? {});
 }
 
-/** 项目 = 一个本地目录（会话按 projectId 归属分组，参考 orca 裁剪版）。 */
+/** 项目对应一个本地目录，会话按 projectId 归属分组。 */
 export interface Project {
   id: string;
   name: string;
@@ -236,6 +236,7 @@ export type AutomationTrigger =
 // Legacy actions remain readable; new forms persist Agent identity explicitly.
 
 export type AutomationAction =
+  | { kind: "conversation_template"; templateId: "pr_review" | "issue_triage" | "release_check"; projectId: string; conversationId: string; agentId: string; body: string; creationId?: string }
   | { kind: "run_agent"; runtimeKind: AgentRuntimeKind; providerId: string | null; model: string | null; cwd: string; prompt: string }
   | { kind: "send_agent"; runtimeKind: AgentRuntimeKind; sessionId: string; body: string; projectId: string | null; agentId: string | null }
   | { kind: "broadcast_agent"; runtimeKind: AgentRuntimeKind; body: string }
@@ -244,6 +245,7 @@ export type AutomationAction =
   | { kind: "broadcast"; body: string };
 
 export interface AutomationRun {
+  topic?: { projectId: string; conversationId: string; clientMessageId: string };
   id?: string;
   origin?: string;
   retryOf?: string | null;
@@ -874,6 +876,7 @@ export interface AgentControlReceipt {
 }
 
 export interface MultiAgentSnapshot {
+  defaultReplyAgentId?: string | null;
   project: MultiAgentProject;
   agents: AgentProfile[];
   tasks: MultiAgentTask[];
@@ -1016,7 +1019,7 @@ export interface ConversationMessage {
   runId: string | null;
   agentId: string | null;
   senderType: "user" | "agent" | "system";
-  kind: "message" | "queued_message" | "reply" | "status" | "plan" | "codex_login_required";
+  kind: "message" | "queued_message" | "reply" | "status" | "plan" | "codex_login_required" | "silent";
   phase: ConversationPhase | null;
   body: string;
   attachments?: ConversationAttachment[];
@@ -1177,13 +1180,18 @@ export interface ConversationMigrationPreview {
   createdAt: number;
 }
 export interface ConversationSnapshot {
+  workItems?: import("./collaborationWorkQueue").ConversationWorkRecord[];
   steerableRuns?: Record<string, string>;
   memberModelSummaries?: Record<string, ConversationMemberModelSummary>;
   delegations?: ConversationDesignDelegation[];
   /** Safe per-run metadata; never raw reasoning or tool results. */
   activityEvents?: RuntimeEventRecord[];
+  deliveryReceipts?: Record<string, ConversationDeliveryReceipt[]>;
+  memberReceipts?: Record<string, ConversationMemberReceipt[]>;
   conversation: CollaborationConversation;
   messages: ConversationMessage[];
+  /** UI-only completion rows for silent communication turns. */
+  handledTurns?: ConversationMessage[];
   rounds: ConversationRound[];
   executionPlans: ConversationExecutionPlan[];
   retainedExecutionPlans?: ConversationExecutionPlan[];
@@ -1192,6 +1200,24 @@ export interface ConversationSnapshot {
   memberPolicies?: ConversationPolicyEntry[];
   runtimeCapabilities?: ConversationRuntimeCapability[];
   archivedTaskRules?: ConversationArchivedRule[];
+}
+export interface ConversationDeliveryReceipt {
+  messageId?: string;
+  purpose?: "question" | "handoff";
+  agentId: string;
+  runId: string | null;
+  status: "queued" | "awaiting_receipt" | "received" | "running" | "waiting_approval" | "needs_decision"
+    | "completed" | "handled" | "cancelled" | "failed" | "unconfirmed" | "not_dispatched";
+}
+export interface ConversationMemberReceipt {
+  messageId: string;
+  senderId: string | null;
+  agentId: string | null;
+  runId: string | null;
+  purpose: "status" | "question" | "handoff";
+  status: ConversationDeliveryReceipt["status"] | "inbox";
+  arguments: Record<string, unknown>;
+  error: string | null;
 }
 export interface ConversationMemberModelSummary {
   model: string | null;

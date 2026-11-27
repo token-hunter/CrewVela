@@ -54,6 +54,7 @@ impl MultiAgentStore {
         )?;
         migrate(&connection)?;
         member_library::migrate(&connection)?;
+        super::project_reply::migrate(&connection)?;
         super::conversation::migrate(&connection)?;
         delegation::migrate(&connection)?;
         connection.execute(
@@ -222,13 +223,20 @@ impl MultiAgentStore {
     }
 
     pub fn create_agent(&self, input: CreateAgentInput) -> Result<AgentProfile> {
+        self.create_agent_with_chat_models(input, None)
+    }
+
+    pub(crate) fn create_agent_with_chat_models(&self, input: CreateAgentInput,
+        chat_models: Option<&super::conversation_models::PreparedSelection>) -> Result<AgentProfile> {
         input.runtime_kind.ensure_available()?;
         if !input.runtime_kind.is_collaboration_cli() {
             return Err(anyhow!("新增协作成员仅支持 CLI 执行引擎；ZCode Desktop 仅兼容已有成员，独立 Chat 不作为新成员"));
         }
         self.check_agent_avatar(input.avatar_id.as_deref())?;
         let name = required(&input.name, "Agent 名称")?;
-        let connection = self.connection.lock().unwrap();
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let connection = &tx;
         ensure_project_exists(&connection, &input.project_id)?;
         let duplicate: bool = connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM ma_agents WHERE project_id=?1 AND lower(name)=lower(?2))",
@@ -286,11 +294,19 @@ impl MultiAgentStore {
             }),
             now,
         )?;
-        get_agent_with(&connection, &id)
+        let profile = get_agent_with(connection, &id)?;
+        if let Some(selection) = chat_models { selection.save(connection, &profile)?; }
+        tx.commit()?;
+        Ok(profile)
     }
     /// Only model fields change; unrelated profile edits and task/session identity survive.
     /// 保存成员配置，不重建成员，也不改写已有任务、运行及会话关联。
     pub fn update_agent(&self, input: UpdateAgentInput) -> Result<AgentProfile> {
+        self.update_agent_with_chat_models(input, None)
+    }
+
+    pub(crate) fn update_agent_with_chat_models(&self, input: UpdateAgentInput,
+        chat_models: Option<&super::conversation_models::PreparedSelection>) -> Result<AgentProfile> {
         self.check_agent_avatar(input.avatar_id.as_deref())?;
         let name = required(&input.name, "Agent 名称")?;
         let previous_profile = self.agent_profile(&input.agent_id)?;
@@ -334,6 +350,7 @@ impl MultiAgentStore {
             // 当前会话是投递投影，历史 run/session 数据不修改。新 Runtime 必须重新绑定。
             tx.execute("UPDATE ma_agent_sessions SET app_session_id=NULL, current_task_id=NULL,
                 current_run_id=NULL, status='idle', control_mode='auto', last_output_at=NULL WHERE agent_id=?1", [&input.agent_id])?;
+            tx.execute("DELETE FROM ma_member_model_options WHERE project_id=?1 AND agent_id=?2", params![input.project_id, input.agent_id])?;
         }
         let now = now_millis();
         tx.execute(
@@ -372,6 +389,7 @@ impl MultiAgentStore {
             now,
         )?;
         let updated = get_agent_with(&tx, &input.agent_id)?;
+        if let Some(selection) = chat_models { selection.save(&tx, &updated)?; }
         if updated.name != previous.name || updated.runtime_kind != previous.runtime_kind
             || updated.role != previous.role || updated.description != previous.description
             || updated.persona != previous.persona || updated.persona_custom != previous.persona_custom
@@ -629,6 +647,9 @@ impl MultiAgentStore {
         let task = get_task_with(&tx, &input.task_id)?;
         ensure_no_handoff(&tx, &task.project_id)?;
         let project_status = self.get_project_with(&tx, &task.project_id)?.status;
+        super::conversation::validate_template_claim(&tx, &task.id, &task.project_id, &input.agent_id)?;
+        anyhow::ensure!(!tx.query_row("SELECT EXISTS(SELECT 1 FROM ma_inactive_member_tasks WHERE task_id=?1)", [&task.id], |r| r.get::<_,bool>(0))?,
+            "来源话题已切换，不能在其他话题处理这条消息");
         let message_only = (task.id.starts_with("cli-message-")
             && matches!(project_status, ProjectStatus::Draft | ProjectStatus::Completed))
             || (super::conversation::is_conversation_task(&task.id)
@@ -1199,6 +1220,7 @@ impl MultiAgentStore {
     pub fn snapshot(&self, project_id: &str) -> Result<MultiAgentSnapshot> {
         let connection = self.connection.lock().unwrap();
         Ok(MultiAgentSnapshot {
+            default_reply_agent_id: super::project_reply::preferred_member(&connection, project_id)?,
             project: self.get_project_with(&connection, project_id)?,
             agents: list_agents_with(&connection, project_id)?,
             tasks: list_tasks_with(&connection, project_id)?,
@@ -1358,11 +1380,21 @@ impl MultiAgentStore {
             }
             runtime_leases.push(crate::runtime_preferences::acquire(agent.runtime_kind)?);
         }
+        let mut connection = self.connection.lock().unwrap();
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let message = Self::insert_collaboration_message(&tx, input, message_id)?;
+        tx.commit()?;
+        Ok(message)
+    }
+
+    pub(super) fn insert_collaboration_message(
+        tx: &Connection,
+        input: SendCollaborationMessageInput,
+        message_id: &str,
+    ) -> Result<CollaborationMessage> {
         let message_id = required(message_id, "消息 ID")?;
         let body = required(&input.body, "消息内容")?;
         let sender_type = required(&input.sender_type, "发送者类型")?;
-        let mut connection = self.connection.lock().unwrap();
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_project_exists(&tx, &input.project_id)?;
         if let Some(task_id) = input.task_id.as_deref() {
             ensure_task_in_project(&tx, task_id, &input.project_id)?;
@@ -1430,7 +1462,6 @@ impl MultiAgentStore {
             }),
             message.created_at,
         )?;
-        tx.commit()?;
         Ok(message)
     }
 
@@ -1444,19 +1475,23 @@ impl MultiAgentStore {
         let connection = self.connection.lock().unwrap();
         ensure_task_in_project(&connection, task_id, project_id)?;
         ensure_agent_in_project(&connection, agent_id, project_id)?;
+        let topic = super::member_messages::topic_for_task(&connection, project_id, task_id)?;
         let mut statement = connection.prepare(
             "SELECT id, project_id, task_id, sender_type, sender_id, target_agent_id, body, created_at
              FROM ma_messages
              WHERE project_id = ?1
-               AND (target_agent_id = ?3 OR (
+               AND CASE WHEN EXISTS(SELECT 1 FROM ma_member_messages x WHERE x.message_id=ma_messages.id)
+                   THEN EXISTS(SELECT 1 FROM ma_member_message_readers v
+                      WHERE v.message_id=ma_messages.id AND v.agent_id=?3 AND v.topic_id IS ?5)
+                   ELSE (target_agent_id = ?3 OR (
                     (task_id IS NULL OR task_id = ?2)
                     AND (target_agent_id IS NULL OR sender_id = ?3)
-               ))
+               )) END
              ORDER BY created_at DESC LIMIT ?4",
         )?;
         let mut items = statement
             .query_map(
-                params![project_id, task_id, agent_id, limit.clamp(1, 200)],
+                params![project_id, task_id, agent_id, limit.clamp(1, 200), topic],
                 |row| collaboration_message_from_row(row),
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1711,6 +1746,9 @@ impl MultiAgentStore {
         if let Some(agent) = agent_id {
             ensure_agent_in_project(&connection, agent, &input.project_id)?;
         }
+        let task = connection.query_row("SELECT task_id FROM ma_runs WHERE project_id=?1 AND id=?2 AND agent_id=?3",
+            params![input.project_id,input.current_run_id,agent_id], |row| row.get::<_,String>(0)).optional()?;
+        let topic = task.as_deref().map(|id| super::member_messages::topic_for_task(&connection, &input.project_id, id)).transpose()?.flatten();
         let query = input.query.trim();
         let pattern = if query.is_empty() {
             "%".to_string()
@@ -1729,6 +1767,9 @@ impl MultiAgentStore {
              WHERE project_id = ?1
                AND (?2 IS NULL OR namespace = ?2)
                AND (verified = 1 OR source_run_id = ?3)
+               AND (?6 IS NULL OR NOT EXISTS(SELECT 1 FROM ma_member_messages x WHERE ma_memory_entries.source_task_id='cli-message-'||x.message_id)
+                   OR EXISTS(SELECT 1 FROM ma_member_message_readers v WHERE ma_memory_entries.source_task_id='cli-message-'||v.message_id
+                         AND v.agent_id=?6 AND v.topic_id IS ?7))
                AND (?6 IS NULL OR source_task_id IS NULL OR substr(source_task_id, 1, 12) != 'cli-message-' OR EXISTS (
                    SELECT 1 FROM ma_tasks private_task
                    WHERE private_task.id = ma_memory_entries.source_task_id
@@ -1748,6 +1789,7 @@ impl MultiAgentStore {
                     pattern,
                     input.limit.clamp(1, 100),
                     agent_id,
+                    topic,
                 ],
                 memory_from_row,
             )?
@@ -1814,6 +1856,7 @@ impl MultiAgentStore {
         let connection = self.connection.lock().unwrap();
         let (agent_id, current_task_id) = scope.map(|(agent, task)| (Some(agent), Some(task)))
             .unwrap_or((None, None));
+        let topic = current_task_id.map(|task| super::member_messages::topic_for_task(&connection, &input.project_id, task)).transpose()?.flatten();
         if let Some((agent, task)) = scope {
             ensure_agent_in_project(&connection, agent, &input.project_id)?;
             ensure_task_in_project(&connection, task, &input.project_id)?;
@@ -1839,13 +1882,17 @@ impl MultiAgentStore {
                 SELECT 1 FROM ma_tasks private_task
                 WHERE private_task.id = d.task_id AND private_task.project_id = d.project_id
                   AND private_task.assignee_agent_id = ?7
-            )) AND (d.source_type != 'conversation' OR EXISTS (
+            )) AND (NOT EXISTS(SELECT 1 FROM ma_member_messages x WHERE d.task_id='cli-message-'||x.message_id)
+                  OR EXISTS(SELECT 1 FROM ma_member_message_readers v WHERE d.task_id='cli-message-'||v.message_id AND v.agent_id=?7 AND v.topic_id IS ?9))
+            AND (d.source_type != 'conversation' OR EXISTS (
                 SELECT 1 FROM ma_messages message
                 WHERE message.id = d.source_id AND message.project_id = d.project_id
-                  AND (message.target_agent_id = ?7 OR (
+                  AND CASE WHEN EXISTS(SELECT 1 FROM ma_member_messages x WHERE x.message_id=message.id)
+                    THEN EXISTS(SELECT 1 FROM ma_member_message_readers v WHERE v.message_id=message.id AND v.agent_id=?7 AND v.topic_id IS ?9)
+                    ELSE (message.target_agent_id = ?7 OR (
                     (message.task_id IS NULL OR message.task_id = ?8)
                     AND (message.target_agent_id IS NULL OR message.sender_id = ?7)
-                  ))
+                  )) END
             ))
         ))";
         if let Some(fts_query) = build_knowledge_fts_query(query) {
@@ -1869,7 +1916,7 @@ impl MultiAgentStore {
             let mut statement = connection.prepare(&sql)?;
             let results = statement
                 .query_map(
-                    params![fts_query, input.project_id, source_filter, task_id, limit, input.offset, agent_id, current_task_id],
+                    params![fts_query, input.project_id, source_filter, task_id, limit, input.offset, agent_id, current_task_id, topic],
                     knowledge_search_result_from_row,
                 )?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1897,7 +1944,7 @@ impl MultiAgentStore {
         let mut statement = connection.prepare(&sql)?;
         let results = statement
             .query_map(
-                params![input.project_id, pattern, source_filter, task_id, limit, input.offset, agent_id, current_task_id],
+                params![input.project_id, pattern, source_filter, task_id, limit, input.offset, agent_id, current_task_id, topic],
                 knowledge_search_result_from_row,
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -2352,6 +2399,7 @@ impl MultiAgentStore {
              JOIN ma_agents a ON a.id = t.assignee_agent_id
              WHERE t.project_id = ?1 AND t.status IN ('ready','changes_requested') AND a.enabled = 1
                AND NOT EXISTS (SELECT 1 FROM ma_conversation_turns ct WHERE ct.task_id=t.id)
+               AND NOT EXISTS (SELECT 1 FROM ma_inactive_member_tasks x WHERE x.task_id=t.id)
                AND NOT EXISTS (
                    SELECT 1 FROM ma_runs message_run WHERE message_run.agent_id = a.id
                      AND message_run.task_id LIKE 'cli-message-%'

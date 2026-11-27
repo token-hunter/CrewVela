@@ -8,6 +8,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use super::store::delegation::{is_design_task, DesignDelivery, RequestDesign};
+use super::member_messages::{MemberSend, Handoff, Purpose};
 
 use super::{
     AgentRuntimeKind, AppendRuntimeEventInput, HeartbeatRunInput, MultiAgentStore, PublishArtifactInput,
@@ -186,12 +187,9 @@ enum CollaborationCommand {
     #[serde(rename = "task.read")]
     TaskRead,
     #[serde(rename = "thread.read")]
-    ThreadRead { limit: Option<u32> },
+    ThreadRead { limit: Option<u32>, message_id: Option<String>, offset: Option<usize>, expected_run_id: Option<String> },
     #[serde(rename = "message.send")]
-    MessageSend {
-        target_agent_id: Option<String>,
-        body: String,
-    },
+    MessageSend(MemberCommand),
     #[serde(rename = "review.submit")]
     ReviewSubmit {
         target_task_id: String,
@@ -240,6 +238,13 @@ enum CollaborationCommand {
         event_type: String,
         payload: Option<serde_json::Value>,
     },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemberCommand {
+    target_agent_id: Option<String>, body: String, purpose: Option<Purpose>, handoff: Option<Handoff>,
+    request_id: Option<String>, expected_run_id: Option<String>,
 }
 
 fn handle_connection(
@@ -374,7 +379,12 @@ fn dispatch(
             }
             Ok(result)
         }
-        CollaborationCommand::ThreadRead { limit } => {
+        CollaborationCommand::ThreadRead { limit, message_id, offset, expected_run_id } => {
+            anyhow::ensure!(expected_run_id.as_deref().is_none_or(|id| id == scope.run_id), "当前任务 Run 已切换");
+            if let Some(id) = message_id {
+                return store.conversation_message_excerpt(&scope.project_id, &scope.task_id, &id, offset.unwrap_or(0));
+            }
+            anyhow::ensure!(offset.is_none(),"分页读取需要 messageId");
             Ok(serde_json::to_value(store.scoped_messages(
                 &scope.project_id,
                 &scope.task_id,
@@ -382,10 +392,22 @@ fn dispatch(
                 limit.unwrap_or(100),
             )?)?)
         }
-        CollaborationCommand::MessageSend {
+        CollaborationCommand::MessageSend(MemberCommand {
             target_agent_id,
             body,
-        } => Ok(serde_json::to_value(store.send_collaboration_message(
+            purpose, handoff, request_id, expected_run_id,
+        }) => {
+            anyhow::ensure!(expected_run_id.as_deref().is_none_or(|id| id == scope.run_id), "来源 Run 已切换，请在原任务中重新发送");
+            let legacy = purpose.is_none() && expected_run_id.is_some();
+            if purpose.is_some() || legacy {
+                return store.send_member_message(&scope.project_id, &scope.task_id, &scope.run_id, &scope.agent_id,
+                    MemberSend { body, target_agent_id, purpose:purpose.or(Some(Purpose::Question)), handoff, request_id }, legacy);
+            }
+            anyhow::ensure!(handoff.is_none() && request_id.is_none(), "交接和请求 ID 需要明确的消息目的");
+            if let Some(result)=store.legacy_topic_inbox(&scope.project_id,&scope.task_id,&scope.run_id,&scope.agent_id,target_agent_id.clone(),&body)? {
+                return Ok(serde_json::to_value(result)?);
+            }
+            Ok(serde_json::to_value(store.send_collaboration_message(
             SendCollaborationMessageInput {
                 project_id: scope.project_id.clone(),
                 task_id: Some(scope.task_id.clone()),
@@ -394,7 +416,8 @@ fn dispatch(
                 target_agent_id,
                 body,
             },
-        )?)?),
+        )?)?)
+        }
         CollaborationCommand::ReviewSubmit {
             target_task_id,
             verdict,
@@ -428,12 +451,13 @@ fn dispatch(
         }
         CollaborationCommand::ArtifactInspect { artifact_id } => {
             let snapshot = store.snapshot(&scope.project_id)?;
+            let shared = store.shared_evidence(&scope.project_id, &scope.task_id, &scope.agent_id, &artifact_id)?;
             let artifact = snapshot
                 .artifacts
                 .into_iter()
                 .find(|artifact| {
                     artifact.id == artifact_id
-                        && (artifact.task_id == scope.task_id
+                        && (shared || artifact.task_id == scope.task_id
                             || snapshot.dependencies.iter().any(|dependency| {
                                 dependency.task_id == scope.task_id
                                     && dependency.depends_on_task_id == artifact.task_id
@@ -665,15 +689,20 @@ fn collaboration_tools() -> Vec<serde_json::Value> {
         ),
         mcp_tool(
             "cc_thread_read",
-            "读取当前任务可见的协作消息",
-            serde_json::json!({"limit": {"type": "integer", "minimum": 1, "maximum": 200}}),
+            "读取当前任务收件箱。提供 messageId 可按 Unicode 字符 offset 分页回读原话题的公开消息，下一页使用 nextOffset。",
+            serde_json::json!({"limit": {"type": "integer", "minimum": 1, "maximum": 200},"messageId":{"type":"string"},"offset":{"type":"integer","minimum":0}}),
         ),
         mcp_tool(
             "cc_message_send",
-            "向项目或指定 Agent 发送持久化消息",
+            "状态更新只进入收件箱。具体提问、交接只唤醒 targetAgentId；交接正文写目标，另附待办、验收条件和已有证据产物 ID。相同 requestId 重试只登记一次。",
             serde_json::json!({
                 "body": {"type": "string"},
-                "targetAgentId": {"type": ["string", "null"]}
+                "targetAgentId": {"type": ["string", "null"]},
+                "purpose":{"type":"string","enum":["status","question","handoff"]},
+                "requestId":{"type":"string","format":"uuid"},
+                "handoff":{"type":"object","additionalProperties":false,"required":["todos","acceptance","artifactIds"],
+                    "properties":{"todos":{"type":"array","items":{"type":"string"}},"acceptance":{"type":"array","items":{"type":"string"}},
+                        "artifactIds":{"type":"array","items":{"type":"string"}}}}
             }),
         ),
         mcp_tool(
@@ -808,25 +837,23 @@ fn collaboration_command_from_tool(
         "cc_design_delegate" => CollaborationCommand::DesignDelegate { input: serde_json::from_value(arguments.clone())? },
         "cc_design_submit" => CollaborationCommand::DesignSubmit { input: serde_json::from_value(arguments.clone())? },
         "cc_task_read" => CollaborationCommand::TaskRead,
-        "cc_thread_read" => CollaborationCommand::ThreadRead {
-            limit: arguments
-                .get("limit")
-                .and_then(serde_json::Value::as_u64)
-                .map(|value| value as u32),
-        },
+        "cc_thread_read" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all="camelCase",deny_unknown_fields)]
+            struct ReadArgs { limit:Option<u32>, message_id:Option<String>, offset:Option<usize> }
+            let a: ReadArgs=serde_json::from_value(arguments.clone())?;
+            CollaborationCommand::ThreadRead {limit:a.limit,message_id:a.message_id,offset:a.offset,expected_run_id:None}
+        }
         "cc_message_send" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct MessageArgs {
-                body: String,
-                target_agent_id: Option<String>,
-            }
-            let message: MessageArgs = serde_json::from_value(arguments.clone())
-                .context("发送参数无效，请使用 body 和可选的 targetAgentId")?;
-            CollaborationCommand::MessageSend {
+            let message: MemberSend = serde_json::from_value(arguments.clone()).context("成员消息参数无效")?;
+            CollaborationCommand::MessageSend(MemberCommand {
                 target_agent_id: message.target_agent_id,
                 body: message.body,
-            }
+                purpose: message.purpose,
+                handoff: message.handoff,
+                request_id: message.request_id,
+                expected_run_id: None,
+            })
         }
         "cc_review_submit" => CollaborationCommand::ReviewSubmit {
             target_task_id: string("targetTaskId")?,
@@ -1023,6 +1050,10 @@ fn write_json_response(
     Ok(())
 }
 
+#[cfg(test)]
+#[path="member_message_tests.rs"]
+mod member_message_tests;
+
 fn write_empty_response(stream: &mut TcpStream, status: u16) -> Result<()> {
     let reason = if status == 202 { "Accepted" } else { "OK" };
     write!(
@@ -1042,7 +1073,7 @@ mod tests {
 
     use super::{
         collaboration_command_from_tool, dispatch, find_bytes, handle_connection,
-        handle_mcp_request, CollaborationCommand, RunScope,
+        handle_mcp_request, CollaborationCommand, MemberCommand, RunScope,
     };
     use crate::multi_agent::{
         AgentRole, AgentRuntimeKind, ClaimTaskInput, CreateAgentInput, CreateProjectInput,
@@ -1384,7 +1415,7 @@ mod tests {
         }
         for public in [json!({"body":"public"}), json!({"body":"public","targetAgentId":null})] {
             assert!(matches!(collaboration_command_from_tool("cc_message_send", &public).unwrap(),
-                CollaborationCommand::MessageSend { target_agent_id: None, .. }));
+                CollaborationCommand::MessageSend(MemberCommand { target_agent_id: None, .. })));
         }
     }
 

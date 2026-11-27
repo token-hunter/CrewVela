@@ -1,8 +1,38 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { CaretDown, ChatCircleText, Check, DotsThree, PencilSimple } from "@phosphor-icons/react";
+import { CaretDown, ChatCircleText, Check, DotsThree, PencilSimple, Plus } from "@phosphor-icons/react";
 import type { ConversationHistoryEntry } from "../types";
 import { conversationTitle } from "./ConversationHistoryDialog";
+import { useTranslation } from "../useInterfaceLanguage";
+
+export function ConversationTopicStrip({ projectId, currentId, currentTitle, busy, fullWidth, revision, onSwitch, onCreate }: {
+  projectId: string; currentId: string; currentTitle: string; busy: boolean; fullWidth: boolean;
+  revision: number;
+  onSwitch: (id: string) => Promise<boolean>; onCreate: () => Promise<void>;
+}) {
+  const t = useTranslation();
+  const [entries, setEntries] = useState<ConversationHistoryEntry[]>([]);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let current = true;
+    invoke<ConversationHistoryEntry[]>("ma_conversation_history", { projectId }).then(rows => {
+      if (current) { setEntries(rows); setError(""); }
+    }, reason => { if (current) setError(String(reason)); });
+    return () => { current = false; };
+  }, [projectId, currentId, currentTitle, revision, attempt]);
+  const recent = entries.filter(entry => !entry.legacy && entry.id !== currentId).slice(0, 4);
+  if (!fullWidth && !recent.length && !error) return null;
+  return <nav className="conversation-topic-strip" aria-label={t("最近话题")}>
+    <div>{[{ id: currentId, title: currentTitle }, ...recent.map(entry => ({ id: entry.id, title: conversationTitle(entry.title, entry.preview) }))].map(entry =>
+      <button type="button" key={entry.id} aria-current={currentId === entry.id ? "page" : undefined}
+        disabled={busy && entry.id !== currentId} title={entry.title} onClick={() => { if (entry.id !== currentId) void onSwitch(entry.id); }}>
+        <span>{entry.title === "空白会话" ? t("空白会话") : entry.title}</span>
+      </button>)}</div>
+    <button type="button" title={t("新建话题")} aria-label={t("新建话题")} disabled={busy} onClick={() => void onCreate()}><Plus size={15} /></button>
+    {error && <button type="button" title={error} onClick={() => setAttempt(value => value + 1)}>{t("重新读取话题")}</button>}
+  </nav>;
+}
 
 interface Props {
   projectId: string;

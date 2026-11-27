@@ -1174,6 +1174,7 @@ impl AgentTerminalHost {
                 );
             }
         }
+        super::conversation_metrics::record_cli_capture(&request.store, &request.run_id, kind, &runtime_files.output_path);
         let output = outcome?;
         if let Some(log) = present_runtime_log(kind, &output.output, "stdout") {
             let _ = request
@@ -3571,6 +3572,10 @@ fn scoped_design_tool(request: &RuntimeRequest) -> Result<Option<&'static str>> 
     })
 }
 
+const MEMBER_MCP_GUIDANCE: &str = "\n需要单独联系成员时，用 cc_message_send 指定 purpose。status 只留状态、不启动收件人；需要答复用 question，明确交接用 handoff，并指定 targetAgentId。交接附 todos、acceptance 和现有 artifactIds。用 cc_thread_read 读取任务收件箱，或指定 messageId 和 offset 查阅本话题的公开引用。";
+const MEMBER_CLI_GUIDANCE: &str = "\n成员通信可在 send --to 中显式指定 --purpose status（只入收件箱）、question（定向提问）或 handoff（明确交接）。交接通过 --todo、--accept、--artifact 附上待办、验收条件与已有产物 ID，每种参数可重复。可用 thread --message <消息ID> --offset <字符位置> 回读本话题的公开引用。";
+const MEMBER_RECEIPT_GUIDANCE: &str = "\nCrewVela 根据本机回执在原消息下显示成员通信状态，技术详情可在活动里查看。正文不要复述工具名、消息 ID、参数、原始 stage 或测试载荷。只有已成功的通信且没有需要告知用户的正文时，直接返回 <crewvela-turn>{\"action\":\"silent\"}</crewvela-turn>，不附文字。用户明确询问结果时，用简短自然语言说明实际状态。失败、需要用户确认或有实质答复时照常说明；排队不代表对方已收到。";
+
 fn execute_preferred_acp(
     kind: ManagedAcpKind,
     locator_keys: &[&str],
@@ -3584,6 +3589,7 @@ fn execute_preferred_acp(
         if policy.uses_native_capabilities() { None } else { Some(policy) }
     } else { None };
     let native_discussion = discussion && research_policy.is_none();
+    let member_mcp = native_discussion && !request.managed && kind != ManagedAcpKind::Antigravity;
     if research_policy.is_some() && kind != ManagedAcpKind::ClaudeCode {
         bail!("{} 暂不能强制执行完整群聊工具白名单与读取边界；请使用已适配的 Claude 或 Pi。未启动模型，也未降级为 YOLO；明确授权的工程任务仍可使用此 Runtime", request.agent.runtime_kind.as_str());
     }
@@ -3591,6 +3597,8 @@ fn execute_preferred_acp(
         && (request.launch.mode().is_some() || request_requires_session_cli(request)?) {
         return Ok(None);
     }
+    let mut topic_binding = None;
+    let mut topic_continuation = None;
     let conversation_config: Option<crate::acp::ConversationConfigurator> = if native_discussion {
         let store = request.store.clone();
         let project = request.project.id.clone();
@@ -3599,6 +3607,21 @@ fn execute_preferred_acp(
         let steering_run = (kind == ManagedAcpKind::Codex && request.store.is_plain_chat_turn(&request.task.id)?)
             .then(|| request.run_id.clone());
         let selection = store.discussion_model_selection(&request.task.id, &agent, runtime)?;
+        if store.is_plain_chat_turn(&request.task.id)? {
+            let binding = serde_json::json!({
+                "version": 1,
+                "runtime": runtime,
+                "selection": selection,
+                "permissionProfile": request.agent.permission_profile,
+                "cwd": request.cwd,
+            });
+            topic_continuation = store.topic_session(&request.task.id, &project, &agent, &binding)?;
+            topic_binding = Some(binding);
+        }
+        let task = request.task.id.clone();
+        let continuation = topic_continuation.as_ref().and_then(|(record, since, prior)| {
+            record["sessionId"].as_str().map(|id| (id.to_owned(), *since, prior.clone()))
+        });
         Some(Box::new(move |connection| {
             let observe = |connection: &crate::acp::AcpConnection| {
                 if let Err(error) = store.observe_conversation_models(&project, &agent, runtime, connection.config_options()) {
@@ -3612,11 +3635,24 @@ fn execute_preferred_acp(
                 result.context("本轮模型与推理设置未获确认，请检查成员设置后重新发送")?;
             }
             if let Some(run_id) = steering_run { connection.register_conversation_steering(run_id); }
-            Ok(())
+            match continuation {
+                Some((session, since, previous)) if connection.resumed() => {
+                    anyhow::ensure!(connection.session_id() == session.as_str(), "原生运行时返回了不同的话题会话");
+                    let mut prompt = store.topic_delta_prompt(&task, since, &previous)?;
+                    if member_mcp {
+                        prompt.push_str(MEMBER_MCP_GUIDANCE);
+                        prompt.push_str(MEMBER_RECEIPT_GUIDANCE);
+                    }
+                    Ok(Some(prompt))
+                }
+                _ => Ok(None),
+            }
         }))
     } else { None };
     let images = request.store.conversation_task_images(&request.task.id)?;
-    let resume_session_id = if kind == ManagedAcpKind::Antigravity {
+    let resume_session_id = if let Some((locator, _, _)) = &topic_continuation {
+        locator["sessionId"].as_str().filter(|value| !value.trim().is_empty()).map(str::to_owned)
+    } else if kind == ManagedAcpKind::Antigravity && topic_binding.is_none() {
         request.store.antigravity_conversation_locator(&request.task.id, &request.project.id, &request.agent.id)?
             .map(|locator| {
                 let cwd = locator["cwd"].as_str().context("Antigravity 原生会话缺少工作目录")?;
@@ -3645,9 +3681,7 @@ fn execute_preferred_acp(
         ManagedAcpMode::FullAccess => "协作 YOLO（适配器协商）",
     } };
     if kind == ManagedAcpKind::DeepSeekHarness && resume_session_id.is_some() {
-        let locator = request
-            .resume_locator
-            .as_ref()
+        let locator = topic_continuation.as_ref().map(|(locator, _, _)| locator).or(request.resume_locator.as_ref())
             .context("缺少 DeepSeek Harness 恢复信息")?;
         validate_deepseek_resume(
             locator,
@@ -3748,8 +3782,16 @@ fn execute_preferred_acp(
     let mcp_url = if kind == ManagedAcpKind::Antigravity || research_policy.as_ref().is_some_and(|p| !p.allows_tools()) { String::new() } else { format!("{}/mcp", request.collaboration.endpoint) };
     let event_store = request.store.clone();
     let event_run = request.run_id.clone();
+    let mut receipt_saved = false;
     let update_handler: Option<Box<dyn FnMut(&serde_json::Value) + Send>> = if discussion { Some(Box::new(move |update| {
-        if update.get("sessionUpdate").and_then(serde_json::Value::as_str) == Some("agent_message_chunk") {
+        if update["sessionUpdate"] == "user_message_chunk" && !receipt_saved {
+            match event_store.append_runtime_event(super::AppendRuntimeEventInput {
+                run_id: event_run.clone(), event_type: "conversation_prompt_received".into(), payload: serde_json::json!({}),
+            }) {
+                Ok(_) => receipt_saved = true,
+                Err(error) => eprintln!("[crewvela] 群聊投递回执保存失败：{error:#}"),
+            }
+        } else if update.get("sessionUpdate").and_then(serde_json::Value::as_str) == Some("agent_message_chunk") {
             if let Some(text) = update.pointer("/content/text").and_then(serde_json::Value::as_str) {
                 if let Err(error) = event_store.append_runtime_event(super::AppendRuntimeEventInput {run_id:event_run.clone(),event_type:"assistant_delta".into(),payload:serde_json::json!({"text":text})}) {
                     eprintln!("[crewvela] 公共讨论回复持久化失败：{error:#}");
@@ -3790,12 +3832,17 @@ fn execute_preferred_acp(
               opened: Box::new(move |id| store.bind_codex_thread(&run, id, storage, &cwd).map(|_| ())),
           }
       });
+      let mut prompt = render_task_prompt(request);
+      if member_mcp {
+          prompt.push_str(MEMBER_MCP_GUIDANCE);
+          if request.store.is_plain_chat_turn(&request.task.id)? { prompt.push_str(MEMBER_RECEIPT_GUIDANCE); }
+      }
       execute_managed_acp(
         kind,
         &session.id,
         &request.cwd.display().to_string(),
         resume_session_id.as_deref(),
-        &render_task_prompt(request),
+        &prompt,
         &mcp_url,
         &request.collaboration.token,
         mode,
@@ -3855,6 +3902,7 @@ fn execute_preferred_acp(
                     "agentVersion": result.agent_version,
                     "permissionMode": if kind == ManagedAcpKind::DeepSeekHarness { Some(deepseek_policy) } else { None },
                     "permissionProfile": request.agent.permission_profile,
+                    "topicBinding": topic_binding,
                 }) },
             }))
         }
@@ -4338,6 +4386,13 @@ fn claude_agent_mcp_config(
 }
 
 fn configure_collaboration_mcp(command: &mut Command, request: &RuntimeRequest) -> Result<()> {
+    if !request.managed
+        && (!super::conversation::is_conversation_task(&request.task.id) || native_conversation(request)?)
+    {
+        crate::messaging::configure_member_cli(
+            command, &request.collaboration.endpoint, &request.collaboration.token, &request.run_id,
+        );
+    }
     if super::conversation::is_conversation_task(&request.task.id) { return Ok(()); }
     let mcp_url = format!("{}/mcp", request.collaboration.endpoint);
     match request.agent.runtime_kind {
@@ -4902,8 +4957,26 @@ impl AgentRuntimeAdapter for PiAdapter {
     }
     fn execute(&self, request: &RuntimeRequest, cancelled: &AtomicBool) -> Result<RuntimeResult> {
         if request.managed && !request.managed_planner() { return managed_pi::execute(request, cancelled); }
+        let native_chat = native_conversation(request)?;
+        let native_selection = native_chat.then(|| request.store.discussion_model_selection(&request.task.id, &request.agent.id, self.kind())).transpose()?;
+        let topic_binding = if native_chat && request.store.is_plain_chat_turn(&request.task.id)? {
+            Some(serde_json::json!({
+                "version": 1, "runtime": self.kind(), "selection": native_selection,
+                "permissionProfile": request.agent.permission_profile, "cwd": request.cwd,
+            }))
+        } else { None };
+        let continuation = match &topic_binding {
+            Some(binding) => request.store.topic_session(&request.task.id, &request.project.id, &request.agent.id, binding)?,
+            None => None,
+        };
+        let previous = continuation.and_then(|(locator, since, message)| {
+            let path = PathBuf::from(locator["sessionPath"].as_str()?);
+            let id = managed_pi::session_identity(&path, &request.cwd).ok()?;
+            (locator["sessionId"].as_str() == Some(id.as_str())).then_some((path, since, message))
+        });
         let session = locator_string(request.resume_locator.as_ref(), &["sessionPath"])
             .map(PathBuf::from)
+            .or_else(|| previous.as_ref().map(|(path, _, _)| path.clone()))
             .unwrap_or(
                 crate::providers::config_dir()?
                     .join("multi-agent-sessions")
@@ -4916,8 +4989,7 @@ impl AgentRuntimeAdapter for PiAdapter {
             std::fs::File::create(&session)?;
         }
         let mut command = runtime_command(self.kind())?;
-        if native_conversation(request)? {
-            let selection = request.store.discussion_model_selection(&request.task.id, &request.agent.id, self.kind())?;
+        if let Some(selection) = native_selection {
             if selection.is_custom() {
                 let options = crate::native_pi_sessions::conversation_config_options(
                     &request.cwd.display().to_string(), selection.model.as_deref(), selection.reasoning.as_deref())?;
@@ -4926,8 +4998,23 @@ impl AgentRuntimeAdapter for PiAdapter {
                 if let Some(thinking) = selection.reasoning.as_deref() { command.args(["--thinking", thinking]); }
             }
             command.args(["--print", "--mode", "json", "--session"]).arg(&session);
+            configure_collaboration_mcp(&mut command, request)?;
             request.log_launch("原生 CLI 配置", "Pi CLI")?;
-            return execute_command(self.kind(), command, Some(render_task_prompt(request)), request, cancelled);
+            let mut prompt = match previous {
+                Some((_, since, message)) => request.store.topic_delta_prompt(&request.task.id, since, &message)?,
+                None => render_task_prompt(request),
+            };
+            if !request.managed {
+                prompt.push_str(MEMBER_CLI_GUIDANCE);
+                if request.store.is_plain_chat_turn(&request.task.id)? { prompt.push_str(MEMBER_RECEIPT_GUIDANCE); }
+            }
+            let mut result = execute_command(self.kind(), command, Some(prompt), request, cancelled)?;
+            if let (Some(binding), Ok(id), Some(locator)) = (topic_binding, managed_pi::session_identity(&session, &request.cwd), result.session_locator.as_object_mut()) {
+                locator.insert("topicBinding".into(), binding);
+                locator.insert("sessionPath".into(), serde_json::json!(session));
+                locator.insert("sessionId".into(), id.into());
+            }
+            return Ok(result);
         }
         if super::conversation::is_conversation_task(&request.task.id) {
             let mut version_command = runtime_command(self.kind())?;
@@ -6111,7 +6198,7 @@ fn render_task_prompt(request: &RuntimeRequest) -> String {
     } else { format!(
         "{}\n\n{}{}{}",
         request.collaboration.prompt_contract(),
-        if request.managed { String::new() } else { session_cli_prompt(&request.project.id) },
+        if request.managed { String::new() } else { format!("{}{MEMBER_CLI_GUIDANCE}", session_cli_prompt(&request.project.id)) },
         delegation_contract,
         design_deliveries,
     ) };

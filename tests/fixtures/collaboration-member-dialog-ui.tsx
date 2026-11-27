@@ -42,6 +42,14 @@ if (fixtureState === "library") {
   snapshot.agents = [];
 }
 const library: { members: any[]; autoApply: boolean } = { members: [], autoApply: true };
+const defaultModels = { model: null, reasoning: null };
+const modelSelections = new Map<string, { model: string | null; reasoning: string | null }>();
+function modelOptions(runtime: string, selection: { model: string | null; reasoning: string | null }) {
+  const supported = runtime === "claude_code";
+  return { supported, observed: true, selection,
+    model: supported ? [{ value: "quick", label: "Fixture Quick" }, { value: "review", label: "Fixture Review" }] : [],
+    reasoning: !supported ? [] : selection.model === "review" ? [{ value: "high", label: "High" }] : [{ value: "low", label: "Low" }] };
+}
 function applyFixtureTeam(projectId: string) {
   const target = snapshots.get(projectId);
   const skipped: string[] = [];
@@ -64,6 +72,11 @@ const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate:
   if (command === "plugin:event|listen") return 1;
   if (command === "plugin:event|unlisten") return;
   if (command === "get_runtime_preferences") return { disabledRuntimes: [] };
+  if (command === "ma_conversation_draft_model_options") return modelOptions(args.runtimeKind, { ...defaultModels, model: args.model });
+  if (command === "ma_conversation_member_models") {
+    const agent = snapshot.agents.find((item: any) => item.id === args.agentId);
+    return modelOptions(agent?.runtimeKind, modelSelections.get(args.agentId) ?? defaultModels);
+  }
   if (command === "ma_conversation_snapshot") { if (policyMock.failLoad) throw Error("隔离测试：权限读取失败"); return structuredClone(policySnapshot()); }
   if (command === "ma_conversation_policy_set") {
     policyMock.calls.push(structuredClone(args.input));
@@ -159,8 +172,10 @@ const projectMock = { creates: [] as any[], agentSaves: [] as any[], holdCreate:
     projectMock.agentSaves.push(structuredClone(args.input));
     if (failNext) { failNext = false; throw Error("回归测试：保存失败"); }
     const { agentId, ...draft } = args.input;
+    const id = agentId ?? `created-${++saves}`;
     if (agentId) snapshot.agents = snapshot.agents.map((a: any) => a.id === agentId ? { ...a, ...draft } : a);
-    else snapshot.agents.push({ ...draft, id: `created-${++saves}`, createdAt: 1, updatedAt: 1, capabilities: [] });
+    else snapshot.agents.push({ ...draft, id, createdAt: 1, updatedAt: 1, capabilities: [] });
+    if (args.chatModels) modelSelections.set(id, structuredClone(args.chatModels));
     report(`保存成功：${draft.name}`);
     return;
   }

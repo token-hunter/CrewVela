@@ -627,6 +627,7 @@ pub struct AgentInstruction {
 #[serde(rename_all = "camelCase")]
 pub struct MultiAgentSnapshot {
     pub project: MultiAgentProject,
+    pub default_reply_agent_id: Option<String>,
     pub agents: Vec<AgentProfile>,
     pub tasks: Vec<MultiAgentTask>,
     pub runs: Vec<AgentRun>,

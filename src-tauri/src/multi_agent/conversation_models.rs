@@ -111,7 +111,62 @@ fn saved(conn: &Connection, project: &str, agent: &str, runtime: AgentRuntimeKin
 fn response(runtime: AgentRuntimeKind, saved: Option<(Vec<Value>, Selection)>) -> MemberOptions {
     let observed = saved.is_some();
     let (catalog, selection) = saved.unwrap_or_default();
-    MemberOptions { supported:runtime == AgentRuntimeKind::Pi || acp_kind(runtime).is_some(), observed, selection, model:choices(option(&catalog,true)), reasoning:choices(option(&catalog,false)) }
+    MemberOptions { supported: supports_options(runtime), observed, selection, model:choices(option(&catalog,true)), reasoning:choices(option(&catalog,false)) }
+}
+
+fn supports_options(runtime: AgentRuntimeKind) -> bool {
+    runtime == AgentRuntimeKind::Pi || acp_kind(runtime).is_some()
+}
+
+fn exposed_options(catalog: &[Value]) -> Vec<&Value> {
+    [option(catalog, true), option(catalog, false)].into_iter().flatten().collect()
+}
+
+fn validate_selection(catalog: &[Value], selection: &Selection) -> Result<()> {
+    for (value, model) in [(&selection.model, true), (&selection.reasoning, false)] {
+        if let Some(value) = value {
+            ensure!(choices(option(catalog, model)).iter().any(|choice| choice.value == *value), "此选项已不可用，请重新选择");
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn draft_options(runtime: AgentRuntimeKind, model: Option<&str>) -> Result<MemberOptions> {
+    if !supports_options(runtime) { return Ok(response(runtime, None)); }
+    let _lease = crate::runtime_preferences::acquire(runtime)?;
+    let catalog = discover_model_options(runtime, model)?;
+    Ok(response(runtime, Some((catalog, Selection::default()))))
+}
+
+/// A validated selection and its catalog travel together into the profile transaction.
+pub(crate) struct PreparedSelection(Option<(Vec<Value>, Selection)>);
+
+impl PreparedSelection {
+    pub(crate) fn check(runtime: AgentRuntimeKind, selection: Selection) -> Result<Self> {
+        if !selection.is_custom() { return Ok(Self(None)); }
+        let _lease = crate::runtime_preferences::acquire(runtime)?;
+        let catalog = discover_model_options(runtime, selection.model.as_deref())?;
+        Self::from_catalog(catalog, selection)
+    }
+
+    pub(super) fn from_catalog(catalog: Vec<Value>, selection: Selection) -> Result<Self> {
+        validate_selection(&catalog, &selection)?;
+        Ok(Self(Some((catalog, selection))))
+    }
+
+    pub(super) fn save(&self, conn: &Connection, agent: &super::AgentProfile) -> Result<()> {
+        if let Some((catalog, selection)) = &self.0 {
+            conn.execute("INSERT INTO ma_member_model_options(project_id,agent_id,runtime,options_json,selection_json)
+                VALUES(?1,?2,?3,?4,?5) ON CONFLICT(project_id,agent_id) DO UPDATE SET
+                runtime=excluded.runtime, options_json=excluded.options_json, selection_json=excluded.selection_json",
+                params![agent.project_id, agent.id, agent.runtime_kind.as_str(),
+                    serde_json::to_string(&exposed_options(catalog))?, serde_json::to_string(selection)?])?;
+        } else {
+            conn.execute("DELETE FROM ma_member_model_options WHERE project_id=?1 AND agent_id=?2 AND runtime=?3",
+                params![agent.project_id, agent.id, agent.runtime_kind.as_str()])?;
+        }
+        Ok(())
+    }
 }
 
 pub(super) fn member_model_summaries(conn: &Connection, project: &str) -> Result<BTreeMap<String, MemberModelSummary>> {
@@ -171,11 +226,7 @@ impl MultiAgentStore {
         let conn = self.connection.lock().unwrap();
         let runtime = runtime_at(&conn, project, agent)?;
         let (catalog, _) = saved(&conn, project, agent, runtime)?.context("尚未取得此成员的模型和推理选项")?;
-        for (value, model) in [(&selection.model, true), (&selection.reasoning, false)] {
-            if let Some(value) = value {
-                ensure!(choices(option(&catalog, model)).iter().any(|choice| choice.value == *value), "此选项已不可用，请重新选择");
-            }
-        }
+        validate_selection(&catalog, &selection)?;
         conn.execute("UPDATE ma_member_model_options SET selection_json=?4 WHERE project_id=?1 AND agent_id=?2 AND runtime=?3",
             params![project, agent, runtime.as_str(), serde_json::to_string(&selection)?])?;
         Ok(response(runtime, Some((catalog, selection))))
@@ -184,7 +235,7 @@ impl MultiAgentStore {
     pub(super) fn observe_conversation_models(&self, project: &str, agent: &str, runtime: AgentRuntimeKind, catalog: &[Value]) -> Result<()> {
         let conn = self.connection.lock().unwrap();
         if runtime_at(&conn, project, agent)? != runtime { return Ok(()); }
-        let exposed: Vec<_> = [option(catalog, true), option(catalog, false)].into_iter().flatten().collect();
+        let exposed = exposed_options(catalog);
         conn.execute("INSERT INTO ma_member_model_options(project_id,agent_id,runtime,options_json,selection_json) VALUES(?1,?2,?3,?4,'{}')
             ON CONFLICT(project_id,agent_id) DO UPDATE SET options_json=excluded.options_json,
               selection_json=CASE WHEN runtime=excluded.runtime THEN selection_json ELSE '{}' END, runtime=excluded.runtime",
@@ -210,7 +261,8 @@ fn discover_model_options(runtime: AgentRuntimeKind, saved_model: Option<&str>) 
     let result = if runtime == AgentRuntimeKind::Pi {
         crate::native_pi_sessions::conversation_config_options(&cwd, saved_model, None)
     } else {
-        crate::acp::conversation_model_catalog(acp_kind(runtime).context("此 Runtime 未提供模型选项")?, &cwd)
+        acp_kind(runtime).context("此 Runtime 未提供模型选项")
+            .and_then(|kind| crate::acp::conversation_model_catalog(kind, &cwd, saved_model))
     };
     // The scratch directory does not own provider home data.
     let _ = std::fs::remove_dir(directory);
@@ -225,11 +277,12 @@ pub(super) fn snapshot_round(conn: &Connection, round: &str, project: &str) -> R
     Ok(())
 }
 
-pub(super) fn apply_acp(connection: &mut crate::acp::AcpConnection, selection: &Selection) -> Result<()> {
+pub(crate) fn apply_acp(connection: &mut crate::acp::AcpConnection, selection: &Selection) -> Result<()> {
     for (value, model) in [(&selection.model, true), (&selection.reasoning, false)] {
         let Some(value) = value else { continue };
         let item = option(connection.config_options(), model).context("当前会话没有公布所选配置")?;
         if item["currentValue"] == *value { continue; }
+        ensure!(choices(Some(item)).iter().any(|choice| choice.value == *value), "此选项已不可用，请重新选择");
         let id = item["id"].as_str().context("配置选项缺少身份")?.to_owned();
         let options = connection.set_config_option(&id, value)?;
         ensure!(options.iter().any(|item| item["id"] == id && item["currentValue"] == *value),

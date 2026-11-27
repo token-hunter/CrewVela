@@ -7,7 +7,7 @@ fn sessions_directory() -> Result<PathBuf> {
 
 /// The readiness hook reports Pi's actual session file. Its own header carries
 /// the native ID and working directory, independent of the application tab ID.
-fn session_identity(path: &Path, cwd: &Path) -> Result<String> {
+pub(super) fn session_identity(path: &Path, cwd: &Path) -> Result<String> {
     let path = path.canonicalize().context("Pi 原生会话文件已不可用")?;
     anyhow::ensure!(
         path.parent() == Some(sessions_directory()?.canonicalize()?.as_path()),

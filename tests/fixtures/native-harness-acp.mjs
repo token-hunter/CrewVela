@@ -8,9 +8,11 @@ let model = 'model-a';
 let thinking = 'low';
 const teamModels = process.argv.includes('--team-models');
 const catalogOnly = process.argv.includes('--catalog-only');
+const modelDependentReasoning = process.argv.includes('--model-dependent-reasoning');
 const options = () => [{id:'model',type:'select',currentValue:model,options:[{name:'模型 A',value:'model-a'},{name:'模型 B',value:'model-b'}]},
   ...(teamModels ? [{id:'provider-effort',category:'thought_level',type:'select',currentValue:thinking,
-    options:[{name:'低',value:'low'},{name:'高',value:'high'},{name:'最高',value:'max'}]}] : [])];
+    options:[{name:'低',value:'low'},{name:'高',value:'high'},{name:'最高',value:'max'}]
+      .filter(option => !modelDependentReasoning || option.value === (model === 'model-b' ? 'high' : 'low'))}] : [])];
 let promptId, permissionId, disposeBridge;
 const listeners = new Map();
 let messageText = '', streamFixtureRevision = 0;
@@ -75,7 +77,10 @@ for await (const line of readline.createInterface({input:process.stdin})) {
     }
     reply({...frame.method==='session/new'?{sessionId:'native-fake'}:{},configOptions:options()});
   } else if(frame.method==='session/set_config_option') {
-    if(frame.params.configId==='model') model=frame.params.value;
+    if(frame.params.configId==='model') {
+      model=frame.params.value;
+      if(modelDependentReasoning) thinking=model==='model-b'?'high':'low';
+    }
     if(teamModels && frame.params.configId==='provider-effort' && frame.params.value!=='max') thinking=frame.params.value;
     reply({configOptions:options()});
   } else if(frame.method==='session/prompt') {

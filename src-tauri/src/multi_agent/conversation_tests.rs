@@ -14,6 +14,10 @@ mod work_views;
 mod research_policy;
 #[path = "conversation_activity_tests.rs"]
 mod activity;
+#[path = "conversation_metrics_scenarios.rs"]
+mod metrics_scenarios;
+#[path = "member_round_tests.rs"]
+mod member_round_tests;
 #[path = "conversation_auth_tests.rs"]
 mod codex_login;
 #[path = "managed_native_tests.rs"]
@@ -32,6 +36,45 @@ struct Fixture {
     root: std::path::PathBuf,
     project: String,
     agents: Vec<String>,
+}
+
+#[test]
+fn member_editor_saves_chat_models_with_the_profile_and_supports_reset() {
+    use crate::multi_agent::conversation_models::{PreparedSelection, Selection};
+    use crate::multi_agent::UpdateAgentInput;
+
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let kind = AgentRuntimeKind::Codex;
+    let catalog = vec![
+        serde_json::json!({"id":"model","type":"select","options":[{"value":"review","name":"Review"}]}),
+        serde_json::json!({"id":"effort","type":"select","options":[{"value":"high","name":"High"}]}),
+    ];
+    assert!(PreparedSelection::from_catalog(catalog.clone(), Selection {
+        model: Some("review".into()), reasoning: Some("low".into()),
+    }).is_err());
+    let prepared = PreparedSelection::from_catalog(catalog, Selection {
+        model: Some("review".into()), reasoning: Some("high".into()),
+    }).unwrap();
+    let created = store.create_agent_with_chat_models(CreateAgentInput {
+        project_id: fixture.project.clone(), name: "模型配置成员".into(), runtime_kind: kind,
+        role: AgentRole::Reviewer, description: String::new(), persona: Default::default(),
+        persona_custom: String::new(), model: None, permission_profile: PermissionProfile::Default,
+        max_concurrency: 1, avatar_id: None,
+    }, Some(&prepared)).unwrap();
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    let preference = || serde_json::to_value(reopened.conversation_member_models(&fixture.project, &created.id).unwrap()).unwrap();
+    assert_eq!(preference()["selection"], serde_json::json!({"model":"review","reasoning":"high"}));
+    assert!(created.model.is_none());
+    let update = UpdateAgentInput {
+        project_id: fixture.project.clone(), agent_id: created.id.clone(), name: "更新配置的成员".into(),
+        runtime_kind: kind, role: created.role, description: created.description, persona: created.persona,
+        persona_custom: created.persona_custom, model: None, enabled: true, avatar_id: None,
+    };
+    let reset = PreparedSelection::check(kind, Selection::default()).unwrap();
+    store.update_agent_with_chat_models(update, Some(&reset)).unwrap();
+    assert_eq!(preference()["selection"], serde_json::json!({"model":null,"reasoning":null}));
+    assert_eq!(preference()["observed"], false, "reset drops the previous model's catalog");
 }
 
 #[test]
@@ -123,7 +166,7 @@ fn conversation_attachments_are_snapshotted_scoped_and_delivered() {
     assert_eq!(images[0].1, "image/png");
     assert_eq!(std::fs::read(&images[0].0).unwrap(), png);
     let prompt = discussion_prompt(&fixture.store, &fixture.store.connection.lock().unwrap(),
-        &round, "chat", 0, &fixture.agents[0]).unwrap();
+        &round, "chat", 0, &fixture.agents[0], None, None).unwrap();
     assert!(prompt.contains("ORIGINAL_ATTACHMENT_TEXT"));
     assert!(!prompt.contains("CHANGED_SOURCE"));
     assert!(prompt.contains("操作演示.MP4") && prompt.contains("video/mp4"));
@@ -525,9 +568,9 @@ fn plan_preflight_reports_missing_git_commit_reviewers_and_integrator() {
     let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
     assert_eq!(issues.len(), 4);
     assert!(issues.iter().any(|issue| issue.kind == "git" && issue.message.contains("缺少 Git 工作区")));
-    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Claude Code、角色为「审查」")));
-    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Codex、角色为「审查」")));
-    assert!(issues.iter().any(|issue| issue.message.contains("缺少「集成」角色")));
+    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Claude Code、托管角色为「独立审查」")));
+    assert!(issues.iter().any(|issue| issue.message.contains("Runtime 为 Codex、托管角色为「独立审查」")));
+    assert!(issues.iter().any(|issue| issue.message.contains("缺少「联调交付」成员")));
     assert!(fixture.store.conversation_snapshot(&fixture.project).unwrap().messages.is_empty());
 
     let status = std::process::Command::new("git").arg("-C").arg(fixture.root.join("project"))
@@ -556,7 +599,7 @@ fn plan_preflight_reports_missing_git_commit_reviewers_and_integrator() {
     input.body = "开发一个贪吃蛇小游戏，交给其中一位开发成员。完成后安排只读审查。".into();
     let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
     assert_eq!(issues.len(), 1);
-    assert!(issues[0].message.contains("缺少能执行只读审查的成员"));
+    assert!(issues[0].message.contains("本轮缺少一位「独立审查」成员"));
 }
 
 #[test]
@@ -597,6 +640,37 @@ fn conversation_export_preserves_complete_markdown_and_current_session_scope() {
         conversation_id: conversation_id.clone(),
     }).unwrap();
     assert_eq!(fixture.store.export_conversation_markdown(&fixture.project, conversation_id).unwrap().1, exported);
+}
+
+#[test]
+fn work_queue_restores_saved_requests_without_crossing_project_or_cleared_history() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let old = fixture.run(&Replies::default());
+    let draft = fixture.draft();
+    let plan = store.save_conversation_plan(&old.rounds[0].id, &old.messages.last().unwrap().id,
+        &json!({"summary":draft.summary,"tasks":draft.tasks}).to_string()).unwrap();
+    let saved = store.conversation_snapshot(&fixture.project).unwrap();
+    let next = store.new_conversation(clear_input(&saved)).unwrap();
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    let snapshot = reopened.conversation_snapshot(&fixture.project).unwrap();
+    assert_eq!(snapshot.conversation.id, next.conversation.id);
+    let item = snapshot.work_items.iter().find(|item| item.kind == "plan" && item.id == plan.id).unwrap();
+    assert_eq!(item.conversation_id, saved.conversation.id);
+    assert_eq!(item.message_id, plan.message_id);
+    assert_eq!(item.request, fixture.input().body);
+    let other = reopened.create_project(CreateProjectInput {
+        name: "Other".into(), goal: "Separate project".into(),
+        root_path: fixture.root.join("other").display().to_string(), default_branch: "main".into(),
+    }).unwrap();
+    assert!(reopened.conversation_snapshot(&other.id).unwrap().work_items.is_empty());
+    let original = reopened.switch_conversation(ConversationSwitchInput {
+        project_id: fixture.project.clone(), expected_conversation_id: next.conversation.id, conversation_id: item.conversation_id.clone(),
+    }).unwrap();
+    assert!(original.messages.iter().any(|message| message.id == item.message_id));
+    assert!(original.execution_plans.iter().any(|record| record.id == item.id && record.status == "pending"));
+    let cleared = reopened.clear_conversation(clear_input(&original)).unwrap();
+    assert!(cleared.work_items.iter().all(|record| record.conversation_id != original.conversation.id));
 }
 
 #[test]
@@ -1312,6 +1386,200 @@ fn restart_requires_decision_and_does_not_replay_stale_round() {
         "needs_decision"
     );
     assert!(!fixture.store.begin_conversation(fixture.input()).unwrap().1);
+}
+
+#[test]
+fn delivery_receipts_follow_the_exact_member_run_and_survive_reopening() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let (round, _) = store.begin_conversation(fixture.input()).unwrap();
+    let turn = prepare_turn(store, &round.id, 0, "chat", 0, &fixture.agents[0]).unwrap();
+    let run = store.claim_task(ClaimTaskInput {
+        task_id: turn.task_id, agent_id: fixture.agents[0].clone(), lease_seconds: 120,
+    }).unwrap();
+    store.update_run(UpdateRunInput { run_id: run.id.clone(), status: RunStatus::Running,
+        output_summary: None, error: None, session_locator: None }).unwrap();
+    let receipts = |store: &MultiAgentStore| store.conversation_snapshot(&fixture.project).unwrap()
+        .delivery_receipts.remove(&round.user_message_id).unwrap();
+    let initial = receipts(store);
+    assert_eq!(initial[0].status, "awaiting_receipt");
+    assert_eq!(initial[0].run_id.as_deref(), Some(run.id.as_str()));
+    assert_eq!(initial[1].status, "queued");
+    store.append_runtime_event(super::super::AppendRuntimeEventInput {
+        run_id: run.id.clone(), event_type: "conversation_prompt_received".into(), payload: json!({}),
+    }).unwrap();
+    assert_eq!(receipts(store)[0].status, "received");
+    store.append_runtime_event(super::super::AppendRuntimeEventInput {
+        run_id: run.id.clone(), event_type: "analysis_activity".into(), payload: json!({}),
+    }).unwrap();
+    assert_eq!(receipts(store)[0].status, "running");
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    reopened.recover_interrupted_runs_at_startup().unwrap();
+    reopened.recover_conversations_at_startup().unwrap();
+    assert_eq!(receipts(&reopened)[0].status, "unconfirmed");
+    assert!(!reopened.begin_conversation(fixture.input()).unwrap().1);
+}
+
+#[test]
+fn delivery_receipts_distinguish_silent_completion_from_a_reply() {
+    let fixture = Fixture::new();
+    let snapshot = fixture.run(&ScriptedReplies::new(vec![
+        controlled_reply("", json!({"action":"silent"})),
+        controlled_reply("这里有一条公开答复。", json!({"action":"done"})),
+    ]));
+    let request = &snapshot.rounds[0].user_message_id;
+    let check = |snapshot: &ConversationSnapshot| {
+        let receipts = &snapshot.delivery_receipts[request];
+        assert_eq!(receipts[0].agent_id, fixture.agents[0]);
+        assert_eq!(receipts[0].status, "handled");
+        assert_eq!(receipts[1].agent_id, fixture.agents[1]);
+        assert_eq!(receipts[1].status, "completed");
+        assert!(!snapshot.messages.iter().any(|message| message.run_id == receipts[0].run_id));
+        assert!(snapshot.messages.iter().any(|message| message.run_id == receipts[1].run_id
+            && message.body == "这里有一条公开答复。"));
+        assert!(snapshot.handled_turns.is_empty(), "silence without a member receipt stays off the timeline");
+    };
+    check(&snapshot);
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    check(&reopened.conversation_snapshot(&fixture.project).unwrap());
+}
+
+#[test]
+fn silent_communication_keeps_its_activity_row_separate_from_public_messages() {
+    use crate::multi_agent::member_messages::{MemberSend, Purpose};
+
+    struct StatusSender {
+        recipient: String,
+        reply: ScriptedReplies,
+    }
+    impl DiscussionExecutor for StatusSender {
+        fn execute(&self, store: &MultiAgentStore, task: &str, run: &str, agent: &str, cancelled: &AtomicBool) -> Result<()> {
+            let project = store.agent_profile(agent)?.project_id;
+            store.send_member_message(&project, task, run, agent, MemberSend {
+                body: "私有状态，只入收件箱".into(),
+                target_agent_id: Some(self.recipient.clone()),
+                purpose: Some(Purpose::Status),
+                handoff: None,
+                request_id: None,
+            }, false)?;
+            self.reply.execute(store, task, run, agent, cancelled)
+        }
+    }
+
+    let fixture = Fixture::new();
+    let mut input = fixture.input();
+    input.chat_dispatch = Some(ConversationChatDispatch::Assigned { agent_id: fixture.agents[0].clone() });
+    let snapshot = fixture.run_input(input, &StatusSender { recipient: fixture.agents[1].clone(),
+        reply: ScriptedReplies::new(vec![controlled_reply("", json!({"action":"silent"}))]) });
+    let check = |snapshot: &ConversationSnapshot| {
+        let round = &snapshot.rounds[0];
+        let activity = &snapshot.handled_turns[0];
+        assert_eq!(snapshot.handled_turns.len(), 1);
+        assert_eq!(activity.run_id, snapshot.delivery_receipts[&round.user_message_id][0].run_id);
+        assert_eq!(activity.reply_to_message_id.as_deref(), Some(round.user_message_id.as_str()));
+        assert_eq!(activity.kind, "silent");
+        assert_eq!(activity.status, "completed");
+        assert!(activity.body.is_empty() && activity.attachments.is_empty());
+        assert!(snapshot.messages.iter().all(|message| message.id != activity.id));
+    };
+    check(&snapshot);
+    let reopened = MultiAgentStore::open_at(fixture.root.join("store.db")).unwrap();
+    check(&reopened.conversation_snapshot(&fixture.project).unwrap());
+}
+
+#[test]
+fn topic_resume_is_member_and_topic_scoped_and_current_request_appears_once() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let agent = &fixture.agents[0];
+    let binding = json!({"runtime":"codex","permissionProfile":"default","version":1});
+    let (round, _) = store.begin_conversation(fixture.input()).unwrap();
+    let turn = prepare_turn(store, &round.id, 0, "chat", 0, agent).unwrap();
+    let run = store.claim_task(ClaimTaskInput {
+        task_id: turn.task_id, agent_id: agent.clone(), lease_seconds: 120,
+    }).unwrap();
+    store.update_run(UpdateRunInput { run_id: run.id.clone(), status: RunStatus::Running,
+        output_summary: None, error: None, session_locator: None }).unwrap();
+    store.update_run(UpdateRunInput { run_id: run.id, status: RunStatus::Succeeded,
+        output_summary: Some("old topic response".into()), error: None,
+        session_locator: Some(json!({"topicBinding":binding,"sessionId":"provider-topic-a"})) }).unwrap();
+    store.finish_conversation(&round.id, "completed", None).unwrap();
+    let mut request = fixture.input();
+    request.client_message_id = "topic-a-2".into();
+    request.body = "unique-current-request-marker".into();
+    let (next, _) = store.begin_conversation(request).unwrap();
+    let next_turn = prepare_turn(store, &next.id, 0, "chat", 0, agent).unwrap();
+    let (locator, cutoff, prior) = store.topic_session(&next_turn.task_id, &fixture.project, agent, &binding).unwrap().unwrap();
+    assert_eq!(locator["sessionId"], "provider-topic-a");
+    assert!(store.topic_session(&next_turn.task_id, &fixture.project, &fixture.agents[1], &binding).unwrap().is_none());
+    assert!(store.topic_session(&next_turn.task_id, &fixture.project, agent, &json!({"version":2})).unwrap().is_none());
+    let prompt = store.topic_delta_prompt(&next_turn.task_id, cutoff, &prior).unwrap();
+    assert_eq!(prompt.matches("unique-current-request-marker").count(), 1);
+    assert!(!prompt.contains("old topic response"));
+    store.finish_conversation(&next.id, "completed", None).unwrap();
+    let snapshot = store.conversation_snapshot(&fixture.project).unwrap();
+    let topic = store.new_conversation(ConversationClearInput {
+        project_id: fixture.project.clone(), expected_conversation_id: snapshot.conversation.id,
+        expected_message_ids: snapshot.messages.into_iter().map(|message| message.id).collect(),
+    }).unwrap();
+    let mut request = fixture.input();
+    request.client_message_id = "topic-b-1".into();
+    request.expected_conversation_id = Some(topic.conversation.id);
+    let (other, _) = store.begin_conversation(request).unwrap();
+    let other_turn = prepare_turn(store, &other.id, 0, "chat", 0, agent).unwrap();
+    assert!(store.topic_session(&other_turn.task_id, &fixture.project, agent, &binding).unwrap().is_none());
+}
+
+#[test]
+fn topic_context_includes_late_review_once_in_publication_order_and_bounds_long_evidence() {
+    let fixture = Fixture::new();
+    let store = &fixture.store;
+    let mut input = fixture.input();
+    input.body = "current request marker".into();
+    let (round, _) = store.begin_conversation(input).unwrap();
+    let reader = prepare_turn(store, &round.id, 0, "chat", 0, &fixture.agents[0]).unwrap();
+    let mut review = message_with(&store.connection.lock().unwrap(), &round.user_message_id).unwrap();
+    review.id = id();
+    review.client_message_id = None;
+    review.created_at = 1;
+    review.sender_type = "agent".into();
+    review.agent_id = Some(fixture.agents[1].clone());
+    review.kind = "reply".into();
+    review.status = "running".into();
+    review.body = format!("审查起始证据\n{}\n晚到的审查结论", "中间长日志".repeat(2000));
+    let initial = {
+        let db = store.connection.lock().unwrap();
+        save_message(&db, "test:late-review", &review).unwrap();
+        topic_context::cursor(&db, &fixture.project, &round.conversation_id).unwrap()
+    };
+    assert!(!store.topic_delta_prompt(&reader.task_id, initial, &reader.id).unwrap().contains("晚到的审查结论"));
+    assert!(store.conversation_message_excerpt(&fixture.project, &reader.task_id, &review.id, 0).is_err());
+    let published = {
+        let db = store.connection.lock().unwrap();
+        review.status = "completed".into();
+        save_message(&db, "test:late-review", &review).unwrap();
+        topic_context::cursor(&db, &fixture.project, &round.conversation_id).unwrap()
+    };
+    assert!(published > initial);
+    let prompt = store.topic_delta_prompt(&reader.task_id, initial, &reader.id).unwrap();
+    assert!(prompt.contains("审查起始证据") && prompt.contains("晚到的审查结论"));
+    assert!(prompt.contains(&review.id));
+    assert!(prompt.chars().count() < review.body.chars().count());
+    assert_eq!(prompt.matches("current request marker").count(), 1);
+    let first = store.conversation_message_excerpt(&fixture.project, &reader.task_id, &review.id, 0).unwrap();
+    assert_eq!(first["body"].as_str().unwrap().chars().count(), 8_000);
+    let next = first["nextOffset"].as_u64().unwrap() as usize;
+    let last = store.conversation_message_excerpt(&fixture.project, &reader.task_id, &review.id, next).unwrap();
+    assert!(last["body"].as_str().unwrap().ends_with("晚到的审查结论"));
+    assert!(last["nextOffset"].is_null());
+    assert!(store.conversation_message_excerpt("another-project", &reader.task_id, &review.id, 0).is_err());
+    assert!(!store.topic_delta_prompt(&reader.task_id, published, &reader.id).unwrap().contains("晚到的审查结论"));
+    let db = store.connection.lock().unwrap();
+    assert_eq!(message_with(&db, &review.id).unwrap().body, review.body);
+    // Polling that changes metadata only does not create a second publication.
+    review.updated_at += 1;
+    save_message(&db, "test:late-review", &review).unwrap();
+    assert_eq!(topic_context::cursor(&db, &fixture.project, &round.conversation_id).unwrap(), published);
 }
 
 #[test]
@@ -2145,7 +2413,7 @@ fn managed_plan_requires_all_roles_and_accepts_zcode_cli_static_review() {
     };
     crate::runtime_preferences::with_launch_default_for_test("claude_code", "auto", || {
         set_role("worker");
-        assert!(fixture.store.conversation_plan_preflight(&input).unwrap().iter().any(|issue| issue.message.contains("独立只读审查成员")));
+        assert!(fixture.store.conversation_plan_preflight(&input).unwrap().iter().any(|issue| issue.message.contains("本轮缺少一位「独立审查」成员")));
         set_role("reviewer");
         let issues = fixture.store.conversation_plan_preflight(&input).unwrap();
         assert!(issues.is_empty(), "{:?}", issues.iter().map(|issue| &issue.message).collect::<Vec<_>>());
@@ -2769,6 +3037,8 @@ fn conversation_plan_prompt_names_actual_roles_and_requires_the_shared_review_gr
         "summary",
         1,
         &fixture.agents[0],
+        None,
+        None,
     )
     .unwrap();
     assert!(prompt.contains("runtime=claude_code | role=reviewer"));
@@ -2778,3 +3048,6 @@ fn conversation_plan_prompt_names_actual_roles_and_requires_the_shared_review_gr
     assert!(prompt.contains("仅设置 reviewerAgentId 不构成独立 Review 任务"));
     assert!(prompt.contains("真实成员不足"));
 }
+
+#[path = "conversation_template_tests.rs"]
+mod template_cases;

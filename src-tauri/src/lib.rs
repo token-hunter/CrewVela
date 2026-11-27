@@ -162,7 +162,7 @@ pub fn run_session_statusline(events_dir: &str, app_session_id: &str) -> anyhow:
     telemetry::store_claude_statusline(std::path::Path::new(events_dir), app_session_id, &payload)
 }
 
-pub use messaging::{parse_send_args, run_message_status, run_send_args, run_send_command, run_sessions_command};
+pub use messaging::{parse_send_args, run_message_status, run_send_args, run_send_command, run_sessions_command, run_thread_args};
 
 #[tauri::command]
 fn test_profile_info() -> Option<test_profile::Profile> { test_profile::current().cloned() }
@@ -942,6 +942,12 @@ async fn ma_rename_project(project_id: String, name: String, state: State<'_, Mu
 }
 
 #[tauri::command]
+async fn ma_set_project_reply_preference(project_id: String, agent_id: Option<String>, state: State<'_, MultiAgentStore>) -> Result<(), String> {
+    let store = state.inner().clone();
+    blocking_command(move || store.set_project_reply_preference(&project_id, agent_id.as_deref()).map_err(to_err)).await
+}
+
+#[tauri::command]
 async fn ma_project_git_status(root_path: String) -> Result<multi_agent::project_git::ProjectGitStatus, String> {
     blocking_command(move || multi_agent::project_git::inspect(std::path::Path::new(&root_path)).map_err(to_err)).await
 }
@@ -992,11 +998,21 @@ async fn ma_agent_avatar_image(avatar_id: String, state: State<'_, MultiAgentSto
 }
 
 #[tauri::command]
-fn ma_create_agent(
+async fn ma_create_agent(
     input: CreateAgentInput,
+    chat_models: Option<multi_agent::conversation_models::Selection>,
     state: State<'_, MultiAgentStore>,
 ) -> Result<AgentProfile, String> {
-    state.create_agent(input).map_err(to_err)
+    let store = state.inner().clone();
+    blocking_command(move || {
+        match chat_models {
+            Some(selection) => {
+                let selection = multi_agent::conversation_models::PreparedSelection::check(input.runtime_kind, selection).map_err(to_err)?;
+                store.create_agent_with_chat_models(input, Some(&selection)).map_err(to_err)
+            }
+            None => store.create_agent(input).map_err(to_err),
+        }
+    }).await
 }
 
 fn ensure_member_terminal_idle(sessions: &SessionManager, agent_id: &str) -> Result<(), String> {
@@ -1042,15 +1058,28 @@ fn ma_remove_agent(
 }
 
 #[tauri::command]
-fn ma_update_agent(
+async fn ma_update_agent(
     input: UpdateAgentInput,
-    state: State<'_, MultiAgentStore>,
-    sessions: State<'_, SessionManager>,
-    pty: State<'_, PtyManager>,
-    action_queue: State<'_, SessionActionQueue>,
+    chat_models: Option<multi_agent::conversation_models::Selection>,
+    app: AppHandle,
+) -> Result<AgentProfile, String> {
+    blocking_command(move || {
+        let selection = chat_models.map(|selection| multi_agent::conversation_models::PreparedSelection::check(input.runtime_kind, selection)).transpose().map_err(to_err)?;
+        update_collaboration_agent(input, selection.as_ref(), &app.state::<MultiAgentStore>(),
+            &app.state::<SessionManager>(), &app.state::<PtyManager>(), &app.state::<SessionActionQueue>())
+    }).await
+}
+
+fn update_collaboration_agent(
+    input: UpdateAgentInput,
+    selection: Option<&multi_agent::conversation_models::PreparedSelection>,
+    state: &MultiAgentStore,
+    sessions: &SessionManager,
+    pty: &PtyManager,
+    action_queue: &SessionActionQueue,
 ) -> Result<AgentProfile, String> {
     let _lifecycle = state.agent_lifecycle_guard();
-    ensure_member_terminal_idle(&sessions, &input.agent_id)?;
+    ensure_member_terminal_idle(sessions, &input.agent_id)?;
     let previous = state.agent_profile(&input.agent_id).map_err(to_err)?;
     if previous.runtime_kind != input.runtime_kind && !input.runtime_kind.is_collaboration_cli() {
         return Err("切换协作成员请选择 CLI 执行引擎；ZCode Desktop 只保留已有成员兼容".into());
@@ -1065,9 +1094,12 @@ fn ma_update_agent(
     let _old_guards: Vec<_> = old_lifecycles.iter().map(|lock| lock.lock().unwrap()).collect();
     if previous.runtime_kind != input.runtime_kind {
         input.runtime_kind.ensure_available().map_err(to_err)?;
-        stop_member_runtime_ptys(&sessions, &pty, &input.project_id, &input.agent_id)?;
+        stop_member_runtime_ptys(sessions, pty, &input.project_id, &input.agent_id)?;
     }
-    let profile = state.update_agent(input).map_err(to_err)?;
+    let profile = match selection {
+        Some(selection) => state.update_agent_with_chat_models(input, Some(selection)),
+        None => state.update_agent(input),
+    }.map_err(to_err)?;
     if previous.runtime_kind != profile.runtime_kind {
         let switch_result = (|| -> Result<(), String> {
             let retired = sessions
@@ -1223,6 +1255,11 @@ fn ma_conversation_snapshot(project_id: String, state: State<'_, MultiAgentStore
 async fn ma_conversation_member_models(project_id: String, agent_id: String, refresh: Option<bool>, state: State<'_, MultiAgentStore>) -> Result<multi_agent::conversation_models::MemberOptions, String> {
     let store = state.inner().clone();
     blocking_command(move || store.load_conversation_member_models(&project_id, &agent_id, refresh.unwrap_or(false)).map_err(to_err)).await
+}
+
+#[tauri::command]
+async fn ma_conversation_draft_model_options(runtime_kind: multi_agent::AgentRuntimeKind, model: Option<String>) -> Result<multi_agent::conversation_models::MemberOptions, String> {
+    blocking_command(move || multi_agent::conversation_models::draft_options(runtime_kind, model.as_deref()).map_err(to_err)).await
 }
 
 #[tauri::command]
@@ -1442,7 +1479,7 @@ fn ma_conversation_open_attachment(project_id: String, conversation_id: String, 
 }
 
 #[tauri::command]
-fn ma_conversation_send(input: multi_agent::ConversationSendInput,
+fn ma_conversation_send(input: multi_agent::ConversationSendInput, template_trial: Option<bool>,
     state: State<'_, MultiAgentStore>, supervisor: State<'_, multi_agent::ConversationSupervisor>,
     pty: State<'_, PtyManager>, sessions: State<'_, SessionManager>, bridge: State<'_, CollaborationBridge>,
     engineering: State<'_, MultiAgentSupervisor>,
@@ -1450,9 +1487,12 @@ fn ma_conversation_send(input: multi_agent::ConversationSendInput,
 ) -> Result<multi_agent::ConversationSnapshot, String> {
     let _admission = admission.admit().map_err(to_err)?;
     let project_id = input.project_id.clone();
-    supervisor.send(state.inner().clone(), input,
-        multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone()), bridge.inner().clone(),
-        engineering.inner().clone()).map_err(to_err)?;
+    let host = multi_agent::AgentTerminalHost::new(pty.inner().clone(), sessions.inner().clone());
+    if template_trial == Some(true) {
+        supervisor.send_template(state.inner().clone(), input, host, bridge.inner().clone(), false)
+    } else {
+        supervisor.send(state.inner().clone(), input, host, bridge.inner().clone(), engineering.inner().clone())
+    }.map_err(to_err)?;
     state.conversation_snapshot(&project_id).map_err(to_err)
 }
 
@@ -5329,7 +5369,7 @@ fn dispatch_due_automations(
     automation_state.reconcile(action_queue, session_state, multi_agent_store, now).map_err(to_err)?;
     let mut report_error = None;
     let busy = busy_automation_ids(automation_state, session_state, action_queue, Some(multi_agent_store));
-    for (automation_id, execution_id, action) in automation_state.collect_due_with_busy(now, &busy).map_err(to_err)? {
+    for (automation_id, execution_id, action) in automation_state.collect_due_for_projects(now, &busy, Some(multi_agent_store)).map_err(to_err)? {
         let mut targets = Vec::new();
         let (ok, detail) = execute_automation_action_tracked(
             &action,
@@ -5581,6 +5621,18 @@ fn execute_automation_action_tracked(
     }
 
     match action {
+        AutomationAction::ConversationTemplate(template) => {
+            let result = (|| -> anyhow::Result<()> {
+                let (manager, run_id) = execution.ok_or_else(|| anyhow::anyhow!("缺少模板执行编号"))?;
+                let store = multi_agent_store.ok_or_else(|| anyhow::anyhow!("协作项目服务不可用"))?;
+                manager.dispatch_template(template, run_id, store,
+                    multi_agent::AgentTerminalHost::new(pty_state.clone(), session_state.clone()))
+            })();
+            match result {
+                Ok(()) => (true, "模板已提交到原话题，等待成员回复".into()),
+                Err(reason) => (false, format!("{reason:#}")),
+            }
+        }
         AutomationAction::RunAgent { runtime_kind, provider_id, model, cwd, prompt } => {
             let result = (|| -> Result<SessionRecord, String> {
                 automation_runtime::validate_launch(*runtime_kind, provider_id.as_deref(), model.as_deref(), cwd).map_err(to_err)?;
@@ -5763,6 +5815,7 @@ fn run_automation_now(id: String, request_id: String, retry_of: Option<String>,
 
 #[tauri::command(async)]
 fn stop_automation_run(id: String, run_id: String, state: State<'_, AutomationManager>, queue: State<'_, SessionActionQueue>, store: State<'_, MultiAgentStore>, supervisor: State<'_, MultiAgentSupervisor>) -> Result<Vec<Automation>, String> {
+    if state.stop_template(&id, &run_id, &store).map_err(to_err)? { return Ok(state.list()); }
     if state.cancel_queued_run(&id, &run_id, &queue).is_err() {
         let run = state.list().into_iter().find(|a| a.id == id).and_then(|a| a.recent_runs.into_iter().find(|r| r.id == run_id)).ok_or("执行不存在")?;
         if run.targets.is_empty() || !automation::is_active_stage(run.stage.as_deref().unwrap_or("unconfirmed")) { return Err("本轮没有可停止的活动任务".into()); }
@@ -5826,6 +5879,7 @@ fn save_automation_inner(id: Option<&str>, input: NewAutomation, session_state: 
     }
     // 模块外校验：provider / 目标会话真实存在（模块内只校验自洽性）。
     match &input.action {
+        AutomationAction::ConversationTemplate(template) => template.validate(multi_agent_store).map_err(to_err)?,
         AutomationAction::RunAgent { runtime_kind, provider_id, model, cwd, .. } => {
             automation_runtime::validate_launch(*runtime_kind, provider_id.as_deref(), model.as_deref(), cwd).map_err(to_err)?;
             runtime_kind.ensure_available().map_err(to_err)?;
@@ -6032,6 +6086,7 @@ fn persist_cli_collaboration_message_with_id(
     session_state: &SessionManager,
     message: &OutboxMessage,
     message_id: &str,
+    published_at: i64,
 ) -> anyhow::Result<()> {
     if session_state
         .get(&message.to)
@@ -6050,6 +6105,9 @@ fn persist_cli_collaboration_message_with_id(
     let Some(target) = session_state.get(&message.to) else {
         return Ok(());
     };
+    if store.record_bound_session_message(&sender, &target, message_id, &message.body, published_at)? {
+        return Ok(());
+    }
     let (Some(project_id), Some(sender_agent_id), Some(target_project_id), Some(target_agent_id)) = (
         sender.multi_agent_project_id.as_deref(),
         sender.multi_agent_agent_id.as_deref(),
@@ -6134,12 +6192,13 @@ fn flush_cli_messages_with_scheduler(
     }
     // 摄取 CLI `send` 写入的会话间消息，再随本轮 flush 投递。
     action_queue
-        .ingest_outbox_with_identity(&session_state, |message, message_id| {
+        .ingest_outbox_with_timestamp(&session_state, |message, message_id, published_at| {
             persist_cli_collaboration_message_with_id(
                 &multi_agent_store,
                 &session_state,
                 message,
                 message_id,
+                published_at,
             )
         })
         .map_err(to_err)?;
@@ -6187,12 +6246,13 @@ fn flush_cli_messages_with_scheduler(
         })?;
     }
     // 已入任务表但当前 Agent 忙碌/调度器正在退出时，下轮仍会重试唤醒。
-    let projects = session_state
+    let mut projects = session_state
         .list()
         .into_iter()
         .filter(|session| session.runtime_command_host)
         .filter_map(|session| session.multi_agent_project_id)
         .collect::<HashSet<_>>();
+    projects.extend(multi_agent_store.drain_member_inbox(action_queue).map_err(to_err)?);
     for project_id in projects {
         if multi_agent_store
             .runnable_tasks(&project_id)
@@ -6519,6 +6579,11 @@ pub fn run() {
                 collaboration_bridge.endpoint()
             );
             app.manage(collaboration_bridge);
+            app.state::<AutomationManager>().template_runtime.set(automation::TemplateRuntime {
+                supervisor: app.state::<multi_agent::ConversationSupervisor>().inner().clone(),
+                bridge: app.state::<CollaborationBridge>().inner().clone(),
+                admission: app.state::<runtime_admission::RuntimeAdmission>().inner().clone(),
+            }).map_err(|_| std::io::Error::other("模板执行服务已初始化"))?;
             }
             // Dynamic application listeners must be bound before restoring the
             // embedded engine's saved port so an in-process clash is detectable.
@@ -6691,6 +6756,7 @@ pub fn run() {
             ma_resolve_intervention,
             ma_create_project,
             ma_rename_project,
+            ma_set_project_reply_preference,
             ma_project_git_status,
             ma_member_library,
             ma_member_library_import,
@@ -6737,7 +6803,9 @@ pub fn run() {
             ma_runtime_events,
             ma_send_message,
             ma_conversation_snapshot,
+            multi_agent::conversation_metrics::ma_conversation_round_metrics,
             ma_conversation_member_models,
+            ma_conversation_draft_model_options,
             ma_set_conversation_member_models,
             ma_conversation_export,
             ma_conversation_design_delivery,
@@ -8984,6 +9052,7 @@ mod tests {
                 body: "HELLO_CODEX".into(),
             },
             "exact-transport-id",
+            chrono::Utc::now().timestamp_millis(),
         )
         .unwrap();
 

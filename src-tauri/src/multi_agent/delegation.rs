@@ -303,6 +303,7 @@ impl MultiAgentStore {
             anyhow::bail!("这项设计已交付，请使用原交付继续执行");
         }
         let id = uuid::Uuid::new_v4().to_string();
+        crate::multi_agent::member_messages::reserve_delegation(&tx, &run.project_id, &source.id, &id)?;
         tx.execute(
             "INSERT INTO ma_design_delegations
              (id,project_id,conversation_id,source_task_id,source_run_id,source_agent_id,target_agent_id,title,brief,criteria,checkpoint_note,requested_at)

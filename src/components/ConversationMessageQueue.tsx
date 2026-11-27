@@ -32,7 +32,7 @@ export function ConversationMessageQueue({ messages, members, steerableRuns, dis
           ? steerableRuns?.[recipientIds[0]] : undefined;
         const uncertain = message.status === "unconfirmed";
         const label = message.body || message.attachments?.map(file => file.name).join("、") || "附件消息";
-        return <li key={message.id} className="conversation-queue-item">
+        return <li key={message.id} data-message-id={message.id} className="conversation-queue-item">
           <div className="conversation-queue-summary">
             <div className="conversation-queue-text">
               <strong title={label}>{label}</strong>

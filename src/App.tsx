@@ -93,7 +93,7 @@ import { FileExplorerPanel } from "./components/FileExplorerPanel";
 import { BrowserPanel } from "./components/BrowserPanel";
 import { saveBrowserPanelState } from "./browserPanelState";
 import { WorkspaceTabs } from "./components/WorkspaceTabs";
-import type { CollaborationTasksRequest } from "./collaborationTasks";
+import type { CollaborationSettingsRequest, CollaborationSettingsTarget } from "./collaborationTasks";
 import {
   RightSidebarActivityBar,
   RightSidebarStart,
@@ -452,8 +452,8 @@ export default function App() {
   const [collaborationInitialTab, setCollaborationInitialTab] = useState<"overview" | "diagnostics">("overview");
   const [collaborationDiagnosticGlobal, setCollaborationDiagnosticGlobal] = useState(false);
   const [collaborationInitialProjectId, setCollaborationInitialProjectId] = useState<string | undefined>();
-  const [collaborationTasksRequest, setCollaborationTasksRequest] = useState<CollaborationTasksRequest>();
-  const collaborationTaskSequence = useRef(0);
+  const [collaborationSettingsRequest, setCollaborationSettingsRequest] = useState<CollaborationSettingsRequest>();
+  const collaborationSettingsSequence = useRef(0);
   const [settingsTarget, setSettingsTarget] = useState<SettingsSection>("generalSettings");
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>(
@@ -529,16 +529,16 @@ export default function App() {
       setCollaborationInitialTab("overview");
       setCollaborationDiagnosticGlobal(false);
       setCollaborationInitialProjectId(undefined);
-      setCollaborationTasksRequest(undefined);
+      setCollaborationSettingsRequest(undefined);
       setSettingsTarget(section);
       setSettingsOpen(true);
     },
     [],
   );
-  const openCollaborationTasks = useCallback((projectId: string) => {
+  const openCollaborationSettings = useCallback((projectId?: string, target?: CollaborationSettingsTarget) => {
     openSettingsSection("collaboration");
     setCollaborationInitialProjectId(projectId);
-    setCollaborationTasksRequest({ projectId, requestId: ++collaborationTaskSequence.current });
+    if (projectId && target) setCollaborationSettingsRequest({ projectId, target, requestId: ++collaborationSettingsSequence.current });
   }, [openSettingsSection]);
   const toastIdRef = useRef(0);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -1330,16 +1330,18 @@ export default function App() {
         void main.show().then(() => main.setFocus())
           .catch(error => showError(`显示主窗口失败：${String(error)}`));
       }),
-      listen<{ projectId?: string; target?: "tasks" }>("crewvela-conversation-open-settings", event => {
+      listen<{ projectId?: string; target?: CollaborationSettingsTarget }>("crewvela-conversation-open-settings", event => {
         if (disposed) return;
-        if (event.payload?.target === "tasks" && event.payload.projectId) { openCollaborationTasks(event.payload.projectId); return; }
-        openSettingsSection("collaboration");
-        setCollaborationInitialProjectId(event.payload?.projectId);
+        openCollaborationSettings(event.payload?.projectId, event.payload?.target);
+        if (event.payload?.target === "team") {
+          const main = getCurrentWindow();
+          void main.show().then(() => main.setFocus()).catch(error => showError(`显示主窗口失败：${String(error)}`));
+        }
       }),
     ];
     for (const subscription of subscriptions) void subscription.catch(error => { if (!disposed) showError(`协作窗口事件监听失败：${String(error)}`); });
     return () => { disposed = true; window.removeEventListener("crewvela-automation-open-session", openAutomationSession); for (const subscription of subscriptions) void subscription.then(unlisten => unlisten()).catch(error => console.error("释放协作窗口监听失败：", error)); };
-  }, [openSettingsSection, openCollaborationTasks, openConversationSession, selectSession, showError]);
+  }, [openCollaborationSettings, openConversationSession, selectSession, showError]);
 
   const renameSession = useCallback(async (session: SessionRecord) => {
     const title = window.prompt("会话标题", session.title)?.trim();
@@ -2646,12 +2648,12 @@ export default function App() {
                 sessionName={(id) => displaySessions.find(item => item.id === id)?.title}
                 onOpenSession={(id) => { setGuideRequest(null); void selectSession(id); }}
                 onOpenCollaboration={(projectId) => {
-                  setCollaborationInitialProjectId(projectId); setCollaborationTasksRequest(undefined);
+                  setCollaborationInitialProjectId(projectId); setCollaborationSettingsRequest(undefined);
                   setCollaborationInitialTab("overview"); setCollaborationDiagnosticGlobal(false); setSettingsTarget("collaboration"); setSettingsOpen(true);
                 }}
                 onClose={() => setGuideRequest(null)} onDiagnostics={(projectId, scope) => {
                   setCollaborationInitialProjectId(projectId);
-                  setCollaborationTasksRequest(undefined); setCollaborationInitialTab(scope === "project" && !projectId ? "overview" : "diagnostics"); setCollaborationDiagnosticGlobal(scope === "sessions"); setSettingsTarget("collaboration"); setSettingsOpen(true);
+                  setCollaborationSettingsRequest(undefined); setCollaborationInitialTab(scope === "project" && !projectId ? "overview" : "diagnostics"); setCollaborationDiagnosticGlobal(scope === "sessions"); setSettingsTarget("collaboration"); setSettingsOpen(true);
                 }} />}
               {(activeRightSidebarTab || mountedRightSidebarTabs.size > 0) && (
                 <>
@@ -2743,7 +2745,7 @@ export default function App() {
                         initialSurface={tab === "multi_agent" ? controlSurface : "multi_agent"}
                         onSurfaceChange={tab === "multi_agent" ? handleControlSurfaceChange : undefined}
                         onOpenSession={openConversationSession}
-                        onOpenProjectSettings={(projectId, target) => { if (target === "tasks" && projectId) { openCollaborationTasks(projectId); return; } openSettingsSection("collaboration"); setCollaborationInitialProjectId(projectId); }}
+                        onOpenProjectSettings={openCollaborationSettings}
                       />
                       </div>
                     ))}
@@ -2841,7 +2843,7 @@ export default function App() {
               initialCollaborationTab={collaborationInitialTab}
               initialCollaborationDiagnosticGlobal={collaborationDiagnosticGlobal}
               initialCollaborationProjectId={collaborationInitialProjectId}
-              initialCollaborationTasksRequest={collaborationTasksRequest}
+              initialCollaborationSettingsRequest={collaborationSettingsRequest}
               onClose={() => setSettingsOpen(false)}
             />
           )}

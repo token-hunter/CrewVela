@@ -27,6 +27,8 @@ export interface AutomationFormAction {
 }
 export function automationFormFromAction(action: AutomationAction, sessions: SessionRecord[], agents: AgentProfile[]): AutomationFormAction {
   const form: AutomationFormAction = { runtime: "", mode: "new", source: "local", providerId: "", model: "", cwd: "", prompt: "", sessionId: "", projectId: "", agentId: "" };
+  if (action.kind === "conversation_template") return { ...form, mode: "member", projectId: action.projectId, agentId: action.agentId, prompt: action.body,
+    runtime: agents.find(a => a.id === action.agentId && a.projectId === action.projectId)?.runtimeKind ?? "" };
   if (action.kind === "run_agent") return { ...form, runtime: action.runtimeKind, cwd: action.cwd, prompt: action.prompt };
   if (action.kind === "broadcast_agent") return { ...form, runtime: action.runtimeKind, mode: "broadcast", prompt: action.body };
   if (action.kind === "broadcast") return { ...form, runtime: "claude_code", mode: "broadcast", prompt: action.body };
@@ -39,6 +41,10 @@ export function automationFormFromAction(action: AutomationAction, sessions: Ses
 }
 
 export function buildEditedAutomationAction(form: AutomationFormAction, original: AutomationAction, initialRuntime: AgentRuntimeKind | "", enabled: (kind: AgentRuntimeKind) => boolean, providers: ProviderConfig[], sessions: SessionRecord[], agents: AgentProfile[]): AutomationAction {
+  if (original.kind === "conversation_template") {
+    if (!form.prompt.trim() || Array.from(form.prompt).length > 32000) throw Error("请填写 1–32000 字符的执行任务");
+    return { ...original, body: form.prompt };
+  }
   const next = buildAutomationAction(form, enabled, providers, sessions, agents);
   // Editing a name/prompt must not silently migrate legacy routing/provider semantics.
   if (form.runtime !== initialRuntime) return next;

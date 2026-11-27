@@ -272,6 +272,24 @@ img[data-avatar="imported"] { border-radius: 24%; }
 .collab-agent-editor { width: min(780px, calc(100vw - 32px)); }
 .collab-agent-editor-body { display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 20px; align-items: start; }
 .collab-agent-editor-form { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.collab-agent-templates { border-block: 1px solid var(--border, #444); }
+.collab-agent-templates summary { cursor: pointer; padding: 10px 0; font-size: 13px; }
+.collab-agent-templates summary small { margin-inline-start: 8px; }
+.collab-agent-templates > small { display: block; margin-block: 8px 10px; }
+.collab-agent-template-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.collab-agent-template-options .btn { display: grid; height: auto; align-content: start; justify-items: start; gap: 4px; white-space: normal; padding: 10px; text-align: start; }
+.collab-agent-template-options .btn[aria-pressed="true"] { border-color: var(--accent); }
+@media (max-width: 650px) { .collab-agent-template-options { grid-template-columns: 1fr; } }
+.collab-agent-responsibilities { display: grid; gap: 8px; }
+.collab-agent-responsibilities-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.collab-agent-responsibilities-heading button { font-size: 12px; }
+.collab-agent-model-settings { display: grid; gap: 6px; min-width: 0; }
+.collab-agent-model-settings option { background-color: var(--input-bg, #1e1e1e); color: var(--text-primary, #eee); }
+.collab-agent-model-error { display: flex; align-items: start; gap: 8px; overflow-wrap: anywhere; }
+.collab-agent-managed-settings { border-block: 1px solid var(--border, #444); }
+.collab-agent-managed-settings summary { cursor: pointer; padding: 10px 0; font-size: 13px; }
+.collab-agent-managed-settings summary small { margin-inline-start: 6px; }
+.collab-agent-managed-settings > div { display: grid; gap: 6px; padding-block: 2px 12px; }
 .collab-agent-editor-preview { position: sticky; top: 0; display: flex; flex-direction: column; gap: 8px; }
 .collab-agent-editor-preview-label { font-size: 11px; letter-spacing: .08em; color: var(--text-muted, #aaa); }
 .collab-persona-hint { font-size: 12px; line-height: 1.6; }

@@ -5,6 +5,7 @@ import { ArrowBendUpLeft, CheckCircle, Circle, ClockCounterClockwise, FileText, 
 import { AgentAvatar } from "./AgentAvatar";
 import { ManagedDeliveryMembers } from "./ManagedDeliveryMembers";
 import { UnverifiedRunNotice } from "./UnverifiedRunNotice";
+import { ConversationApprovalRequests } from "./ConversationApprovalRequests";
 import { TaskRunRecords } from "./TaskRunRecords";
 import { CONVERSATION_STATUS, TASK_STATUS } from "../collaborationConversation";
 import { orderedTaskRuns } from "../collaborationTasks";
@@ -88,13 +89,14 @@ export function ConversationTaskView({ snapshot, tasks, plans, retainedPlans, re
           <span className={`team-task-status ${item.status}`}>{label(item)}</span>
         </button>;
       })}</div>
-      {task ? <article className="team-task-detail" aria-label={`任务详情 ${task.title}`}>
+      {task ? <article className="team-task-detail" data-work-task={task.id} aria-label={`任务详情 ${task.title}`}>
         <header><h2>{task.title}</h2><span className={`team-task-status ${task.status}`}>{label(task)}</span></header>
         <dl className="team-task-facts"><div><dt><User size={17} />{t("负责人")}</dt><dd>{assignee.runtimeKind && <AgentAvatar avatarId={assignee.avatarId} runtimeKind={assignee.runtimeKind} decorative />}{assignee.name}</dd></div>
           <div><dt><Target size={17} />{t("范围")}</dt><dd>{task.description || "未填写任务范围"}</dd></div>
           <div><dt><LinkSimple size={17} />{t("依赖")}</dt><dd>{dependencies.join("、") || "无前置任务"}</dd></div>
           <div><dt><CheckCircle size={17} />{t("验收")}</dt><dd>{task.acceptanceCriteria || "未填写验收要求"}</dd></div>
         </dl>
+        <ConversationApprovalRequests approvals={(snapshot?.approvals ?? []).filter(item => item.projectId === task.projectId && item.taskId === task.id && item.status === "pending")} disabled={blocked} onChanged={onRefresh} />
         <section className="team-task-activity" aria-label={t("执行动态")}><h3>{t("执行动态")}</h3>
           {plan?.status === "applied" && <p><CheckCircle size={18} weight="fill" />{t("已确认分工")}</p>}
           {runs.map(run => <p key={run.id}><Circle size={18} /><span>{agents.find(member => member.id === run.agentId)?.name ?? t("历史成员")} · {run.error || run.outputSummary || (run.startedAt ? "已开始执行任务" : "执行已登记")}{run.status !== "running" && <small>{run.status === "succeeded" ? "本次运行已结束，任务验收以任务状态为准" : run.status === "failed" ? "运行失败" : run.status === "cancelled" ? "运行已取消" : run.status}</small>}</span></p>)}

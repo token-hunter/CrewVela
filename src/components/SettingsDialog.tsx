@@ -60,7 +60,7 @@ import { BrowserControlSettingsPanel } from "./BrowserControlSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { LockIcon } from "@phosphor-icons/react/dist/csr/Lock";
 import { PrivacySettingsPanel } from "./PrivacySettingsPanel";
-import type { CollaborationTasksRequest } from "../collaborationTasks";
+import type { CollaborationSettingsRequest } from "../collaborationTasks";
 import {
   loadSidebarShortcuts,
   saveSidebarShortcuts,
@@ -92,7 +92,7 @@ interface Props {
   initialCollaborationTab?: "overview" | "diagnostics";
   initialCollaborationDiagnosticGlobal?: boolean;
   initialCollaborationProjectId?: string;
-  initialCollaborationTasksRequest?: CollaborationTasksRequest;
+  initialCollaborationSettingsRequest?: CollaborationSettingsRequest;
 }
 
 export type SettingsSection =
@@ -134,7 +134,7 @@ export function SettingsDialog({
   initialCollaborationTab = "overview",
   initialCollaborationDiagnosticGlobal = false,
   initialCollaborationProjectId,
-  initialCollaborationTasksRequest,
+  initialCollaborationSettingsRequest,
 }: Props) {
   const t = useTranslation();
   const interfaceLanguage = useInterfaceLanguage();
@@ -155,11 +155,11 @@ export function SettingsDialog({
   const [automationEditing, setAutomationEditing] = useState<"create" | "edit" | null>(null);
   const [navQuery, setNavQuery] = useState("");
   const [privacyCollaborationRequested, setPrivacyCollaborationRequested] = useState(false);
-  const [taskRequest, setTaskRequest] = useState(initialCollaborationTasksRequest);
+  const [projectRequest, setProjectRequest] = useState(initialCollaborationSettingsRequest);
   useEffect(() => {
-    setTaskRequest(initialCollaborationTasksRequest);
-    if (initialCollaborationTasksRequest) { setActiveSection("collaboration"); setNavQuery(""); setPrivacyCollaborationRequested(false); }
-  }, [initialCollaborationTasksRequest?.projectId, initialCollaborationTasksRequest?.requestId]);
+    setProjectRequest(initialCollaborationSettingsRequest);
+    if (initialCollaborationSettingsRequest) { setActiveSection("collaboration"); setNavQuery(""); setPrivacyCollaborationRequested(false); }
+  }, [initialCollaborationSettingsRequest]);
   const settingsNav = useRef<HTMLElement>(null);
   const privacyNavigationTarget = useRef<SettingsSection | null>(null);
   useEffect(() => {
@@ -410,7 +410,7 @@ export function SettingsDialog({
                           aria-current={
                             activeSection === item.id ? "page" : undefined
                           }
-                          onClick={() => { privacyNavigationTarget.current = null; setPrivacyCollaborationRequested(false); setTaskRequest(undefined); setActiveSection(item.id); }}
+                          onClick={() => { privacyNavigationTarget.current = null; setPrivacyCollaborationRequested(false); setProjectRequest(undefined); setActiveSection(item.id); }}
                         >
                           <span className="settings-nav-icon" aria-hidden="true">
                             {item.icon}
@@ -599,10 +599,10 @@ export function SettingsDialog({
             {activeSection === "privacy" ? (
               <PrivacySettingsPanel
                 viewStyle={resolvePrivacySettingsStyle(appearance)}
-                onNavigate={destination => { privacyNavigationTarget.current = destination; setNavQuery(""); setTaskRequest(undefined); setPrivacyCollaborationRequested(destination === "collaboration"); setActiveSection(destination); }}
+                onNavigate={destination => { privacyNavigationTarget.current = destination; setNavQuery(""); setProjectRequest(undefined); setPrivacyCollaborationRequested(destination === "collaboration"); setActiveSection(destination); }}
               />
             ) : activeSection === "collaboration" ? (
-              <CollaborationSettingsPanel onClose={onClose} initialTab={privacyCollaborationRequested ? "records" : initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} taskRequest={taskRequest} />
+              <CollaborationSettingsPanel onClose={onClose} initialTab={privacyCollaborationRequested ? "records" : initialCollaborationTab} initialDiagnosticGlobal={initialCollaborationDiagnosticGlobal} initialProjectId={initialCollaborationProjectId} projectRequest={projectRequest} />
             ) : activeSection === "projectManagement" ? (
               <ProjectManagementPanel
                 projects={projects}

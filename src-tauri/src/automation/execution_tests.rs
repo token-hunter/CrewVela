@@ -21,6 +21,56 @@ struct Fixture {
     session: String,
     _cleanup: Cleanup,
 }
+
+#[test]
+fn conversation_template_schedule_skips_paused_projects_and_reconciles_the_exact_durable_round() {
+    use crate::multi_agent::{CreateProjectInput, ProjectStatus};
+    let f = Fixture::new();
+    let project = f.store.create_project(CreateProjectInput {
+        name: "Schedule test".into(), goal: "Scoped review".into(), root_path: f.root.display().to_string(), default_branch: "main".into(),
+    }).unwrap();
+    let member = f.store.create_agent(serde_json::from_value(serde_json::json!({
+        "projectId": project.id, "name": "Reader", "runtimeKind": "claude_code", "role": "reviewer"
+    })).unwrap()).unwrap();
+    let topic = f.store.conversation_snapshot(&project.id).unwrap().conversation.id;
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let draft: NewAutomation = serde_json::from_value(serde_json::json!({
+        "name":"Review", "trigger":{"kind":"interval","minutes":1}, "overlapPolicy":"skip", "maxRuns":null,
+        "maxConsecutiveFailures":3, "action":{"kind":"conversation_template","projectId":project.id,
+            "conversationId":topic,"agentId":member.id,"templateId":"pr_review","body":"Read the supplied patch.",
+            "creationId": request_id}
+    })).unwrap();
+    let item = f.manager.create(draft.clone(), 1).unwrap();
+    assert_eq!(f.manager.create(draft, 2).unwrap().id, item.id);
+    assert_eq!(item.id, request_id);
+    let due = |at| f.manager.collect_due_for_projects(at, &Default::default(), Some(&f.store)).unwrap();
+    f.store.set_project_status(&project.id, ProjectStatus::Paused).unwrap();
+    assert!(due(60_001).is_empty());
+    let held = f.manager.list().into_iter().find(|a| a.id == item.id).unwrap();
+    assert_eq!(held.run_count, 0);
+    assert_eq!(held.consecutive_failures, 0);
+    assert_eq!(held.recent_runs[0].stage.as_deref(), Some("skipped"));
+    f.store.set_project_status(&project.id, ProjectStatus::Active).unwrap();
+    let (id, run_id, action) = due(120_001).pop().unwrap();
+    assert_eq!(id, item.id);
+    let AutomationAction::ConversationTemplate(action) = action else { panic!("unexpected action") };
+    action.validate(&f.store).unwrap();
+    let input = f.manager.reserve_template(&action, &run_id).unwrap();
+    assert!(f.manager.reserve_template(&action, &run_id).is_err());
+    assert!(!input.native_capabilities);
+    assert_eq!(input.expected_conversation_id.as_deref(), Some(topic.as_str()));
+    assert_eq!(input.participant_agent_ids, [member.id]);
+    let (round, _) = f.store.begin_conversation(input).unwrap();
+    f.manager.finish_dispatch(&id, &run_id, true, "accepted".into(), 120_002).unwrap();
+    let reopened = AutomationManager::open_at(f.root.join("automations.json")).unwrap();
+    let status = || reopened.list().into_iter().find(|a| a.id == id).unwrap().recent_runs.last().unwrap().stage.clone();
+    assert_eq!(status().as_deref(), Some("unconfirmed"));
+    reopened.reconcile(&f.queue, &f.sessions, &f.store, 120_003).unwrap();
+    assert_eq!(status().as_deref(), Some("queued"));
+    f.store.finish_conversation(&round.id, "completed", None).unwrap();
+    reopened.reconcile(&f.queue, &f.sessions, &f.store, 120_004).unwrap();
+    assert_eq!(status().as_deref(), Some("completed"));
+}
 impl Fixture {
     fn new() -> Self {
         let root =
