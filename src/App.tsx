@@ -25,7 +25,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -102,6 +102,7 @@ import {
 } from "./components/RightSidebarActivityBar";
 import { normalizeRightSidebarTab } from "./teamMessages";
 import { ToastStack, type ToastItem } from "./components/Toast";
+import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { DesktopPet } from "./components/DesktopPet";
 import {
   loadPetSettings,
@@ -2871,7 +2872,9 @@ export default function App() {
               }}
             />
           )}
-          <ToastStack toasts={toasts} onDismiss={dismissToast} />
+          <ToastStack toasts={toasts} onDismiss={dismissToast}>
+            {!UI_PREVIEW && isTauri() && document.documentElement.dataset.view === "main" && <AppUpdateNotice />}
+          </ToastStack>
         </div>
       </div>
     </div>

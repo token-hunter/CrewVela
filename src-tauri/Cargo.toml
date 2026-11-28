@@ -95,6 +95,7 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Power",
     "Win32_UI_Shell",
 ] }
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls"] }
 [features]
 default = []
 custom-protocol = ["tauri/custom-protocol"]

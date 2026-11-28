@@ -858,6 +858,11 @@ impl PtyManager {
         s.process_exit_code().is_none()
     }
 
+    #[cfg(windows)]
+    pub(crate) fn has_open_terminals(&self) -> bool {
+        !self.sessions.lock().unwrap().is_empty()
+    }
+
     /// 交接必须确认进程已退出，不能用移除 PTY 映射冒充停止成功。
     pub(crate) fn stop_for_handoff(&self, id: u32) -> Result<()> {
         let session = self.session_arc(id)?;

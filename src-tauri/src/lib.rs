@@ -1,6 +1,7 @@
 mod acp;
 mod app_instance;
 mod app_help;
+mod app_updater;
 mod ai_memory;
 mod ai_memory_access;
 mod approvals;
@@ -6494,6 +6495,11 @@ pub fn run() {
                     return Ok(());
                 }
             }
+            #[cfg(windows)]
+            if let Some(pubkey) = app_updater::embedded_key() {
+                app.handle().plugin(tauri_plugin_updater::Builder::new().pubkey(pubkey).build())?;
+                app.manage(app_updater::PendingUpdate::default());
+            }
             #[cfg(target_os = "windows")]
             if !test_profile::active() { if let Err(error) = windows_notification::initialize() {
                 eprintln!("[crewvela] 初始化 Windows 通知身份失败：{error:#}");
@@ -6727,6 +6733,8 @@ pub fn run() {
             browser_control::browser_control_save,
             general_settings::general_settings_get,
             app_help::app_check_update,
+            app_updater::app_download_update,
+            app_updater::app_install_update,
             app_help::app_data_directory,
             general_settings::general_settings_save,
             terminal_fonts::terminal_fonts_list,

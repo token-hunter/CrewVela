@@ -16,9 +16,9 @@ Browser control, Skills, and other connected tools may access websites, project 
 
 Each local agent CLI manages its own sign-in and configuration. CrewVela uses the system credential store for some credentials it manages. This does not mean that CrewVela encrypts all third-party sign-in files, logs, or session content. Avoid including passwords, tokens, or unnecessary private information in tasks, screenshots, public issues, or feedback.
 
-## Manual update checks
+## Automatic and manual update checks
 
-When you select Check for updates, CrewVela requests public release information for the repository from GitHub. The request includes ordinary HTTP information such as the source IP address and a User-Agent containing the application version. It does not include session content, CLI credentials, or shared memories. The release page opens in your browser only when you select the official link. The app does not automatically download or install the update.
+CrewVela requests public release information from GitHub after launch, periodically while it runs, and when you select Check for updates. The request includes routine HTTP information such as your source IP address and a User-Agent containing the application version. Checks and downloads do not include session content, CLI credentials, or shared memories. In builds that support in-app updates, the installer is downloaded and verified after you select Update. Release page links open GitHub in your browser.
 
 ## Managing and deleting data
 

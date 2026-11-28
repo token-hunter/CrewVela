@@ -10,7 +10,7 @@ export const PRIVACY_DATA_ROWS: readonly PrivacyDataRow[] = [
 export type PrivacyExplanation = "storage" | "services";
 export const PRIVACY_EXPLANATIONS = {
   storage: {title:"数据保存在哪里", headings:["本机应用记录","管理与删除"]},
-  services: {title:"Agent 与外部服务", headings:["Agent、模型与工具","登录与凭据","手动检查应用更新"]},
+  services: {title:"Agent 与外部服务", headings:["Agent、模型与工具","登录与凭据","自动与手动检查应用更新"]},
 } as const;
 /** Read only relevant paragraphs from the same bundled policy used by Help. */
 export function privacySections(document: string, headings: readonly string[]): Array<{title:string; paragraphs:string[]}> {

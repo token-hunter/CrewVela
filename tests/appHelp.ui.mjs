@@ -23,13 +23,29 @@ try{
   assert.ok((await about.boundingBox()).width<=400);assert.equal(await about.getByRole('heading',{name:'CrewVela',exact:true}).count(),1);
   await page.evaluate(()=>document.activeElement?.blur());await about.screenshot({path:`${out}/about-${theme}-${size.width}.png`});await about.getByRole('button',{name:'关闭帮助窗口',exact:true}).click();
   await select('检查更新…');const update=page.getByRole('dialog',{name:'检查更新',exact:true});await update.getByRole('status').waitFor();await page.waitForFunction(()=>window.appSessionMock.help.pending.length===1);assert.equal(await page.evaluate(()=>window.appSessionMock.help.checks),1);
-  await page.evaluate(()=>window.appSessionMock.help.fail('发布源不可用（HTTP 404）：尚无公开稳定发行版'));await update.getByRole('alert').waitFor();assert.doesNotMatch(await update.innerText(),/已是公开最新稳定版/);await update.screenshot({path:`${out}/update-error-${theme}-${size.width}.png`});
+  await page.evaluate(()=>window.appSessionMock.help.fail('发布源不可用（HTTP 404）：无法访问 CrewVela 的 GitHub 发布列表。'));await update.getByRole('alert').waitFor();assert.doesNotMatch(await update.innerText(),/已是最新兼容版本/);await update.screenshot({path:`${out}/update-error-${theme}-${size.width}.png`});
   await update.getByRole('button',{name:'重新检查',exact:true}).click();await page.waitForFunction(()=>window.appSessionMock.help.pending.length===1);await page.evaluate(value=>window.appSessionMock.help.complete(value),release());await update.getByRole('heading',{name:'发现新版本',exact:true}).waitFor();
   await update.getByText('发行说明',{exact:true}).click();assert.match(await update.locator('pre').innerText(),/<img/);assert.equal(await update.locator('.app-update-result img').count(),0,'Remote notes stay text');
   await page.evaluate(()=>window.appSessionMock.help.openFails=true);await update.getByRole('button',{name:'前往发布页下载',exact:true}).click();await update.getByRole('alert').waitFor();assert.match(await update.getByRole('alert').innerText(),/https:\/\/github.com\/token-hunter\/CrewVela\/releases/);
   await page.evaluate(()=>window.appSessionMock.help.openFails=false);await update.getByRole('button',{name:'前往发布页下载',exact:true}).click();await update.getByRole('alert').waitFor({state:'detached'});assert.equal(await page.evaluate(()=>window.appSessionMock.help.opens.at(-1)),'https://github.com/token-hunter/CrewVela/releases/tag/v0.2.0');
   await update.screenshot({path:`${out}/update-available-${theme}-${size.width}.png`});
-  for(const status of ['current','ahead']){await update.getByRole('button',{name:'重新检查',exact:true}).click();await page.waitForFunction(()=>window.appSessionMock.help.pending.length===1);await page.evaluate(value=>window.appSessionMock.help.complete(value),release(status));await update.getByRole('heading',{name:status==='current'?'已是公开最新稳定版':'当前版本高于公开稳定版',exact:true}).waitFor();}
+  for(const status of ['current','ahead']){await update.getByRole('button',{name:'重新检查',exact:true}).click();await page.waitForFunction(()=>window.appSessionMock.help.pending.length===1);await page.evaluate(value=>window.appSessionMock.help.complete(value),release(status));await update.getByRole('heading',{name:status==='current'?'已是最新兼容版本':'当前版本高于最新兼容版本',exact:true}).waitFor();}
+  await update.getByRole('button',{name:'重新检查',exact:true}).click();
+  await page.waitForFunction(()=>window.appSessionMock.help.pending.length===1);
+  const betaUrl='https://github.com/token-hunter/CrewVela/releases/tag/v0.1.1-beta.20261128';
+  await page.evaluate(value=>window.appSessionMock.help.complete(value),{...release(),currentVersion:'0.1.1-beta.20261127',latestVersion:'0.1.1-beta.20261128',releaseUrl:betaUrl});
+  await update.getByRole('heading',{name:'发现新版本',exact:true}).waitFor();
+  assert.match(await update.innerText(),/最新兼容版本：0\.1\.1-beta\.20261128/);
+  await update.getByRole('button',{name:'前往发布页下载',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.appSessionMock.help.opens.at(-1)),betaUrl);
+  await update.getByRole('button',{name:'重新检查',exact:true}).click();
+  await page.waitForFunction(()=>window.appSessionMock.help.pending.length===1);
+  await page.evaluate(value=>window.appSessionMock.help.complete(value),{...release(),status:'unavailable',latestVersion:null,releaseUrl:null,releaseNotes:''});
+  await update.getByRole('heading',{name:'暂无适用于当前平台和更新通道的安装包',exact:true}).waitFor();
+  assert.equal(await update.getByRole('alert').count(),0);
+  assert.equal(await update.getByRole('button',{name:'前往发布页下载',exact:true}).count(),0);
+  await update.getByRole('button',{name:'查看官方发布页',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.appSessionMock.help.opens.at(-1)),'https://github.com/token-hunter/CrewVela/releases');
   await update.getByRole('button',{name:'重新检查',exact:true}).click();await page.waitForFunction(()=>window.appSessionMock.help.pending.length===1);await page.evaluate(value=>window.appSessionMock.help.complete(value),{...release(),releaseUrl:'https://evil.invalid/file.exe'});await update.getByRole('alert').waitFor();assert.match(await update.innerText(),/未知链接/);
   const before=await page.evaluate(()=>window.appSessionMock.help.checks);
   await update.getByRole('button',{name:'重新检查',exact:true}).evaluate(el=>{el.click();el.click();});await page.waitForFunction(()=>window.appSessionMock.help.pending.length===1);assert.equal(await page.evaluate(()=>window.appSessionMock.help.checks),before+1,'One in-flight check per window');

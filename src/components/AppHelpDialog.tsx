@@ -38,7 +38,10 @@ export function AppHelpDialog({ section, onClose }: { section: AppHelpSection; o
     inFlight.current = true; setChecking(true); setError(""); setCheck(null);
     try {
       const result = await invoke<AppUpdateCheck>("app_check_update");
-      if (!trustedReleaseUrl(result.releaseUrl) || !["available", "current", "ahead"].includes(result.status)) throw Error("发行信息无效，未打开未知链接。");
+      const valid = result.status === "unavailable"
+        ? result.releaseUrl === null && result.latestVersion === null
+        : ["available", "current", "ahead"].includes(result.status) && trustedReleaseUrl(result.releaseUrl);
+      if (!valid) throw Error("发行信息无效，未打开未知链接。");
       if (mounted.current) { setCheck(result); setVersion(result.currentVersion); setVersionError(""); }
     } catch (reason) { if (mounted.current) setError(String(reason)); }
     finally { inFlight.current = false; if (mounted.current) setChecking(false); }
@@ -68,9 +71,16 @@ export function AppHelpDialog({ section, onClose }: { section: AppHelpSection; o
       {section !== "privacy" && <p className="app-help-version">{t("当前版本：")}{version ?? (versionError ? t("未取得") : t("正在读取…"))}</p>}
       {versionError && <div role="alert"><p>{versionError}</p><button className="btn" onClick={() => setRevision(value => value + 1)}>{t("重新读取版本")}</button></div>}
       {section === "updates" && <>
-        {checking && <p role="status" className="app-help-checking"><ArrowClockwise size={17} />{t("正在检查 CrewVela 的公开稳定发行版…")}</p>}
+        {checking && <p role="status" className="app-help-checking"><ArrowClockwise size={17} />{t("正在检查 CrewVela 更新…")}</p>}
         {error && <div className="app-help-error" role="alert"><strong>{t("未能完成更新检查")}</strong><p>{error}</p></div>}
-        {check && <section className={`app-update-result ${check.status}`} aria-label={t("更新检查结果")}><h3>{check.status === "available" ? t("发现新版本") : check.status === "ahead" ? t("当前版本高于公开稳定版") : t("已是公开最新稳定版")}</h3><p>{t("公开稳定版：")}{check.latestVersion}</p>{check.status === "available" && <button className="btn primary" onClick={() => void external(check.releaseUrl)}>{t("前往发布页下载")}<ArrowSquareOut size={15} /></button>}{check.releaseNotes && <details><summary>{t("发行说明")}</summary><pre>{check.releaseNotes}</pre></details>}</section>}
+        {check && <section className={`app-update-result ${check.status}`} aria-label={t("更新检查结果")}>
+          {check.status === "unavailable" ? <h3>{t("暂无适用于当前平台和更新通道的安装包")}</h3> : <>
+            <h3>{check.status === "available" ? t("发现新版本") : check.status === "ahead" ? t("当前版本高于最新兼容版本") : t("已是最新兼容版本")}</h3>
+            <p>{t("最新兼容版本：")}{check.latestVersion}</p>
+            {check.status === "available" && <button className="btn primary" onClick={() => void external(check.releaseUrl)}>{t("前往发布页下载")}<ArrowSquareOut size={15} /></button>}
+            {check.releaseNotes && <details><summary>{t("发行说明")}</summary><pre>{check.releaseNotes}</pre></details>}
+          </>}
+        </section>}
         <p className="app-help-note">{t("仅检查 CrewVela 应用版本。更新由你在官方发布页下载，本次检查不会自动下载或安装。")}</p>
         <button className="app-help-link" onClick={() => void external(check?.releaseUrl ?? APP_RELEASES_URL)}>{t("查看官方发布页")}<ArrowSquareOut size={14} /></button>
       </>}

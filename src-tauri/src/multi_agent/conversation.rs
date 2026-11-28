@@ -1955,6 +1955,11 @@ pub struct ConversationSupervisor {
     active: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
 }
 impl ConversationSupervisor {
+    #[cfg(windows)]
+    pub(crate) fn has_active_rounds(&self) -> bool {
+        !self.active.lock().unwrap().is_empty()
+    }
+
     pub(crate) fn steer_queued_chat(&self, store: &MultiAgentStore, project: &str, conversation: &str,
         message_id: &str, expected_updated_at: i64, run_id: &str) -> Result<()> {
         let _active = self.active.lock().unwrap();
