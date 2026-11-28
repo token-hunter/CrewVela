@@ -2,18 +2,18 @@
 
 [简体中文](downloads.md)
 
-The [2026-11-26 Beta](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261126) provides Windows x64 and macOS Apple Silicon installers. Both use app version `0.1.0`.
+The [2026-11-28 Beta](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.1-beta.20261128) provides the latest Windows x64 installer. The macOS Apple Silicon installer is available in the [2026-11-26 Beta](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261126).
 
 ## Windows x64
 
-The Windows installer was built from [`0062a19`](https://github.com/token-hunter/CrewVela/commit/0062a198a441973c794c085e81c4fa975a35e50f).
+The Windows installer was built from the [v0.1.1-beta.20261128 tag](https://github.com/token-hunter/CrewVela/tree/v0.1.1-beta.20261128).
 
-1. Download the [Windows installer](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/CrewVela-0.1.0-windows-x64-setup.exe) and [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/SHA256SUMS.txt).
+1. Download the [Windows installer](https://github.com/token-hunter/CrewVela/releases/download/v0.1.1-beta.20261128/CrewVela-0.1.1-beta.20261128-windows-x64-setup.exe) and [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.1-beta.20261128/SHA256SUMS.txt).
 2. In PowerShell, run the command below from your downloads folder. Compare the `Hash` value with the entry in `SHA256SUMS.txt`.
 3. Run the installer. The installer is unsigned, installs for the current Windows user, and offers English and Simplified Chinese. In the app, choose your interface language in **Settings → General**.
 
 ```powershell
-Get-FileHash .\CrewVela-0.1.0-windows-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\CrewVela-0.1.1-beta.20261128-windows-x64-setup.exe -Algorithm SHA256
 ```
 
 Windows WebView2 is required. The installer can download its bootstrapper if WebView2 is missing. Install and sign in to the agents you plan to use. Some native-chat integrations require Node.js and an ACP adapter. Rust and MSVC are only needed to build CrewVela from source.
