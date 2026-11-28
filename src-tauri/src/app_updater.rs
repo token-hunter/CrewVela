@@ -1,17 +1,67 @@
 use serde::Serialize;
-use tauri::{ipc::Channel, WebviewWindow};
+use tauri::{ipc::Channel, Manager, WebviewWindow};
 
 pub(crate) fn embedded_key() -> Option<&'static str> {
     #[cfg(all(windows, target_arch = "x86_64"))]
     {
         use tauri::utils::{config::BundleType, platform::bundle_type};
-        if !crate::test_profile::active() && bundle_type() == Some(BundleType::Nsis) {
+        if bundle_type() == Some(BundleType::Nsis) {
             return option_env!("CREWVELA_UPDATER_PUBLIC_KEY")
                 .map(str::trim)
                 .filter(|key| !key.is_empty());
         }
     }
     None
+}
+
+#[cfg(windows)]
+pub(crate) fn configure_context<R: tauri::Runtime>(
+    context: &mut tauri::Context<R>,
+    pubkey: &str,
+) {
+    // Tauri deserializes the plugin configuration before running its setup hook.
+    context.config_mut().plugins.0.insert(
+        "updater".into(),
+        serde_json::json!({ "pubkey": pubkey }),
+    );
+}
+
+#[cfg(windows)]
+pub(crate) fn register<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<()> {
+    app.plugin(tauri_plugin_updater::Builder::new().build())?;
+    app.manage(PendingUpdate::default());
+    Ok(())
+}
+
+pub(crate) fn is_ready<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    #[cfg(windows)]
+    return !crate::test_profile::active() && app.try_state::<PendingUpdate>().is_some();
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        false
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use tauri::test::{mock_builder, mock_context, noop_assets};
+
+    #[test]
+    fn updater_startup_registers_only_after_configuration_is_available() {
+        let missing_config = mock_builder().build(mock_context(noop_assets())).unwrap();
+        let error = register(missing_config.handle()).unwrap_err();
+        assert!(error.to_string().contains("plugins.updater"));
+        assert!(!is_ready(missing_config.handle()));
+
+        let mut context = mock_context(noop_assets());
+        configure_context(&mut context, "test-updater-public-key");
+        let configured = mock_builder().build(context).unwrap();
+        assert!(!is_ready(configured.handle()));
+        register(configured.handle()).unwrap();
+        assert!(is_ready(configured.handle()));
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -25,7 +75,7 @@ pub(crate) enum DownloadProgress {
 
 #[tauri::command]
 pub(crate) async fn app_download_update(window: WebviewWindow, version: String, progress: Channel<DownloadProgress>) -> Result<(), String> {
-    if window.label() != "main" || embedded_key().is_none() {
+    if window.label() != "main" || !is_ready(window.app_handle()) {
         return Err("当前应用请通过官方发布页更新。".into());
     }
     #[cfg(windows)]
@@ -39,7 +89,7 @@ pub(crate) async fn app_download_update(window: WebviewWindow, version: String, 
 
 #[tauri::command]
 pub(crate) async fn app_install_update(window: WebviewWindow, version: String) -> Result<bool, String> {
-    if window.label() != "main" || embedded_key().is_none() {
+    if window.label() != "main" || !is_ready(window.app_handle()) {
         return Err("当前应用请通过官方发布页更新。".into());
     }
     #[cfg(windows)]
@@ -60,7 +110,7 @@ mod windows {
     use crate::{app_help, sessions::SessionStatus};
     use sha2::{Digest, Sha256};
     use std::time::{Duration, Instant};
-    use tauri::{Manager, Url};
+    use tauri::Url;
     use tauri_plugin_updater::{Update, UpdaterExt};
     use tokio::sync::Mutex;
 

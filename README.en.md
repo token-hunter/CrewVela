@@ -8,7 +8,7 @@
 
 Let Claude Code implement, Codex review, and another agent pick up the next step.
 
-[![Version 0.1.1 Beta](https://img.shields.io/badge/version-0.1.1--beta-8B6CEF?style=flat-square)](CHANGELOG.md)
+[![Version 0.1.2 Beta](https://img.shields.io/badge/version-0.1.2--beta-8B6CEF?style=flat-square)](CHANGELOG.md)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8D8?style=flat-square)](src-tauri/Cargo.toml)
 [![React and TypeScript](https://img.shields.io/badge/React-TypeScript-3178C6?style=flat-square)](package.json)
 [![MIT license](https://img.shields.io/badge/license-MIT-64748B?style=flat-square)](LICENSE)
@@ -23,7 +23,7 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 
 CrewVela is a desktop workspace built with **Tauri 2, React, and Rust**. It brings separate agent sessions, messaging, project collaboration, and work handoffs into one window, while retaining each agent's local installation, accounts, and permission mechanisms.
 
-> **The latest Windows x64 build is v0.1.1 Beta.** v0.1.0 Beta is available for macOS Apple Silicon. See [Download and install](docs/downloads.en.md) for links, checksums, and setup.
+> **The latest Windows x64 build is v0.1.2 Beta.** v0.1.0 Beta is available for macOS Apple Silicon. See [Download and install](docs/downloads.en.md) for links, checksums, and setup.
 
 ## See CrewVela in one minute
 

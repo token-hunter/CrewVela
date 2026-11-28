@@ -2,25 +2,25 @@
 
 [English](downloads.en.md)
 
-[2026-11-28 Beta](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.1-beta.20261128) 提供最新的 Windows x64 安装包。macOS Apple Silicon 安装包见 [2026-11-26 Beta](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261126)。
+[2026-11-28 Beta](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.2-beta.20261128) 提供最新的 Windows x64 安装包。macOS Apple Silicon 安装包见 [2026-11-26 Beta](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.0-beta.20261126)。
 
 | 资产 | 用途与当前状态 |
 | --- | --- |
-| [CrewVela-0.1.1-beta.20261128-windows-x64-setup.exe](https://github.com/token-hunter/CrewVela/releases/download/v0.1.1-beta.20261128/CrewVela-0.1.1-beta.20261128-windows-x64-setup.exe) | Windows x64 当前用户安装向导，提供简体中文和 English。应用本体可从源码单独构建 |
-| [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.1-beta.20261128/SHA256SUMS.txt) | 上述安装包的完整性校验值 |
+| [CrewVela-0.1.2-beta.20261128-windows-x64-setup.exe](https://github.com/token-hunter/CrewVela/releases/download/v0.1.2-beta.20261128/CrewVela-0.1.2-beta.20261128-windows-x64-setup.exe) | Windows x64 当前用户安装向导，提供简体中文和 English。应用本体可从源码单独构建 |
+| [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.2-beta.20261128/SHA256SUMS.txt) | 上述安装包的完整性校验值 |
 | [CrewVela_0.1.0_macos_aarch64.dmg](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/CrewVela_0.1.0_macos_aarch64.dmg) | macOS Apple Silicon 安装镜像 |
 | [CrewVela_0.1.0_macos_aarch64.dmg.sha256](https://github.com/token-hunter/CrewVela/releases/download/v0.1.0-beta.20261126/CrewVela_0.1.0_macos_aarch64.dmg.sha256) | macOS 安装镜像校验值 |
 
 ## Windows
 
-Windows 安装包的源码见 [v0.1.1-beta.20261128 标签](https://github.com/token-hunter/CrewVela/tree/v0.1.1-beta.20261128)。
+Windows 安装包的源码见 [v0.1.2-beta.20261128 标签](https://github.com/token-hunter/CrewVela/tree/v0.1.2-beta.20261128)。
 
-下载 `CrewVela-0.1.1-beta.20261128-windows-x64-setup.exe` 并运行安装向导。WebView2 和对应 Agent CLI 仍需本机可用。**使用下载版无需安装 Rust/MSVC 或克隆源码**；运行时使用的 Node、CLI 和 ACP 适配器仍有单独依赖，无源码目录的干净机器验证仍待完成。自行使用 ZIP 分发时，解压后再运行 EXE，不要从压缩包内部启动。
+下载 `CrewVela-0.1.2-beta.20261128-windows-x64-setup.exe` 并运行安装向导。WebView2 和对应 Agent CLI 仍需本机可用。**使用下载版无需安装 Rust/MSVC 或克隆源码**；运行时使用的 Node、CLI 和 ACP 适配器仍有单独依赖，无源码目录的干净机器验证仍待完成。自行使用 ZIP 分发时，解压后再运行 EXE，不要从压缩包内部启动。
 
 运行安装向导前，可在下载目录使用 PowerShell 核对 SHA-256。将 `Hash` 与同一 Release 的 `SHA256SUMS.txt` 比较。
 
 ```powershell
-Get-FileHash .\CrewVela-0.1.1-beta.20261128-windows-x64-setup.exe -Algorithm SHA256
+Get-FileHash .\CrewVela-0.1.2-beta.20261128-windows-x64-setup.exe -Algorithm SHA256
 ```
 
 应用界面语言在「设置 → 常规」切换，独立于安装向导所选语言。
@@ -36,7 +36,7 @@ npm run tauri -- build --no-bundle
 npm run bundle:windows
 ```
 
-第二步独立生成 NSIS 安装包，原始输出在 `src-tauri/target/release/bundle/nsis/`，对外统一命名为 `CrewVela-0.1.1-beta.20261128-windows-x64-setup.exe`。这不是给普通 EXE 改名。Windows 专属配置提供当前用户安装、中英语言选择和许可材料；缺少 WebView2 时下载引导程序，需要网络。Node、Agent CLI 与 ACP 依赖不会由该安装包全部安装。
+第二步独立生成 NSIS 安装包，原始输出在 `src-tauri/target/release/bundle/nsis/`，对外统一命名为 `CrewVela-0.1.2-beta.20261128-windows-x64-setup.exe`。这不是给普通 EXE 改名。Windows 专属配置提供当前用户安装、中英语言选择和许可材料；缺少 WebView2 时下载引导程序，需要网络。Node、Agent CLI 与 ACP 依赖不会由该安装包全部安装。
 
 本地发行文件整理在 `output/releases/<tag>/` 并被 Git 忽略。构建、向导检查、签名和安装/卸载验收边界见 [安装包记录](release-installers-validation.md)。
 

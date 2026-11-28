@@ -6474,6 +6474,12 @@ pub fn run() {
     if !test_profile::active() { launcher::initialize_platform_path(); }
     let storage_migration = brand::prepare_app_storage_aliases();
     let mut context=tauri::generate_context!();
+    #[cfg(windows)]
+    let updater_key = app_updater::embedded_key();
+    #[cfg(windows)]
+    if let Some(pubkey) = updater_key {
+        app_updater::configure_context(&mut context, pubkey);
+    }
     let isolated_windows=test_profile::configure_context(&mut context);
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -6496,9 +6502,10 @@ pub fn run() {
                 }
             }
             #[cfg(windows)]
-            if let Some(pubkey) = app_updater::embedded_key() {
-                app.handle().plugin(tauri_plugin_updater::Builder::new().pubkey(pubkey).build())?;
-                app.manage(app_updater::PendingUpdate::default());
+            if updater_key.is_some() {
+                if let Err(error) = app_updater::register(app.handle()) {
+                    eprintln!("[crewvela] 无法初始化应用内更新，将使用官方发布页：{error}");
+                }
             }
             #[cfg(target_os = "windows")]
             if !test_profile::active() { if let Err(error) = windows_notification::initialize() {
