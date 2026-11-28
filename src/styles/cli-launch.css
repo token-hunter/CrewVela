@@ -24,8 +24,15 @@
 .cli-launch-directory-controls > button { flex: 0 0 auto; padding: 10px 12px; font-size: 12px; }
 .cli-launch-directory-path { margin: 9px 0 4px; overflow-wrap: anywhere; line-height: 1.5; font-size: 12px; }
 .cli-launch-directory-hint { margin: 0; color: var(--text-dim); line-height: 1.5; font-size: 12px; }
+.cli-launch-models { margin-bottom: 20px; }
+.cli-launch-model-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cli-launch-model-fields > label:only-child { grid-column: 1 / -1; }
+.cli-launch-model-fields > label { display: grid; min-width: 0; gap: 9px; font-size: 14px; }
+.cli-launch-models small { display: block; margin-top: 6px; color: var(--text-dim); font-size: 12px; }
+.cli-launch-model-feedback { display: flex; gap: 8px; align-items: baseline; }
 .cli-launch-chat-setup { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; color: var(--warn); font-size: 12px; }
 @media (max-width: 420px) { .cli-launch-directory-controls { flex-direction: column; } .cli-launch-directory-controls > select { width: 100%; } }
+@media (max-width: 360px) { .cli-launch-model-fields { grid-template-columns: minmax(0, 1fr); } }
 .collab-runtime-management .runtime-default-mode { background: var(--bg); color: var(--text); font: inherit; font-size: 12px; border: 1px solid var(--border-strong); border-radius: 6px; padding: 8px; width: 100%; min-width: 0; }
 .collab-runtime-management-row.cli-mode-row { display: grid; grid-template-columns: 16px minmax(125px, 1fr) 180px 88px 24px; align-items: center; gap: 10px; padding: 10px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; }
 .cli-mode-row > .collab-runtime-order-actions { grid-column: 5; grid-row: 1; }

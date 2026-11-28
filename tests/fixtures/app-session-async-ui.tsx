@@ -147,6 +147,16 @@ const api = {
         return api.cliLaunch.pickerValue;
       }
       if (command === 'get_runtime_preferences') return {disabledRuntimes:[],defaultLaunchModes:structuredClone(api.cliLaunch.defaults)};
+      if (command === 'cli_session_model_options') {
+        if (args?.runtimeKind === 'claude_code') throw Error('fixture 没有模型目录');
+        return {
+          supported: true, observed: true, selection: { model: null, reasoning: null },
+          model: [{ value: 'model-a', label: 'Model A' }, { value: 'model-b', label: 'Model B' },
+            ...(args?.runtimeKind === 'antigravity' ? [{ value: 'model-orchestrator', label: 'Orchestrator' }] : [])],
+          reasoning: args?.model === 'model-orchestrator' ? []
+            : args?.model === 'model-b' ? [{ value: 'low', label: 'Low' }] : [{ value: 'high', label: 'High' }],
+        };
+      }
       if (command === 'set_runtime_launch_default') {
         api.cliLaunch.calls.push({command,args});
         if (api.cliLaunch.failSave) throw Error('fixture 默认模式写入失败');

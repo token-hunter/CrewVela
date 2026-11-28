@@ -1826,6 +1826,8 @@
   "用于团队聊天的原生 Runtime，从下一次派发起生效。": "Applies to native runtimes in team chat starting with the next dispatch.",
   "正在读取可用选项…": "Loading available options…",
   "无法读取模型选项": "Could not load model options",
+  "跟随 Agent 默认": "Agent default",
+  "无法读取模型选项，可跟随 Agent 默认启动。": "Could not load model options. You can start with the agent defaults.",
   "已不可用": "Unavailable",
   "运行环境检测": "Runtime checks",
   "更新检查": "Check for updates",

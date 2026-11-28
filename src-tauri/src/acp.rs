@@ -2038,15 +2038,14 @@ pub(crate) type ConversationConfigurator = Box<dyn FnOnce(&mut AcpConnection) ->
 
 /// Discover values with a fresh, message-free handshake. Never resume a
 /// member's live session or attach collaboration tools just to open settings.
-pub(crate) fn conversation_model_catalog(kind: ManagedAcpKind, cwd: &str, model: Option<&str>) -> Result<Vec<Value>> {
+pub(crate) fn conversation_model_catalog(kind: ManagedAcpKind, cwd: &str, model: Option<&str>, codex_storage: crate::codex_storage::CodexStorage) -> Result<Vec<Value>> {
     if matches!(kind, ManagedAcpKind::ClaudeCode | ManagedAcpKind::Codex) {
         anyhow::ensure!(chat_adapter_installed(kind), "{} 的 ACP 适配器尚未就绪，请先在运行时管理中检查", kind.label());
     }
     let mut command = adapter_command(kind)?;
     if kind == ManagedAcpKind::Codex {
-        let storage = crate::codex_storage::CodexStorage::CrewVela;
-        storage.prepare()?;
-        storage.configure(&mut command, true)?;
+        codex_storage.prepare()?;
+        codex_storage.configure(&mut command, true)?;
     }
     catalog_from_adapter(kind, cwd, command, model)
 }
