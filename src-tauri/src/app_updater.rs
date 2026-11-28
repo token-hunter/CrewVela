@@ -73,6 +73,18 @@ pub(crate) enum DownloadProgress {
     Verifying,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum RestartBlocker {
+    RuntimeTransition,
+    AgentSession,
+    Terminal,
+    ProjectExecution,
+    TeamChat,
+    PreviewService,
+    Automation,
+}
+
 #[tauri::command]
 pub(crate) async fn app_download_update(window: WebviewWindow, version: String, progress: Channel<DownloadProgress>) -> Result<(), String> {
     if window.label() != "main" || !is_ready(window.app_handle()) {
@@ -88,7 +100,7 @@ pub(crate) async fn app_download_update(window: WebviewWindow, version: String, 
 }
 
 #[tauri::command]
-pub(crate) async fn app_install_update(window: WebviewWindow, version: String) -> Result<bool, String> {
+pub(crate) async fn app_install_update(window: WebviewWindow, version: String) -> Result<Option<RestartBlocker>, String> {
     if window.label() != "main" || !is_ready(window.app_handle()) {
         return Err("当前应用请通过官方发布页更新。".into());
     }
@@ -180,7 +192,7 @@ mod windows {
         Ok(())
     }
 
-    pub(super) fn install(window: WebviewWindow, version: &str) -> Result<bool, String> {
+    pub(super) fn install(window: WebviewWindow, version: &str) -> Result<Option<RestartBlocker>, String> {
         let app = window.app_handle();
         let pending = app.state::<PendingUpdate>();
         let pending = pending.0.try_lock().map_err(|_| "更新已在进行。")?;
@@ -190,24 +202,36 @@ mod windows {
         // Refuse restarts during activity and hold both admission guards until the
         // installer starts. A failed launch drops them so that work can continue.
         let admission = app.state::<crate::runtime_admission::RuntimeAdmission>();
-        let Ok(_admission) = admission.begin_shutdown(Duration::ZERO) else { return Ok(false) };
+        let Ok(_admission) = admission.begin_shutdown(Duration::ZERO) else {
+            return Ok(Some(RestartBlocker::RuntimeTransition));
+        };
         let supervisor = app.state::<crate::MultiAgentSupervisor>();
-        let Ok(supervisor) = supervisor.begin_shutdown() else { return Ok(false) };
+        let Ok(supervisor) = supervisor.begin_shutdown() else {
+            return Ok(Some(RestartBlocker::RuntimeTransition));
+        };
         let sessions = app.state::<crate::SessionManager>();
         let agent_busy = sessions.with_worktree_records(|records| Ok(records.iter().any(|session| {
             matches!(session.status, SessionStatus::Running | SessionStatus::Waiting)
         }))).map_err(|_| "无法确认会话已结束，请重试。")?;
-        if agent_busy || !supervisor.project_ids.is_empty()
-            || app.state::<crate::PtyManager>().has_open_terminals()
-            || app.state::<crate::multi_agent::ConversationSupervisor>().has_active_rounds()
-            || app.state::<crate::multi_agent::project_preview::LocalProjectServices>().has_active_services()
-            || app.state::<crate::automation::AutomationManager>().list().iter().any(|automation| {
-                automation.recent_runs.iter().any(|run| run.stage.as_deref().is_some_and(crate::automation::is_active_stage))
-            })
-        {
-            return Ok(false);
+        if agent_busy {
+            return Ok(Some(RestartBlocker::AgentSession));
+        }
+        if !supervisor.project_ids.is_empty() {
+            return Ok(Some(RestartBlocker::ProjectExecution));
+        }
+        if app.state::<crate::PtyManager>().has_open_terminals() {
+            return Ok(Some(RestartBlocker::Terminal));
+        }
+        if app.state::<crate::multi_agent::ConversationSupervisor>().has_active_rounds() {
+            return Ok(Some(RestartBlocker::TeamChat));
+        }
+        if app.state::<crate::multi_agent::project_preview::LocalProjectServices>().has_active_services() {
+            return Ok(Some(RestartBlocker::PreviewService));
+        }
+        if app.state::<crate::automation::AutomationManager>().has_live_execution() {
+            return Ok(Some(RestartBlocker::Automation));
         }
         verified.update.install(&verified.bytes).map_err(|_| "无法启动安装程序，请重试。")?;
-        Ok(true)
+        Ok(None)
     }
 }

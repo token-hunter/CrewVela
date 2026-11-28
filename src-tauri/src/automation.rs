@@ -219,6 +219,19 @@ pub struct AutomationManager {
     dispatching: Mutex<std::collections::HashSet<String>>,
 }
 
+impl AutomationManager {
+    pub(crate) fn has_live_execution(&self) -> bool {
+        let items = self.items.lock().unwrap();
+        // Recovered runs stay unconfirmed for reconciliation and safe retries.
+        // Only current execution or dispatch should hold up an app restart.
+        items.iter().flat_map(|item| &item.recent_runs).any(|run| {
+            run.stage.as_deref().is_some_and(|stage| {
+                stage != "unconfirmed" && is_active_stage(stage)
+            })
+        }) || !self.dispatching.lock().unwrap().is_empty()
+    }
+}
+
 /// 按本地日历寻找下一次触发；跳过 DST 不存在的时刻，重复时刻选严格晚于基准的最早一次。
 fn next_calendar_after(
     weekdays: Option<&[u32]>,
@@ -877,6 +890,29 @@ impl AutomationManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn historical_unconfirmed_automation_does_not_block_app_restart() {
+        let root = std::env::temp_dir().join(format!("crewvela-automation-restart-{}", uuid::Uuid::new_v4()));
+        let file = root.join("automations.json");
+        let manager = AutomationManager::open_at(file.clone()).unwrap();
+        manager.create(input(
+            AutomationTrigger::OnSessionEvent { event: SessionEventKind::Failed },
+            AutomationAction::Broadcast { body: "test dispatch".into() },
+        ), 1).unwrap();
+        assert!(!manager.has_live_execution());
+        assert_eq!(manager.collect_event(SessionEventKind::Failed, 2).unwrap().len(), 1);
+        assert!(manager.has_live_execution(), "a real dispatch still blocks restart");
+        drop(manager);
+
+        let restarted = AutomationManager::open_at(file).unwrap();
+        assert_eq!(restarted.list()[0].recent_runs[0].stage.as_deref(), Some("unconfirmed"));
+        assert!(!restarted.has_live_execution(), "a recovered record has no live dispatch");
+        assert_eq!(restarted.collect_event(SessionEventKind::Failed, 3).unwrap().len(), 1);
+        assert!(restarted.has_live_execution(), "new work blocks restart even with recovered history");
+        drop(restarted);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn action_fields_deserialize_from_camelCase_contract() {
