@@ -860,6 +860,12 @@ impl LocalProjectServices {
             .collect()
     }
 
+    #[cfg(windows)]
+    pub(crate) fn has_active_services(&self) -> bool {
+        self.instances.lock().unwrap().values()
+            .any(|entry| matches!(entry.lock().unwrap().status.state, "starting" | "running"))
+    }
+
     pub(crate) fn status(&self, id: &str) -> PreviewStatus {
         self.instances.lock().unwrap().get(id)
             .map_or_else(PreviewStatus::default, |entry| entry.lock().unwrap().status(true))

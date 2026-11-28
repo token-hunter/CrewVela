@@ -16,6 +16,12 @@ let sessions: SessionRecord[] = ["one", "two"].map((id, i) => ({
 const bulkFixture = new URLSearchParams(location.search).get("bulk-actions");
 const originalRunFixture = new URLSearchParams(location.search).has("original-run");
 const originalPiChatHost = new URLSearchParams(location.search).has("pi-chat-host");
+const appUpdateFixture = new URLSearchParams(location.search).has("app-update-notice");
+const appUpdateDemo = new URLSearchParams(location.search).get("update-demo");
+if (appUpdateFixture) {
+  document.documentElement.dataset.view = "main";
+  Object.assign(window, { isTauri: true });
+}
 if (originalRunFixture) {
   sessions[0] = { ...sessions[0], title: originalPiChatHost ? "Pi 审查" : "Claude 原终端", agentRuntimeKind: originalPiChatHost ? "pi" : "claude_code",
     multiAgentProjectId: "A", multiAgentAgentId: "agent-A", status: "running", ptyId: 1,
@@ -37,11 +43,23 @@ if (new URLSearchParams(location.search).has("retired-runtime")) {
 const pending: Array<{ id: string; resolve: (value: SessionRecord) => void; reject: (reason: Error) => void }> = [];
 const calls: string[] = [];
 const callbacks = new Map<number, (event: unknown) => void>();
+let nextCallbackId = 0;
 const listeners = new Map<string, number>();
 let providers = [{ id: "fixture-provider", name: "Fixture provider", baseUrl: "https://example.com", authTokenRef: "fixture", env: {}, builtin: false, timeoutMs: null, disableNonessentialTraffic: false }];
 // 轮询命令的返回内容由测试控制；每次都是新对象，键顺序也随机（Rust HashMap 的序列化顺序就是如此）。
 const shuffledKeys = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).sort(() => Math.random() - 0.5));
 const api = {
+  updateNotice: {
+    canInstall: !new URLSearchParams(location.search).has("manual-only"),
+    checks: 0,
+    downloads: [] as string[],
+    installs: [] as string[],
+    opens: [] as string[],
+    busy: true,
+    fail: false,
+    emit: (_message: unknown) => {},
+    finish: () => {},
+  },
   cliLaunch: {
     defaults: JSON.parse(localStorage.getItem('fixture-cli-launch-defaults') ?? '{"claude_code":"auto","codex":"read_only"}') as Record<string, string>,
     calls: [] as Array<{command: string; args: any}>,
@@ -80,7 +98,8 @@ const api = {
   rejectSwitchDismiss: false, switchCommands: [] as string[],
   usages: {} as Record<string, unknown>,
   switchRecords: [] as unknown[],
-  registerCallback(fn: (event: unknown) => void) { const id = callbacks.size + 1; callbacks.set(id, fn); return id; },
+  registerCallback(fn: (event: unknown) => void) { const id = ++nextCallbackId; callbacks.set(id, fn); return id; },
+  unregisterCallback(id: number) { callbacks.delete(id); },
   emit(event: string, payload: unknown) { callbacks.get(listeners.get(event)!)?.({ event, payload }); },
   release(id: string, failure?: string) {
     const index = pending.findIndex(item => item.id === id);
@@ -244,6 +263,46 @@ const api = {
         return structuredClone(stopped);
       }
       return null;
+    }
+    if (appUpdateFixture) {
+      const update = api.updateNotice;
+      if (command === "app_check_update") {
+        if (args && Object.keys(args).length) throw Error("Update check must not send session/config data");
+        update.checks++;
+        return { currentVersion: "0.1.1-beta.20261128", latestVersion: "0.1.2-beta.1", status: "available",
+          releaseUrl: "https://github.com/token-hunter/CrewVela/releases/tag/v0.1.2-beta.1",
+          releaseNotes: "", canInstall: update.canInstall };
+      }
+      if (command === "app_download_update") {
+        update.downloads.push(String(args?.version));
+        const progress = args?.progress as { id: number };
+        let index = 0;
+        update.emit = message => callbacks.get(progress.id)?.({ index: index++, message });
+        return new Promise<void>((resolve, reject) => { update.finish = () => {
+          callbacks.get(progress.id)?.({ index, end: true });
+          if (update.fail) reject(Error("fixture download failed"));
+          else resolve();
+        };
+          if (appUpdateDemo) {
+            window.setTimeout(() => update.emit({ phase: "downloading", received: 64, total: 100 }), 80);
+            if (appUpdateDemo !== "progress") {
+              window.setTimeout(() => {
+                update.fail = appUpdateDemo === "retry" && update.downloads.length === 1;
+                update.emit({ phase: "verifying" });
+                update.finish();
+              }, 400);
+            }
+          }
+        });
+      }
+      if (command === "app_install_update") {
+        update.installs.push(String(args?.version));
+        return !update.busy || (appUpdateDemo !== null && update.installs.length > 1);
+      }
+      if (command === "plugin:opener|open_url") {
+        update.opens.push(String(args?.url));
+        return;
+      }
     }
     if (new URLSearchParams(location.search).has("app-help")) {
       if(command === "plugin:app|version") { if(api.help.versionFails)throw Error("version unavailable");return api.help.version; }

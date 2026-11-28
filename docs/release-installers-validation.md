@@ -23,6 +23,23 @@ npm run bundle:windows
 
 缺少 WebView2 时使用下载引导，需联网。该安装包不会替用户安装全部 Agent CLI、Node 和 ACP 适配器，不等于此前“干净机器完整工作流”待办已完成。许可材料也不替代未完成的素材来源核对。
 
+## Windows x64 应用内更新
+
+发行构建前，将长期使用的 Tauri 更新公钥内容设为 `CREWVELA_UPDATER_PUBLIC_KEY`。私钥通过受保护的发布环境保存，仅在签署安装包时使用。安装包签名与 Windows Authenticode 签名独立。
+
+保证应用内的语义版本号与 GitHub 标签一致。按上面的顺序构建和打包后，将最终安装包命名并放到发布目录，然后执行：
+
+```powershell
+$tag = 'v0.1.2-beta.1'
+$installer = 'output/releases/v0.1.2-beta.1/CrewVela-0.1.2-beta.1-windows-x64-setup.exe'
+npm run tauri -- signer sign $installer
+node scripts/make-windows-update-manifest.mjs $tag $installer
+```
+
+签名命令从发布环境读取 `TAURI_SIGNING_PRIVATE_KEY_PATH` 或 `TAURI_SIGNING_PRIVATE_KEY`，以及密钥所需的 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。将最终 EXE、同名 `.sig` 和生成的 `crewvela-update.json` 一起挂到该标签的 GitHub Release。若对 EXE 做 Authenticode 签名或其他修改，先完成修改再生成 Tauri 签名和更新清单。
+
+正式版和 Beta 使用同一套公钥，检查时继续按客户端通道与架构筛选。旧版用户手动安装一次带公钥的版本即可接收后续应用内更新。便携 EXE 和缺少签名附件的发行版在提示中提供官方发布页入口。
+
 ## 实际验证
 
 - Node 全量：425 通过、1 项既有跳过，0 失败。

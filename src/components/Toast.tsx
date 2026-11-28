@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { localizeError } from "../localizedError";
 import { translate } from "../interfaceLanguage";
 import { useInterfaceLanguage } from "../useInterfaceLanguage";
@@ -54,16 +54,19 @@ function ToastCard({
 export function ToastStack({
   toasts,
   onDismiss,
+  children,
 }: {
   toasts: ToastItem[];
   onDismiss: (id: number) => void;
+  children?: ReactNode;
 }) {
-  if (toasts.length === 0) return null;
+  if (toasts.length === 0 && !children) return null;
   return (
     <div className="toast-stack">
       {toasts.map((toast) => (
         <ToastCard key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}
+      {children}
     </div>
   );
 }
