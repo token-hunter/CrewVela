@@ -223,7 +223,7 @@ pub async fn app_check_update(app: tauri::AppHandle) -> Result<AppUpdateCheck, S
     .await
     .map_err(|_| "检查更新超时，请检查网络后重试。")??;
     result.can_install = result.status == "available" && result.signed_update.is_some()
-        && crate::app_updater::embedded_key().is_some();
+        && crate::app_updater::is_ready(&app);
     Ok(result)
 }
 
