@@ -789,7 +789,7 @@ dependencies = [
 
 [[package]]
 name = "crewvela"
-version = "0.1.2-beta.20261128"
+version = "0.1.3-beta.20261128"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
