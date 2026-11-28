@@ -8,10 +8,20 @@ import "../styles/app-update-notice.css";
 
 type Offer = Exclude<AppUpdateCheck, { status: "unavailable" }>;
 type Progress = { phase: "downloading"; received: number; total: number } | { phase: "verifying" };
+const restartBlockerMessage = {
+  runtimeTransition: "会话正在启动或退出，请稍后重试。",
+  agentSession: "请结束运行中或等待确认的 Agent 会话后再安装。",
+  terminal: "请关闭仍打开的终端后再安装。",
+  projectExecution: "请结束正在执行的项目任务后再安装。",
+  teamChat: "请等待团队聊天的当前回复完成后再安装。",
+  previewService: "请停止仍在运行的项目预览后再安装。",
+  automation: "请等待当前自动化任务结束后再安装。",
+} as const;
+type RestartBlocker = keyof typeof restartBlockerMessage;
 type Notice = { offer: Offer } & (
   | { step: "available" | "retry" | "verifying" | "installing" }
   | { step: "downloading"; percent: number }
-  | { step: "ready"; installFailed: boolean }
+  | { step: "ready"; reason: (typeof restartBlockerMessage)[RestartBlocker] | "无法启动安装程序，请重试。" }
 );
 
 const CHECK_DELAY = 5000;
@@ -55,10 +65,10 @@ export function AppUpdateNotice() {
   async function install() {
     setNotice({ offer, step: "installing" });
     try {
-      const installing = await invoke<boolean>("app_install_update", { version });
-      if (!installing) setNotice({ offer, step: "ready", installFailed: false });
+      const blocker = await invoke<RestartBlocker | null>("app_install_update", { version });
+      if (blocker) setNotice({ offer, step: "ready", reason: restartBlockerMessage[blocker] });
     } catch {
-      setNotice({ offer, step: "ready", installFailed: true });
+      setNotice({ offer, step: "ready", reason: "无法启动安装程序，请重试。" });
     }
   }
   async function update() {
@@ -134,7 +144,7 @@ export function AppUpdateNotice() {
           <button type="button" className="app-update-notice-action" onClick={() => void update()}>{t(action)}</button>
         </div>
       )}
-      {step === "ready" && <p>{t(notice.installFailed ? "无法启动安装程序，请重试。" : "请在会话和任务结束后安装。")}</p>}
+      {step === "ready" && <p role="status">{t(notice.reason)}</p>}
       {step === "retry" && <button className="app-update-notice-release" type="button" onClick={() => void openUrl(offer.releaseUrl).then(dismiss).catch(() => { setNotice({ offer, step: "retry" }); })}>{t("查看官方发布页")}</button>}
     </section>
   );

@@ -297,7 +297,7 @@ const api = {
       }
       if (command === "app_install_update") {
         update.installs.push(String(args?.version));
-        return !update.busy || (appUpdateDemo !== null && update.installs.length > 1);
+        return !update.busy || (appUpdateDemo !== null && update.installs.length > 1) ? null : "automation";
       }
       if (command === "plugin:opener|open_url") {
         update.opens.push(String(args?.url));
