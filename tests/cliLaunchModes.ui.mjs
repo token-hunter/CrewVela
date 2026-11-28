@@ -7,7 +7,7 @@ const output = '.scratch/cli-launch-modes-20261116/ui'; mkdirSync(output, { recu
 const browser = await chromium.launch({ channel: 'chrome' });
 const errors = [];
 async function choose(page, kind) {
-  await page.getByRole('button', {name:'新建会话',exact:true}).first().click();
+  await page.getByRole('button', {name:'新建',exact:true}).first().click();
   const labels = {
     claude_code:'Claude Code', codex:'Codex CLI', kimi_code:'Kimi Code', opencode:'OpenCode', pi:'Pi Agent', zcode_cli:'ZCode CLI', antigravity:'Antigravity CLI',
     claude_chat:'Claude Code Chat', codex_chat:'Codex Chat', kimi_chat:'Kimi Code Chat', opencode_chat:'OpenCode Chat',
@@ -33,7 +33,36 @@ try {
     assert.equal(await page.evaluate(()=>window.appSessionMock.cliLaunch.defaults.codex),'read_only');
     let call=await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1));
     assert.equal(call.args.launchMode,'workspace'); assert.equal(call.args.cwd,'C:\\fixture');
+    assert.equal(call.args.launchModels, undefined, 'agent defaults do not send model overrides');
     await page.locator('.pane-launch-mode').filter({hasText:'工作区写入'}).waitFor();
+    dialog = await choose(page,'codex');
+    const model = dialog.getByRole('combobox',{name:'模型',exact:true});
+    const reasoning = dialog.getByRole('combobox',{name:'推理级别',exact:true});
+    await model.selectOption('model-a');
+    await reasoning.selectOption('high');
+    await model.selectOption('model-b');
+    await reasoning.locator('option[value=low]').waitFor({state:'attached'});
+    assert.equal(await reasoning.inputValue(),'');
+    assert.equal(await reasoning.locator('option[value=high]').count(),0);
+    await reasoning.selectOption('low');
+    await page.setViewportSize({width:390,height:850});
+    assert.equal(await dialog.evaluate(el=>el.scrollWidth>el.clientWidth),false);
+    await dialog.getByRole('button',{name:'启动',exact:true}).click();
+    await dialog.waitFor({state:'detached'});
+    call = await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1));
+    assert.deepEqual(call.args.launchModels,{model:'model-b',reasoning:'low'});
+    await page.setViewportSize({width:1440,height:1000});
+    dialog = await choose(page,'codex');
+    assert.equal(await model.inputValue(),'');
+    await model.selectOption('model-a');
+    await dialog.getByRole('combobox',{name:'启动 Agent'}).selectOption('claude_code');
+    await dialog.getByRole('status').filter({hasText:'无法读取模型选项'}).waitFor();
+    assert.equal(await model.inputValue(),'');
+    await dialog.getByRole('button',{name:'启动',exact:true}).click();
+    await dialog.waitFor({state:'detached'});
+    call = await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1));
+    assert.equal(call.args.runtimeKind,'claude_code');
+    assert.equal(call.args.launchModels,undefined);
     dialog = await choose(page,'antigravity');
     assert.deepEqual(await dialog.getByRole('combobox',{name:'本次启动模式'}).locator('option').allTextContents(),['CLI 默认']);
     await dialog.getByRole('button',{name:'启动',exact:true}).click();
@@ -41,6 +70,31 @@ try {
     call = await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1));
     assert.equal(call.args.runtimeKind,'antigravity');
     assert.equal(call.args.launchMode,'cli_default');
+    assert.equal(call.args.launchModels,undefined);
+    for (const [kind, supportsReasoning] of [['pi',true],['antigravity',true],['kimi_code',false],['opencode',false]]) {
+      dialog = await choose(page,kind);
+      await model.selectOption('model-b');
+      if (supportsReasoning) await reasoning.selectOption('low');
+      else assert.equal(await reasoning.count(),0,`${kind} only exposes model selection`);
+      await dialog.getByRole('button',{name:'启动',exact:true}).click();
+      await dialog.waitFor({state:'detached'});
+      const launched = await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1).args);
+      assert.equal(launched.runtimeKind,kind);
+      assert.deepEqual(launched.launchModels,{model:'model-b',reasoning:supportsReasoning?'low':null});
+    }
+    dialog = await choose(page,'antigravity');
+    await model.selectOption('model-orchestrator');
+    await dialog.getByRole('button',{name:'启动',exact:true}).waitFor();
+    await reasoning.waitFor({state:'detached'});
+    await dialog.getByRole('button',{name:'启动',exact:true}).click();
+    await dialog.waitFor({state:'detached'});
+    call = await page.evaluate(()=>window.appSessionMock.cliLaunch.calls.filter(item=>item.command==='launch_runtime_session').at(-1));
+    assert.deepEqual(call.args.launchModels,{model:'model-orchestrator',reasoning:null});
+    dialog = await choose(page,'zcode_cli');
+    assert.equal(await model.count(),0);
+    assert.equal(await reasoning.count(),0);
+    await dialog.getByRole('button',{name:'取消',exact:true}).click();
+    await dialog.waitFor({state:'detached'});
     dialog=await choose(page,'claude_code');
     await dialog.getByRole('button',{name:'管理默认模式'}).click();
     const management=page.getByRole('dialog',{name:'管理 Runtime',exact:true});

@@ -1,6 +1,6 @@
 [package]
 name = "crewvela"
-version = "0.1.0"
+version = "0.1.1-beta.20261128"
 description = "CrewVela — 多Agent协作工作台"
 authors = ["CrewVela"]
 edition = "2021"

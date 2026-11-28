@@ -13,7 +13,11 @@ import { NEW_SESSION_CHAT_ORDER_STORAGE_KEY, NEW_SESSION_TERMINAL_ORDER_STORAGE_
 import { RuntimeManagementDialog } from "./RuntimeManagementDialog";
 import type { RuntimeChatDependencies } from "../runtimeInstallation";
 import { Modal } from "./ui/Modal";
+import type { MemberModels } from "./ConversationMemberModels";
+import { useTranslation } from "../useInterfaceLanguage";
 import "../styles/cli-launch.css";
+
+const FOLLOW_AGENT = { model: null, reasoning: null };
 
 export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, onLaunch, onClose }: {
   initialRuntime: NewSessionAgent;
@@ -22,6 +26,7 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
   onLaunch: (kind: NewSessionAgent, selection: RuntimeLaunchSelection, directory: SessionDirectory) => Promise<boolean>;
   onClose: () => void;
 }) {
+  const t = useTranslation();
   const availability = useRuntimeAvailability();
   const [kind, setKind] = useState(initialRuntime);
   const [override, setOverride] = useState<string | null>(null);
@@ -63,6 +68,26 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
   const branches = branchResult?.cwd === cwd ? branchResult : null;
   const worktreeReady = !isolated || Boolean(branches?.refs);
   const cli = isCliRuntime(kind);
+  const canChooseReasoning = kind === "claude_code" || kind === "codex" || kind === "pi" || kind === "antigravity";
+  const canChooseModels = canChooseReasoning || kind === "kimi_code" || kind === "opencode";
+  const [models, setModels] = useState<NonNullable<RuntimeLaunchSelection["models"]>>(FOLLOW_AGENT);
+  const [modelOptions, setModelOptions] = useState<MemberModels>();
+  const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [modelAttempt, setModelAttempt] = useState(0);
+  const runtimeEnabled = availability.ready && availability.isRuntimeEnabled(kind);
+  const customModels = Boolean(models.model || models.reasoning);
+  const modelsReady = !customModels || modelStatus === "ready";
+  const catalogModel = canChooseReasoning ? models.model : null;
+  useEffect(() => {
+    if (!canChooseModels || !runtimeEnabled) return;
+    let current = true;
+    void invoke<MemberModels>("cli_session_model_options", { runtimeKind: kind, model: catalogModel }).then(result => {
+      if (!current) return;
+      setModelOptions(result);
+      setModelStatus("ready");
+    }).catch(() => { if (current) setModelStatus("error"); });
+    return () => { current = false; };
+  }, [canChooseModels, runtimeEnabled, kind, catalogModel, modelAttempt]);
   const chatDependency = chatDependencies?.[kind];
   useEffect(() => {
     if (cli || managing) return;
@@ -97,19 +122,47 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
     <header><h2>新建会话</h2><button type="button" className="icon-button" aria-label="关闭启动设置" disabled={busy} onClick={close}><X size={19} /></button></header>
     <form onSubmit={async event => {
       event.preventDefault();
-      if (submitting.current || pickingRef.current || !directory || !worktreeReady || (cli && !choice) || !availability.ready || !availability.isRuntimeEnabled(kind)) return;
+      if (submitting.current || pickingRef.current || !directory || !worktreeReady || !modelsReady || (cli && !choice) || !runtimeEnabled) return;
       submitting.current = true; setPending(true); setError(null);
       try {
-        const started = await onLaunch(kind, { mode, saveAsDefault: cli && saveAsDefault, ...(isolated && { worktreeOptions: { baseRef, fetchUpstream } }) }, directory);
+        const started = await onLaunch(kind, { mode, saveAsDefault: cli && saveAsDefault, ...(customModels && { models }), ...(isolated && { worktreeOptions: { baseRef, fetchUpstream } }) }, directory);
         if (!started && mounted.current) setError("尚未启动；选择已保留，可以调整后重试。");
       } catch (reason) { if (mounted.current) setError(`启动失败：${String(reason)}`); }
       finally { submitting.current = false; if (mounted.current) setPending(false); }
     }}>
-      <label>Agent<span className={IS_MAC ? "cli-launch-agent-field cli-launch-agent-field-mac" : "cli-launch-agent-field"}><img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><select aria-label="启动 Agent" value={kind} disabled={busy} onChange={event => { setKind(event.target.value as NewSessionAgent); setOverride(null); setSaveAsDefault(false); setError(null); }}>
+      <label>Agent<span className={IS_MAC ? "cli-launch-agent-field cli-launch-agent-field-mac" : "cli-launch-agent-field"}><img src={RUNTIME_LOGOS[kind]} data-runtime={kind} alt="" /><select aria-label="启动 Agent" value={kind} disabled={busy} onChange={event => {
+        setKind(event.target.value as NewSessionAgent);
+        setOverride(null); setSaveAsDefault(false); setError(null);
+        setModels(FOLLOW_AGENT); setModelOptions(undefined); setModelStatus("loading");
+      }}>
         {[{ label: "CLI 终端 Agent", items: order.order }, { label: "原生聊天 Agent", items: chatOrder.order }].map(group => <optgroup label={group.label} key={group.label}>
           {group.items.map(runtime => <option key={runtime} value={runtime} disabled={!availability.isRuntimeEnabled(runtime)}>{RUNTIME_LABELS[runtime]}</option>)}
         </optgroup>)}
       </select></span></label>
+      {canChooseModels && runtimeEnabled && <div className="cli-launch-models">
+        <div className="cli-launch-model-fields">
+          <label>{t("模型")}<select value={models.model ?? ""} disabled={busy || !modelOptions?.model.length} onChange={event => {
+            if (canChooseReasoning) setModelStatus("loading");
+            setModels({ model: event.target.value || null, reasoning: null });
+          }}>
+            <option value="">{t("跟随 Agent 默认")}</option>
+            {modelOptions?.model.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select></label>
+          {canChooseReasoning && (modelStatus !== "ready" || Boolean(modelOptions?.reasoning.length)) && <label>{t("推理级别")}<select value={models.reasoning ?? ""} disabled={busy || modelStatus !== "ready" || !modelOptions?.reasoning.length} onChange={event => {
+            setModels(current => ({ ...current, reasoning: event.target.value || null }));
+          }}>
+            <option value="">{t("跟随 Agent 默认")}</option>
+            {modelStatus === "ready" && modelOptions?.reasoning.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select></label>}
+        </div>
+        {modelStatus === "loading" && <small role="status">{t("正在读取可用选项…")}</small>}
+        {modelStatus === "error" && <div className="cli-launch-model-feedback" role="status">
+          <small>{t("无法读取模型选项，可跟随 Agent 默认启动。")}</small>
+          <button type="button" className="cli-launch-manage" disabled={busy} onClick={() => {
+            setModelStatus("loading"); setModelAttempt(n => n + 1);
+          }}>{t("重试")}</button>
+        </div>}
+      </div>}
       <section className="cli-launch-directory" aria-label="工作目录">
         <label htmlFor="session-work-directory">工作目录</label>
         <div className="cli-launch-directory-controls">
@@ -155,7 +208,7 @@ export function CliLaunchDialog({ initialRuntime, initialDirectory, projects, on
       <footer>
         {cli && <button type="button" className="cli-launch-manage" disabled={busy} onClick={() => setManaging(true)}>管理默认模式</button>}
         <button type="button" className="btn secondary" disabled={busy} onClick={close}>取消</button>
-        <button type="submit" className="btn" disabled={!directory || !worktreeReady || (cli && !choice) || !availability.ready || busy || !availability.isRuntimeEnabled(kind)}>{pending ? "正在启动…" : "启动"}</button>
+        <button type="submit" className="btn" disabled={!directory || !worktreeReady || !modelsReady || (cli && !choice) || busy || !runtimeEnabled}>{pending ? "正在启动…" : "启动"}</button>
       </footer>
     </form>
     {managing && <RuntimeManagementDialog order={[...order.order, ...chatOrder.order]} orderError={order.error || chatOrder.error} initialInstaller={cli ? undefined : kind} onClose={() => { setChatDependencies(null); setManaging(false); }} onReorder={(kind, target, position) => {

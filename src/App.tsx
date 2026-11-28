@@ -1560,6 +1560,7 @@ export default function App() {
         cwd: picked,
         projectId: project?.id ?? null,
         launchMode: selection?.mode,
+        ...(selection?.models && { launchModels: selection.models }),
         ...(selection?.worktreeOptions && { worktreeOptions: selection.worktreeOptions }),
       });
       setSessions((items) => [

@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use super::{AgentRuntimeKind, MultiAgentStore};
 use crate::acp::ManagedAcpKind;
+use crate::codex_storage::CodexStorage;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,7 +17,7 @@ pub(crate) struct Selection {
 }
 
 impl Selection {
-    pub(super) fn is_custom(&self) -> bool { self.model.is_some() || self.reasoning.is_some() }
+    pub(crate) fn is_custom(&self) -> bool { self.model.is_some() || self.reasoning.is_some() }
 }
 
 #[derive(Serialize)]
@@ -138,6 +139,28 @@ pub(crate) fn draft_options(runtime: AgentRuntimeKind, model: Option<&str>) -> R
     Ok(response(runtime, Some((catalog, Selection::default()))))
 }
 
+pub(crate) fn cli_options(runtime: AgentRuntimeKind, selection: &Selection) -> Result<MemberOptions> {
+    crate::runtime_launch::validate_models(runtime.as_str(), selection)?;
+    let _lease = crate::runtime_preferences::acquire(runtime)?;
+    let model = if crate::runtime_launch::supports_reasoning(runtime.as_str()) {
+        selection.model.as_deref()
+    } else {
+        None
+    };
+    let catalog = discover_model_options_with_storage(runtime, model, CodexStorage::Personal)?;
+    let antigravity_orchestrator = runtime == AgentRuntimeKind::Antigravity
+        && model.or_else(|| option(&catalog, true)?.get("currentValue")?.as_str())
+            .is_some_and(|value| value.contains("orchestrator"));
+    ensure!(!antigravity_orchestrator || selection.reasoning.is_none(),
+        "Antigravity 编排模型不支持单独指定推理级别");
+    validate_selection(&catalog, selection)?;
+    let mut options = response(runtime, Some((catalog, Selection::default())));
+    options.model.retain(|choice| crate::runtime_launch::valid_model_id(&choice.value));
+    options.reasoning.retain(|choice| crate::runtime_launch::valid_reasoning(runtime.as_str(), &choice.value));
+    if antigravity_orchestrator { options.reasoning.clear(); }
+    Ok(options)
+}
+
 /// A validated selection and its catalog travel together into the profile transaction.
 pub(crate) struct PreparedSelection(Option<(Vec<Value>, Selection)>);
 
@@ -254,6 +277,10 @@ impl MultiAgentStore {
 }
 
 fn discover_model_options(runtime: AgentRuntimeKind, saved_model: Option<&str>) -> Result<Vec<Value>> {
+    discover_model_options_with_storage(runtime, saved_model, CodexStorage::CrewVela)
+}
+
+fn discover_model_options_with_storage(runtime: AgentRuntimeKind, saved_model: Option<&str>, codex_storage: CodexStorage) -> Result<Vec<Value>> {
     // Do not load project-local hooks, extensions or scripts for a menu read.
     let directory = std::env::temp_dir().join(format!("crewvela-model-catalog-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&directory).context("无法创建模型目录读取所需的临时目录")?;
@@ -262,7 +289,7 @@ fn discover_model_options(runtime: AgentRuntimeKind, saved_model: Option<&str>) 
         crate::native_pi_sessions::conversation_config_options(&cwd, saved_model, None)
     } else {
         acp_kind(runtime).context("此 Runtime 未提供模型选项")
-            .and_then(|kind| crate::acp::conversation_model_catalog(kind, &cwd, saved_model))
+            .and_then(|kind| crate::acp::conversation_model_catalog(kind, &cwd, saved_model, codex_storage))
     };
     // The scratch directory does not own provider home data.
     let _ = std::fs::remove_dir(directory);
@@ -298,13 +325,114 @@ mod tests {
     use std::{path::Path, process::Command, sync::{Arc, atomic::AtomicU32}};
 
     #[test]
-    #[ignore = "Requires locally installed Claude Code ACP. Reads catalog only, sends no prompt."]
-    fn installed_claude_catalog_before_chat() {
-        let catalog = discover_model_options(AgentRuntimeKind::ClaudeCode, None).unwrap();
-        let models = choices(option(&catalog, true));
-        let reasoning = choices(option(&catalog, false));
-        eprintln!("Claude Code catalog: {} models, {} reasoning levels", models.len(), reasoning.len());
-        assert!(!models.is_empty(), "The installed Claude adapter must expose selectable models");
+    #[ignore = "Requires locally installed runtimes and their adapters. Reads catalogs only, sends no prompt."]
+    fn installed_cli_model_catalogs_before_launch() {
+        let mut failures = Vec::new();
+        for runtime in [AgentRuntimeKind::ClaudeCode, AgentRuntimeKind::Codex, AgentRuntimeKind::Pi,
+            AgentRuntimeKind::Antigravity, AgentRuntimeKind::KimiCode, AgentRuntimeKind::OpenCode] {
+            let result = (|| -> Result<()> {
+                let options = cli_options(runtime, &Selection::default())?;
+                eprintln!("{}: {} models, {} reasoning levels", runtime.as_str(), options.model.len(), options.reasoning.len());
+                let candidate = options.model.iter().find(|choice| choice.value != "default"
+                    && !choice.value.contains("orchestrator")).context("目录未返回可选模型")?;
+                let selected = cli_options(runtime, &Selection { model: Some(candidate.value.clone()), reasoning: None })?;
+                if crate::runtime_launch::supports_reasoning(runtime.as_str()) {
+                    let mut reasoning_available = !selected.reasoning.is_empty();
+                    for candidate in options.model.iter().filter(|choice| choice.value.contains("gemini")).take(3) {
+                        if reasoning_available { break; }
+                        let selected = cli_options(runtime, &Selection { model: Some(candidate.value.clone()), reasoning: None })?;
+                        reasoning_available = !selected.reasoning.is_empty();
+                    }
+                    ensure!(reasoning_available, "未从测试模型获取推理级别");
+                } else {
+                    ensure!(selected.reasoning.is_empty(), "只支持模型选择的 CLI 返回了推理级别");
+                }
+                if runtime == AgentRuntimeKind::Antigravity {
+                    if let Some(model) = options.model.iter().find(|choice| choice.value.contains("orchestrator")) {
+                        let selected = cli_options(runtime, &Selection { model: Some(model.value.clone()), reasoning: None })?;
+                        ensure!(selected.reasoning.is_empty(), "编排模型仍返回推理级别");
+                        eprintln!("antigravity: confirmed Orchestrator has no separate reasoning selector");
+                    }
+                }
+                Ok(())
+            })();
+            if let Err(error) = result { failures.push(format!("{}: {error}", runtime.as_str())); }
+        }
+        assert!(failures.is_empty(), "{failures:?}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "Starts installed CLI terminals in fresh temporary directories without sending prompts or accepting trust."]
+    fn installed_cli_launch_accepts_model_arguments() {
+        use crate::{pty::PtyManager, sessions::{NewRuntimeSession, SessionManager}};
+        use std::num::NonZeroU16;
+        use std::time::{Duration, Instant};
+
+        let only_runtime = std::env::var("CREWVELA_STARTUP_TEST_RUNTIME").ok();
+        let mut tested = 0;
+        let mut failed = Vec::new();
+        for (runtime, mode, terminal_marker) in [
+            (AgentRuntimeKind::ClaudeCode, "plan", "Claude Code"),
+            (AgentRuntimeKind::Codex, "read_only", "OpenAI Codex"),
+            (AgentRuntimeKind::Pi, "read_tools", "pi v"),
+            (AgentRuntimeKind::Antigravity, "cli_default", "Antigravity"),
+            (AgentRuntimeKind::KimiCode, "plan", "Kimi"),
+            (AgentRuntimeKind::OpenCode, "build", "OpenCode"),
+        ] {
+            if only_runtime.as_deref().is_some_and(|kind| kind != runtime.as_str()) { continue; }
+            tested += 1;
+            let options = cli_options(runtime, &Selection::default()).unwrap();
+            let model = options.model.iter().find(|choice| choice.value != "default" && !choice.value.contains("orchestrator")).unwrap();
+            let options = cli_options(runtime, &Selection { model: Some(model.value.clone()), reasoning: None }).unwrap();
+            let reasoning = options.reasoning.iter().find(|choice| choice.value == "high").or(options.reasoning.first());
+            let selection = Selection { model: Some(model.value.clone()), reasoning: reasoning.map(|choice| choice.value.clone()) };
+            cli_options(runtime, &selection).unwrap();
+
+            let root = std::env::temp_dir().join(format!("crewvela-launch-models-{}", uuid::Uuid::new_v4()));
+            let sessions = SessionManager::open_at(root.join("sessions.json"), root.join("events")).unwrap();
+            let record = sessions.create_runtime_with_launch_mode(NewRuntimeSession {
+                runtime_kind: runtime.as_str().into(), cwd: root.display().to_string(), project_id: None,
+            }, mode).unwrap();
+            let ptys = PtyManager::new();
+            let started = crate::open_runtime_session_checked(&record, &ptys, &sessions, false, None, None, Some(&selection)).unwrap();
+            let id = started.pty_id.unwrap();
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let mut reached_terminal = false;
+            let mut model_visible = false;
+            let mut reasoning_visible = None;
+            let new_screen = || vt100::Parser::new(NonZeroU16::new(24).unwrap(), NonZeroU16::new(80).unwrap(), 0);
+            let mut screen = new_screen();
+            while ptys.is_running(id) && Instant::now() < deadline {
+                let chunks = ptys.poll_all();
+                crate::mark_interactive_runtime_prompts(&chunks, &sessions);
+                let bytes = ptys.transcript_tail(id, 64 * 1024).unwrap();
+                screen = new_screen();
+                screen.process(&bytes);
+                let output = crate::multi_agent::strip_terminal_control_sequences(&String::from_utf8_lossy(&bytes));
+                let visible = screen.screen().contents();
+                model_visible = [&output, &visible].iter().any(|text| text.contains(&model.value) || text.contains(&model.label));
+                reasoning_visible = reasoning.map(|choice| model_visible && visible.split_whitespace().any(|word| word.eq_ignore_ascii_case(&choice.value)));
+                let waiting_for_trust = output.contains("Do you trust") || output.contains("trust this");
+                reached_terminal |= model_visible || waiting_for_trust || output.contains(terminal_marker)
+                    || sessions.is_ready_for_prompt(&record.id);
+                if (model_visible && reasoning_visible != Some(false)) || waiting_for_trust { break; }
+                std::thread::sleep(Duration::from_millis(150));
+            }
+            let running = ptys.is_running(id);
+            ptys.kill_all().unwrap();
+            drop(ptys);
+            drop(sessions);
+            let temp = std::env::temp_dir().canonicalize().unwrap();
+            if root.canonicalize().is_ok_and(|path| path.parent() == Some(temp.as_path())) {
+                let _ = std::fs::remove_dir_all(root);
+            }
+            eprintln!("{}: interactive terminal={}, selected model visible={}, reasoning visible={:?}",
+                runtime.as_str(), reached_terminal && running, model_visible, reasoning_visible);
+            if !reached_terminal || !running { failed.push((runtime.as_str(), running, reached_terminal, screen.screen().contents().len())); }
+        }
+        assert!(tested > 0, "Unknown CREWVELA_STARTUP_TEST_RUNTIME");
+        assert!(failed.is_empty(), "Failed to reach interactive terminal: {failed:?}");
     }
 
     #[test]

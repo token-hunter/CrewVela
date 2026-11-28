@@ -1470,8 +1470,14 @@
 .settings-native .collab-tabs b { background: var(--bg-hover); color: var(--text-dim); }
 .settings-native .collab-overview-page :is(.btn, .collab-primary) { border-color: var(--border-strong); background: var(--settings-canvas); color: var(--text); }
 .settings-native .collab-overview-page .collab-primary { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent-fill); }
-.settings-native :is(.collab-team-filter-pill, .collab-team-scope, .collab-team-search input, .collab-runtime-popover, .collab-task-menu > div, .collab-upgrade-menu > button) { background: var(--settings-canvas); color: var(--text); border-color: var(--border); }
-.settings-native :is(.collab-team-filter-pill.active, .collab-team-scope.active, .collab-task-filters button.active, .collab-task-row.selected) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.settings-native .collab-overview-page .collab-team-add-btn { border-color: transparent; background: var(--text); color: var(--settings-canvas); }
+.settings-native :is(.collab-team-search input, .collab-runtime-popover, .collab-task-menu > div, .collab-upgrade-menu > button) { background: var(--settings-canvas); color: var(--text); border-color: var(--border); }
+.settings-native :is(.collab-task-filters button.active, .collab-task-row.selected) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.settings-native .collab-team-page-toggle { background: var(--bg-sunken); border-color: var(--border); }
+.settings-native .collab-team-scope { background: transparent; border-color: transparent; color: var(--text-dim); }
+.settings-native .collab-team-scope.active { background: var(--bg-elev); color: var(--text); }
+.settings-native .collab-team-filter-pill { background: transparent; border-color: transparent; color: var(--text-dim); }
+.settings-native .collab-team-filter-pill.active { background: var(--bg-active); border-color: var(--border); color: var(--text); }
 .settings-native :is(.collab-task-columns, .collab-task-panel > header, .collab-side-panels header, .collab-stage-title) { background: transparent; border-color: var(--border); color: var(--text-dim); }
 .settings-native :is(.collab-agent-card h4, .collab-agent-card strong, .collab-task-title, .collab-task-id) { color: var(--text); }
 .settings-native :is(.collab-agent-card p, .collab-agent-card footer, .collab-project-counts, .collab-runtime-popover p, .collab-task-meta, .collab-team-toolbar > p, .collab-diagnostic-summary > span) { color: var(--text-dim); }

@@ -1826,6 +1826,8 @@
   "用于团队聊天的原生 Runtime，从下一次派发起生效。": "Applies to native runtimes in team chat starting with the next dispatch.",
   "正在读取可用选项…": "Loading available options…",
   "无法读取模型选项": "Could not load model options",
+  "跟随 Agent 默认": "Agent default",
+  "无法读取模型选项，可跟随 Agent 默认启动。": "Could not load model options. You can start with the agent defaults.",
   "已不可用": "Unavailable",
   "运行环境检测": "Runtime checks",
   "更新检查": "Check for updates",
@@ -2487,5 +2489,13 @@
   "人格与职责": "Persona & responsibilities",
   "只约束沟通风格": "Communication style only",
   "托管与状态": "Managed & status",
-  "保存与生效说明": "Save & behavior notes"
+  "保存与生效说明": "Save & behavior notes",
+  "已一致": "Matched",
+  "Skill 不一致": "Skill mismatch",
+  "Runtime 与 Skill 检查": "Runtime & Skill checks",
+  "{count} 项已启用": "{count} enabled",
+  "权威 CLI": "Authoritative CLI",
+  "子进程实际环境仍需核验": "Child-process environment still needs verification",
+  "展开 / 收起": "Toggle",
+  "动态时间线": "Activity timeline"
 }

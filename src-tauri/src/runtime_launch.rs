@@ -1,7 +1,8 @@
 //! Native CLI launch choices shared by the standalone and collaboration launchers.
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use serde::Deserialize;
 use std::{collections::BTreeMap, process::Command, sync::OnceLock};
+use crate::multi_agent::conversation_models::Selection;
 
 #[derive(Debug, Deserialize)]
 pub struct Choice { pub id: String, pub label: String, pub description: String }
@@ -54,9 +55,79 @@ pub fn configure(command: &mut Command, runtime: &str, mode: &str) -> Result<()>
     Ok(())
 }
 
+pub(crate) fn valid_model_id(value: &str) -> bool {
+    value.len() <= 256 && !value.starts_with('-') && !value.is_empty()
+        && value.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.:/+@-".contains(&b))
+}
+
+pub(crate) fn supports_reasoning(runtime: &str) -> bool {
+    matches!(runtime, "claude_code" | "codex" | "pi" | "antigravity")
+}
+
+pub(crate) fn valid_reasoning(runtime: &str, value: &str) -> bool {
+    match runtime {
+        "claude_code" => matches!(value, "low" | "medium" | "high" | "xhigh" | "max" | "ultracode"),
+        "codex" => matches!(value, "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"),
+        "pi" => matches!(value, "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"),
+        "antigravity" => matches!(value, "low" | "medium" | "high" | "xhigh" | "max"),
+        _ => false,
+    }
+}
+
+pub(crate) fn validate_models(runtime: &str, selection: &Selection) -> Result<()> {
+    ensure!(supports_reasoning(runtime) || matches!(runtime, "kimi_code" | "opencode"), "该 Agent 不支持启动时选择模型或推理级别");
+    ensure!(selection.model.as_deref().is_none_or(valid_model_id), "模型标识无法用于 CLI 启动");
+    ensure!(selection.reasoning.as_deref().is_none_or(|value| valid_reasoning(runtime, value)), "推理级别无法用于 CLI 启动");
+    Ok(())
+}
+
+pub(crate) fn configure_models(command: &mut Command, runtime: &str, selection: &Selection) -> Result<()> {
+    validate_models(runtime, selection)?;
+    if let Some(model) = &selection.model {
+        command.args(["--model", model]);
+    }
+    if let Some(reasoning) = &selection.reasoning {
+        match runtime {
+            "claude_code" | "antigravity" => { command.args(["--effort", reasoning]); }
+            "pi" => { command.args(["--thinking", reasoning]); }
+            "codex" => { command.args(["--config", &format!("model_reasoning_effort=\"{reasoning}\"")]); }
+            _ => bail!("该 Agent 不支持启动时选择推理级别"),
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_model_settings_reach_the_selected_cli_without_changing_launch_mode() {
+        let models = Selection { model: Some("provider/model-v2".into()), reasoning: Some("high".into()) };
+        let model_only = Selection { model: models.model.clone(), reasoning: None };
+        for (kind, mode, selection, expected) in [
+            ("claude_code", "plan", &models, vec!["--permission-mode", "plan", "--model", "provider/model-v2", "--effort", "high"]),
+            ("codex", "read_only", &models, vec!["--sandbox", "read-only", "--ask-for-approval", "on-request",
+                "--model", "provider/model-v2", "--config", "model_reasoning_effort=\"high\""]),
+            ("pi", "read_tools", &models, vec!["--no-extensions", "--no-mcp", "--tools", "read,grep,find,ls",
+                "--model", "provider/model-v2", "--thinking", "high"]),
+            ("antigravity", "cli_default", &models, vec!["--model", "provider/model-v2", "--effort", "high"]),
+            ("kimi_code", "plan", &model_only, vec!["--plan", "--model", "provider/model-v2"]),
+            ("opencode", "build", &model_only, vec!["--agent", "build", "--model", "provider/model-v2"]),
+        ] {
+            let mut command = Command::new("fixture-cli");
+            configure(&mut command, kind, mode).unwrap();
+            configure_models(&mut command, kind, selection).unwrap();
+            assert_eq!(command.get_args().collect::<Vec<_>>(), expected);
+            let mut defaults = Command::new("fixture-cli");
+            configure_models(&mut defaults, kind, &Selection::default()).unwrap();
+            assert_eq!(defaults.get_args().count(), 0);
+        }
+        assert!(validate_models("kimi_code", &models).is_err());
+        assert!(validate_models("opencode", &models).is_err());
+        assert!(validate_models("zcode_cli", &model_only).is_err());
+        assert!(validate_models("claude_code", &Selection { model: Some("--help".into()), reasoning: None }).is_err());
+        assert!(validate_models("codex", &Selection { model: None, reasoning: Some("ultracode".into()) }).is_err());
+    }
     #[test]
     fn explicit_native_default_and_override_win_without_affecting_saved_defaults() {
         let defaults = BTreeMap::from([("codex".into(), "yolo".into()), ("pi".into(), "read_tools".into())]);

@@ -3530,7 +3530,7 @@ fn open_runtime_session_with_yolo(
     session_state: &SessionManager,
     yolo: bool,
 ) -> Result<SessionRecord, String> {
-    open_runtime_session_checked(record, pty_state, session_state, yolo, None, None)
+    open_runtime_session_checked(record, pty_state, session_state, yolo, None, None, None)
 }
 
 fn open_runtime_session_for_switch(
@@ -3539,7 +3539,7 @@ fn open_runtime_session_for_switch(
     session_state: &SessionManager,
     switch_id: &str,
 ) -> Result<SessionRecord, String> {
-    open_runtime_session_checked(record, pty_state, session_state, false, Some(switch_id), None)
+    open_runtime_session_checked(record, pty_state, session_state, false, Some(switch_id), None, None)
 }
 
 fn open_runtime_session_checked(
@@ -3549,6 +3549,7 @@ fn open_runtime_session_checked(
     yolo: bool,
     switch_id: Option<&str>,
     _member_store: Option<&MultiAgentStore>,
+    launch_models: Option<&multi_agent::conversation_models::Selection>,
 ) -> Result<SessionRecord, String> {
     let _admission = pty_state.admit_start().map_err(to_err)?;
     worktree_management::verify_start(record, session_state).map_err(to_err)?;
@@ -3599,6 +3600,9 @@ fn open_runtime_session_checked(
     if switch_id.is_none() && !session_switch::is_handoff_target(&record.id).map_err(to_err)? {
         if let Some(mode) = record.cli_launch_mode.as_deref() {
             runtime_launch::configure(&mut command, kind.as_str(), mode).map_err(to_err)?;
+        }
+        if let Some(models) = launch_models {
+            runtime_launch::configure_models(&mut command, kind.as_str(), models).map_err(to_err)?;
         }
     }
     session_switch::configure_target(&mut command, record).map_err(to_err)?;
@@ -3778,19 +3782,36 @@ fn runtime_project_cwd(
     Ok(cwd.or_else(|| dirs::home_dir().map(|path| path.display().to_string())).unwrap_or_else(|| ".".into()))
 }
 
-// Permission probing waits for a child process; keep it off the WebView/UI thread.
+#[tauri::command]
+async fn cli_session_model_options(
+    runtime_kind: AgentRuntimeKind,
+    model: Option<String>,
+) -> Result<multi_agent::conversation_models::MemberOptions, String> {
+    blocking_command(move || {
+        let selection = multi_agent::conversation_models::Selection { model, reasoning: None };
+        multi_agent::conversation_models::cli_options(runtime_kind, &selection).map_err(to_err)
+    }).await
+}
+
+// Permission and model probing wait for child processes; keep them off the WebView/UI thread.
 #[tauri::command(async)]
 fn launch_runtime_session(
     runtime_kind: String,
     cwd: Option<String>,
     project_id: Option<String>,
     launch_mode: Option<String>,
+    launch_models: Option<multi_agent::conversation_models::Selection>,
     worktree_options: Option<worktree::WorktreeOptions>,
     pty_state: State<'_, PtyManager>,
     session_state: State<'_, SessionManager>,
 ) -> Result<SessionRecord, String> {
     let mode = runtime_launch::resolve(&runtime_kind, launch_mode.as_deref(), &runtime_preferences::get().map_err(to_err)?.default_launch_modes).map_err(to_err)?;
     let cwd = runtime_project_cwd(cwd, project_id.as_deref(), |id| projects::get(id).map_err(to_err))?;
+    let launch_models = launch_models.as_ref().filter(|selection| selection.is_custom());
+    if let Some(selection) = launch_models {
+        let kind = serde_json::from_value(serde_json::Value::String(runtime_kind.clone())).map_err(to_err)?;
+        multi_agent::conversation_models::cli_options(kind, selection).map_err(to_err)?;
+    }
     let record = worktree_management::create_session(&session_state, &cwd, worktree_options.as_ref(),
         |id, actual, tree| session_state.create_runtime_in(NewRuntimeSession {
             runtime_kind, cwd: actual, project_id,
@@ -3798,7 +3819,7 @@ fn launch_runtime_session(
     let lifecycle = session_state.lifecycle_lock(&record.id);
     let _guard = lifecycle.lock().unwrap();
     let record = session_state.get(&record.id).ok_or_else(|| "会话已删除".to_string())?;
-    match open_runtime_session(&record, &pty_state, &session_state) {
+    match open_runtime_session_checked(&record, &pty_state, &session_state, false, None, None, launch_models) {
         Ok(started) => Ok(started),
         Err(error) => {
             let _ = session_state.mark_error(&record.id, error.clone());
@@ -6078,7 +6099,7 @@ fn open_direct_collaboration_session(
             session_state,
         );
     }
-    open_runtime_session_checked(&record, pty_state, session_state, record.yolo, None, store)
+    open_runtime_session_checked(&record, pty_state, session_state, record.yolo, None, store, None)
 }
 
 fn persist_cli_collaboration_message_with_id(
@@ -6864,6 +6885,7 @@ pub fn run() {
             launch_multi,
             launch_terminal,
             launch_runtime_session,
+            cli_session_model_options,
             create_zcode_session, zcode_snapshot, start_zcode_session, send_zcode_message, edit_zcode_message, zcode_slash_command, zcode_side_session, zcode_side_send, zcode_side_close, zcode_composer_catalog, zcode_attachment_info, set_zcode_model, set_zcode_permission_mode, zcode_queue_action, zcode_child_action, recover_zcode_queue_input, answer_zcode_permission, cancel_zcode_turn,
             create_deepseek_harness_session,
             deepseek_harness_snapshot,

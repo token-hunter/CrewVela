@@ -1,7 +1,7 @@
 {
   "name": "crewvela",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1-beta.20261128",
   "type": "module",
   "scripts": {
     "dev": "vite",
