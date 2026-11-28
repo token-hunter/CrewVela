@@ -2489,5 +2489,13 @@
   "人格与职责": "Persona & responsibilities",
   "只约束沟通风格": "Communication style only",
   "托管与状态": "Managed & status",
-  "保存与生效说明": "Save & behavior notes"
+  "保存与生效说明": "Save & behavior notes",
+  "已一致": "Matched",
+  "Skill 不一致": "Skill mismatch",
+  "Runtime 与 Skill 检查": "Runtime & Skill checks",
+  "{count} 项已启用": "{count} enabled",
+  "权威 CLI": "Authoritative CLI",
+  "子进程实际环境仍需核验": "Child-process environment still needs verification",
+  "展开 / 收起": "Toggle",
+  "动态时间线": "Activity timeline"
 }

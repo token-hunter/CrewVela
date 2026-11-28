@@ -1,6 +1,8 @@
 import { useTranslation } from "../useInterfaceLanguage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowClockwise";
+import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 import { Modal } from "./ui/Modal";
 import { SettingsSection } from "./ui/SettingsSection";
 import type { MultiAgentSnapshot } from "../types";
@@ -159,38 +161,237 @@ export function CollaborationSupportPanel({ snapshot, enabledRuntimes, onChanged
   // 独立会话交接与诊断项目范围无关；保留失败交接的恢复入口。
   const handoffHistory = handoffRecoveryHistory(rawHealth, snapshot?.project.id);
   const name = (id?: string) => id ? rawHealth?.sessions.find((session) => session.id === id)?.title ?? id : "外部发送方";
+  const runtimeStatus = (runtime: Health["runtimes"][number]) => {
+    if (!runtime.supported) return { tone: "muted" as const, label: t("未验证") };
+    if (!runtime.skills.length) return { tone: "warn" as const, label: t("Skill 未发现") };
+    if (runtime.skills.every((skill) => skill.matches)) return { tone: "ok" as const, label: t("已一致") };
+    return { tone: "warn" as const, label: t("Skill 不一致") };
+  };
+  const sessionTone = (state: string) => {
+    if (state === "就绪" || state === "已就绪" || state === "正常") return "ok";
+    if (state === "忙碌" || state === "阻塞" || state === "待确认") return "warn";
+    return "muted";
+  };
+  const checkedAtText = health?.checkedAt ? `检查于 ${new Date(health.checkedAt).toLocaleTimeString("zh-CN")}` : t("尚未检查");
   return <div className="collaboration-support">
-    {view === "diagnostics" && <><nav className="collab-tabs" aria-label={t("诊断内容")}>{[["checks", t("环境与会话检查")], ["messages", t("消息投递")]].map(([id, label]) => <button key={id} className={diagnosticTab === id ? "active" : ""} onClick={() => setDiagnosticTab(id)}>{label}</button>)}</nav>
-      <div className="collaboration-support-toolbar"><label>{t("检查范围")} <select value={global ? "global" : "project"} onChange={(event) => setGlobal(event.target.value === "global")}><option value="project">{t("当前项目")}</option><option value="global">{t("全局")}</option></select></label><span>{t("仅启用的 Runtime ·")} {global ? t("全部关联会话") : snapshot?.project.name ?? t("未选择项目")} · {health?.checkedAt ? `检查于 ${new Date(health.checkedAt).toLocaleTimeString("zh-CN")}` : t("尚未检查")}</span></div></>}
+    {view === "diagnostics" && (
+      <div className="collab-diag-header">
+        <div className="collab-diag-head-row">
+          <nav className="collab-diag-seg" aria-label={t("诊断内容")}>
+            {[["checks", t("环境与会话检查")], ["messages", t("消息投递")]].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={diagnosticTab === id ? "active" : ""}
+                aria-pressed={diagnosticTab === id}
+                onClick={() => setDiagnosticTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+          <div className="collab-diag-head-actions">
+            <label className="collab-diag-scope">
+              <span>{t("检查范围")}</span>
+              <select value={global ? "global" : "project"} onChange={(event) => setGlobal(event.target.value === "global")}>
+                <option value="project">{t("当前项目")}</option>
+                <option value="global">{t("全局")}</option>
+              </select>
+            </label>
+            <button type="button" className="btn secondary collab-diag-recheck" disabled={checking || busy} onClick={() => void refresh()}>
+              <ArrowClockwiseIcon size={13} aria-hidden="true" />
+              <span>{checking ? t("检查中…") : shownView === "messages" ? t("刷新记录") : t("重新检查")}</span>
+            </button>
+          </div>
+        </div>
+        <div className="collab-diag-meta">
+          <span className="collab-diag-meta-left">
+            <span className="collab-diag-ro-tag">{PREVIEW ? t("演示数据") : t("只读诊断")}</span>
+            <span>{shownView === "messages" ? t("只展示真实投递证据；消息提交不等于模型已处理或回复。") : t("检查 Skill 与当前会话证据；不会发送测试消息或启动 Agent。")}</span>
+          </span>
+          <span className="collab-diag-meta-right">
+            {t("仅启用的 Runtime ·")} {global ? t("全部关联会话") : snapshot?.project.name ?? t("未选择项目")} · {checkedAtText}
+          </span>
+        </div>
+      </div>
+    )}
 
     {["diagnostics", "messages"].includes(view) && error && <p className="collaboration-support-error" role="alert">{error}</p>}
-    {shownView === "diagnostics" && <><SettingsSection title={t("协作健康检查")} description={t("检查 Skill 与当前会话证据；不会发送测试消息或启动 Agent。")}>
-      <div className="collaboration-support-toolbar"><button className="btn secondary" disabled={checking || busy} onClick={() => void refresh()}>{checking ? t("检查中…") : t("重新检查")}</button>
-        <span>{PREVIEW ? t("演示数据") : t("只读诊断")}</span></div>
-      {health && <>
-        <p className="collaboration-support-cli">{t("权威 CLI：")}<code>{health.cliPath}</code> · {health.cliPathExists ? t("文件存在") : t("路径不可用")}{t("。子进程实际环境仍需核验。")}</p>
-        <div className="collaboration-support-grid">{health.runtimes.map((runtime) => <article key={runtime.runtime}>
-          <strong>{runtime.label}</strong><span>{!runtime.supported ? t("未验证：尚未支持此 Runtime 的 Skill 与通道检查") : !runtime.skills.length ? t("Skill 未发现") : runtime.skills.every((skill) => skill.matches) ? t("Skill 内容与内置版本一致") : t("Skill 内容不一致 / 读取失败")}</span>
-          <small>{!runtime.supported ? t("检查未覆盖") : runtime.installed ? t("命令可发现") : t("命令未发现")} {t("· 安装成功不代表通信成功")}</small>
-          <details><summary>{t("发现路径")}</summary>{runtime.skills.map((skill) => <p key={skill.path}><code>{skill.path}</code>{skill.error && `：${skill.error}`}</p>)}
-            {!runtime.skills.length && runtime.searchedRoots.map((root) => <p key={root}><code>{root}</code></p>)}</details>
-        </article>)}</div>
-        <details className="collaboration-support-details" open><summary>{t("当前会话与投递就绪")}</summary>
-          {!health.sessions.length && <p>{t("当前范围没有关联 Agent 会话。")}</p>}
-          {health.sessions.map((session) => <article className="collaboration-support-session" key={session.id}>
-            <strong>{session.title}</strong><code>{session.id}</code><span>{sessionCheckState(session)}</span>
-            <small>{session.commandHost ? t("项目后台执行宿主，不支持直接聊天输入检查") : sessionCheckState(session) === "未验证" ? t("当前检查缺少适用通道或明确状态证据；不判断为故障") : sessionCheckState(session) === "忙碌" ? t("会话正在执行，暂不可接收输入") : sessionCheckState(session) === "已停止" ? t("会话已停止或归档，不作为故障告警") : session.reason}</small><details><summary>{t("身份与桥证据")}</summary><p>{session.cwd} · PTY {session.ptyId ?? t("无")}</p><p>{session.identityEnvironment}</p>
-              <p>{session.runtime === "pi" ? session.bridge.configured ? t("私有桥启动配置存在；接收确认见消息记录") : t("未观察到私有桥启动配置") : t("使用 PTY 通道，无需 Pi 私有桥")}</p>
-              {(session.error || session.bridge.error || session.waitingReason) && <p role="alert">{session.error ?? session.bridge.error ?? session.waitingReason}</p>}</details>
-          </article>)}</details>
-      </>}
-    </SettingsSection></>}
-    {shownView === "messages" && <SettingsSection title={t("消息投递")} description={t("只展示真实投递证据；消息提交不等于模型已处理或回复。")}>
-      <button className="btn secondary" disabled={checking || busy} onClick={() => void refresh()}>{checking ? t("检查中…") : t("刷新记录")}</button>
-      {health ? <details open className="collaboration-support-details"><summary>{t("消息投递证据（")}{health.messages.length}）</summary><p>{health.replyEvidence}{t("。成功投递记录为本次应用运行内存记录，排队消息持久保留。")}</p>
-          {health.messages.map((message) => <article key={message.id}><strong>{STAGES[message.stage] ?? message.stage}</strong><p><time>{message.at ? new Date(message.at).toLocaleString("zh-CN") : t("时间未记录")}</time> {t("· 来源：")}{message.fromLabel ?? name(message.fromSessionId)} {t("→ 接收：")}{name(message.toSessionId)}</p><p>{message.body}</p>{message.error && <p role="alert">{message.error}</p>}</article>)}
-          {!health.messages.length && <p>{t("暂无可展示的排队或投递证据。")}</p>}</details> : <p>{t("尚未取得通信记录。")}</p>}
-    </SettingsSection>}
+
+    {shownView === "diagnostics" && (
+      <div className="collab-diag-body">
+        {health && (
+          <>
+            <div className="collaboration-support-cli collab-diag-cli-bar">
+              <div className="collab-diag-cli-left">
+                <span className="collab-diag-cli-label">{t("权威 CLI")}</span>
+                <code className="collab-diag-cli-code" title={health.cliPath}>{health.cliPath}</code>
+              </div>
+              <div className="collab-diag-cli-right">
+                <span className={`collab-diag-pill ${health.cliPathExists ? "ok" : "warn"}`}>
+                  <i aria-hidden="true" />
+                  {health.cliPathExists ? t("文件存在") : t("路径不可用")}
+                </span>
+                <span className="collab-diag-cli-note">{t("子进程实际环境仍需核验")}</span>
+              </div>
+            </div>
+
+            <div className="collab-diag-section">
+              <div className="collab-diag-section-head">
+                <span>{t("Runtime 与 Skill 检查")}</span>
+                <span>{t("{count} 项已启用", { count: health.runtimes.length })}</span>
+              </div>
+              <div className="collaboration-support-grid">
+                {health.runtimes.map((runtime) => {
+                  const status = runtimeStatus(runtime);
+                  const skillDesc = !runtime.supported
+                    ? t("未验证：尚未支持此 Runtime 的 Skill 与通道检查")
+                    : !runtime.skills.length
+                      ? t("Skill 未发现")
+                      : runtime.skills.every((skill) => skill.matches)
+                        ? t("Skill 内容与内置版本一致")
+                        : t("Skill 内容不一致 / 读取失败");
+                  const cmdDesc = `${!runtime.supported ? t("检查未覆盖") : runtime.installed ? t("命令可发现") : t("命令未发现")} ${t("· 安装成功不代表通信成功")}`;
+                  return (
+                    <article className="collab-diag-rt-card" key={runtime.runtime}>
+                      <div className="collab-diag-rt-head">
+                        <strong>{runtime.label}</strong>
+                        <span className={`collab-diag-pill ${status.tone}`}>
+                          <i aria-hidden="true" />
+                          {status.label}
+                        </span>
+                      </div>
+                      <div className="collab-diag-rt-rows">
+                        <div className="collab-diag-kv"><span>Skill</span><span>{skillDesc}</span></div>
+                        <div className="collab-diag-kv"><span>{t("命令")}</span><span>{cmdDesc}</span></div>
+                      </div>
+                      <div className="collab-diag-rt-foot">
+                        <details className="collab-diag-paths">
+                          <summary><CaretRightIcon size={12} aria-hidden="true" /><span>{t("发现路径")}</span></summary>
+                          <div className="collab-diag-path-list">
+                            {runtime.skills.map((skill) => (
+                              <p key={skill.path}><code>{skill.path}</code>{skill.error && `：${skill.error}`}</p>
+                            ))}
+                            {!runtime.skills.length && runtime.searchedRoots.map((root) => (
+                              <p key={root}><code>{root}</code></p>
+                            ))}
+                            {!runtime.skills.length && !runtime.searchedRoots.length && (
+                              <p className="collab-diag-path-empty">{t("检查未覆盖")}</p>
+                            )}
+                          </div>
+                        </details>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="collab-diag-panel">
+              <details className="collaboration-support-details" open>
+                <summary>
+                  <span className="collab-diag-panel-title">
+                    <span>{t("当前会话与投递就绪")}</span>
+                    <b>{health.sessions.length}</b>
+                  </span>
+                  <span className="collab-diag-toggle-hint">{t("展开 / 收起")}</span>
+                </summary>
+                <div className="collab-diag-panel-body">
+                  {!health.sessions.length && <p className="collab-diag-empty">{t("当前范围没有关联 Agent 会话。")}</p>}
+                  {health.sessions.map((session) => {
+                    const state = sessionCheckState(session);
+                    return (
+                      <article className="collaboration-support-session collab-diag-session" key={session.id}>
+                        <div className="collab-diag-session-top">
+                          <div className="collab-diag-session-title">
+                            <strong>{session.title}</strong>
+                            <code>{session.id}</code>
+                          </div>
+                          <span className={`collab-diag-pill ${sessionTone(state)}`}>
+                            <i aria-hidden="true" />
+                            {state}
+                          </span>
+                        </div>
+                        <small>
+                          {session.commandHost
+                            ? t("项目后台执行宿主，不支持直接聊天输入检查")
+                            : state === "未验证"
+                              ? t("当前检查缺少适用通道或明确状态证据；不判断为故障")
+                              : state === "忙碌"
+                                ? t("会话正在执行，暂不可接收输入")
+                                : state === "已停止"
+                                  ? t("会话已停止或归档，不作为故障告警")
+                                  : session.reason}
+                        </small>
+                        <details className="collab-diag-paths">
+                          <summary><CaretRightIcon size={12} aria-hidden="true" /><span>{t("身份与桥证据")}</span></summary>
+                          <div className="collab-diag-path-list">
+                            <p>{session.cwd} · PTY {session.ptyId ?? t("无")}</p>
+                            <p>{session.identityEnvironment}</p>
+                            <p>{session.runtime === "pi" ? session.bridge.configured ? t("私有桥启动配置存在；接收确认见消息记录") : t("未观察到私有桥启动配置") : t("使用 PTY 通道，无需 Pi 私有桥")}</p>
+                            {(session.error || session.bridge.error || session.waitingReason) && (
+                              <p role="alert" className="collaboration-support-error">{session.error ?? session.bridge.error ?? session.waitingReason}</p>
+                            )}
+                          </div>
+                        </details>
+                      </article>
+                    );
+                  })}
+                </div>
+              </details>
+            </div>
+          </>
+        )}
+      </div>
+    )}
+
+    {shownView === "messages" && (
+      <div className="collab-diag-body">
+        {view !== "diagnostics" && (
+          <div className="collab-diag-head-row">
+            <div>
+              <h3 className="collab-diag-standalone-title">{t("消息投递")}</h3>
+              <p className="collab-diag-standalone-desc">{t("只展示真实投递证据；消息提交不等于模型已处理或回复。")}</p>
+            </div>
+            <button type="button" className="btn secondary collab-diag-recheck" disabled={checking || busy} onClick={() => void refresh()}>
+              <ArrowClockwiseIcon size={13} aria-hidden="true" />
+              <span>{checking ? t("检查中…") : t("刷新记录")}</span>
+            </button>
+          </div>
+        )}
+        {health ? (
+          <div className="collab-diag-panel">
+            <details open className="collaboration-support-details">
+              <summary>
+                <span className="collab-diag-panel-title">
+                  <span>{t("消息投递证据（")}{health.messages.length}）</span>
+                </span>
+                <span className="collab-diag-toggle-hint">{t("展开 / 收起")}</span>
+              </summary>
+              <div className="collab-diag-panel-body">
+                <p className="collab-diag-evidence-note">{health.replyEvidence}{t("。成功投递记录为本次应用运行内存记录，排队消息持久保留。")}</p>
+                {health.messages.map((message) => (
+                  <article className="collab-diag-msg-item" key={message.id}>
+                    <div className="collab-diag-msg-head">
+                      <strong>{STAGES[message.stage] ?? message.stage}</strong>
+                      <span>
+                        <time>{message.at ? new Date(message.at).toLocaleString("zh-CN") : t("时间未记录")}</time>
+                        {" "}{t("· 来源：")}{message.fromLabel ?? name(message.fromSessionId)} {t("→ 接收：")}{name(message.toSessionId)}
+                      </span>
+                    </div>
+                    <p className="collab-diag-msg-body">{message.body}</p>
+                    {message.error && <p role="alert" className="collaboration-support-error">{message.error}</p>}
+                  </article>
+                ))}
+                {!health.messages.length && <p className="collab-diag-empty">{t("暂无可展示的排队或投递证据。")}</p>}
+              </div>
+            </details>
+          </div>
+        ) : (
+          <p className="collab-diag-empty">{t("尚未取得通信记录。")}</p>
+        )}
+      </div>
+    )}
     {handoffOpen && <Modal className="collaboration-handoff-dialog" overlayClassName="dialog-overlay collaboration-handoff-overlay" onClose={closeHandoff} ariaLabel={t("交接当前工作")} closeOnOverlayClick={false}>
       <button className="collab-modal-close" aria-label={t("关闭交接窗口")} disabled={busy} onClick={closeHandoff}>×</button>
       <SettingsSection title={t("交接当前工作")} description={t("交接会停止原执行并转交负责人；普通发消息仍使用 CrewVela 会话通信。")}>

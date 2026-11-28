@@ -51,7 +51,7 @@ try {
   }
   await setDisabled([]);
   await checkCounts(7);
-  assert.doesNotMatch(await page.locator('.collab-team-toolbar p').innerText(), /隐藏/);
+  assert.equal(await page.locator('.collab-team-toolbar p').count(), 0);
   await setDisabled(['claude_code', 'codex', 'kimi_code', 'pi', 'opencode', 'zcode_cli', 'deepseek_harness', 'zcode']);
   await checkCounts(0);
   assert.match(await page.locator('.collab-team-toolbar p').innerText(), /共 7 位，隐藏 7 位/);
