@@ -1,6 +1,14 @@
 # 更新记录
 
-当前开发线为 **v0.1.0 Beta**。安装包内部版本为 `0.1.0`。GitHub 测试构建使用独立的 Beta 标签，例如 `v0.1.0-beta.20261118`。下载、源码提交与校验值见[发布列表](https://github.com/token-hunter/CrewVela/releases)。
+当前 Windows x64 发行版为 **v0.1.3 Beta**，应用版本为 `0.1.3-beta.20261128`。下载、源码提交与校验值见[发布列表](https://github.com/token-hunter/CrewVela/releases)。
+
+## v0.1.3 Beta · 2026-11-28
+
+[Windows x64 Beta 发布说明](https://github.com/token-hunter/CrewVela/releases/tag/v0.1.3-beta.20261128)，对应源码提交 `3e5aaf7`。
+
+- **应用内一键更新**。Windows x64 检测到新版时会在右下角显示提醒。点击「更新」后，CrewVela 会下载更新包、校验签名、覆盖安装并自动重启。旧版用户手动覆盖安装一次最新版后，即可在应用内接收后续更新。详见[下载与安装](docs/downloads.md)。
+- **重启安装修复**。结果未确认的历史自动化记录可以保留，且不会再阻塞重启安装。仍有会话或任务运行时，更新卡片会显示阻塞原因。
+- **实测通过**。从包含重启阻塞修复的 `0.1.2-beta.20261128` Windows x64 测试版升级到本版，右下角更新提醒、一键覆盖安装和自动重启均正常，重启后显示的版本为 `0.1.3-beta.20261128`。
 
 ## v0.1.0 Beta · 2026-11-26
 
