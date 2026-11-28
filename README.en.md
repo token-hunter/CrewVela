@@ -24,6 +24,8 @@ Let Claude Code implement, Codex review, and another agent pick up the next step
 CrewVela is a desktop workspace built with **Tauri 2, React, and Rust**. It brings separate agent sessions, messaging, project collaboration, and work handoffs into one window, while retaining each agent's local installation, accounts, and permission mechanisms.
 
 > **The latest Windows x64 build is v0.1.3 Beta.** v0.1.0 Beta is available for macOS Apple Silicon. See [Download and install](docs/downloads.en.md) for links, checksums, and setup.
+>
+> **Windows x64 supports one-click in-app updates.** If you're using an older build, run the latest installer once to upgrade. For future releases, click **Update** in the bottom-right notice.
 
 ## See CrewVela in one minute
 

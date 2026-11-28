@@ -23,6 +23,8 @@ Windows 安装包的源码见 [v0.1.3-beta.20261128 标签](https://github.com/t
 Get-FileHash .\CrewVela-0.1.3-beta.20261128-windows-x64-setup.exe -Algorithm SHA256
 ```
 
+**应用内一键更新。** 旧版用户先从系统托盘退出 CrewVela，再运行上表中的最新 Windows x64 安装包覆盖安装一次。后续检测到新版本时，点击右下角提醒里的「更新」。CrewVela 会下载并校验更新包，安装完成后自动重启。如果卡片提示有任务在运行，等任务结束后点击「重启安装」。
+
 应用界面语言在「设置 → 常规」切换，独立于安装向导所选语言。
 
 当前源码的发行构建只在应用安装位置和用户运行时 PATH 中发现适配器，不引用构建机器的源码目录；未安装时通过 npx 使用固定版本。Codex 的本地安装和 npx 回退均加载同一个包装桥。开发构建仍可使用项目 node_modules。首次使用可能联网安装适配器，且必须有兼容的 Node/npm；这不代表所有适配器均已内置。
@@ -40,7 +42,7 @@ npm run bundle:windows
 
 本地发行文件整理在 `output/releases/<tag>/` 并被 Git 忽略。构建、向导检查、签名和安装/卸载验收边界见 [安装包记录](release-installers-validation.md)。
 
-未签名文件可能显示系统来源/信誉提示。公开说明签名状态并核对发行源；不要求用户关闭 Defender、SmartScreen 或其他系统防护。
+安装包带有 Tauri 更新签名。Windows Authenticode 签名尚未配置，系统仍可能显示来源或信誉提示。公开说明签名状态并核对发行源；不要求用户关闭 Defender、SmartScreen 或其他系统防护。
 
 ## macOS Apple Silicon
 

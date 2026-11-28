@@ -10,7 +10,7 @@ The Windows installer was built from the [v0.1.3-beta.20261128 tag](https://gith
 
 1. Download the [Windows installer](https://github.com/token-hunter/CrewVela/releases/download/v0.1.3-beta.20261128/CrewVela-0.1.3-beta.20261128-windows-x64-setup.exe) and [SHA256SUMS.txt](https://github.com/token-hunter/CrewVela/releases/download/v0.1.3-beta.20261128/SHA256SUMS.txt).
 2. In PowerShell, run the command below from your downloads folder. Compare the `Hash` value with the entry in `SHA256SUMS.txt`.
-3. Run the installer. The installer is unsigned, installs for the current Windows user, and offers English and Simplified Chinese. In the app, choose your interface language in **Settings → General**.
+3. Run the installer. It installs for the current Windows user and offers English and Simplified Chinese. The package has a Tauri updater signature. Windows Authenticode signing is pending. In the app, choose your interface language in **Settings → General**.
 
 ```powershell
 Get-FileHash .\CrewVela-0.1.3-beta.20261128-windows-x64-setup.exe -Algorithm SHA256
@@ -18,7 +18,9 @@ Get-FileHash .\CrewVela-0.1.3-beta.20261128-windows-x64-setup.exe -Algorithm SHA
 
 Windows WebView2 is required. The installer can download its bootstrapper if WebView2 is missing. Install and sign in to the agents you plan to use. Some native-chat integrations require Node.js and an ACP adapter. Rust and MSVC are only needed to build CrewVela from source.
 
-Before upgrading, quit the old app from the system tray. Settings, sessions, and credentials are stored separately from the application. The release notes list the checks performed on each build.
+**One-click in-app updates.** If you're using an older build, exit CrewVela from the system tray and run the latest Windows x64 installer above once to upgrade. When a future release is available, click **Update** in the bottom-right notice. CrewVela downloads and verifies the package, installs it, and restarts automatically. If the notice shows a task is still running, let it finish and then click **Restart to install**.
+
+Settings, sessions, and credentials are stored separately from the application. The release notes list the checks performed on each build.
 
 ## macOS Apple Silicon
 

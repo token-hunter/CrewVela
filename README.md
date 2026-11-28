@@ -24,6 +24,8 @@
 CrewVela 是一个基于 **Tauri 2 + React + Rust** 的桌面多 Agent 工作台，把独立会话、会话通信、项目协作和工作交接放进同一个窗口。沿用各 Agent 的本机安装、账号与权限机制，让你围绕任务组织工具。
 
 > **Windows x64 最新版为 v0.1.3 Beta。** macOS Apple Silicon 可下载 v0.1.0 Beta。下载链接、校验文件和安装步骤见[下载与安装](docs/downloads.md)。
+>
+> **Windows x64 已支持应用内一键更新。** 旧版用户手动覆盖安装一次最新版后，后续可直接在右下角的更新提醒中点击「更新」。
 
 ## 一分钟看 CrewVela
 
